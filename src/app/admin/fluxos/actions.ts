@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { referenciasDeConteudo } from "@/lib/motor-fluxo/db";
 import {
   carregarResumoDeTodasEtapas,
@@ -49,7 +50,7 @@ export async function salvarEtapaAction(entrada: EntradaSalvarEtapa): Promise<Re
 export type ResultadoExcluir = { sucesso: true } | { sucesso: false; erro: string };
 
 export async function excluirEtapaAction(id: string, fluxoId: string): Promise<ResultadoExcluir> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.from("etapas_fluxo").select("id, conteudo");
   if (error) {
     return { sucesso: false, erro: `Falha ao validar exclusão: ${error.message}` };

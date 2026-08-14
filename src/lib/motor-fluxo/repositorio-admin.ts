@@ -1,17 +1,21 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { tipoEtapaDb } from "./db";
 import type { ConteudoEtapa } from "./tipos";
 
 // Camada de I/O usada pelo painel admin (leitura E escrita) — separada de repositorio.ts, que é
-// só leitura e serve o motor de fluxo em tempo real. Mesma razão de usar o cliente admin
-// (service_role): o admin autentica via Supabase Auth, não precisa de RLS por linha aqui (nível
-// único ADMIN/MASTER, MODELAGEM_DADOS_ARRUDACRED.md).
+// só leitura e serve o motor de fluxo em tempo real. Usa o cliente autenticado (cookie de sessão),
+// não o service_role: /admin/* já é protegido por proxy.ts (sempre há um usuário logado aqui), e
+// autenticar de verdade é o que permite ao Postgres saber "quem" está escrevendo — auth.uid() fica
+// disponível pro trigger de auditoria (auditoria_log, ver SEGURANCA_E_AUDITORIA_ARRUDACRED.md).
+// As tabelas abaixo têm política de RLS liberando acesso total pra qualquer usuário autenticado
+// (nível único ADMIN/MASTER hoje, MODELAGEM_DADOS_ARRUDACRED.md) — sem essa política o acesso seria
+// negado por padrão (Supabase liga RLS automaticamente em toda tabela nova).
 
 export type FluxoAdmin = { id: string; nome: string; produtoId: string | null };
 
 export async function listarFluxos(): Promise<FluxoAdmin[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.from("fluxos").select("id, nome, produto_id").order("nome");
 
   if (error) {
@@ -35,7 +39,7 @@ export type EtapaAdmin = {
 };
 
 export async function carregarEtapasDoFluxo(fluxoId: string): Promise<EtapaAdmin[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("etapas_fluxo")
     .select("id, fluxo_id, ordem, campo_salvo, agenda_followup_id, conteudo")
@@ -58,7 +62,7 @@ export async function carregarEtapasDoFluxo(fluxoId: string): Promise<EtapaAdmin
 
 /** Id + código de toda etapa que existe hoje, em qualquer fluxo — a navegação do motor cruza fluxos (ex.: triagem → produto), então validar referências e colisão de código precisa considerar tudo, não só o fluxo aberto no editor. */
 export async function carregarResumoDeTodasEtapas(): Promise<{ id: string; codigo: string }[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.from("etapas_fluxo").select("id, conteudo");
 
   if (error) {
@@ -74,7 +78,7 @@ export async function carregarResumoDeTodasEtapas(): Promise<{ id: string; codig
 export type AgendaAdmin = { id: string; nome: string };
 
 export async function listarAgendasFollowup(): Promise<AgendaAdmin[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.from("agendas_followup").select("id, nome").order("nome");
 
   if (error) {
@@ -94,7 +98,7 @@ export type EntradaSalvarEtapa = {
 };
 
 export async function salvarEtapa(entrada: EntradaSalvarEtapa): Promise<{ id: string }> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const linha = {
     fluxo_id: entrada.fluxoId,
     ordem: entrada.ordem,
@@ -116,7 +120,7 @@ export async function salvarEtapa(entrada: EntradaSalvarEtapa): Promise<{ id: st
 }
 
 export async function excluirEtapa(id: string): Promise<void> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { error } = await supabase.from("etapas_fluxo").delete().eq("id", id);
   if (error) throw new Error(`Falha ao excluir etapa: ${error.message}`);
 }
