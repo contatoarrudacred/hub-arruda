@@ -454,13 +454,15 @@ O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta —
 ### Fase 2 — Painel Admin 🔶 em andamento (13-14/08/2026)
 - ✅ Login (Supabase Auth) + guard de `/admin`
 - ✅ Editor visual do fluxo (React Flow): caixinhas editáveis em modal com abas (Mensagens/Fluxo/Avançado), prévia ao vivo, marcadores de Início/Fim/Perdida/referência externa, arestas mescladas por destino
+- ✅ Auto-layout hierárquico do canvas (dagre) + arestas ortogonais (90°) — botão "Reorganizar"
+- ✅ Upload de mídia (imagem/áudio/vídeo/documento) direto no editor — sobe pro Supabase Storage (bucket `midia-fluxo`), preenche a URL pública sozinho. **Pendente:** rodar a migration `20260814140000_storage_midia_fluxo.sql` no SQL Editor do Supabase pra criar o bucket em produção (só existe localmente até isso rodar)
 - ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, preços por faixa, configurações, e gerenciar as agendas de follow-up em si — essa é a próxima peça
-- ⬜ **Falta:** auto-layout do canvas (hoje é grid simples; fica difícil de ler quando o fluxo cresce) — em andamento
 
 ### Decisões/correções registradas durante a construção (14/08/2026)
 - A saudação personalizada ("Oi [Nome], bom dia!") vive uma vez na abertura, não repetida por produto — corrigido no script, ver `SCRIPT_LIMPANOME_SERASA_SPC.md`
 - Checkpoint de telefone é condicional por canal (só pergunta se o canal não fornece nativamente)
-- Placeholders de imagem já existem no fluxo (foto da Malala, selo Reclame Aqui) — só falta o upload
+- Placeholders de imagem já existem no fluxo (foto da Malala, selo Reclame Aqui) — upload de verdade já dá pra fazer pelo editor (ver Fase 2 acima)
+- `public/` do Next.js não é gravável em runtime no Vercel (cada deploy é um pacote imutável) — por isso mídia enviada pelo admin vai pro Supabase Storage, não pra uma pasta local
 - Prática de git adotada: commitar a cada chunk validado (testes + lint + build verdes), mensagem sempre com resumo do que mudou — histórico vira ponto de restauração
 
 ### Explicitamente fora do MVP1 ainda (não esquecer)
