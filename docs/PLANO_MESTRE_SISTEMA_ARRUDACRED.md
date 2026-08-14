@@ -456,6 +456,10 @@ O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta —
 - ✅ Editor visual do fluxo (React Flow): caixinhas editáveis em modal com abas (Mensagens/Fluxo/Avançado), prévia ao vivo, marcadores de Início/Fim/Perdida/referência externa, arestas mescladas por destino
 - ✅ Auto-layout hierárquico do canvas (dagre) + arestas ortogonais (90°) — botão "Reorganizar"
 - ✅ Upload de mídia (imagem/áudio/vídeo/documento) direto no editor — sobe pro Supabase Storage (bucket `midia-fluxo`), preenche a URL pública sozinho. **Pendente:** rodar a migration `20260814140000_storage_midia_fluxo.sql` no SQL Editor do Supabase pra criar o bucket em produção (só existe localmente até isso rodar)
+- ✅ Barra superior do editor: Voltar (lista de fluxos), Atualizar (recarrega), Ver tudo (fitView)
+- ✅ Quadrinho mostra thumbnail de imagem de verdade e ícone grande pra áudio/vídeo/documento
+- ✅ Reordenar mensagens dentro de uma etapa (setas ▲▼ no modal)
+- ✅ Exclusão de etapa corrigida — o `window.confirm()` nativo era bloqueado silenciosamente pelo navegador (retornava "cancelado" sem mostrar nada), por isso parecia não funcionar; trocado por modal de confirmação próprio
 - ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, preços por faixa, configurações, e gerenciar as agendas de follow-up em si — essa é a próxima peça
 
 ### Decisões/correções registradas durante a construção (14/08/2026)
