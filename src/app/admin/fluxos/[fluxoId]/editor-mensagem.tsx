@@ -1,6 +1,15 @@
 "use client";
 
+import { useRef, useState } from "react";
+import { uploadMidiaAction } from "../actions";
 import type { MensagemEtapa } from "@/lib/motor-fluxo/tipos";
+
+const ACEITA_ARQUIVO: Partial<Record<MensagemEtapa["tipo"], string>> = {
+  imagem: "image/*",
+  audio: "audio/*",
+  video: "video/*",
+  documento: "*/*",
+};
 
 const ROTULO_TIPO: Record<MensagemEtapa["tipo"], string> = {
   texto: "Texto",
@@ -44,6 +53,40 @@ export function EditorMensagem({
   onChange: (m: MensagemEtapa) => void;
   onRemover: () => void;
 }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erroUpload, setErroUpload] = useState<string | null>(null);
+  const inputArquivoRef = useRef<HTMLInputElement>(null);
+
+  async function lidarComArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!arquivo) return;
+
+    setEnviando(true);
+    setErroUpload(null);
+    try {
+      const formData = new FormData();
+      formData.set("arquivo", arquivo);
+      const resultado = await uploadMidiaAction(formData);
+      if (!resultado.sucesso) {
+        setErroUpload(resultado.erro);
+        return;
+      }
+      if (
+        mensagem.tipo === "imagem" ||
+        mensagem.tipo === "audio" ||
+        mensagem.tipo === "video" ||
+        mensagem.tipo === "documento"
+      ) {
+        onChange({ ...mensagem, midia_url: resultado.url });
+      }
+    } catch {
+      setErroUpload("Falha inesperada no upload. Tenta de novo.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   return (
     <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
       <div className="flex items-center justify-between">
@@ -83,13 +126,31 @@ export function EditorMensagem({
         mensagem.tipo === "documento") && (
         <>
           <div className="space-y-1">
-            <label className={rotulo}>URL do arquivo</label>
-            <input
-              className={campo}
-              value={mensagem.midia_url}
-              onChange={(e) => onChange({ ...mensagem, midia_url: e.target.value })}
-              placeholder="https://..."
-            />
+            <label className={rotulo}>Arquivo</label>
+            <div className="flex items-center gap-2">
+              <input
+                className={campo}
+                value={mensagem.midia_url}
+                onChange={(e) => onChange({ ...mensagem, midia_url: e.target.value })}
+                placeholder="https://... (ou envie um arquivo)"
+              />
+              <button
+                type="button"
+                disabled={enviando}
+                onClick={() => inputArquivoRef.current?.click()}
+                className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                {enviando ? "Enviando..." : "Enviar arquivo"}
+              </button>
+              <input
+                ref={inputArquivoRef}
+                type="file"
+                className="hidden"
+                accept={ACEITA_ARQUIVO[mensagem.tipo]}
+                onChange={lidarComArquivoSelecionado}
+              />
+            </div>
+            {erroUpload && <p className="text-xs text-red-600 dark:text-red-400">{erroUpload}</p>}
           </div>
           <div className="space-y-1">
             <label className={rotulo}>Legenda (opcional)</label>

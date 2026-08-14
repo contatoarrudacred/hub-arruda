@@ -12,31 +12,43 @@ export function BolhaMensagem({ mensagem }: { mensagem: MensagemEtapa }) {
     case "imagem":
       return (
         <div className="space-y-1">
-          {/* eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de conteúdo editado pelo admin, não é asset do projeto */}
-          <img
-            src={mensagem.midia_url}
-            alt={mensagem.legenda ?? "Imagem"}
-            className="max-w-full rounded-lg"
-          />
+          {mensagem.midia_url ? (
+            // eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de conteúdo editado pelo admin, não é asset do projeto
+            <img
+              src={mensagem.midia_url}
+              alt={mensagem.legenda ?? "Imagem"}
+              className="max-w-full rounded-lg"
+            />
+          ) : (
+            <MidiaPendente rotulo="Nenhuma imagem enviada ainda" />
+          )}
           {mensagem.legenda && <p className="whitespace-pre-wrap">{mensagem.legenda}</p>}
         </div>
       );
     case "video":
       return (
         <div className="space-y-1">
-          <video controls src={mensagem.midia_url} className="max-w-full rounded-lg" />
+          {mensagem.midia_url ? (
+            <video controls src={mensagem.midia_url} className="max-w-full rounded-lg" />
+          ) : (
+            <MidiaPendente rotulo="Nenhum vídeo enviado ainda" />
+          )}
           {mensagem.legenda && <p className="whitespace-pre-wrap">{mensagem.legenda}</p>}
         </div>
       );
     case "audio":
       return (
         <div className="space-y-1">
-          <audio controls src={mensagem.midia_url} className="max-w-full" />
+          {mensagem.midia_url ? (
+            <audio controls src={mensagem.midia_url} className="max-w-full" />
+          ) : (
+            <MidiaPendente rotulo="Nenhum áudio enviado ainda" />
+          )}
           {mensagem.legenda && <p className="whitespace-pre-wrap">{mensagem.legenda}</p>}
         </div>
       );
     case "documento":
-      return (
+      return mensagem.midia_url ? (
         <a
           href={mensagem.midia_url}
           target="_blank"
@@ -45,6 +57,8 @@ export function BolhaMensagem({ mensagem }: { mensagem: MensagemEtapa }) {
         >
           📄 {mensagem.legenda ?? "Documento"}
         </a>
+      ) : (
+        <MidiaPendente rotulo={`📄 ${mensagem.legenda ?? "Nenhum documento enviado ainda"}`} />
       );
     case "localizacao":
       return (
@@ -73,4 +87,12 @@ export function BolhaMensagem({ mensagem }: { mensagem: MensagemEtapa }) {
         </div>
       );
   }
+}
+
+function MidiaPendente({ rotulo }: { rotulo: string }) {
+  return (
+    <p className="rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-600 dark:text-zinc-400">
+      {rotulo}
+    </p>
+  );
 }

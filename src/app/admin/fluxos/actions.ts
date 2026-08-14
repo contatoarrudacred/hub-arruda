@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { referenciasDeConteudo } from "@/lib/motor-fluxo/db";
@@ -76,4 +77,37 @@ export async function excluirEtapaAction(id: string, fluxoId: string): Promise<R
   await excluirEtapaRepo(id);
   revalidatePath(`/admin/fluxos/${fluxoId}`);
   return { sucesso: true };
+}
+
+const BUCKET_MIDIA_FLUXO = "midia-fluxo";
+const TAMANHO_MAXIMO_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+export type ResultadoUpload = { sucesso: true; url: string } | { sucesso: false; erro: string };
+
+export async function uploadMidiaAction(formData: FormData): Promise<ResultadoUpload> {
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { sucesso: false, erro: "Nenhum arquivo recebido." };
+  }
+  if (arquivo.size > TAMANHO_MAXIMO_UPLOAD_BYTES) {
+    return {
+      sucesso: false,
+      erro: `Arquivo muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_BYTES / (1024 * 1024)}MB).`,
+    };
+  }
+
+  const extensao = arquivo.name.includes(".") ? arquivo.name.split(".").pop() : "";
+  const nomeArquivo = `${randomUUID()}${extensao ? `.${extensao}` : ""}`;
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage
+    .from(BUCKET_MIDIA_FLUXO)
+    .upload(nomeArquivo, arquivo, { contentType: arquivo.type || undefined });
+
+  if (error) {
+    return { sucesso: false, erro: `Falha no upload: ${error.message}` };
+  }
+
+  const { data } = supabase.storage.from(BUCKET_MIDIA_FLUXO).getPublicUrl(nomeArquivo);
+  return { sucesso: true, url: data.publicUrl };
 }
