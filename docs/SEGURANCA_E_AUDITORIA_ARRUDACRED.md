@@ -1,5 +1,5 @@
 # Segurança e Auditoria — Sistema ArrudaCred
-**Status:** Pesquisa e recomendação registradas (14/08/2026) — implementação pendente de validação de escopo com Luiz
+**Status:** Seção 1 (segurança externa) é pesquisa/regra de arquitetura registrada, ainda sem código (Fase 5/7 não existem). Seção 2 (auditoria interna) ✅ implementada em 14/08/2026 — `supabase/migrations/20260814150000_auditoria_log.sql`, pendente só de Luiz rodar a migration no SQL Editor do Supabase.
 **Motivação:** ver PLANO_MESTRE seção 1.6 (Camada Transversal) e seção 2 ("Segurança mínima não-negociável") — este documento detalha o que estava só como bullet solto ali.
 
 > **Como usar este documento:** duas frentes bem diferentes, tratadas em seções separadas — **Segurança externa** (alguém de fora tentando abusar do sistema) e **Auditoria interna** (rastrear o que aconteceu com os dados, não é bem "segurança", é prova/histórico). Ver PLANO_MESTRE seção 0 sobre a convenção de duas dimensões — este documento está 100% no lado "Planejamento" ainda, 0% "Produção", exceto onde marcado.
@@ -49,6 +49,8 @@ Ainda não é um risco ativo — Fase 5 (IA real) e Fase 7 (WhatsApp real) não 
 
 ## 2. Auditoria interna — trilha de quem mudou o quê
 
+> ✅ **Implementado em 14/08/2026** (`20260814150000_auditoria_log.sql`) — as subseções abaixo descrevem o desenho tal como foi construído. A única pendência é Luiz rodar a migration no SQL Editor do Supabase (mesmo passo já feito para as migrations anteriores).
+
 ### 2.1 Recomendação: sim, começar agora
 
 Luiz perguntou se faz sentido já começar agora, no início. **Recomendação: sim**, por três motivos:
@@ -85,22 +87,23 @@ create table auditoria_log (
 
 Uma função de trigger genérica (`fn_auditoria()`), anexada via `AFTER INSERT OR UPDATE OR DELETE` em cada tabela que precisa de trilha — grava a linha inteira antes/depois como JSON. Isso é mais útil na prática do que guardar o texto da query SQL: dá pra ver exatamente **o que mudou, campo a campo**, e até reverter manualmente se precisar, sem precisar reconstruir o efeito a partir de sintaxe SQL.
 
-### 2.4 Como capturar "quem fez" (o ponto que exige mais cuidado)
+### 2.4 Sobre capturar "quem fez" — limitação técnica real, decisão consciente de adiar
 
-O painel admin acessa o banco pelo cliente `service_role` (`createAdminClient()`), que ignora RLS e — do ponto de vista do Postgres — é sempre o mesmo "usuário técnico", não importa quem esteja logado no admin. Pra o log saber **qual pessoa** (não só "foi o backend"), o padrão é:
+Cheguei a desenhar isso como "a Server Action seta `set_config('app.usuario_atual', ...)` antes de escrever, o trigger lê essa variável" — só que ao implementar, essa abordagem esbarra numa característica de como o Supabase funciona: o cliente JS fala com o Postgres via PostgREST, e cada `.insert()/.update()/.delete()` normalmente é sua **própria conexão/transação** — uma variável de sessão setada numa chamada não sobrevive de forma confiável até a chamada seguinte (ainda mais com pooling de conexão). Ou seja, "setar antes, escrever depois" em duas chamadas separadas **não é confiável** nesse modelo — daria a falsa impressão de estar funcionando até um dia falhar silenciosamente.
 
-1. Antes de cada escrita, a Server Action seta uma variável de sessão: `set_config('app.usuario_atual', '<id do usuário logado no Supabase Auth>', true)`.
-2. O trigger lê essa variável (`current_setting('app.usuario_atual', true)`) e grava em `usuario_id`.
+As duas formas de fazer isso direito custam mais do que uma migration de auditoria deveria carregar escondida:
+- Reescrever as escritas (`salvarEtapa`, `excluirEtapa`, etc.) como funções RPC no Postgres, que recebem o usuário como parâmetro e fazem a escrita + o `set_config` na mesma chamada/transação; ou
+- Trocar o cliente `service_role` pelo cliente autenticado do próprio admin nas escritas (o que exigiria ligar RLS no projeto, hoje inexistente em toda a base).
 
-Isso exige um pequeno ajuste em `src/lib/supabase/admin.ts` (ou nas próprias actions) para sempre setar essa variável antes de escrever — é a única parte que toca código de aplicação; o resto é 100% migration.
+**Decisão:** adiar essa parte. Com um usuário admin só (Luiz) hoje, saber "qual dos vários usuários fez" tem valor baixo agora — o valor real e imediato é o histórico de **o que mudou e quando**, que a migration já entrega 100% funcional, sem depender de nenhum ajuste em código de aplicação. A coluna `usuario_id` já existe na tabela e o trigger já tenta ler a variável de sessão (então funciona sozinha se um dia uma dessas duas mudanças for feita) — por enquanto fica `NULL` na prática, e isso está documentado no cabeçalho da própria migration para não ser esquecido nem confundido com um bug.
 
 ### 2.5 Guardar o SQL literal também? (opcional)
 
 Dá pra fazer — dentro do trigger, `current_query()` retorna o texto da instrução que disparou o trigger — mas **não recomendo como abordagem principal**: não mostra os valores de parâmetro de forma legível na maioria dos casos, e não ajuda a reverter/entender o impacto tão bem quanto o antes/depois em JSON. Posso adicionar como uma coluna extra opcional (`sql_bruto text`) se Luiz achar valioso ter os dois — é barato de incluir.
 
-### 2.6 Escopo inicial proposto
+### 2.6 Escopo implementado
 
-Aplicar o trigger nas tabelas que já existem e já guardam dado sensível ou editável pelo admin: `etapas_fluxo`, `fluxos`, `usuarios_sistema`, `pessoas` (quando existir/for populada), `conversas`. Tabela nova criada depois só precisa de uma linha a mais no migration (`create trigger ... execute function fn_auditoria()`) — não é preciso replanejar nada.
+Trigger aplicado em 6 tabelas: `etapas_fluxo`, `fluxos`, `usuarios_sistema`, `pessoas`, `conversas` (as 5 originalmente propostas) e `oportunidades` (adicionada — é o registro do CRM/Kanban, valor estimado e etapa do funil, claramente no mesmo nível de sensibilidade das outras). `faqs`, `precos_por_faixa`, `produtos`, `configuracoes`, `agendas_followup` ficaram de fora por enquanto (ainda sem tela de CRUD construída — item #9 pendente) — quando essas telas forem feitas, estender é uma linha (`create trigger ...`) por tabela, sem replanejar nada.
 
 ### 2.7 Imutabilidade do log
 
@@ -108,9 +111,10 @@ O plano mestre já registra "log de auditoria imutável" como requisito. Na prá
 
 ---
 
-## 3. O que fica pendente de decisão do Luiz antes de eu codar
+## 3. Pendências
 
-1. **Auditoria (seção 2):** confirmar se posso seguir com o migration (tabela + função + triggers nas 5 tabelas listadas em 2.6 + o ajuste em `admin.ts` pra setar o usuário atual). É uma peça pequena e isolada.
-2. **MFA no login (seção 1.2):** confirmar se entra agora ou fica para quando houver mais de um admin (minha sugestão: esperar, não é urgente com um usuário só).
-3. **Coluna de SQL bruto opcional (seção 2.5):** incluir ou não junto com o resto do log.
-4. Seções 1.1 e 1.3 não têm código para escrever ainda — são regras de arquitetura a manter quando a Fase 5 (IA real) e Fase 7 (WhatsApp real) forem implementadas. Ficam registradas aqui para não se perder até lá.
+1. ~~Auditoria (seção 2)~~ ✅ implementada — falta só Luiz rodar `20260814150000_auditoria_log.sql` no SQL Editor do Supabase.
+2. **MFA no login (seção 1.2):** confirmar se entra agora ou fica para quando houver mais de um admin (sugestão: esperar, não é urgente com um usuário só).
+3. **Coluna de SQL bruto opcional (seção 2.5):** não incluída na implementação — segue como possível extra futuro se Luiz achar valioso.
+4. **Captura de "quem fez" (seção 2.4):** adiada conscientemente — só vira viável quando as escritas forem reescritas como RPC ou o admin passar a escrever com o cliente autenticado (RLS). Não é bloqueante pra usar o log hoje.
+5. Seções 1.1 e 1.3 não têm código para escrever ainda — são regras de arquitetura a manter quando a Fase 5 (IA real) e Fase 7 (WhatsApp real) forem implementadas. Ficam registradas aqui para não se perder até lá.

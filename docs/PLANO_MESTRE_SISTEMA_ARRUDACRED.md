@@ -434,7 +434,11 @@ Requisito: um módulo de **"governança de custo"** (dentro do Financeiro, alime
 
 Aprofunda os bullets soltos da seção 2 ("segurança mínima não-negociável") em resposta a uma pergunta direta de Luiz sobre segurança externa (prompt injection na Malala, ataque na tela de login, abuso pra gastar crédito de IA) e auditoria interna (trilha de INSERT/UPDATE/DELETE). Resumo:
 - **Segurança externa:** a arquitetura atual já bloqueia por desenho o cenário "IA manipulada pra agir no banco" — motor determinístico, zero SQL bruto no projeto, IA (quando ligada na Fase 5) só classifica texto, nunca executa comando. Login já usa `getUser()` revalidado no servidor (Supabase Auth). Faltam: MFA administrativo, e — só quando Fase 5/7 forem implementadas — limite de chamadas de IA por lead, verificação de assinatura do webhook do WhatsApp, circuit breaker de orçamento diário.
-- **Auditoria interna:** recomendado começar agora (dado ainda é pequeno, mais barato que retrofit depois). Abordagem: trigger genérico no Postgres (não log manual no código) gravando antes/depois em JSON por tabela, capturando o usuário via `set_config`. Pendente de confirmação de escopo antes de codar.
+- **Auditoria interna:** ✅ implementada (14/08/2026) — trigger genérico no Postgres (`20260814150000_auditoria_log.sql`), grava antes/depois em JSON em 6 tabelas (`etapas_fluxo`, `fluxos`, `usuarios_sistema`, `pessoas`, `conversas`, `oportunidades`). Captura de "qual usuário fez" foi adiada conscientemente — exigiria reescrever as escritas como RPC ou ligar RLS no projeto (mudança maior); com um admin só hoje, o ganho imediato é baixo. **Pendente:** Luiz rodar a migration no SQL Editor do Supabase.
+
+### 10.1 Prompt de sistema/persona da Malala — pendente (novo, 14/08/2026)
+
+Luiz esclareceu o papel exato da FAQ (ver `FAQ_LIMPANOME_SERASA_SPC.md`): ela é a base de consulta que a IA usa quando uma pergunta **não** está coberta implicitamente pelo prompt de sistema da Malala — que ainda não existe como documento. Falta escrever: identidade/persona, tom de voz, técnicas comerciais/de venda, regras de quando desviar pra FAQ vs. responder direto, regras de escalonamento pra humano. Isso é pré-requisito real da Fase 5 (interpretação por IA), não só um "nice to have" de FAQ.
 
 ---
 
