@@ -436,10 +436,18 @@ Aprofunda os bullets soltos da seção 2 ("segurança mínima não-negociável")
 - **Segurança externa:** a arquitetura atual já bloqueia por desenho o cenário "IA manipulada pra agir no banco" — motor determinístico, zero SQL bruto no projeto, IA (quando ligada na Fase 5) só classifica texto, nunca executa comando. Login já usa `getUser()` revalidado no servidor (Supabase Auth). Faltam: MFA administrativo, e — só quando Fase 5/7 forem implementadas — limite de chamadas de IA por lead, verificação de assinatura do webhook do WhatsApp, circuit breaker de orçamento diário.
 - **Auditoria interna:** ✅ implementada (14/08/2026), incluindo captura de "quem fez" — trigger genérico no Postgres (`20260814150000_auditoria_log.sql`), grava antes/depois em JSON em 6 tabelas (`etapas_fluxo`, `fluxos`, `usuarios_sistema`, `pessoas`, `conversas`, `oportunidades`). O painel admin passou a escrever com o cliente autenticado (RLS) em vez de service_role, e uma migration seguinte (`20260814160000_auditoria_quem_fez.sql`) liga `auth.uid()` no log — decisão de Luiz de não adiar essa parte, mesmo com um admin só hoje. **Pendente:** Luiz rodar as duas migrations, nessa ordem, no SQL Editor do Supabase — até lá, `/admin/fluxos` aparece vazio (RLS bloqueando por falta da política, não é perda de dado).
 
-### 10.1 Prompt de sistema/persona da Malala — 🔶 rascunho v1 (14/08/2026)
+### 10.1 Prompt de sistema/persona da Malala — 🔶 rascunho v2 (14/08/2026)
 > 📄 `PERSONA_MALALA_PROMPT_SISTEMA.md`
 
-Luiz esclareceu o papel exato da FAQ (ver `FAQ_LIMPANOME_SERASA_SPC.md`): ela é a base de consulta que a IA usa quando uma pergunta **não** está coberta implicitamente pelo prompt de sistema da Malala. Primeira versão escrita (14/08/2026), extraída do que já existe em `SCRIPT_LIMPANOME_SERASA_SPC.md`/FAQ — identidade, tom de voz, técnicas comerciais, regra de desvio formalizada, limites/guardrails, regras de escalonamento. **Pendente de revisão de Luiz** antes de virar definitivo — em especial a seção de técnicas comerciais (interpretação minha do padrão) e o limite de quantas vezes insistir numa objeção antes de aceitar um "não" (pergunta em aberto). É pré-requisito real da Fase 5 (interpretação por IA), não só um "nice to have" de FAQ.
+Luiz esclareceu o papel exato da FAQ (ver `FAQ_LIMPANOME_SERASA_SPC.md`): ela é a base de consulta que a IA usa quando uma pergunta **não** está coberta implicitamente pelo prompt de sistema da Malala. Escrito e refinado em conversa direta com Luiz (14/08/2026) — identidade, **princípio central de venda consultiva** (a IA orienta, não empurra — venda é consequência de uma boa consultoria, não o objetivo direto), tom de voz, técnicas comerciais reenquadradas como apoio ao princípio consultivo, regra de desvio, **regra travada de preço** (proposta sempre vem do mecanismo determinístico `ln_passo15_router`/`regras-limpeza-nome.ts`, IA nunca calcula), acesso ao histórico completo da conversa (não só função de consulta pontual), banco de objeções (novo, ver 10.2), limites/guardrails, regras de escalonamento (incluindo lead hostil/alterado, prioridade máxima). **Pendente de revisão de Luiz** antes de virar definitivo — em especial o limite de quantas vezes insistir numa objeção antes de aceitar um "não" (pergunta em aberto).
+
+**Nota técnica registrada para a implementação da Fase 5:** o encaixe `InterpretadorIA` (`src/lib/motor-fluxo/tipos.ts`) hoje só recebe a etapa atual e a resposta do lead — não recebe o histórico da conversa. Passar o histórico completo (tabela `mensagens`, já captura toda mensagem trocada independente da origem) é um ajuste necessário nessa implementação futura.
+
+### 10.2 Banco de objeções — ✅ tabela criada (14/08/2026)
+
+Luiz pediu explicitamente que objeções vivam no banco, não em arquivo de texto ("fica ruim para gestão e administração"). Tabela `objecoes` criada (`20260814170000_banco_objecoes.sql`, mesmo padrão de `faqs`: `produto_id`, `objecao`, `como_lidar`, `ativo`) — mesma fila de CRUD no admin que FAQs (item #9). **Pendente:** Luiz rodar a migration no SQL Editor do Supabase.
+
+**Requisito futuro registrado (dashboard, não construir agora):** Luiz quer visibilidade de quais objeções mais aparecem na prática. Isso depende da Fase 5 existir (só a IA consegue detectar qual objeção o lead expressou) — quando for desenhado, precisa de um registro de "esta objeção apareceu, nesta conversa, nesta hora" (provável tabela de eventos, ex. `objecoes_detectadas`) alimentando um painel de frequência por objeção/produto/período. Fica anotado aqui para não se perder até a Fase 5 chegar.
 
 ---
 
@@ -474,7 +482,7 @@ O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta —
 - ✅ Quadrinho mostra thumbnail de imagem de verdade e ícone grande pra áudio/vídeo/documento
 - ✅ Reordenar mensagens dentro de uma etapa (setas ▲▼ no modal)
 - ✅ Exclusão de etapa corrigida — o `window.confirm()` nativo era bloqueado silenciosamente pelo navegador (retornava "cancelado" sem mostrar nada), por isso parecia não funcionar; trocado por modal de confirmação próprio
-- ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, preços por faixa, configurações, e gerenciar as agendas de follow-up em si — essa é a próxima peça
+- ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, banco de objeções (tabela `objecoes`, nova — ver seção 10.2), preços por faixa, configurações, e gerenciar as agendas de follow-up em si — essa é a próxima peça
 
 ### Decisões/correções registradas durante a construção (14/08/2026)
 - A saudação personalizada ("Oi [Nome], bom dia!") vive uma vez na abertura, não repetida por produto — corrigido no script, ver `SCRIPT_LIMPANOME_SERASA_SPC.md`
