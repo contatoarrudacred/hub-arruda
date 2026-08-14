@@ -24,6 +24,14 @@ export default async function AdminHome() {
           <span className="font-medium text-zinc-900 dark:text-zinc-50">Editor de fluxo</span>
           <p className="text-sm text-zinc-500">Script de atendimento, mensagens e ramificações</p>
         </Link>
+        <Link
+          href="/simulador"
+          target="_blank"
+          className="rounded-xl bg-white p-4 shadow hover:shadow-md dark:bg-zinc-900"
+        >
+          <span className="font-medium text-zinc-900 dark:text-zinc-50">Simulador de conversa</span>
+          <p className="text-sm text-zinc-500">Testar o atendimento da Malala como se fosse o lead</p>
+        </Link>
       </div>
       <p className="mt-4 text-sm text-zinc-500">
         FAQs, preços por faixa, configurações e agendas de follow-up vêm a seguir.
