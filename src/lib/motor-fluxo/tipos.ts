@@ -114,8 +114,6 @@ export type ConteudoEtapa = {
    */
   kanban_subetapa?: string;
   interpretacao_ia?: ConfigInterpretacaoIA;
-  /** posição da caixinha no canvas do editor visual — só layout, não afeta a navegação (quem decide "o que vem depois" são as opções/condições, não a posição) */
-  posicao_canvas?: { x: number; y: number };
 };
 
 export type DadosConversa = Record<string, string>;

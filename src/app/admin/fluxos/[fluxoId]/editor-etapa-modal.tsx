@@ -72,7 +72,7 @@ function paraRascunho(
   };
 }
 
-function paraConteudo(r: Rascunho, posicaoCanvas?: { x: number; y: number }): ConteudoEtapa {
+function paraConteudo(r: Rascunho): ConteudoEtapa {
   const base: ConteudoEtapa = {
     codigo: r.codigo.trim(),
     mensagens: r.mensagens,
@@ -85,7 +85,6 @@ function paraConteudo(r: Rascunho, posicaoCanvas?: { x: number; y: number }): Co
         : r.delayTipo === "aleatorio"
           ? { tipo: "aleatorio", min_segundos: r.delayMin, max_segundos: r.delayMax }
           : { tipo: "nenhum" },
-    posicao_canvas: posicaoCanvas,
   };
 
   if (r.aguardaResposta && r.tipoResposta) {
@@ -208,7 +207,7 @@ export function EditorEtapaModal({
       return;
     }
     setSalvando(true);
-    const conteudo = paraConteudo(r, etapaExistente?.conteudo.posicao_canvas);
+    const conteudo = paraConteudo(r);
     const resultado = await salvarEtapaAction({
       id: etapaExistente?.id ?? null,
       fluxoId,

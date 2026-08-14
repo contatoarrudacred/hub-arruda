@@ -9,36 +9,32 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
   type Edge,
   type Node,
 } from "@xyflow/react";
-import { useMemo, useState } from "react";
-import { salvarEtapaAction } from "../actions";
+import { useEffect, useMemo, useState } from "react";
 import { EditorEtapaModal } from "./editor-etapa-modal";
+import { layoutComDagre } from "./layout-dagre";
 import { NoEtapa } from "./no-etapa";
 import { NoStub } from "./no-stub";
 
 const NODE_TYPES = { etapa: NoEtapa, stub: NoStub };
+// Arestas retas com cantos de 90° (não curvas) — pedido do Luiz (14/08/2026) pra facilitar
+// enxergar as conexões quando o fluxo cresce e o zoom precisa diminuir bastante.
+const OPCOES_ARESTA_PADRAO = { type: "step" as const };
 
 // Cores por opção — só aplicadas quando uma etapa tem mais de uma saída, pra deixar visualmente
 // óbvio que os caminhos se separam ali (etapas de saída única continuam com seta neutra).
 const PALETA_ARESTAS = ["#3b82f6", "#f97316", "#10b981", "#a855f7", "#ec4899", "#eab308"];
 
-// Cores dos marcadores sintéticos (início/fim/perda/referência externa) — mesma paleta de
-// "gravidade" usada na borda das caixinhas reais (ver no-etapa.tsx), mais verde pro início e
-// índigo pra referência a outro fluxo.
+// Cores dos marcadores sintéticos (início/fim/perda/referência externa).
 const COR_INICIO = "#22c55e";
 const COR_HANDOFF = "#64748b";
 const COR_PAUSA = "#f59e0b";
 const COR_PERDIDA = "#ef4444";
 const COR_EXTERNO = "#6366f1";
-
-function posicaoPadrao(indice: number) {
-  const colunas = 4;
-  const col = indice % colunas;
-  const linha = Math.floor(indice / colunas);
-  return { x: col * 320, y: linha * 220 };
-}
 
 /** Todo código que uma etapa referencia por navegação normal (não inclui as opções que marcam perda — essas não têm próxima etapa). */
 function codigosReferenciados(etapa: EtapaAdmin): { alvo: string; rotulo?: string }[] {
@@ -67,6 +63,108 @@ function codigosReferenciados(etapa: EtapaAdmin): { alvo: string; rotulo?: strin
   return refs;
 }
 
+/** Monta a estrutura do grafo (nós + arestas, reais e sintéticos) sem posição — quem posiciona é o dagre, sempre. */
+function construirGrafo(
+  etapas: EtapaAdmin[],
+  onClickEtapa: (etapa: EtapaAdmin) => void,
+  idsFiltrados: Set<string> | null,
+): { nodes: Node[]; edges: Edge[] } {
+  const codigoParaId = Object.fromEntries(etapas.map((e) => [e.conteudo.codigo, e.id]));
+
+  const nodesReais: Node[] = etapas.map((etapa) => ({
+    id: etapa.id,
+    type: "etapa",
+    position: { x: 0, y: 0 },
+    data: { etapa, onClick: () => onClickEtapa(etapa) },
+    style: !idsFiltrados || idsFiltrados.has(etapa.id) ? undefined : { opacity: 0.15 },
+  }));
+
+  const nodesStub: Node[] = [];
+  const edgesStub: Edge[] = [];
+  let contadorStub = 0;
+
+  function adicionarStub(sourceId: string, rotulo: string, cor: string, direcaoEntrada = false) {
+    const id = `stub-${contadorStub++}-${sourceId}`;
+    nodesStub.push({
+      id,
+      type: "stub",
+      position: { x: 0, y: 0 },
+      data: { rotulo, cor },
+      draggable: false,
+      selectable: false,
+    });
+    edgesStub.push({
+      id: `edge-${id}`,
+      source: direcaoEntrada ? id : sourceId,
+      target: direcaoEntrada ? sourceId : id,
+      style: { stroke: cor, strokeWidth: 1.5, strokeDasharray: "4 3" },
+    });
+  }
+
+  const referenciadosInternamente = new Set<string>();
+  const edgesReais: Edge[] = [];
+
+  for (const etapa of etapas) {
+    const refs = codigosReferenciados(etapa);
+
+    // agrupa por alvo — quando várias opções levam pro mesmo lugar (ex.: 6 produtos → handoff
+    // humano), isso vira UMA seta só, não 6 sobrepostas e invisíveis.
+    const porAlvo = new Map<string, string[]>();
+    for (const ref of refs) {
+      const lista = porAlvo.get(ref.alvo) ?? [];
+      if (ref.rotulo) lista.push(ref.rotulo);
+      porAlvo.set(ref.alvo, lista);
+    }
+
+    const entradas = Array.from(porAlvo.entries());
+    entradas.forEach(([alvo, rotulos], i) => {
+      if (codigoParaId[alvo]) {
+        referenciadosInternamente.add(codigoParaId[alvo]);
+        const cor = entradas.length > 1 ? PALETA_ARESTAS[i % PALETA_ARESTAS.length] : undefined;
+        const label =
+          rotulos.length > 3 ? `${rotulos.length} opções` : rotulos.join(" / ") || undefined;
+        edgesReais.push({
+          id: `${etapa.id}-${alvo}`,
+          source: etapa.id,
+          target: codigoParaId[alvo],
+          label,
+          style: cor ? { stroke: cor, strokeWidth: 2 } : undefined,
+          labelStyle: cor ? { fill: cor, fontWeight: 600 } : undefined,
+        });
+      } else {
+        // referência a uma etapa que não está neste canvas — provavelmente outro fluxo.
+        const rotulo = rotulos.length > 0 ? `↗ ${rotulos.join(", ")} → ${alvo}` : `↗ ${alvo}`;
+        adicionarStub(etapa.id, rotulo, COR_EXTERNO);
+      }
+    });
+
+    for (const opcao of etapa.conteudo.opcoes ?? []) {
+      if (opcao.encerra_com_perda) {
+        const rotulo = opcao.motivo_perda ? `⛔ Perdida: ${opcao.motivo_perda}` : "⛔ Perdida";
+        adicionarStub(etapa.id, rotulo, COR_PERDIDA);
+      }
+    }
+
+    if (modoNavegacao(etapa.conteudo) === "terminal") {
+      const sobSupervisor = etapa.conteudo.encerramento?.sob_supervisor ?? false;
+      adicionarStub(
+        etapa.id,
+        sobSupervisor ? "🧑‍💼 Atendimento humano" : "⏸ Aguardando retomada",
+        sobSupervisor ? COR_HANDOFF : COR_PAUSA,
+      );
+    }
+  }
+
+  // Início — etapas deste fluxo que ninguém aqui dentro aponta pra elas.
+  for (const etapa of etapas) {
+    if (!referenciadosInternamente.has(etapa.id)) {
+      adicionarStub(etapa.id, "▶ Início", COR_INICIO, true);
+    }
+  }
+
+  return { nodes: [...nodesReais, ...nodesStub], edges: [...edgesReais, ...edgesStub] };
+}
+
 function EditorFluxoInterno({
   fluxoId,
   etapasIniciais,
@@ -81,24 +179,13 @@ function EditorFluxoInterno({
   const [etapas, setEtapas] = useState(etapasIniciais);
   const [modalAberto, setModalAberto] = useState<"nova" | EtapaAdmin | null>(null);
   const [busca, setBusca] = useState("");
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges] = useEdgesState<Edge>([]);
 
-  // Inclui os códigos das etapas deste fluxo mesmo que `todosOsCodigos` ainda não tenha sido
-  // revalidado (ex.: logo depois de criar uma etapa nova, antes do reload do servidor).
   const codigosDisponiveis = useMemo(
     () => Array.from(new Set([...todosOsCodigos, ...etapas.map((e) => e.conteudo.codigo)])),
     [todosOsCodigos, etapas],
   );
-  const codigoParaId = useMemo(
-    () => Object.fromEntries(etapas.map((e) => [e.conteudo.codigo, e.id])),
-    [etapas],
-  );
-  const posicaoDoId = useMemo(() => {
-    const mapa: Record<string, { x: number; y: number }> = {};
-    etapas.forEach((etapa, indice) => {
-      mapa[etapa.id] = etapa.conteudo.posicao_canvas ?? posicaoPadrao(indice);
-    });
-    return mapa;
-  }, [etapas]);
 
   const buscaNormalizada = busca.trim().toLowerCase();
   const idsFiltrados = useMemo(() => {
@@ -114,147 +201,18 @@ function EditorFluxoInterno({
     return new Set(filtradas.map((e) => e.id));
   }, [etapas, buscaNormalizada]);
 
-  const nodesReais: Node[] = etapas.map((etapa) => ({
-    id: etapa.id,
-    type: "etapa",
-    position: posicaoDoId[etapa.id],
-    data: { etapa, onClick: () => setModalAberto(etapa) },
-    style: !idsFiltrados || idsFiltrados.has(etapa.id) ? undefined : { opacity: 0.15 },
-  }));
-
-  // --- Marcadores sintéticos (início / fim / perdida / referência externa) ------------------
-  const nodesStub: Node[] = [];
-  const edgesStub: Edge[] = [];
-  const contadorPorFonte: Record<string, number> = {};
-
-  function proximaPosicaoStub(sourceId: string) {
-    const i = contadorPorFonte[sourceId] ?? 0;
-    contadorPorFonte[sourceId] = i + 1;
-    const base = posicaoDoId[sourceId] ?? { x: 0, y: 0 };
-    return { x: base.x + i * 190, y: base.y + 170 };
+  function reorganizar() {
+    const grafo = construirGrafo(etapas, setModalAberto, idsFiltrados);
+    const posicoes = layoutComDagre(grafo.nodes, grafo.edges);
+    setNodes(grafo.nodes.map((n) => ({ ...n, position: posicoes[n.id] ?? { x: 0, y: 0 } })));
+    setEdges(grafo.edges);
   }
 
-  function adicionarStubSaida(sourceId: string, rotulo: string, cor: string) {
-    const id = `stub-${sourceId}-${nodesStub.length}`;
-    nodesStub.push({
-      id,
-      type: "stub",
-      position: proximaPosicaoStub(sourceId),
-      data: { rotulo, cor },
-      draggable: false,
-      selectable: false,
-    });
-    edgesStub.push({
-      id: `edge-${id}`,
-      source: sourceId,
-      target: id,
-      style: { stroke: cor, strokeWidth: 1.5, strokeDasharray: "4 3" },
-    });
-  }
-
-  const referenciadosInternamente = new Set<string>();
-
-  for (const etapa of etapas) {
-    const refs = codigosReferenciados(etapa);
-
-    // agrupa por alvo — quando várias opções levam pro mesmo lugar (ex.: 6 produtos → handoff
-    // humano), isso vira UMA seta só, não 6 sobrepostas e invisíveis.
-    const porAlvo = new Map<string, string[]>();
-    for (const ref of refs) {
-      const lista = porAlvo.get(ref.alvo) ?? [];
-      if (ref.rotulo) lista.push(ref.rotulo);
-      porAlvo.set(ref.alvo, lista);
-    }
-
-    for (const [alvo, rotulos] of porAlvo) {
-      if (codigoParaId[alvo]) {
-        referenciadosInternamente.add(codigoParaId[alvo]);
-      } else {
-        // referência a uma etapa que não está neste canvas — provavelmente outro fluxo.
-        const rotulo = rotulos.length > 0 ? `↗ ${rotulos.join(", ")} → ${alvo}` : `↗ ${alvo}`;
-        adicionarStubSaida(etapa.id, rotulo, COR_EXTERNO);
-      }
-    }
-
-    for (const opcao of etapa.conteudo.opcoes ?? []) {
-      if (opcao.encerra_com_perda) {
-        const rotulo = opcao.motivo_perda ? `⛔ Perdida: ${opcao.motivo_perda}` : "⛔ Perdida";
-        adicionarStubSaida(etapa.id, rotulo, COR_PERDIDA);
-      }
-    }
-
-    if (modoNavegacao(etapa.conteudo) === "terminal") {
-      const sobSupervisor = etapa.conteudo.encerramento?.sob_supervisor ?? false;
-      adicionarStubSaida(
-        etapa.id,
-        sobSupervisor ? "🧑‍💼 Atendimento humano" : "⏸ Aguardando retomada",
-        sobSupervisor ? COR_HANDOFF : COR_PAUSA,
-      );
-    }
-  }
-
-  // Início — etapas deste fluxo que ninguém aqui dentro aponta pra elas.
-  for (const etapa of etapas) {
-    if (referenciadosInternamente.has(etapa.id)) continue;
-    const posEntrada = posicaoDoId[etapa.id];
-    const idInicio = `stub-inicio-${etapa.id}`;
-    nodesStub.push({
-      id: idInicio,
-      type: "stub",
-      position: { x: posEntrada.x, y: posEntrada.y - 110 },
-      data: { rotulo: "▶ Início", cor: COR_INICIO },
-      draggable: false,
-      selectable: false,
-    });
-    edgesStub.push({
-      id: `edge-${idInicio}`,
-      source: idInicio,
-      target: etapa.id,
-      style: { stroke: COR_INICIO, strokeWidth: 1.5, strokeDasharray: "4 3" },
-    });
-  }
-
-  // --- Arestas reais (dentro deste canvas), mescladas por alvo -------------------------------
-  const edgesReais: Edge[] = etapas.flatMap((etapa) => {
-    const refs = codigosReferenciados(etapa).filter((ref) => codigoParaId[ref.alvo]);
-    const porAlvo = new Map<string, string[]>();
-    for (const ref of refs) {
-      const lista = porAlvo.get(ref.alvo) ?? [];
-      if (ref.rotulo) lista.push(ref.rotulo);
-      porAlvo.set(ref.alvo, lista);
-    }
-    const entradas = Array.from(porAlvo.entries());
-    return entradas.map(([alvo, rotulos], i) => {
-      const cor = entradas.length > 1 ? PALETA_ARESTAS[i % PALETA_ARESTAS.length] : undefined;
-      const label = rotulos.length > 3 ? `${rotulos.length} opções` : rotulos.join(" / ") || undefined;
-      return {
-        id: `${etapa.id}-${alvo}`,
-        source: etapa.id,
-        target: codigoParaId[alvo],
-        label,
-        style: cor ? { stroke: cor, strokeWidth: 2 } : undefined,
-        labelStyle: cor ? { fill: cor, fontWeight: 600 } : undefined,
-      };
-    });
-  });
-
-  const nodes = [...nodesReais, ...nodesStub];
-  const edges = [...edgesReais, ...edgesStub];
-
-  async function salvarPosicao(id: string, posicao: { x: number; y: number }) {
-    const etapa = etapas.find((e) => e.id === id);
-    if (!etapa) return;
-    const conteudo = { ...etapa.conteudo, posicao_canvas: posicao };
-    setEtapas((atual) => atual.map((e) => (e.id === id ? { ...e, conteudo } : e)));
-    await salvarEtapaAction({
-      id: etapa.id,
-      fluxoId: etapa.fluxoId,
-      ordem: etapa.ordem,
-      campoSalvo: etapa.campoSalvo,
-      agendaFollowupId: etapa.agendaFollowupId,
-      conteudo,
-    });
-  }
+  // Recalcula o layout sempre que a lista de etapas ou o filtro de busca mudam — o admin pode
+  // arrastar nós à vontade durante a sessão (React Flow cuida disso via onNodesChange), mas nunca
+  // fica "preso" numa bagunça: qualquer edição ou o botão "Reorganizar" volta pro layout limpo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(reorganizar, [etapas, idsFiltrados]);
 
   function aoSalvarEtapa(etapaSalva: EtapaAdmin) {
     setEtapas((atual) => {
@@ -283,6 +241,13 @@ function EditorFluxoInterno({
           className="w-64 rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm shadow dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
         />
         <button
+          onClick={reorganizar}
+          title="Reorganiza automaticamente todas as caixinhas"
+          className="rounded-full bg-white px-4 py-2 text-sm text-zinc-700 shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200"
+        >
+          🔀 Reorganizar
+        </button>
+        <button
           onClick={() => setModalAberto("nova")}
           className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white shadow dark:bg-zinc-50 dark:text-zinc-900"
         >
@@ -294,7 +259,8 @@ function EditorFluxoInterno({
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
-        onNodeDragStop={(_, node) => salvarPosicao(node.id, node.position)}
+        onNodesChange={onNodesChange}
+        defaultEdgeOptions={OPCOES_ARESTA_PADRAO}
         fitView
       >
         <Background />
