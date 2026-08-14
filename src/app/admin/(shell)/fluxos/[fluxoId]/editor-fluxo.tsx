@@ -235,14 +235,15 @@ function EditorFluxoInterno({
   const ultimaEtapa = etapas[etapas.length - 1];
 
   return (
-    <div className="relative h-screen w-full bg-zinc-100 dark:bg-zinc-950">
+    <div className="relative h-full w-full bg-zinc-100 dark:bg-zinc-950">
       <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2">
         <Link
-          href="/admin/fluxos"
-          title="Voltar pra lista de fluxos"
+          href="/simulador"
+          target="_blank"
+          title="Abre o simulador em outra aba pra testar este fluxo"
           className="rounded-full bg-white px-4 py-2 text-sm text-zinc-700 shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200"
         >
-          ← Voltar
+          ▶ Preview
         </Link>
         <button
           onClick={() => window.location.reload()}

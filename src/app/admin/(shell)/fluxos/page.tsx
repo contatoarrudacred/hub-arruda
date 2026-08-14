@@ -5,11 +5,8 @@ export default async function FluxosPage() {
   const fluxos = await listarFluxos();
 
   return (
-    <div className="min-h-screen bg-zinc-50 p-8 dark:bg-black">
-      <Link href="/admin" className="text-sm text-zinc-500 hover:underline">
-        ← Admin
-      </Link>
-      <h1 className="mt-2 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+    <div className="p-8">
+      <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
         Fluxos de atendimento
       </h1>
       <ul className="mt-4 space-y-2">
