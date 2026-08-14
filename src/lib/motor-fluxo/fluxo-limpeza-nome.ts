@@ -1,0 +1,825 @@
+// Conteúdo real do script de atendimento (docs/SCRIPT_LIMPANOME_SERASA_SPC.md) traduzido pro
+// formato genérico do motor de fluxo. Isto é o que, no sistema rodando, mora em `etapas_fluxo`
+// (editável pelo admin sem deploy) — aqui é a fonte usada para (a) os testes do motor
+// (engine.test.ts) e (b) gerar o seed inicial dessas tabelas (scripts/gerar-seed.ts). Depois do
+// primeiro seed, o banco é que manda — este arquivo só volta a ser referência se precisarmos
+// re-semear do zero.
+//
+// Escopo automatizado do MVP1 (confirmado com Luiz em 13/08/2026): a Malala conduz o atendimento
+// até a etapa "ln_encerramento" (solicitação de dados e documentos para o contrato, Passos 17-18).
+// Elaboração do contrato e cobrança continuam manuais nesta versão — ver PLANO_MESTRE seção 8.10.
+//
+// `kanban_subetapa` de cada etapa segue o vocabulário de KANBAN_COMERCIAL_LIMPANOME.md (mesmos
+// slugs usados em `oportunidades.etapa_kanban`): novo_lead_triagem (1.1) → qualificacao (1.2) →
+// faixa_divida (2.1) → envio_proposta (2.2) → negociacao_duvidas (2.3) → dados_contrato (3.1).
+// 3.2/3.3/4.1/4.2 (assinatura_digital/pagamento/ganha/perdida) ficam fora do automatizado do MVP1,
+// exceto "perdida" que o motor já atribui sozinho quando `encerra_com_perda` dispara (engine.ts).
+
+import { tipoEtapaDb } from "./db";
+import { extrairDadosAbertura } from "./extracao";
+import type { ConteudoEtapa, DadosConversa, EtapaCarregada, MensagemEtapa } from "./tipos";
+import {
+  buscarFaixaPreco,
+  calcularFormulaAltoValor,
+  classificarAltoValor,
+  type ConfigPrecificacaoLimpaNome,
+  type FaixaPreco,
+  montarPropostaAltoValorSelfService,
+  montarPropostaBaixoValor,
+  montarPropostaPorFaixa,
+  montarQualificacaoAltoValor,
+  resolverValorRestricao,
+} from "./regras-limpeza-nome";
+
+export type DefinicaoEtapa = {
+  codigo: string;
+  ordem: number;
+  campoSalvo: string | null;
+  conteudo: ConteudoEtapa;
+};
+
+/** Atalho pra mensagem de texto simples — a maioria do script é só isso; mídia/pix/localização/contato usam o formato completo direto. */
+function t(texto: string): MensagemEtapa {
+  return { tipo: "texto", texto };
+}
+
+// Slugs do Kanban (mesmo vocabulário de oportunidades.etapa_kanban) — ver cabeçalho do arquivo.
+const KANBAN_TRIAGEM = "novo_lead_triagem";
+const KANBAN_QUALIFICACAO = "qualificacao";
+const KANBAN_FAIXA_DIVIDA = "faixa_divida";
+const KANBAN_ENVIO_PROPOSTA = "envio_proposta";
+const KANBAN_NEGOCIACAO_DUVIDAS = "negociacao_duvidas";
+const KANBAN_DADOS_CONTRATO = "dados_contrato";
+
+// ---------------------------------------------------------------------------
+// Fluxo geral — Abertura + Triagem (roda antes do produto ser conhecido, produto_id nulo)
+// ---------------------------------------------------------------------------
+
+export const NOME_FLUXO_ABERTURA_TRIAGEM = "Abertura e Triagem";
+
+export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
+  {
+    // Sempre dispara, independente do que o lead já disse — é só cortesia/marca, não coleta dado
+    // nenhum, então nunca é pulada pela regra de "checkpoint já respondido" (só se aplica a etapas
+    // que aguardam resposta).
+    codigo: "saudacao_inicial",
+    ordem: 1,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "saudacao_inicial",
+      mensagens: [
+        {
+          tipo: "imagem",
+          midia_url: "",
+          legenda: "Foto da Malala (avatar/mascote — moldura navy/dourado, ver referência visual do script)",
+        },
+        t(
+          "🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!",
+        ),
+      ],
+      aguarda_resposta: false,
+      proximo_codigo: "pergunta_nome",
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+  {
+    // Pulada automaticamente se `dados.nome` já veio da primeira mensagem do lead (regra de
+    // checkpoint já respondido — ver extracao.ts e o hook `proximoSeJaConhecido` do motor).
+    codigo: "pergunta_nome",
+    ordem: 2,
+    campoSalvo: "nome",
+    conteudo: {
+      codigo: "pergunta_nome",
+      mensagens: [t("👉 *Com quem eu falo?*")],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "saudacao_personalizada",
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+  {
+    // Sempre dispara assim que o nome é conhecido — seja porque o lead acabou de responder
+    // `pergunta_nome`, seja porque o nome já veio pronto da extração da abertura (nesse caso, o
+    // motor pula `pergunta_nome` silenciosamente e cai direto aqui). Corrige um erro do desenho
+    // original do script: esta saudação estava duplicada como "Passo 1" do fluxo de Limpeza de
+    // Nome (ln_passo1, removido) — ela é única, acontece uma vez na abertura, não de novo por
+    // produto (ajuste de 14/08/2026, ver SCRIPT_LIMPANOME_SERASA_SPC.md).
+    codigo: "saudacao_personalizada",
+    ordem: 3,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "saudacao_personalizada",
+      mensagens: [t("Oi [Primeiro_Nome], [saudacao]! É um prazer atender você!")],
+      aguarda_resposta: false,
+      proximo_codigo: "abertura_telefone",
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+  {
+    // Pulada quando o canal já fornece o telefone (WhatsApp/Telegram) — o adaptador daquele canal
+    // pré-preenche `dados.telefone` antes do motor rodar (Fase 7). Em canais sem número nativo
+    // (widget do site, Instagram Direct) ela pergunta normalmente.
+    codigo: "abertura_telefone",
+    ordem: 4,
+    campoSalvo: "telefone",
+    conteudo: {
+      codigo: "abertura_telefone",
+      mensagens: [t("Pra eu continuar seu atendimento, me confirma um WhatsApp ou telefone de contato:")],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "abertura_email",
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+  {
+    codigo: "abertura_email",
+    ordem: 5,
+    campoSalvo: "email",
+    conteudo: {
+      codigo: "abertura_email",
+      mensagens: [t("Para te atender melhor, preciso que me informe o seu e-mail:")],
+      aguarda_resposta: true,
+      tipo_resposta: "email",
+      proximo_codigo: "triagem_menu",
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+  {
+    codigo: "triagem_menu",
+    ordem: 6,
+    campoSalvo: "produto_interesse",
+    conteudo: {
+      codigo: "triagem_menu",
+      mensagens: [
+        t(
+          "Para agilizar seu atendimento, informe o número da opção:\n\n1️⃣ Limpeza de Nome (CPF/CNPJ)\n2️⃣ Aumento de Score / Rating\n3️⃣ BACEN / SCR / CCF\n4️⃣ Jusbrasil / Escavador\n5️⃣ Conta Protegida (Bloqueio Judicial)\n6️⃣ Consórcio\n7️⃣ Crédito / Financiamento\n8️⃣ Outro assunto\n\n👉 *É só responder com o número da opção* 😊",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "limpeza_nome", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo2" },
+        { valor: "score", rotulos: ["2", "2️⃣"], proximo_codigo: "handoff_humano" },
+        { valor: "bacen_scr_ccf", rotulos: ["3", "3️⃣"], proximo_codigo: "handoff_humano" },
+        { valor: "jusbrasil_escavador", rotulos: ["4", "4️⃣"], proximo_codigo: "handoff_humano" },
+        { valor: "conta_protegida", rotulos: ["5", "5️⃣"], proximo_codigo: "handoff_humano" },
+        { valor: "consorcio", rotulos: ["6", "6️⃣"], proximo_codigo: "handoff_humano" },
+        { valor: "credito", rotulos: ["7", "7️⃣"], proximo_codigo: "handoff_humano" },
+        { valor: "outro_assunto", rotulos: ["8", "8️⃣"], proximo_codigo: "handoff_humano" },
+      ],
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+  {
+    codigo: "handoff_humano",
+    ordem: 7,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "handoff_humano",
+      mensagens: [
+        t(
+          "Perfeito! Esse assunto eu já vou encaminhar direto para um de nossos consultores te ajudar — só um instante 🙋‍♂️",
+        ),
+      ],
+      aguarda_resposta: false,
+      encerramento: { sob_supervisor: true },
+      kanban_subetapa: KANBAN_TRIAGEM,
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Fluxo do produto — Limpeza de Nome (CPF/CNPJ) Serasa/SPC
+// ---------------------------------------------------------------------------
+
+export const NOME_FLUXO_LIMPEZA_NOME = "Atendimento — Limpeza de Nome Serasa/SPC";
+
+export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
+  {
+    codigo: "ln_passo2",
+    ordem: 2,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo2",
+      mensagens: [
+        t(
+          "🤔 Se você responder 4 perguntas rápidas, em menos de um minuto eu já consigo informar o valor exato para limpar o seu nome. Depois disso, tiro todas as suas dúvidas e, se preferir, também podemos conversar por ligação.\n\n👉 *Podemos começar?*",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "sim_nao",
+      opcoes: [
+        { valor: "sim", rotulos: ["sim", "s"], proximo_codigo: "ln_passo3" },
+        { valor: "nao", rotulos: ["nao", "n"], proximo_codigo: "ln_aguardar_melhor_momento" },
+      ],
+      kanban_subetapa: KANBAN_QUALIFICACAO,
+    },
+  },
+  {
+    codigo: "ln_aguardar_melhor_momento",
+    ordem: 3,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_aguardar_melhor_momento",
+      mensagens: [t("Sem problema! Fico por aqui e retomo com você mais tarde, combinado? 🙂")],
+      aguarda_resposta: false,
+      encerramento: { sob_supervisor: false },
+      kanban_subetapa: KANBAN_QUALIFICACAO,
+    },
+  },
+  {
+    codigo: "ln_passo3",
+    ordem: 4,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo3",
+      mensagens: [
+        t(
+          "✅ A proposta do nosso trabalho é remover as restrições que estão negativando seu CPF ou CNPJ — independentemente da origem: contas não pagas, cartão de crédito, empréstimos, financiamentos, protestos, cheques devolvidos ou ações de cobrança.\n\n👉 O objetivo é que seu nome fique limpo, permitindo que você recupere sua reputação financeira e consiga voltar a pleitear acesso a crédito no mercado.",
+        ),
+        t(
+          "⚖️ O procedimento é realizado por meio de ação judicial coletiva via associação de proteção ao consumidor, garantindo direitos previstos em lei, removendo as restrições no SERASA, SPC Brasil, SCPC Boa Vista e CENPROT (Central Nacional de Protestos).\n\n📌 O serviço conta com seguro-garantia de manutenção do nome limpo pelo período de 1 ANO, conforme condições contratuais (após 12 meses as restrições podem retornar se não forem negociadas ou pagas neste período).",
+        ),
+        t(
+          "⚠️ Importante entender: RESTRIÇÃO é uma coisa, DÍVIDA é outra! As restrições que hoje estão negativando seu nome nestes orgãos serão 100% removidas. Já as dívidas, continuarão existindo de forma interna no credor e nos sistemas do Banco Central.\n\n✅ Em resumo: uma forma rápida e legal de obter CPF ou CNPJ limpo no sistema Serasa/SPC por um custo menor do que se fosse pagar as dívidas.",
+        ),
+      ],
+      aguarda_resposta: false,
+      proximo_codigo: "ln_passo4",
+      kanban_subetapa: KANBAN_QUALIFICACAO,
+    },
+  },
+  {
+    codigo: "ln_passo4",
+    ordem: 5,
+    campoSalvo: "tipo_documento",
+    conteudo: {
+      codigo: "ln_passo4",
+      mensagens: [t("👉 Você precisa limpar o *CPF* ou *CNPJ*?")],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "cpf", rotulos: ["cpf"], proximo_codigo: "ln_passo5" },
+        { valor: "cnpj", rotulos: ["cnpj"], proximo_codigo: "ln_passo5" },
+        {
+          valor: "cpf_e_cnpj",
+          rotulos: ["cpf e cnpj", "os dois", "ambos", "cnpj e cpf"],
+          proximo_codigo: "ln_passo5",
+        },
+      ],
+      kanban_subetapa: KANBAN_QUALIFICACAO,
+    },
+  },
+  {
+    codigo: "ln_passo5",
+    ordem: 6,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo5",
+      mensagens: [t("Ótimo! Podemos auxiliar sim com o processo limpa nome.")],
+      aguarda_resposta: false,
+      proximo_codigo: "ln_passo6",
+      kanban_subetapa: KANBAN_QUALIFICACAO,
+    },
+  },
+  {
+    codigo: "ln_passo6",
+    ordem: 7,
+    campoSalvo: "faixa_valor",
+    conteudo: {
+      codigo: "ln_passo6",
+      mensagens: [
+        t(
+          "👉 *Em qual das faixas abaixo melhor se enquadra o valor das restrições neste CPF atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n1️⃣ Menos de 10 mil\n2️⃣ Entre 10 e 30 mil\n3️⃣ Entre 30 e 50 mil\n4️⃣ Entre 50 e 100 mil\n5️⃣ Mais de 100 mil",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "menos_10mil", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo6_refino_baixo" },
+        { valor: "10_30mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
+        { valor: "30_50mil", rotulos: ["3", "3️⃣"], proximo_codigo: "ln_passo8" },
+        { valor: "50_100mil", rotulos: ["4", "4️⃣"], proximo_codigo: "ln_passo8" },
+        { valor: "mais_100mil", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo6_refino_alto" },
+      ],
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo6_refino_baixo",
+    ordem: 8,
+    campoSalvo: "faixa_valor_detalhe",
+    conteudo: {
+      codigo: "ln_passo6_refino_baixo",
+      mensagens: [
+        t(
+          "Entendo, para eu conseguir te orientar melhor me responda:\n\n1️⃣ Menos de 3 Mil\n2️⃣ Entre 3 e 10 Mil",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "menos_3mil", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo7" },
+        { valor: "3_10mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
+      ],
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo6_refino_alto",
+    ordem: 9,
+    campoSalvo: "valor_aproximado",
+    conteudo: {
+      codigo: "ln_passo6_refino_alto",
+      mensagens: [
+        t(
+          "Entendi que são mais de 100 mil reais, para eu conseguir te orientar melhor, preciso que me informe o valor aproximado das restrições - pode escrever... (tudo bem se não tiver certeza - depois faremos uma consulta)",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "numero_ou_nao_sei",
+      proximo_codigo: "ln_passo8",
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder o valor aproximado da restrição de forma bem livre (por extenso, com gírias, faixa vaga tipo 'uns 200 e pouco'). Extraia um número em reais o mais próximo possível do que ele quis dizer.",
+      },
+    },
+  },
+  {
+    codigo: "ln_passo7",
+    ordem: 10,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo7",
+      mensagens: [
+        t(
+          "😊 Aqui na ArrudaCred nós sempre buscamos orientar o cliente da forma que entendemos ser mais vantajosa para ele.\n\nComo o valor total das restrições é inferior a R$ 3.000, vale a pena considerar que nosso serviço de limpeza de nome tem um investimento mínimo de R$ 899 à vista ou 6x de R$ 299. Além disso, é importante lembrar que as dívidas continuam existindo, ou seja, a ação remove as restrições, mas não quita os débitos.\n\nPor isso, nesse cenário, nossa recomendação é que você avalie a possibilidade de negociar e quitar diretamente essas dívidas, pois, financeiramente, essa costuma ser a opção mais vantajosa.\n\nSe, ainda assim, você preferir seguir com a ação para remover as restrições do seu nome, será um prazer ajudar. Podemos continuar?",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "sim_nao",
+      opcoes: [
+        { valor: "sim", rotulos: ["sim", "s"], proximo_codigo: "ln_passo8" },
+        {
+          valor: "nao",
+          rotulos: ["nao", "n"],
+          encerra_com_perda: true,
+          motivo_perda: "LEAD OPTOU POR NEGOCIAR DÍVIDA DIRETAMENTE",
+        },
+      ],
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo8",
+    ordem: 11,
+    campoSalvo: "experiencia_e_origem",
+    conteudo: {
+      codigo: "ln_passo8",
+      mensagens: [
+        t(
+          "👍 Entendido! Me conta: você já contratou algum serviço de limpeza de nome antes? E como conheceu a ArrudaCred? Foi indicação de alguém? 🤔",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_condicional: {
+        contem_qualquer: ["google", "internet", "site", "instagram", "facebook", "busca", "pesquis"],
+        se_sim: "ln_passo9",
+        se_nao: "ln_passo10",
+      },
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo9",
+    ordem: 12,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo9",
+      mensagens: [
+        t(
+          "Obrigado por nos informar, estamos bem posicionados nos mecanismos de busca justamente por conta da nossa reputação e boa avaliação de clientes que já nos contrataram...",
+        ),
+      ],
+      aguarda_resposta: false,
+      proximo_codigo: "ln_passo10",
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo10",
+    ordem: 13,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo10",
+      mensagens: [
+        t(
+          "Pergunto porque para nós a relação com nossos clientes vale mais que uma venda isolada, assim ganhamos indicações com a confiança estabelecida. Entendemos a preocupação de quem ainda não nos conhece e tem medo de cair num golpe ou na mão de gente desonesta...",
+        ),
+      ],
+      aguarda_resposta: false,
+      proximo_codigo: "ln_passo11",
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo11",
+    ordem: 14,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo11",
+      mensagens: [
+        t(
+          "⭐⭐⭐⭐⭐\nSomos uma empresa com 5 anos de atuação no mercado de recuperação de crédito, trabalhando sempre com contrato para prestação de serviços, que deixa claro os direitos e deveres tanto do cliente quanto da empresa.\n\n👉 *Não existe milagre. O que existe é processo dentro da lei, contrato, prazo e compromisso.*\n👉 No último ano, auxiliamos mais de 5 mil clientes em processos de regularização de crédito.\n👉 Atualmente temos avaliação 4,9 no Google (o máximo é nota 5,0) e avaliação 9,5 no Reclame Aqui (máximo é nota 10).",
+        ),
+        t(
+          "📌 Dados da empresa:\nARRUDACRED – HUB ARRUDA DE NEGÓCIOS E SERVIÇOS\nL.H. DE ARRUDA D. DO VALLE SERVIÇOS LTDA\nCNPJ: 40.342.851/0001-37\n\n🌐 Site: https://www.arrudacred.com.br\n\n📷 Instagram:\nhttps://instagram.com/arrudacred.br\n\n*Trabalhamos com foco em transparência e segurança para o cliente, oferecendo*:\n\n✅ Contrato de prestação de serviços\n✅ Google com avaliação 5 estrelas\n✅ Reclame Aqui com avaliação 9,5 (ótima)\n✅ Mais de 5 mil clientes atendidos\n✅ Seguro Garantia de 12 meses incluso",
+        ),
+        {
+          tipo: "imagem",
+          midia_url: "",
+          legenda: "Selo do Prêmio Reclame Aqui 2026 (círculo verde escuro, \"Melhores empresas para o consumidor 2026\")",
+        },
+        t(
+          "A *ARRUDACRED* está concorrendo ao *Prêmio Reclame AQUI*. Nossa empresa foi indicada na categoria RECUPERAÇÃO DE CRÉDITO, junto de outras grandes no segmento, como CENPROT NACIONAL E SPC BRASIL.\n\nVeja você mesmo:\n📌 https://www.reclameaqui.com.br/premio/classificadas-indicadas/financeiras/",
+        ),
+      ],
+      aguarda_resposta: false,
+      proximo_codigo: "ln_passo12",
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo12",
+    ordem: 15,
+    campoSalvo: "urgencia",
+    conteudo: {
+      codigo: "ln_passo12",
+      mensagens: [
+        t(
+          "📣 *Para eu conseguir te orientar melhor me diz: para quando você tem necessidade do CPF limpo?*\n\n1️⃣ Só está pesquisando\n2️⃣ Urgente\n3️⃣ Em 30-45 dias\n4️⃣ 3 a 6 meses\n5️⃣ Outro, me explique!",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "pesquisando", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo13" },
+        { valor: "urgente", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo13" },
+        { valor: "30_45_dias", rotulos: ["3", "3️⃣"], proximo_codigo: "ln_passo13" },
+        { valor: "3_6_meses", rotulos: ["4", "4️⃣"], proximo_codigo: "ln_passo13" },
+        { valor: "outro", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo12_explique" },
+      ],
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo12_explique",
+    ordem: 16,
+    campoSalvo: "urgencia_detalhe",
+    conteudo: {
+      codigo: "ln_passo12_explique",
+      mensagens: [t("Pode me explicar melhor a sua situação de prazo?")],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "ln_passo13",
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo13",
+    ordem: 17,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo13",
+      mensagens: [
+        t(
+          "Vejo que não tem tempo sobrando, o prazo normal para o resultado é de 7 a 45 dias úteis mas depende de um processo judicial, portanto pode variar. Entender que, quanto antes der entrada mais rápido sai o resultado, pode ajudar na sua situação...",
+        ),
+      ],
+      aguarda_resposta: false,
+      proximo_codigo: "ln_passo14",
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo14",
+    ordem: 18,
+    campoSalvo: "prioridade_fechar_hoje",
+    conteudo: {
+      codigo: "ln_passo14",
+      mensagens: [
+        t(
+          "📌 Nós recebemos alguns vouchers da Associação que nos permitem oferecer uma condição especial muito expressiva. Como são limitados, para liberar a proposta com a melhor condição possível, precisamos saber:\n\n👉 *É prioridade para você já entrar com o CPF para ser limpo e começar a contar o prazo hoje?*\n1️⃣ Sim\n2️⃣ Não",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "sim", rotulos: ["1", "1️⃣", "sim"], proximo_codigo: "ln_passo15_router" },
+        { valor: "nao", rotulos: ["2", "2️⃣", "nao"], proximo_codigo: "ln_passo15_router" },
+      ],
+      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+    },
+  },
+  {
+    codigo: "ln_passo15_router",
+    ordem: 19,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_passo15_router",
+      mensagens: [],
+      aguarda_resposta: false,
+      proximo_por_dado: {
+        campo: "alto_valor",
+        se_igual: "sim",
+        entao: "ln_passo15_alto_valor",
+        senao: "ln_passo15_normal",
+      },
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+    },
+  },
+  {
+    // Conteúdo real gerado em tempo de execução por criarResolverMensagensDinamicas
+    // (varia por faixa de preço e voucher) — ver mais abaixo neste arquivo.
+    codigo: "ln_passo15_normal",
+    ordem: 20,
+    campoSalvo: "forma_pagamento",
+    conteudo: {
+      codigo: "ln_passo15_normal",
+      mensagens: [t("(proposta calculada dinamicamente pela faixa de preço)")],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "avista", rotulos: ["avista", "a vista", "à vista"], proximo_codigo: "ln_passo16_1" },
+        { valor: "parcelado", rotulos: ["parcelado", "parcela"], proximo_codigo: "ln_passo16_1" },
+      ],
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+    },
+  },
+  {
+    codigo: "ln_passo15_alto_valor",
+    ordem: 21,
+    campoSalvo: "aceitou_call",
+    conteudo: {
+      codigo: "ln_passo15_alto_valor",
+      mensagens: [t("(qualificação de alto valor gerada dinamicamente)")],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "call", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_call_agendada" },
+        { valor: "whatsapp", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo15_selfservice" },
+      ],
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+    },
+  },
+  {
+    codigo: "ln_call_agendada",
+    ordem: 22,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_call_agendada",
+      mensagens: [
+        t(
+          "Combinado! Já vou avisar nosso especialista pra entrar em contato com você e agendar a ligação. 🙋‍♂️",
+        ),
+      ],
+      aguarda_resposta: false,
+      encerramento: { sob_supervisor: true },
+      kanban_subetapa: KANBAN_NEGOCIACAO_DUVIDAS,
+    },
+  },
+  {
+    codigo: "ln_passo15_selfservice",
+    ordem: 23,
+    campoSalvo: "forma_pagamento",
+    conteudo: {
+      codigo: "ln_passo15_selfservice",
+      mensagens: [t("(proposta self-service de alto valor gerada dinamicamente)")],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "avista", rotulos: ["avista", "a vista", "à vista"], proximo_codigo: "ln_passo16_1" },
+        { valor: "parcelado", rotulos: ["parcelado", "parcela"], proximo_codigo: "ln_passo16_1" },
+      ],
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+    },
+  },
+  {
+    codigo: "ln_passo16_1",
+    ordem: 24,
+    campoSalvo: "data_primeira_parcela",
+    conteudo: {
+      codigo: "ln_passo16_1",
+      mensagens: [
+        t(
+          "Perfeito! Só preciso confirmar uma coisa: qual a melhor data pra você pra realizar o pagamento da primeira parcela? O processo só dá entrada depois que o pagamento for confirmado, viu?",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "ln_passo17a",
+      kanban_subetapa: KANBAN_NEGOCIACAO_DUVIDAS,
+    },
+  },
+  {
+    codigo: "ln_passo17a",
+    ordem: 25,
+    campoSalvo: "dados_pessoa_limpar",
+    conteudo: {
+      codigo: "ln_passo17a",
+      mensagens: [
+        t(
+          "👍 Entendido! Agora vou enviar os dados necessários para a emissão do contrato, em 2 minutinhos vc consegue preencher:",
+        ),
+        t("📌 *DADOS PARA LIMPEZA DE NOME:*\n\nCPF:\nNome Completo:"),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "ln_passo17b",
+      kanban_subetapa: KANBAN_DADOS_CONTRATO,
+    },
+  },
+  {
+    codigo: "ln_passo17b",
+    ordem: 26,
+    campoSalvo: "dados_assinante",
+    conteudo: {
+      codigo: "ln_passo17b",
+      mensagens: [
+        t(
+          "📌 *DADOS DE QUEM VAI ASSINAR CONTRATO:*\n\n** CPF:\n** Nome Completo:\n** RG:\n** Estado Civil:\n** Profissão:\n** Nacionalidade:\n** Data Nascimento:\n** E-mail:\n** Whatsapp:\n** Endereço completo com cep:",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "ln_passo18",
+      kanban_subetapa: KANBAN_DADOS_CONTRATO,
+    },
+  },
+  {
+    codigo: "ln_passo18",
+    ordem: 27,
+    campoSalvo: "documentos_status",
+    conteudo: {
+      codigo: "ln_passo18",
+      mensagens: [
+        t(
+          "Estamos quase concluindo! Agora falta somente a foto ou PDF de um documento válido (RG ou CNH) + comprovante de residência da pessoa que vai assinar o contrato. (se não tiver em mãos para enviar neste momento, me avise que anotamos aqui para você enviar depois.)",
+        ),
+      ],
+      aguarda_resposta: true,
+      tipo_resposta: "texto_livre",
+      proximo_codigo: "ln_encerramento",
+      kanban_subetapa: KANBAN_DADOS_CONTRATO,
+    },
+  },
+  {
+    codigo: "ln_encerramento",
+    ordem: 28,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_encerramento",
+      mensagens: [
+        t(
+          "😊 Perfeito! Já anotei tudo aqui. Nossa equipe vai preparar seu contrato e te aviso por aqui assim que estiver tudo pronto pra você assinar. Muito obrigada pela confiança! 🙌",
+        ),
+      ],
+      aguarda_resposta: false,
+      encerramento: { sob_supervisor: true },
+      kanban_subetapa: KANBAN_DADOS_CONTRATO,
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Extração da abertura — reconhecimento por palavra-chave de qual produto o lead já mencionou de
+// cara (regra de checkpoint já respondido, aplicada ao menu de triagem especificamente). Fica aqui
+// porque as palavras-chave são do menu deste fluxo, não algo genérico do motor (ver extracao.ts).
+// ---------------------------------------------------------------------------
+
+const PALAVRAS_CHAVE_PRODUTO: { termos: string[]; valor: string }[] = [
+  {
+    termos: ["limpar meu nome", "limpeza de nome", "limpar nome", "nome sujo", "nome negativado", "spc", "serasa"],
+    valor: "limpeza_nome",
+  },
+  { termos: ["score", "rating"], valor: "score" },
+  { termos: ["bacen", "scr", "ccf"], valor: "bacen_scr_ccf" },
+  { termos: ["jusbrasil", "escavador"], valor: "jusbrasil_escavador" },
+  { termos: ["conta protegida", "bloqueio judicial"], valor: "conta_protegida" },
+  { termos: ["consórcio", "consorcio"], valor: "consorcio" },
+  { termos: ["crédito", "credito", "financiamento", "empréstimo", "emprestimo"], valor: "credito" },
+];
+
+function extrairProdutoInteresse(mensagem: string): string | null {
+  const normalizado = mensagem.toLowerCase();
+  for (const { termos, valor } of PALAVRAS_CHAVE_PRODUTO) {
+    if (termos.some((termo) => normalizado.includes(termo))) return valor;
+  }
+  return null;
+}
+
+/** Combina a extração genérica (nome, ver extracao.ts) com a específica deste menu (produto) — usado na primeira mensagem da conversa, antes do motor começar a perguntar. */
+export function criarExtratorAbertura() {
+  return (mensagem: string): DadosConversa => {
+    const dados = extrairDadosAbertura(mensagem);
+    const produto = extrairProdutoInteresse(mensagem);
+    if (produto) dados.produto_interesse = produto;
+    return dados;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Regras dinâmicas específicas deste produto — plugadas no motor genérico via os hooks
+// `resolverMensagensDinamicas` e `calcularDadosDerivados` (ver engine.ts / tipos.ts).
+// ---------------------------------------------------------------------------
+
+export function criarCalculadoraDadosDerivados(
+  config: Pick<ConfigPrecificacaoLimpaNome, "altoValorFixo" | "altoValorPercentual" | "corteAltoValor">,
+) {
+  return (dados: DadosConversa): DadosConversa => {
+    const valorRestricao = resolverValorRestricao(dados);
+    if (valorRestricao === null) return {};
+
+    const altoValor = classificarAltoValor(valorRestricao, config.corteAltoValor);
+    return {
+      valor_restricao_estimado: String(valorRestricao),
+      alto_valor: altoValor ? "sim" : "nao",
+    };
+  };
+}
+
+/** Lê o valor já derivado (calcularDadosDerivados) e só recalcula a partir das respostas brutas se, por algum motivo, ainda não tiver sido derivado nesta conversa. */
+function obterValorRestricao(dados: DadosConversa): number | null {
+  if (dados.valor_restricao_estimado) {
+    const numero = Number(dados.valor_restricao_estimado);
+    if (!Number.isNaN(numero)) return numero;
+  }
+  return resolverValorRestricao(dados);
+}
+
+export function criarResolverMensagensDinamicas(
+  faixasPrecos: FaixaPreco[],
+  config: ConfigPrecificacaoLimpaNome,
+) {
+  return (codigo: string, dados: DadosConversa): MensagemEtapa[] | null => {
+    if (codigo === "ln_passo15_normal") {
+      if (dados.faixa_valor_detalhe === "menos_3mil") {
+        return montarPropostaBaixoValor(config).map(t);
+      }
+      const valorRestricao = obterValorRestricao(dados);
+      if (valorRestricao === null) return null;
+      const faixa = buscarFaixaPreco(valorRestricao, faixasPrecos);
+      if (!faixa) return null;
+      return montarPropostaPorFaixa(faixa, dados.prioridade_fechar_hoje === "sim").map(t);
+    }
+
+    if (codigo === "ln_passo15_alto_valor") {
+      return montarQualificacaoAltoValor().map(t);
+    }
+
+    if (codigo === "ln_passo15_selfservice") {
+      const valorRestricao = obterValorRestricao(dados);
+      if (valorRestricao === null) return null;
+      const valorEstimado = calcularFormulaAltoValor(
+        valorRestricao,
+        config.altoValorFixo,
+        config.altoValorPercentual,
+      );
+      return montarPropostaAltoValorSelfService(valorEstimado).map(t);
+    }
+
+    return null;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers de montagem — usados pelos testes (com fluxoId/ids fabricados) e por
+// scripts/gerar-seed.ts (pra escrever as linhas reais de `etapas_fluxo`).
+// ---------------------------------------------------------------------------
+
+export function construirEtapaCarregada(def: DefinicaoEtapa, fluxoId: string): EtapaCarregada {
+  return {
+    id: `${fluxoId}:${def.codigo}`,
+    fluxoId,
+    ordem: def.ordem,
+    campoSalvo: def.campoSalvo,
+    conteudo: def.conteudo,
+  };
+}
+
+export function construirEtapasPorCodigo(
+  grupos: { definicoes: DefinicaoEtapa[]; fluxoId: string }[],
+): Record<string, EtapaCarregada> {
+  const mapa: Record<string, EtapaCarregada> = {};
+  for (const grupo of grupos) {
+    for (const def of grupo.definicoes) {
+      mapa[def.codigo] = construirEtapaCarregada(def, grupo.fluxoId);
+    }
+  }
+  return mapa;
+}
+
+export { tipoEtapaDb };
