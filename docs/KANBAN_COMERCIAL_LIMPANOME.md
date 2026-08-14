@@ -1,5 +1,5 @@
 # Kanban Comercial — Funil de Oportunidade (Limpeza de Nome Serasa/SPC)
-**Status:** Estrutura de 2 níveis (etapa/subetapa) definida com Luiz em 11/08/2026 — modelo-base para os demais produtos.
+**Status:** Estrutura de 2 níveis (etapa/subetapa) definida com Luiz em 11/08/2026 — modelo-base para os demais produtos. **Os slugs das subetapas já estão implementados** (`novo_lead_triagem`, `qualificacao`, `faixa_divida`, `envio_proposta`, `negociacao_duvidas`, `dados_contrato`, `assinatura_digital`, `pagamento`, `ganha`, `perdida`) — cada etapa do fluxo de atendimento já carrega a sua (`src/lib/motor-fluxo/kanban.ts`), pronta pra alimentar a tela do Kanban em si quando ela for construída (ainda não existe — hoje só o editor de fluxo usa esses slugs pra marcar cada etapa).
 
 ---
 

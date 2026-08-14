@@ -1,6 +1,6 @@
 # PLANO MESTRE — Sistema de Gestão ArrudaCred
 **Status:** Documento vivo — atualizar a cada sessão de planejamento
-**Última atualização:** 12/08/2026
+**Última atualização:** 14/08/2026
 **Responsável:** Luiz Humberto de Arruda Dória do Valle
 **Entidade legal:** L.H. DE ARRUDA D. DO VALLE SERVIÇOS LTDA (CNPJ 40.342.851/0001-37)
 
@@ -429,13 +429,56 @@ Requisito: um módulo de **"governança de custo"** (dentro do Financeiro, alime
 
 ---
 
+## 10. Progresso de Produção — MVP1 (a partir de 13/08/2026)
+
+> ⚠️ **Esta seção é a "memória de backup" do desenvolvimento** — registrada pra que, se a conversa/sessão de trabalho se perder, dê pra reconstruir exatamente onde paramos, o que já funciona, e o que falta, só lendo este documento. Atualizar ao final de toda sessão de construção com o Claude Code, sempre com data. Ver seção 0 sobre a convenção de duas dimensões (Planejamento × Produção) — esta seção é sobre **Produção**.
+>
+> **Onde fica o código:** `github.com/contatoarrudacred/hub-arruda`, branch `main`. Histórico de commits no git é a fonte definitiva do que mudou passo a passo — esta seção é o resumo em prosa pra não precisar ler diff nenhum pra se situar.
+
+### Stack técnica confirmada (13/08/2026)
+- **Next.js 16** (App Router, TypeScript, Tailwind, pnpm) na Vercel
+- **Supabase**: Postgres + **Supabase Auth** (login do admin — substituiu a ideia original de `senha_hash` próprio em `usuarios_sistema`) + Storage (mídia) — acesso via `service_role` no backend
+- **React Flow** (`@xyflow/react`) pro editor visual do fluxo
+- **Vitest** pros testes do motor de fluxo
+
+### Fase 0 — Setup ✅ concluída (13/08/2026)
+Projeto criado, conectado ao Supabase de ponta a ponta, migrations 001-004 organizadas em `supabase/migrations/` (as duas originais + duas novas: Supabase Auth em `usuarios_sistema`, e estado de conversa do motor — `fluxos.produto_id` virou opcional, `conversas` ganhou `dados`/`fluxo_id`/`etapa_fluxo_atual_id`).
+
+### Fase 1 — Motor de Fluxo ✅ concluída (13-14/08/2026)
+O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta — testado (22 testes automatizados), sem WhatsApp real ainda (testado via `/simulador`, chat de texto no navegador). Cobre:
+- Todo o script da Limpeza de Nome Serasa/SPC (abertura → triagem → qualificação → faixa de valor/alto valor → proposta → coleta de dados), até onde o MVP1 vai (Malala para na solicitação de dados/documentos pro contrato — resto é manual, ver seção 8.10)
+- Mensagens canal-agnósticas (texto/imagem/áudio/vídeo/documento/localização/contato/pix) — pensando na Camada de Adaptadores de Canal futura, não só WhatsApp
+- Regra de "checkpoint já respondido": o lead pode se apresentar de cara ("Oi, sou Luiz e quero limpar meu nome") e o motor pula as perguntas correspondentes — extração determinística hoje, cai pra IA (quando ligada) nos casos que não reconhece
+- Digitando + delay configurável por mensagem, subetapa do Kanban por etapa
+
+### Fase 2 — Painel Admin 🔶 em andamento (13-14/08/2026)
+- ✅ Login (Supabase Auth) + guard de `/admin`
+- ✅ Editor visual do fluxo (React Flow): caixinhas editáveis em modal com abas (Mensagens/Fluxo/Avançado), prévia ao vivo, marcadores de Início/Fim/Perdida/referência externa, arestas mescladas por destino
+- ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, preços por faixa, configurações, e gerenciar as agendas de follow-up em si — essa é a próxima peça
+- ⬜ **Falta:** auto-layout do canvas (hoje é grid simples; fica difícil de ler quando o fluxo cresce) — em andamento
+
+### Decisões/correções registradas durante a construção (14/08/2026)
+- A saudação personalizada ("Oi [Nome], bom dia!") vive uma vez na abertura, não repetida por produto — corrigido no script, ver `SCRIPT_LIMPANOME_SERASA_SPC.md`
+- Checkpoint de telefone é condicional por canal (só pergunta se o canal não fornece nativamente)
+- Placeholders de imagem já existem no fluxo (foto da Malala, selo Reclame Aqui) — só falta o upload
+- Prática de git adotada: commitar a cada chunk validado (testes + lint + build verdes), mensagem sempre com resumo do que mudou — histórico vira ponto de restauração
+
+### Explicitamente fora do MVP1 ainda (não esquecer)
+- Interpretação por IA de verdade (hoje só o encaixe existe, sem chamada real) — Fase 5
+- Motor de disparo de follow-up (agenda já é configurável por etapa, mas ninguém dispara sozinho ainda) — Fase 6
+- Integração real de WhatsApp — Fase 7
+- Integração real Assinafy/Asaas (Malala para antes disso no MVP1, é manual)
+
+---
+
 ## Próximos Passos
 - [x] Confirmar preferência de hospedagem → Supabase + Vercel + GitHub (região São Paulo), VPS Hostinger como reserva
 - [x] Fechar ordem de prioridade dos módulos → Comercial (WhatsApp/leads) → Marketing → Financeiro → Jurídico
 - [x] Ferramenta de IA principal para código → Claude Code (recomendado, aceito por padrão — pode trocar a qualquer momento)
 - [x] Detalhar módulo priorizado #1 (Comercial — Limpeza de Nome Serasa/SPC): script completo, FAQ, Kanban, MVP1 fechados
 - [x] Modelagem de dados do núcleo do MVP1: Pessoa/Papel, Comercial/Atendimento, camada multi-canal, RBAC (nível único ADMIN/MASTER), valores configuráveis — ver `MODELAGEM_DADOS_ARRUDACRED.md`
-- [ ] Fechar a última pendência do produto (ver lista abaixo) e então avançar para especificação técnica (schema/API) e/ou início da construção
+- [x] Fechar a última pendência do produto e avançar pra construção → **em produção desde 13/08/2026, ver seção 10 "Progresso de Produção" acima**
+- [ ] Fase 2 (Painel Admin): CRUD de FAQs/preços/configurações/agendas de follow-up + auto-layout do editor visual
 
 ---
 

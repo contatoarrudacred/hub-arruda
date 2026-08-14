@@ -1,5 +1,5 @@
 # Modelagem de Dados — Núcleo do Sistema ArrudaCred
-**Status:** Primeira versão, discutida com Luiz em 11/08/2026
+**Status:** Núcleo e módulo Comercial já implementados e em produção (migrations 001-004, ver `PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 10) — este documento descreve o desenho; para o schema exato como está hoje, ver `supabase/migrations/` no repositório. Discutido originalmente com Luiz em 11/08/2026.
 **Objetivo:** definir a estrutura de dados central que sustenta Lead, Cliente, Fornecedor, Parceiro/Afiliado, e a convivência de múltiplas unidades de negócio (ArrudaCred, Aetria, futuras) — pensada para crescer sem precisar ser refeita.
 
 ---
@@ -95,6 +95,7 @@ Este bloco conecta ao núcleo Pessoa/Papel e realiza, em estrutura de dados, os 
 - **PRODUTOS** — já vinculado à unidade de negócio (decisão anterior). `tipo_receita` distingue produto próprio vs. comissão de terceiro.
 - **FLUXOS** — um fluxo de atendimento por produto (o script inteiro do Limpeza de Nome Serasa/SPC vira um registro aqui).
 - **ETAPAS_FLUXO** — **esta é a tabela que realiza o "editor de fluxo" exigido na seção 8.9 do plano mestre.** Cada linha é um checkpoint/mensagem do script (cada "Passo" que documentamos vira uma linha aqui). `conteudo` em `jsonb` guarda o texto (com variações), mídia, e as regras de ramificação — assim o admin edita uma linha em vez de mexer em código. `campo_salvo` implementa a persistência de resposta configurável (seção 8.12... referenciada no script). `agenda_followup_id` é opcional — se nulo, usa a agenda padrão; se preenchido, usa uma agenda específica daquele checkpoint (ex.: a mensagem de proposta).
+  - **Formato de `conteudo` implementado (13-14/08/2026)** — não mudou a coluna (continua um `jsonb` livre), mas o formato interno que o motor de fluxo interpreta ficou concreto: `mensagens` é uma lista de itens tipados (`texto`/`imagem`/`audio`/`video`/`documento`/`localizacao`/`contato`/`pix` — formato canal-agnóstico, ver Camada de Adaptadores abaixo), mais `aguarda_resposta`, `tipo_resposta`, `opcoes`/`proximo_codigo`/`proximo_condicional`/`proximo_por_dado` (regras de ramificação), `kanban_subetapa` (toda etapa carrega a sua, não só as terminais), `digitando`/`delay`, `interpretacao_ia` (toggle + instrução, encaixe pronto pra Fase 5), `posicao_canvas` (layout do editor visual). Código de referência: `src/lib/motor-fluxo/tipos.ts`.
 - **AGENDAS_FOLLOWUP / AGENDA_ITENS** — realiza a régua de follow-up (a "Agenda padrão" que já preenchemos vira o primeiro registro aqui; a agenda da proposta, quando vier, é o segundo).
 - **FAQS** — a base de conhecimento por produto, com CRUD completo (editar/desativar/excluir/criar) já exigido.
 - **OPORTUNIDADES** — liga Pessoa + Produto, com `etapa_kanban` (a etapa/subetapa que desenhamos) e `alto_valor` (a badge, não uma coluna separada — decisão já tomada).
@@ -146,8 +147,8 @@ Luiz definiu: por ora, um único nível de acesso — **ADMIN/MASTER**, com perm
 **USUARIOS_SISTEMA** — reaproveita o núcleo Pessoa/Papel em vez de duplicar identidade: um usuário do sistema é uma Pessoa (já cadastrada) que ganha credencial de acesso.
 - `id`
 - `pessoa_id` (FK, único — liga ao registro já existente em `pessoas`)
-- `email` (login)
-- `senha_hash`
+- `email` (login — cópia de conveniência, fonte de verdade é `auth.users.email`)
+- `auth_user_id` (FK → `auth.users`, único) — **corrigido em 13/08/2026, migration 003**: login/senha/sessão passaram a ser geridos pelo **Supabase Auth** em vez de um `senha_hash` próprio (a ideia original nesta seção). Motivo: evitar reinventar hashing/reset de senha/sessão com pouca gente no time — Supabase Auth já resolve isso testado em produção.
 - `nivel_acesso` (enum — hoje só `admin`, campo já pronto para crescer: `financeiro`, `operacional`, `relatorios`, etc.)
 - `ativo`
 - `ultimo_login_at`
@@ -187,4 +188,4 @@ Cobre todos os valores/parâmetros que já marcamos como "configuráveis pelo ad
 - Definir a lista fechada (ou configurável) de `tipo_papel` — hoje sabemos de Lead, Cliente, Fornecedor, Parceiro/Afiliado; pode crescer
 - ~~Definir se RBAC (controle de acesso) e log de auditoria vivem como tabelas próprias ligadas a Pessoa~~ ✅ Resolvido — `usuarios_sistema` liga a `pessoas`, nível único ADMIN/MASTER por enquanto
 - Este é o núcleo — ainda faltam as entidades específicas de Jurídico (processos, contratos) e Financeiro (parcelas, comissões), que se conectam a este núcleo mas não foram desenhadas ainda
-- Detalhar o formato exato do "formato interno único" que a Camada de Adaptadores produz (schema da mensagem normalizada) — próximo passo natural quando formos implementar o segundo canal
+- ~~Detalhar o formato exato do "formato interno único" que a Camada de Adaptadores produz~~ ✅ Parcialmente resolvido (13/08/2026) — o formato de mensagem canal-agnóstica já existe e é usado pelo motor de fluxo (`src/lib/motor-fluxo/tipos.ts`, tipo `MensagemEtapa`). Falta ainda implementar os adaptadores de canal em si (WhatsApp é o primeiro, Fase 7) — o formato existe, quem traduz pra cada canal não.
