@@ -429,7 +429,16 @@ Requisito: um módulo de **"governança de custo"** (dentro do Financeiro, alime
 
 ---
 
-## 10. Progresso de Produção — MVP1 (a partir de 13/08/2026)
+## 10. Segurança e Auditoria (detalhado, novo — 14/08/2026)
+> 📄 Detalhamento técnico: `SEGURANCA_E_AUDITORIA_ARRUDACRED.md`
+
+Aprofunda os bullets soltos da seção 2 ("segurança mínima não-negociável") em resposta a uma pergunta direta de Luiz sobre segurança externa (prompt injection na Malala, ataque na tela de login, abuso pra gastar crédito de IA) e auditoria interna (trilha de INSERT/UPDATE/DELETE). Resumo:
+- **Segurança externa:** a arquitetura atual já bloqueia por desenho o cenário "IA manipulada pra agir no banco" — motor determinístico, zero SQL bruto no projeto, IA (quando ligada na Fase 5) só classifica texto, nunca executa comando. Login já usa `getUser()` revalidado no servidor (Supabase Auth). Faltam: MFA administrativo, e — só quando Fase 5/7 forem implementadas — limite de chamadas de IA por lead, verificação de assinatura do webhook do WhatsApp, circuit breaker de orçamento diário.
+- **Auditoria interna:** recomendado começar agora (dado ainda é pequeno, mais barato que retrofit depois). Abordagem: trigger genérico no Postgres (não log manual no código) gravando antes/depois em JSON por tabela, capturando o usuário via `set_config`. Pendente de confirmação de escopo antes de codar.
+
+---
+
+## 11. Progresso de Produção — MVP1 (a partir de 13/08/2026)
 
 > ⚠️ **Esta seção é a "memória de backup" do desenvolvimento** — registrada pra que, se a conversa/sessão de trabalho se perder, dê pra reconstruir exatamente onde paramos, o que já funciona, e o que falta, só lendo este documento. Atualizar ao final de toda sessão de construção com o Claude Code, sempre com data. Ver seção 0 sobre a convenção de duas dimensões (Planejamento × Produção) — esta seção é sobre **Produção**.
 >
