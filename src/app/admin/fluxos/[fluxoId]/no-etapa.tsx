@@ -32,11 +32,58 @@ function corBorda(etapa: EtapaAdmin, modo: ModoNavegacao): string {
   return etapa.conteudo.encerramento?.sob_supervisor ? COR_BORDA_HANDOFF : COR_BORDA_PAUSA;
 }
 
-function textoPreview(etapa: EtapaAdmin): string {
+const ICONE_ANEXO: Record<"audio" | "video" | "documento", string> = {
+  audio: "🎵",
+  video: "🎬",
+  documento: "📄",
+};
+
+/** Prévia do conteúdo no quadrinho — mostra thumb de verdade pra imagem e ícone grande pra outros anexos, não só texto genérico "(mensagem de X)". */
+function PreviewConteudo({ etapa }: { etapa: EtapaAdmin }) {
   const primeira = etapa.conteudo.mensagens[0];
-  if (!primeira) return "(sem mensagem — roteador automático)";
-  if (primeira.tipo === "texto") return primeira.texto.slice(0, 90);
-  return `(mensagem de ${primeira.tipo})`;
+
+  if (!primeira) {
+    return <p className="italic text-zinc-400">(sem mensagem — roteador automático)</p>;
+  }
+
+  if (primeira.tipo === "texto") {
+    return <p className="line-clamp-3 text-zinc-800 dark:text-zinc-100">{primeira.texto.slice(0, 90)}</p>;
+  }
+
+  if (primeira.tipo === "imagem") {
+    return (
+      <div className="space-y-1">
+        {primeira.midia_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- thumb de conteúdo arbitrário editado pelo admin
+          <img
+            src={primeira.midia_url}
+            alt={primeira.legenda ?? "Prévia da imagem"}
+            className="h-16 w-full rounded-lg object-cover"
+          />
+        ) : (
+          <div className="flex h-16 items-center justify-center rounded-lg bg-zinc-100 text-2xl dark:bg-zinc-800">
+            🖼️
+          </div>
+        )}
+        {primeira.legenda && (
+          <p className="line-clamp-2 text-zinc-800 dark:text-zinc-100">{primeira.legenda}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (primeira.tipo === "audio" || primeira.tipo === "video" || primeira.tipo === "documento") {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-3xl leading-none">{ICONE_ANEXO[primeira.tipo]}</span>
+        <span className="line-clamp-2 text-zinc-800 dark:text-zinc-100">
+          {primeira.legenda || `Mensagem de ${primeira.tipo}`}
+        </span>
+      </div>
+    );
+  }
+
+  return <p className="line-clamp-3 text-zinc-800 dark:text-zinc-100">{`(mensagem de ${primeira.tipo})`}</p>;
 }
 
 export function NoEtapa({ data }: { data: { etapa: EtapaAdmin; onClick: () => void } }) {
@@ -59,7 +106,7 @@ export function NoEtapa({ data }: { data: { etapa: EtapaAdmin; onClick: () => vo
           {ICONE_MODO[modo] && <span title={TITULO_MODO[modo]}>{ICONE_MODO[modo]}</span>}
         </div>
       </div>
-      <p className="line-clamp-3 text-zinc-800 dark:text-zinc-100">{textoPreview(etapa)}</p>
+      <PreviewConteudo etapa={etapa} />
       <div className="mt-2 flex items-center justify-between gap-1">
         {c.mensagens.length > 1 ? (
           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">

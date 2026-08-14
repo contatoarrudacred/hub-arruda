@@ -11,9 +11,11 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { EditorEtapaModal } from "./editor-etapa-modal";
 import { layoutComDagre } from "./layout-dagre";
@@ -181,6 +183,7 @@ function EditorFluxoInterno({
   const [busca, setBusca] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges] = useEdgesState<Edge>([]);
+  const { fitView } = useReactFlow();
 
   const codigosDisponiveis = useMemo(
     () => Array.from(new Set([...todosOsCodigos, ...etapas.map((e) => e.conteudo.codigo)])),
@@ -233,7 +236,28 @@ function EditorFluxoInterno({
 
   return (
     <div className="relative h-screen w-full bg-zinc-100 dark:bg-zinc-950">
-      <div className="absolute left-4 top-4 z-10 flex gap-2">
+      <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2">
+        <Link
+          href="/admin/fluxos"
+          title="Voltar pra lista de fluxos"
+          className="rounded-full bg-white px-4 py-2 text-sm text-zinc-700 shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200"
+        >
+          ← Voltar
+        </Link>
+        <button
+          onClick={() => window.location.reload()}
+          title="Recarrega a página e busca as etapas de novo"
+          className="rounded-full bg-white px-4 py-2 text-sm text-zinc-700 shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200"
+        >
+          ↻ Atualizar
+        </button>
+        <button
+          onClick={() => fitView({ padding: 0.2, duration: 300 })}
+          title="Ajusta o zoom pra mostrar o fluxo inteiro"
+          className="rounded-full bg-white px-4 py-2 text-sm text-zinc-700 shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200"
+        >
+          ⛶ Ver tudo
+        </button>
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}

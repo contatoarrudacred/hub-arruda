@@ -186,7 +186,23 @@ export function EditorEtapaModal({
   const [mensagemExpandida, setMensagemExpandida] = useState<number | null>(0);
   const [salvando, setSalvando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  function moverMensagem(indice: number, direcao: -1 | 1) {
+    const alvo = indice + direcao;
+    if (alvo < 0 || alvo >= r.mensagens.length) return;
+    setR((atual) => {
+      const mensagens = [...atual.mensagens];
+      [mensagens[indice], mensagens[alvo]] = [mensagens[alvo], mensagens[indice]];
+      return { ...atual, mensagens };
+    });
+    setMensagemExpandida((atual) => {
+      if (atual === indice) return alvo;
+      if (atual === alvo) return indice;
+      return atual;
+    });
+  }
 
   function atualizar<K extends keyof Rascunho>(chave: K, valor: Rascunho[K]) {
     setR((atual) => ({ ...atual, [chave]: valor }));
@@ -233,9 +249,9 @@ export function EditorEtapaModal({
     });
   }
 
-  async function excluir() {
+  async function confirmarEExcluir() {
     if (!etapaExistente) return;
-    if (!confirm(`Excluir a etapa "${etapaExistente.conteudo.codigo}"? Não dá pra desfazer.`)) return;
+    setConfirmandoExclusao(false);
     setExcluindo(true);
     const resultado = await excluirEtapaAction(etapaExistente.id, fluxoId);
     setExcluindo(false);
@@ -297,17 +313,37 @@ export function EditorEtapaModal({
                     key={i}
                     className="rounded-lg border border-zinc-200 dark:border-zinc-700"
                   >
-                    <button
-                      type="button"
-                      onClick={() => setMensagemExpandida(expandida ? null : i)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm"
-                    >
-                      <span>{ICONE_TIPO_MENSAGEM[m.tipo]}</span>
-                      <span className="flex-1 truncate text-zinc-700 dark:text-zinc-300">
-                        {resumoMensagem(m)}
-                      </span>
-                      <span className="text-zinc-400">{expandida ? "▲" : "▼"}</span>
-                    </button>
+                    <div className="flex items-center gap-1 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => setMensagemExpandida(expandida ? null : i)}
+                        className="flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm"
+                      >
+                        <span>{ICONE_TIPO_MENSAGEM[m.tipo]}</span>
+                        <span className="flex-1 truncate text-zinc-700 dark:text-zinc-300">
+                          {resumoMensagem(m)}
+                        </span>
+                        <span className="text-zinc-400">{expandida ? "▲" : "▼"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moverMensagem(i, -1)}
+                        disabled={i === 0}
+                        title="Mover pra cima"
+                        className="rounded px-1.5 py-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moverMensagem(i, 1)}
+                        disabled={i === r.mensagens.length - 1}
+                        title="Mover pra baixo"
+                        className="rounded px-1.5 py-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      >
+                        ▼
+                      </button>
+                    </div>
                     {expandida && (
                       <div className="border-t border-zinc-200 p-2 dark:border-zinc-700">
                         <EditorMensagem
@@ -696,7 +732,7 @@ export function EditorEtapaModal({
           <div className="mt-6 flex items-center justify-between">
             {etapaExistente ? (
               <button
-                onClick={excluir}
+                onClick={() => setConfirmandoExclusao(true)}
                 disabled={excluindo}
                 className="text-sm text-red-600 hover:underline disabled:opacity-40 dark:text-red-400"
               >
@@ -729,6 +765,34 @@ export function EditorEtapaModal({
           </div>
         </div>
       </div>
+
+      {confirmandoExclusao && etapaExistente && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              Excluir a etapa &quot;{etapaExistente.conteudo.codigo}&quot;?
+            </p>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Essa ação não pode ser desfeita.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmandoExclusao(false)}
+                className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEExcluir}
+                disabled={excluindo}
+                className="rounded-full bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                {excluindo ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
