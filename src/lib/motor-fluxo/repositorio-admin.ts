@@ -124,3 +124,139 @@ export async function excluirEtapa(id: string): Promise<void> {
   const { error } = await supabase.from("etapas_fluxo").delete().eq("id", id);
   if (error) throw new Error(`Falha ao excluir etapa: ${error.message}`);
 }
+
+export type ProdutoAdmin = { id: string; nome: string };
+
+export async function listarProdutos(): Promise<ProdutoAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("produtos").select("id, nome").order("nome");
+
+  if (error) {
+    throw new Error(`Falha ao listar produtos: ${error.message}`);
+  }
+  return data ?? [];
+}
+
+export type FaqAdmin = {
+  id: string;
+  produtoId: string;
+  pergunta: string;
+  resposta: string;
+  ativo: boolean;
+};
+
+export async function listarFaqs(): Promise<FaqAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("faqs")
+    .select("id, produto_id, pergunta, resposta, ativo")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Falha ao listar FAQs: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    produtoId: linha.produto_id,
+    pergunta: linha.pergunta,
+    resposta: linha.resposta,
+    ativo: linha.ativo,
+  }));
+}
+
+export type EntradaSalvarFaq = {
+  id: string | null;
+  produtoId: string;
+  pergunta: string;
+  resposta: string;
+  ativo: boolean;
+};
+
+export async function salvarFaq(entrada: EntradaSalvarFaq): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = {
+    produto_id: entrada.produtoId,
+    pergunta: entrada.pergunta,
+    resposta: entrada.resposta,
+    ativo: entrada.ativo,
+  };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("faqs").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar FAQ: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("faqs").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar FAQ: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirFaq(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("faqs").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir FAQ: ${error.message}`);
+}
+
+export type ObjecaoAdmin = {
+  id: string;
+  produtoId: string;
+  objecao: string;
+  comoLidar: string;
+  ativo: boolean;
+};
+
+export async function listarObjecoes(): Promise<ObjecaoAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("objecoes")
+    .select("id, produto_id, objecao, como_lidar, ativo")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Falha ao listar objeções: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    produtoId: linha.produto_id,
+    objecao: linha.objecao,
+    comoLidar: linha.como_lidar,
+    ativo: linha.ativo,
+  }));
+}
+
+export type EntradaSalvarObjecao = {
+  id: string | null;
+  produtoId: string;
+  objecao: string;
+  comoLidar: string;
+  ativo: boolean;
+};
+
+export async function salvarObjecao(entrada: EntradaSalvarObjecao): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = {
+    produto_id: entrada.produtoId,
+    objecao: entrada.objecao,
+    como_lidar: entrada.comoLidar,
+    ativo: entrada.ativo,
+  };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("objecoes").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar objeção: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("objecoes").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar objeção: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirObjecao(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("objecoes").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir objeção: ${error.message}`);
+}

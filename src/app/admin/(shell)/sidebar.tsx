@@ -19,8 +19,8 @@ type ItemMenu = { rotulo: string; href: string } | { rotulo: string; emBreve: tr
 // alimentar a futura Vendas de Balcão, não é exclusivo do CRM.
 const GRUPO_CRM: ItemMenu[] = [
   { rotulo: "Fluxos", href: "/admin/fluxos" },
-  { rotulo: "FAQs", emBreve: true },
-  { rotulo: "Objeções", emBreve: true },
+  { rotulo: "FAQs", href: "/admin/faqs" },
+  { rotulo: "Objeções", href: "/admin/objecoes" },
   { rotulo: "Agendas de Follow-up", emBreve: true },
 ];
 
