@@ -7,22 +7,31 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import {
+  criarConversaSimulador,
+  registrarMensagemLead,
+  registrarTurnoMalala,
+} from "@/lib/motor-fluxo/persistencia";
+import {
   carregarConfigPrecificacao,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
 } from "@/lib/motor-fluxo/repositorio";
 import type { DadosConversa, MensagemEnviada } from "@/lib/motor-fluxo/tipos";
 
-// Server Actions que dão vida ao simulador (src/app/simulador/simulador-chat.tsx). O estado da
-// conversa (em que etapa está, o que já foi capturado) fica no client — não persiste em nenhuma
-// tabela ainda (isso é trabalho da Fase 4, quando o motor passa a escrever em pessoas/oportunidades
-// de verdade). O que É real aqui é o conteúdo: etapas_fluxo, precos_por_faixa e configuracoes vêm
-// do Supabase a cada chamada, então editar o script no banco muda o simulador na hora.
+// Server Actions que dão vida ao simulador (src/app/simulador/simulador-chat.tsx). O estado de
+// navegação do fluxo (em que etapa está, o que já foi capturado) fica no client — mas, desde
+// 15/08/2026, cada mensagem também é gravada de verdade em pessoas/oportunidades/conversas/
+// mensagens (ver persistencia.ts), pra alimentar o motor de disparo de follow-up (Fase 6) e servir
+// de rascunho pro webhook do WhatsApp real (Fase 7) reaproveitar a mesma persistência depois. O
+// conteúdo do script (etapas_fluxo, precos_por_faixa, configuracoes) já vinha do Supabase a cada
+// chamada, então editar o script no banco continua mudando o simulador na hora.
 
 export type EstadoSimulador = {
   /** null = fluxo automatizado encerrado (perdida, handoff humano, ou fim do MVP1) */
   etapaAtualCodigo: string | null;
   dados: DadosConversa;
+  conversaId: string | null;
+  oportunidadeId: string | null;
 };
 
 export type PassoSimulador = {
@@ -63,11 +72,17 @@ export async function iniciarSimulacaoComMensagem(primeiraMensagemLead: string):
     { saudacao: saudacaoPorHorario() },
   );
 
+  const { conversaId, oportunidadeId } = await criarConversaSimulador(dadosIniciais.nome ?? null);
+  await registrarMensagemLead(conversaId, primeiraMensagemLead);
+  await registrarTurnoMalala({ conversaId, oportunidadeId, resultado });
+
   return {
     mensagens: resultado.mensagens,
     estado: {
       etapaAtualCodigo: resultado.etapaFinal?.conteudo.codigo ?? null,
       dados: dadosIniciais,
+      conversaId,
+      oportunidadeId,
     },
     encerrado: resultado.etapaFinal === null,
     naoReconhecido: false,
@@ -78,13 +93,15 @@ export async function enviarResposta(
   estado: EstadoSimulador,
   respostaLead: string,
 ): Promise<PassoSimulador> {
-  if (!estado.etapaAtualCodigo) {
+  if (!estado.etapaAtualCodigo || !estado.conversaId || !estado.oportunidadeId) {
     return { mensagens: [], estado, encerrado: true, naoReconhecido: false };
   }
 
   const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } =
     await montarDependencias();
   const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
+
+  await registrarMensagemLead(estado.conversaId, respostaLead);
 
   const resultado = await avancarConversa({
     etapaAtual,
@@ -96,10 +113,18 @@ export async function enviarResposta(
     variaveisGlobais: { saudacao: saudacaoPorHorario() },
   });
 
+  await registrarTurnoMalala({
+    conversaId: estado.conversaId,
+    oportunidadeId: estado.oportunidadeId,
+    resultado,
+  });
+
   return {
     mensagens: resultado.mensagens,
     estado: {
       etapaAtualCodigo: resultado.etapaFinal?.conteudo.codigo ?? null,
+      conversaId: estado.conversaId,
+      oportunidadeId: estado.oportunidadeId,
       dados: { ...estado.dados, ...resultado.dadosNovos },
     },
     encerrado: resultado.etapaFinal === null,

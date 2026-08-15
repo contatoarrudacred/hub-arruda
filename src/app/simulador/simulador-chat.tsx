@@ -7,7 +7,12 @@ import { enviarResposta, iniciarSimulacaoComMensagem, type EstadoSimulador } fro
 
 type MensagemExibida = { autor: "malala" | "lead"; conteudo: MensagemEtapa };
 
-const ESTADO_INICIAL: EstadoSimulador = { etapaAtualCodigo: null, dados: {} };
+const ESTADO_INICIAL: EstadoSimulador = {
+  etapaAtualCodigo: null,
+  dados: {},
+  conversaId: null,
+  oportunidadeId: null,
+};
 const DIGITANDO_MINIMO_MS = 500;
 
 function sleep(ms: number) {

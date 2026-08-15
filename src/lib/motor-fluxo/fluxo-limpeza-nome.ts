@@ -806,6 +806,7 @@ export function construirEtapaCarregada(def: DefinicaoEtapa, fluxoId: string): E
     fluxoId,
     ordem: def.ordem,
     campoSalvo: def.campoSalvo,
+    agendaFollowupId: null,
     conteudo: def.conteudo,
   };
 }

@@ -13,7 +13,7 @@ export async function carregarEtapasPorCodigo(): Promise<Record<string, EtapaCar
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("etapas_fluxo")
-    .select("id, fluxo_id, ordem, campo_salvo, conteudo");
+    .select("id, fluxo_id, ordem, campo_salvo, agenda_followup_id, conteudo");
 
   if (error) {
     throw new Error(`Falha ao carregar etapas_fluxo: ${error.message}`);
@@ -27,10 +27,64 @@ export async function carregarEtapasPorCodigo(): Promise<Record<string, EtapaCar
       fluxoId: linha.fluxo_id,
       ordem: linha.ordem,
       campoSalvo: linha.campo_salvo,
+      agendaFollowupId: linha.agenda_followup_id,
       conteudo,
     };
   }
   return mapa;
+}
+
+/** Id da agenda de follow-up usada quando uma etapa não define uma própria (`etapas_fluxo.agenda_followup_id` nulo). */
+export async function carregarIdAgendaPadrao(): Promise<string> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("agendas_followup")
+    .select("id")
+    .eq("nome", "Padrão")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Falha ao carregar agenda de follow-up padrão: ${error?.message ?? "não encontrada"}`);
+  }
+  return data.id;
+}
+
+export type ItemAgendaFollowupCarregado = {
+  id: string;
+  ordem: number;
+  intervaloValor: number;
+  intervaloUnidade: "minutos" | "horas" | "dias";
+  canal: "whatsapp" | "email";
+  respeitaJanelaComercial: boolean;
+  conteudo: string;
+  encerraAtendimento: boolean;
+};
+
+/** Itens de uma agenda de follow-up, em ordem — usado pelo motor de disparo (motor-followup.ts) pra decidir o que vem a seguir. */
+export async function carregarItensAgenda(agendaId: string): Promise<ItemAgendaFollowupCarregado[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("agenda_itens")
+    .select(
+      "id, ordem, intervalo_valor, intervalo_unidade, canal, respeita_janela_comercial, conteudo, encerra_atendimento",
+    )
+    .eq("agenda_id", agendaId)
+    .order("ordem");
+
+  if (error) {
+    throw new Error(`Falha ao carregar agenda_itens: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    ordem: linha.ordem,
+    intervaloValor: linha.intervalo_valor,
+    intervaloUnidade: linha.intervalo_unidade,
+    canal: linha.canal,
+    respeitaJanelaComercial: linha.respeita_janela_comercial,
+    conteudo: linha.conteudo,
+    encerraAtendimento: linha.encerra_atendimento,
+  }));
 }
 
 /**

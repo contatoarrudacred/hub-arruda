@@ -131,6 +131,8 @@ export type EtapaCarregada = {
   fluxoId: string;
   ordem: number;
   campoSalvo: string | null;
+  /** null = usa a agenda padrão do sistema (agendas_followup.nome = "Padrão") */
+  agendaFollowupId: string | null;
   conteudo: ConteudoEtapa;
 };
 
