@@ -1,5 +1,9 @@
 import { SimuladorChat } from "./simulador-chat";
 
 export default function SimuladorPage() {
-  return <SimuladorChat />;
+  return (
+    <div className="h-screen">
+      <SimuladorChat />
+    </div>
+  );
 }

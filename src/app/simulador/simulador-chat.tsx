@@ -24,7 +24,7 @@ function delayMs(delay: ConfigDelay): number {
   return 0;
 }
 
-export function SimuladorChat() {
+export function SimuladorChat({ aoFechar }: { aoFechar?: () => void } = {}) {
   const [mensagens, setMensagens] = useState<MensagemExibida[]>([]);
   const [estado, setEstado] = useState<EstadoSimulador>(ESTADO_INICIAL);
   const [entrada, setEntrada] = useState("");
@@ -78,7 +78,7 @@ export function SimuladorChat() {
 
   if (erro) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-2 bg-zinc-50 p-8 dark:bg-black">
+      <div className="flex h-full flex-col items-center justify-center gap-2 bg-zinc-50 p-8 dark:bg-black">
         <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>
         <p className="max-w-md text-center text-xs text-zinc-500">
           Verifique se a migration 004 e o supabase/seed.sql já foram rodados no Supabase.
@@ -88,15 +88,25 @@ export function SimuladorChat() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-50 dark:bg-black">
-      <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Simulador — Malala (Limpeza de Nome)
-        </h1>
-        <p className="text-xs text-zinc-500">
-          Testa o motor de fluxo direto pelo navegador, sem WhatsApp de verdade — o conteúdo vem do
-          Supabase, então editar uma etapa no banco muda a conversa aqui na hora.
-        </p>
+    <div className="flex h-full flex-col bg-zinc-50 dark:bg-black">
+      <header className="flex items-start justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div>
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Simulador — Malala (Limpeza de Nome)
+          </h1>
+          <p className="text-xs text-zinc-500">
+            Testa o motor de fluxo direto pelo navegador, sem WhatsApp de verdade — o conteúdo vem do
+            Supabase, então editar uma etapa no banco muda a conversa aqui na hora.
+          </p>
+        </div>
+        {aoFechar && (
+          <button
+            onClick={aoFechar}
+            className="shrink-0 rounded-full px-3 py-1 text-sm text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            ✕ Fechar
+          </button>
+        )}
       </header>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">

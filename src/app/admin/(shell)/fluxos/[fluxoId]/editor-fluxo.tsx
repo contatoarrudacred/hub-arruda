@@ -15,14 +15,17 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { SimuladorChat } from "@/app/simulador/simulador-chat";
 import { EditorEtapaModal } from "./editor-etapa-modal";
 import { layoutComDagre } from "./layout-dagre";
 import { NoEtapa } from "./no-etapa";
 import { NoStub } from "./no-stub";
 
 const NODE_TYPES = { etapa: NoEtapa, stub: NoStub };
+// Dourado da identidade visual do Hub Arruda (mesma cor do sidebar.tsx) — usado aqui só no botão
+// Preview, pra destacá-lo dos outros botões neutros da barra (pedido de Luiz, 15/08/2026).
+const DOURADO = "#c8a55d";
 // Arestas retas com cantos de 90° (não curvas) — pedido do Luiz (14/08/2026) pra facilitar
 // enxergar as conexões quando o fluxo cresce e o zoom precisa diminuir bastante.
 const OPCOES_ARESTA_PADRAO = { type: "step" as const };
@@ -180,6 +183,7 @@ function EditorFluxoInterno({
 }) {
   const [etapas, setEtapas] = useState(etapasIniciais);
   const [modalAberto, setModalAberto] = useState<"nova" | EtapaAdmin | null>(null);
+  const [simuladorAberto, setSimuladorAberto] = useState(false);
   const [busca, setBusca] = useState("");
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges] = useEdgesState<Edge>([]);
@@ -237,14 +241,14 @@ function EditorFluxoInterno({
   return (
     <div className="relative h-full w-full bg-zinc-100 dark:bg-zinc-950">
       <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2">
-        <Link
-          href="/simulador"
-          target="_blank"
-          title="Abre o simulador em outra aba pra testar este fluxo"
-          className="rounded-full bg-white px-4 py-2 text-sm text-zinc-700 shadow hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-200"
+        <button
+          onClick={() => setSimuladorAberto(true)}
+          title="Abre o simulador pra testar este fluxo"
+          className="rounded-full px-4 py-2 text-sm font-medium text-white shadow hover:brightness-95"
+          style={{ backgroundColor: DOURADO }}
         >
           ▶ Preview
-        </Link>
+        </button>
         <button
           onClick={() => window.location.reload()}
           title="Recarrega a página e busca as etapas de novo"
@@ -308,6 +312,14 @@ function EditorFluxoInterno({
           onSalvo={aoSalvarEtapa}
           onExcluido={aoExcluirEtapa}
         />
+      )}
+
+      {simuladorAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="h-[85vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-black">
+            <SimuladorChat aoFechar={() => setSimuladorAberto(false)} />
+          </div>
+        </div>
       )}
     </div>
   );
