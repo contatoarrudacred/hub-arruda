@@ -74,7 +74,7 @@ export function EmailBoasVindas({
                 <Text style={{ fontSize: 12, lineHeight: "17px", color: "#333333", margin: 0 }}>
                   👉{" "}
                   <Link href={linkVideo} style={{ color: NAVY, textDecoration: "underline" }}>
-                    Assista o vídeo de apresentação da ArrudaCred
+                    Assista agora o vídeo de apresentação da ArrudaCred
                   </Link>
                 </Text>
               </td>
@@ -88,7 +88,7 @@ export function EmailBoasVindas({
                 <Text style={{ fontSize: 12, lineHeight: "17px", color: "#333333", margin: 0 }}>
                   👉 Leia o post:{" "}
                   <Link href={linkBlog} style={{ color: NAVY, textDecoration: "underline" }}>
-                    &quot;{tituloBlog}&quot;
+                    {tituloBlog}
                   </Link>
                 </Text>
               </td>

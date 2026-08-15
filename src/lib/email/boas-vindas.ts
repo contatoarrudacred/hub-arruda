@@ -12,7 +12,7 @@ import { EmailBoasVindas } from "./templates/boas-vindas";
 // descadastro desde o primeiro envio.
 
 const LINK_BLOG_REPUTACAO = "https://arrudacred.com.br/empresa-confiavel-limpar-nome-arrudacred-reclame-aqui/";
-const TITULO_BLOG_REPUTACAO = "ArrudaCred é indicada ao Prêmio Reclame Aqui 2026";
+const TITULO_BLOG_REPUTACAO = "ArrudaCred é indicada a Prêmio Reclame Aqui";
 
 const ID_VIDEO_APRESENTACAO = "RZVQQIBHr0Y";
 const LINK_VIDEO_APRESENTACAO = `https://youtu.be/${ID_VIDEO_APRESENTACAO}`;
