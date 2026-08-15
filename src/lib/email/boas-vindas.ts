@@ -12,6 +12,7 @@ import { EmailBoasVindas } from "./templates/boas-vindas";
 // descadastro desde o primeiro envio.
 
 const LINK_BLOG_REPUTACAO = "https://arrudacred.com.br/empresa-confiavel-limpar-nome-arrudacred-reclame-aqui/";
+const TITULO_BLOG_REPUTACAO = "ArrudaCred é indicada ao Prêmio Reclame Aqui 2026";
 const CAPA_BLOG_REPUTACAO = "https://arrudacred.com.br/wp-content/uploads/2026/08/capa-arrudacred-premioRA-2026.png";
 
 // Vídeo de apresentação institucional passado por Luiz (15/08/2026). A miniatura vem direto do
@@ -56,6 +57,7 @@ export async function enviarEmailBoasVindasSeNecessario(
         nome: primeiroNome,
         linkWhatsapp: montarLinkWhatsapp(contato.whatsappNumero),
         linkBlog: LINK_BLOG_REPUTACAO,
+        tituloBlog: TITULO_BLOG_REPUTACAO,
         capaBlog: CAPA_BLOG_REPUTACAO,
         linkVideo: LINK_VIDEO_APRESENTACAO,
         capaVideo: CAPA_VIDEO_APRESENTACAO,
