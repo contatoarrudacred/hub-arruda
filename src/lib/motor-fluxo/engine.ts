@@ -4,6 +4,7 @@
 // seção 8.9). Função pura (exceto o hook opcional de IA, que é assíncrono) — o Supabase entra só
 // na camada de repositório.
 
+import { extrairNomeDeResposta } from "./extracao";
 import { parseResposta } from "./parser";
 import type {
   CalcularDadosDerivados,
@@ -227,6 +228,13 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   let reconhecido: { valor: string; opcaoEscolhida?: Opcao } | null = parse.reconhecido
     ? { valor: parse.valor, opcaoEscolhida: parse.opcaoEscolhida }
     : null;
+
+  // "nome" é regra de negócio fixa do motor (mesma exceção já registrada em substituirVariaveisTexto,
+  // pro [Primeiro_Nome]) — sem isto, uma resposta tipo "sou Luiz, boa tarde!" vira o nome inteiro
+  // "sou Luiz, boa tarde!", e o [Primeiro_Nome] usa só a primeira palavra bruta ("sou").
+  if (reconhecido && etapaAtual.campoSalvo === "nome" && conteudo.tipo_resposta === "texto_livre") {
+    reconhecido = { ...reconhecido, valor: extrairNomeDeResposta(reconhecido.valor) };
+  }
 
   let interpretadoPorIA = false;
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarComIA) {

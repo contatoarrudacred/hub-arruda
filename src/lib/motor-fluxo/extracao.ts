@@ -7,20 +7,59 @@
 
 import type { DadosConversa } from "./tipos";
 
+// A primeira palavra do nome agora aceita minúscula (14/08/2026) — no WhatsApp real quase ninguém
+// capitaliza ("sou luiz", não "sou Luiz"). Achado por Luiz testando o simulador (15/08/2026):
+// "sou luiz, boa tarde!" não batia em nenhum padrão, caía no fallback ingênuo (primeira palavra da
+// resposta crua = "sou") e virava "[Primeiro_Nome]".
+//
+// As palavras SEGUINTES do nome (pra compostos tipo "Luiz Silva") continuam exigindo maiúscula de
+// propósito — é o único jeito de saber, só com regex, onde o nome termina e a frase continua. Sem
+// essa exigência, "sou luiz e quero limpar meu nome" capturaria "luiz e quero limpar" inteiro (bug
+// reproduzido ao tentar deixar tudo case-insensitive). Efeito colateral aceito: nome composto todo
+// em minúsculo ("meu nome é luiz silva") só captura o primeiro nome — melhor capturar de menos do
+// que capturar errado.
 const PADROES_NOME = [
-  /\bsou\s+([A-ZÀ-Ý][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
-  /\bme\s+chamo\s+([A-ZÀ-Ý][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
-  /\bmeu\s+nome\s+[ée]\s+([A-ZÀ-Ý][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
-  /\baqui\s+[ée]\s+(?:o|a)?\s*([A-ZÀ-Ý][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
+  /\b[Ss]ou\s+([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
+  /\b[Mm]e\s+[Cc]hamo\s+([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
+  /\b[Mm]eu\s+[Nn]ome\s+[ée]\s+([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
+  /\b[Aa]qui\s+[ée]\s+(?:o|a)?\s*([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
 ];
+
+// Conectores de nome composto que ficam em minúscula, exceto quando são a primeira palavra
+// (ex.: "Luiz da Silva", não "Luiz Da Silva").
+const CONECTORES_NOME = new Set(["de", "da", "do", "das", "dos", "e"]);
+
+function capitalizarNome(nome: string): string {
+  return nome
+    .split(/\s+/)
+    .map((palavra, indice) => {
+      const minuscula = palavra.toLowerCase();
+      if (indice > 0 && CONECTORES_NOME.has(minuscula)) return minuscula;
+      return minuscula.charAt(0).toUpperCase() + minuscula.slice(1);
+    })
+    .join(" ");
+}
 
 /** Tenta achar um nome próprio depois de frases de auto-apresentação comuns ("sou X", "meu nome é X"...). */
 export function extrairNomeSaudacao(mensagem: string): string | null {
   for (const padrao of PADROES_NOME) {
     const encontrado = mensagem.match(padrao);
-    if (encontrado?.[1]) return encontrado[1].trim();
+    if (encontrado?.[1]) return capitalizarNome(encontrado[1].trim());
   }
   return null;
+}
+
+/**
+ * Extrai o nome de uma resposta DIRETA à pergunta "Com quem eu falo?" (não a mensagem de abertura
+ * espontânea, que usa `extrairNomeSaudacao` acima). Tenta os mesmos padrões de auto-apresentação
+ * primeiro ("sou Luiz, boa tarde!" → "Luiz") — se o lead respondeu só o nome puro, sem nenhuma
+ * frase de apresentação ("Luiz"), cai no fallback de usar a resposta inteira, que já é o
+ * comportamento correto nesse caso.
+ */
+export function extrairNomeDeResposta(resposta: string): string {
+  const viaPadrao = extrairNomeSaudacao(resposta);
+  if (viaPadrao) return viaPadrao;
+  return capitalizarNome(resposta.trim());
 }
 
 export function extrairDadosAbertura(mensagem: string): DadosConversa {

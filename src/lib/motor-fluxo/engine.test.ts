@@ -94,6 +94,38 @@ describe("extração determinística da abertura", () => {
     expect(criarExtratorAbertura()("oi")).toEqual({});
     expect(extrator("boa tarde")).toEqual({});
   });
+
+  it("reconhece nome mesmo sem maiúscula, como no WhatsApp real", () => {
+    const extrator = criarExtratorAbertura();
+    expect(extrator("oi, sou luiz e quero limpar meu nome").nome).toBe("Luiz");
+  });
+});
+
+describe("extração de nome — resposta direta a 'Com quem eu falo?'", () => {
+  it("resposta com frase de apresentação não vira o nome inteiro (bug reportado por Luiz)", async () => {
+    // Antes desta correção, "sou luiz, boa tarde!" virava dados.nome = "sou luiz, boa tarde!" (a
+    // resposta crua inteira), e [Primeiro_Nome] usava só a primeira palavra bruta ("sou") — a
+    // Malala respondia "Oi sou, bom dia!".
+    const r = await responder("pergunta_nome", {}, "sou luiz, boa tarde!");
+    expect(r.dadosNovos.nome).toBe("Luiz");
+    expect(r.mensagens.some((m) => txt(m).includes("Oi Luiz"))).toBe(true);
+  });
+
+  it("resposta só com o nome, sem frase de apresentação, continua funcionando", async () => {
+    const r = await responder("pergunta_nome", {}, "luiz");
+    expect(r.dadosNovos.nome).toBe("Luiz");
+  });
+
+  it("reconhece 'me chamo' e 'meu nome é' em minúscula também", async () => {
+    let r = await responder("pergunta_nome", {}, "me chamo luiz");
+    expect(r.dadosNovos.nome).toBe("Luiz");
+
+    // Nome composto todo em minúsculo só captura o primeiro nome — regex não tem como saber onde
+    // o nome termina sem depender de maiúscula (ver comentário em extracao.ts). Capitalizado
+    // funciona normalmente ("meu nome é Luiz Silva" capturaria "Luiz Silva" inteiro).
+    r = await responder("pergunta_nome", {}, "meu nome é luiz silva");
+    expect(r.dadosNovos.nome).toBe("Luiz");
+  });
 });
 
 describe("abertura e triagem", () => {
