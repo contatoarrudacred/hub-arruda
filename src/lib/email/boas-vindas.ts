@@ -1,6 +1,7 @@
 import "server-only";
 import { render } from "react-email";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { carregarContatoInstitucional } from "./contato-institucional";
 import { enviarEmail } from "./resend";
 import { EmailBoasVindas } from "./templates/boas-vindas";
 
@@ -10,12 +11,18 @@ import { EmailBoasVindas } from "./templates/boas-vindas";
 // (Luiz, 15/08/2026) — por isso os dois controles: nunca duas vezes pro mesmo lead, e respeita
 // descadastro desde o primeiro envio.
 
-const NUMERO_WHATSAPP_ARRUDACRED = "5513974024339"; // (13) 97402-4339 — confirmado direto no site oficial, 15/08/2026. Outros números antigos não são mais válidos.
 const LINK_BLOG_REPUTACAO = "https://arrudacred.com.br/empresa-confiavel-limpar-nome-arrudacred-reclame-aqui/";
+const CAPA_BLOG_REPUTACAO = "https://arrudacred.com.br/wp-content/uploads/2026/08/capa-arrudacred-premioRA-2026.png";
 
-function montarLinkWhatsapp(): string {
+// Vídeo de apresentação institucional passado por Luiz (15/08/2026). A miniatura vem direto do
+// YouTube (URL previsível a partir do id do vídeo, sem precisar de API/chave).
+const ID_VIDEO_APRESENTACAO = "RZVQQIBHr0Y";
+const LINK_VIDEO_APRESENTACAO = `https://youtu.be/${ID_VIDEO_APRESENTACAO}`;
+const CAPA_VIDEO_APRESENTACAO = `https://img.youtube.com/vi/${ID_VIDEO_APRESENTACAO}/hqdefault.jpg`;
+
+function montarLinkWhatsapp(numero: string): string {
   const texto = "Olá! Vim do e-mail e quero continuar minha conversa sobre limpar meu nome 😊";
-  return `https://wa.me/${NUMERO_WHATSAPP_ARRUDACRED}?text=${encodeURIComponent(texto)}`;
+  return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
 }
 
 function montarLinkDescadastro(pessoaId: string): string {
@@ -42,12 +49,18 @@ export async function enviarEmailBoasVindasSeNecessario(
   const primeiroNome = nomeCompleto.trim().split(/\s+/)[0] || "";
 
   try {
+    const contato = await carregarContatoInstitucional();
+
     const html = await render(
       EmailBoasVindas({
         nome: primeiroNome,
-        linkWhatsapp: montarLinkWhatsapp(),
+        linkWhatsapp: montarLinkWhatsapp(contato.whatsappNumero),
         linkBlog: LINK_BLOG_REPUTACAO,
+        capaBlog: CAPA_BLOG_REPUTACAO,
+        linkVideo: LINK_VIDEO_APRESENTACAO,
+        capaVideo: CAPA_VIDEO_APRESENTACAO,
         linkDescadastro: montarLinkDescadastro(pessoaId),
+        redesSociais: contato.redesSociais,
       }),
     );
 

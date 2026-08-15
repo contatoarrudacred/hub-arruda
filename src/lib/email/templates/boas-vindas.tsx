@@ -4,20 +4,46 @@ import { Body, Button, Container, Head, Hr, Html, Img, Link, Preview, Section, T
 // quero nada grande, é um e-mail curto e personalizado". Identidade navy/dourado do Hub Arruda
 // (mesmas cores do admin, sidebar.tsx). HTML de e-mail tem regras próprias (Outlook não entende
 // CSS moderno) — por isso estilos inline via objeto `style`, sem classes/Tailwind/flex/grid.
+//
+// Ícones de rede social (15/08/2026): o site institucional só tem os ícones como SVG embutido no
+// próprio HTML da página, não como arquivo de imagem separado — e SVG não é confiável em e-mail
+// de qualquer forma. Em vez de ícone de marca de verdade, usa círculo dourado com a inicial da
+// rede (IG/FB/YT) — funciona em qualquer cliente de e-mail, sem risco de imagem quebrada. Trocar
+// por ícone de verdade se Luiz fornecer os arquivos.
 
 const NAVY = "#141e33";
 const DOURADO = "#c8a55d";
 
-const LOGO_URL = "https://arrudacred.com.br/wp-content/uploads/2024/07/logo_arrudacred_horizontal-1-scaled.webp";
+// Convertido de .webp (único formato disponível no site) pra .png e hospedado no Storage do
+// próprio projeto — Outlook desktop não renderiza .webp de forma confiável em e-mail.
+const LOGO_URL =
+  "https://mzvaqjhalynaceecnayt.supabase.co/storage/v1/object/public/midia-fluxo/email/logo-arrudacred-horizontal.png";
+
+function iniciaisRede(rede: "instagram" | "facebook" | "youtube"): string {
+  return { instagram: "IG", facebook: "FB", youtube: "YT" }[rede];
+}
 
 export type EmailBoasVindasProps = {
   nome: string;
   linkWhatsapp: string;
   linkBlog: string;
+  capaBlog: string;
+  linkVideo: string;
+  capaVideo: string;
   linkDescadastro: string;
+  redesSociais: { site: string; instagram: string; facebook: string; youtube: string };
 };
 
-export function EmailBoasVindas({ nome, linkWhatsapp, linkBlog, linkDescadastro }: EmailBoasVindasProps) {
+export function EmailBoasVindas({
+  nome,
+  linkWhatsapp,
+  linkBlog,
+  capaBlog,
+  linkVideo,
+  capaVideo,
+  linkDescadastro,
+  redesSociais,
+}: EmailBoasVindasProps) {
   return (
     <Html lang="pt-BR">
       <Head />
@@ -33,21 +59,20 @@ export function EmailBoasVindas({ nome, linkWhatsapp, linkBlog, linkDescadastro 
               Olá, {nome}! 😊
             </Text>
             <Text style={{ fontSize: 15, lineHeight: "24px", color: "#333333", margin: "0 0 16px" }}>
-              Sou a Malala, da ArrudaCred. Conforme conversamos, separei rapidinho as informações
-              que podem te deixar mais tranquilo(a) antes de seguirmos:
+              Sou a Malala, da ArrudaCred, separei algumas informações da nossa empresa para você
+              ver com calma:
             </Text>
 
             <table role="presentation" width="100%" cellPadding={0} cellSpacing={0} style={{ margin: "0 0 20px" }}>
               <tbody>
                 {[
                   "Nota 9,5/10 no Reclame Aqui e 4,9/5 no Google",
-                  "Certificado RA1000 — selo de excelência do próprio Reclame Aqui",
                   "Mais de 5.000 clientes atendidos",
                   "Contrato formal de prestação de serviço",
-                  "Indicada ao Prêmio Reclame Aqui 2026 (categoria Recuperação de Crédito)",
+                  "Certificado RA1000 e indicada ao Prêmio Reclame Aqui 2026 (categoria Recuperação de Crédito)",
                 ].map((item) => (
                   <tr key={item}>
-                    <td style={{ fontSize: 14, lineHeight: "22px", color: "#333333", padding: "2px 0" }}>
+                    <td style={{ fontSize: 12, lineHeight: "19px", color: "#333333", padding: "2px 0" }}>
                       <span style={{ color: DOURADO, fontWeight: 700 }}>✓ </span>
                       {item}
                     </td>
@@ -56,6 +81,9 @@ export function EmailBoasVindas({ nome, linkWhatsapp, linkBlog, linkDescadastro 
               </tbody>
             </table>
 
+            <Link href={linkBlog} style={{ display: "block", margin: "0 0 8px" }}>
+              <Img src={capaBlog} alt="Post: ArrudaCred indicada ao Prêmio Reclame Aqui 2026" width={416} style={{ display: "block", borderRadius: 8 }} />
+            </Link>
             <Text style={{ fontSize: 15, lineHeight: "24px", color: "#333333", margin: "0 0 24px" }}>
               Se quiser ver tudo isso com mais detalhe, escrevi um post especial sobre a nossa
               reputação:{" "}
@@ -65,7 +93,18 @@ export function EmailBoasVindas({ nome, linkWhatsapp, linkBlog, linkDescadastro 
               .
             </Text>
 
-            <Section style={{ textAlign: "center", margin: "0 0 28px" }}>
+            <Link href={linkVideo} style={{ display: "block", margin: "0 0 8px" }}>
+              <Img src={capaVideo} alt="Vídeo de apresentação da ArrudaCred" width={416} style={{ display: "block", borderRadius: 8 }} />
+            </Link>
+            <Text style={{ fontSize: 15, lineHeight: "24px", color: "#333333", margin: "0 0 24px" }}>
+              👉{" "}
+              <Link href={linkVideo} style={{ color: NAVY, textDecoration: "underline" }}>
+                Assista a um vídeo curto de apresentação da ArrudaCred
+              </Link>
+              .
+            </Text>
+
+            <Section style={{ textAlign: "center", margin: "0 0 20px" }}>
               <Button
                 href={linkWhatsapp}
                 style={{
@@ -83,8 +122,53 @@ export function EmailBoasVindas({ nome, linkWhatsapp, linkBlog, linkDescadastro 
               </Button>
             </Section>
 
-            <Text style={{ fontSize: 14, lineHeight: "22px", color: "#666666", margin: "0 0 24px" }}>
+            <Text style={{ fontSize: 14, lineHeight: "22px", color: "#666666", margin: "0 0 20px" }}>
               Quando quiser continuar, é só me chamar de volta — sigo por aqui te ajudando.
+            </Text>
+
+            <Hr style={{ borderColor: "#e5e0d3", margin: "0 0 20px" }} />
+
+            <Text style={{ fontSize: 13, lineHeight: "20px", color: "#666666", margin: "0 0 12px" }}>
+              Quer ficar de olho em promoções, dicas financeiras e cupons de desconto? Acompanha a
+              gente:
+            </Text>
+            <table role="presentation" cellPadding={0} cellSpacing={0} style={{ margin: "0 0 8px" }}>
+              <tbody>
+                <tr>
+                  {(["instagram", "facebook", "youtube"] as const).map((rede) => (
+                    <td key={rede} style={{ padding: "0 8px 0 0" }}>
+                      <Link href={redesSociais[rede]}>
+                        <table role="presentation" cellPadding={0} cellSpacing={0}>
+                          <tbody>
+                            <tr>
+                              <td
+                                width={36}
+                                height={36}
+                                align="center"
+                                valign="middle"
+                                style={{
+                                  backgroundColor: DOURADO,
+                                  color: NAVY,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  borderRadius: 18,
+                                }}
+                              >
+                                {iniciaisRede(rede)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </Link>
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+            <Text style={{ fontSize: 13, lineHeight: "20px", margin: 0 }}>
+              <Link href={redesSociais.site} style={{ color: NAVY, textDecoration: "underline" }}>
+                arrudacred.com.br
+              </Link>
             </Text>
           </Section>
 
