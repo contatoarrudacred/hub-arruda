@@ -490,7 +490,7 @@ O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta —
 - ✅ **CRUD de FAQs e Objeções (15/08/2026):** telas simples (`/admin/faqs`, `/admin/objecoes`) — cards colapsáveis, mesmo padrão de confirmação de exclusão do editor de fluxo, já acendem no menu lateral
 - ✅ **Delay automático por tamanho de mensagem (15/08/2026):** novo modo `{tipo: "automatico"}` em `ConfigDelay` — o motor calcula o delay a partir do tamanho de cada mensagem (mais texto = pausa um pouco maior) com uma margem aleatória por cima, sempre com "digitando..." ativo. Objetivo duplo de Luiz: dar um respiro proporcional ao lead pensar, e nunca repetir o mesmo tempo em conversas diferentes (evita "assinatura" de robô) — sem simular literalmente velocidade de digitação humana (teto de 4s). Virou o padrão em todas as etapas existentes (`20260815110000_delay_automatico.sql`); parâmetros da fórmula ainda fixos no código, migram pra `configuracoes` quando a tela existir.
 - ✅ **Fundo do canvas do editor (15/08/2026):** trocado de cinza pra dourado clarinho (light `#F8F1E4`) / dourado bem escurecido (dark `#1f1912`) — reforça a identidade navy/dourado também dentro do canvas, mais contraste com os quadrinhos brancos/escuros.
-- ⬜ **Falta:** telas de CRUD simples pra preços por faixa e configurações — próxima peça
+- ✅ **CRUD de Preços por faixa, Configurações gerais e Agendas de Follow-up (15/08/2026):** telas `/admin/precos`, `/admin/configuracoes`, `/admin/agendas` — mesmo padrão de card colapsável + confirmação de exclusão. Agendas tem uma camada a mais (agenda → lista de tentativas/itens, cada uma com intervalo/canal/janela comercial/mensagem). Configurações usa um campo de valor em JSON livre (número, texto ou objeto) com aviso explícito de que mudar chave/formato usado em produção quebra cálculo. Item #9 do backlog fechado — menu lateral trocou os três de "em breve" pra links reais. **Pendente de ação manual de Luiz:** rodar a migration [`supabase/migrations/20260815120000_precos_config_agendas_rls.sql`](../supabase/migrations/20260815120000_precos_config_agendas_rls.sql) no SQL Editor do Supabase (RLS + auditoria pras 4 tabelas) — até lá as três telas carregam vazias (sem erro), mesmo padrão já visto com FAQs/Objeções.
 
 ### Decisões/correções registradas durante a construção (14/08/2026)
 - A saudação personalizada ("Oi [Nome], bom dia!") vive uma vez na abertura, não repetida por produto — corrigido no script, ver `SCRIPT_LIMPANOME_SERASA_SPC.md`
@@ -515,7 +515,7 @@ O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta —
 - [x] Detalhar módulo priorizado #1 (Comercial — Limpeza de Nome Serasa/SPC): script completo, FAQ, Kanban, MVP1 fechados
 - [x] Modelagem de dados do núcleo do MVP1: Pessoa/Papel, Comercial/Atendimento, camada multi-canal, RBAC (nível único ADMIN/MASTER), valores configuráveis — ver `MODELAGEM_DADOS_ARRUDACRED.md`
 - [x] Fechar a última pendência do produto e avançar pra construção → **em produção desde 13/08/2026, ver seção 10 "Progresso de Produção" acima**
-- [ ] Fase 2 (Painel Admin): CRUD de FAQs/preços/configurações/agendas de follow-up + auto-layout do editor visual
+- [x] Fase 2 (Painel Admin): CRUD de FAQs/preços/configurações/agendas de follow-up + auto-layout do editor visual
 
 ---
 

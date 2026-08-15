@@ -21,12 +21,12 @@ const GRUPO_CRM: ItemMenu[] = [
   { rotulo: "Fluxos", href: "/admin/fluxos" },
   { rotulo: "FAQs", href: "/admin/faqs" },
   { rotulo: "Objeções", href: "/admin/objecoes" },
-  { rotulo: "Agendas de Follow-up", emBreve: true },
+  { rotulo: "Agendas de Follow-up", href: "/admin/agendas" },
 ];
 
 const GRUPO_GERAL: ItemMenu[] = [
-  { rotulo: "Preços", emBreve: true },
-  { rotulo: "Configurações gerais", emBreve: true },
+  { rotulo: "Preços", href: "/admin/precos" },
+  { rotulo: "Configurações gerais", href: "/admin/configuracoes" },
 ];
 
 function ItemNav({ item, pathname }: { item: ItemMenu; pathname: string }) {

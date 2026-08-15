@@ -260,3 +260,257 @@ export async function excluirObjecao(id: string): Promise<void> {
   const { error } = await supabase.from("objecoes").delete().eq("id", id);
   if (error) throw new Error(`Falha ao excluir objeção: ${error.message}`);
 }
+
+export type FaixaPrecoAdmin = {
+  id: string;
+  produtoId: string;
+  faixaMin: number;
+  faixaMax: number | null;
+  precoCheio: number | null;
+  precoAvista: number | null;
+  parcelasBoletoQtd: number | null;
+  parcelasBoletoValor: number | null;
+  parcelasCartaoMax: number | null;
+  voucherAvista: number | null;
+  voucherParcelasQtd: number | null;
+  voucherParcelasValor: number | null;
+  ativo: boolean;
+};
+
+export async function listarFaixasPrecoAdmin(): Promise<FaixaPrecoAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("precos_por_faixa")
+    .select(
+      "id, produto_id, faixa_min, faixa_max, preco_cheio, preco_avista, parcelas_boleto_qtd, parcelas_boleto_valor, parcelas_cartao_max, voucher_avista, voucher_parcelas_qtd, voucher_parcelas_valor, ativo",
+    )
+    .order("faixa_min");
+
+  if (error) {
+    throw new Error(`Falha ao listar preços por faixa: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    produtoId: linha.produto_id,
+    faixaMin: Number(linha.faixa_min),
+    faixaMax: linha.faixa_max === null ? null : Number(linha.faixa_max),
+    precoCheio: linha.preco_cheio === null ? null : Number(linha.preco_cheio),
+    precoAvista: linha.preco_avista === null ? null : Number(linha.preco_avista),
+    parcelasBoletoQtd: linha.parcelas_boleto_qtd,
+    parcelasBoletoValor: linha.parcelas_boleto_valor === null ? null : Number(linha.parcelas_boleto_valor),
+    parcelasCartaoMax: linha.parcelas_cartao_max,
+    voucherAvista: linha.voucher_avista === null ? null : Number(linha.voucher_avista),
+    voucherParcelasQtd: linha.voucher_parcelas_qtd,
+    voucherParcelasValor: linha.voucher_parcelas_valor === null ? null : Number(linha.voucher_parcelas_valor),
+    ativo: linha.ativo,
+  }));
+}
+
+export type EntradaSalvarFaixaPreco = Omit<FaixaPrecoAdmin, "id"> & { id: string | null };
+
+export async function salvarFaixaPreco(entrada: EntradaSalvarFaixaPreco): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = {
+    produto_id: entrada.produtoId,
+    faixa_min: entrada.faixaMin,
+    faixa_max: entrada.faixaMax,
+    preco_cheio: entrada.precoCheio,
+    preco_avista: entrada.precoAvista,
+    parcelas_boleto_qtd: entrada.parcelasBoletoQtd,
+    parcelas_boleto_valor: entrada.parcelasBoletoValor,
+    parcelas_cartao_max: entrada.parcelasCartaoMax,
+    voucher_avista: entrada.voucherAvista,
+    voucher_parcelas_qtd: entrada.voucherParcelasQtd,
+    voucher_parcelas_valor: entrada.voucherParcelasValor,
+    ativo: entrada.ativo,
+  };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("precos_por_faixa").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar faixa de preço: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("precos_por_faixa").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar faixa de preço: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirFaixaPreco(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("precos_por_faixa").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir faixa de preço: ${error.message}`);
+}
+
+export type ConfiguracaoAdmin = {
+  id: string;
+  chave: string;
+  valor: unknown;
+  descricao: string;
+  produtoId: string | null;
+};
+
+export async function listarConfiguracoes(): Promise<ConfiguracaoAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("id, chave, valor, descricao, produto_id")
+    .order("chave");
+
+  if (error) {
+    throw new Error(`Falha ao listar configurações: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    chave: linha.chave,
+    valor: linha.valor,
+    descricao: linha.descricao,
+    produtoId: linha.produto_id,
+  }));
+}
+
+export type EntradaSalvarConfiguracao = {
+  id: string | null;
+  chave: string;
+  valor: unknown;
+  descricao: string;
+  produtoId: string | null;
+};
+
+export async function salvarConfiguracao(entrada: EntradaSalvarConfiguracao): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = {
+    chave: entrada.chave,
+    valor: entrada.valor,
+    descricao: entrada.descricao,
+    produto_id: entrada.produtoId,
+  };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("configuracoes").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar configuração: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("configuracoes").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar configuração: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirConfiguracao(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("configuracoes").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir configuração: ${error.message}`);
+}
+
+export type AgendaItemAdmin = {
+  id: string;
+  ordem: number;
+  intervaloValor: number;
+  intervaloUnidade: "minutos" | "horas" | "dias";
+  canal: "whatsapp" | "email";
+  respeitaJanelaComercial: boolean;
+  conteudo: string;
+};
+
+export type AgendaFollowupCompleta = {
+  id: string;
+  nome: string;
+  itens: AgendaItemAdmin[];
+};
+
+export async function listarAgendasCompletas(): Promise<AgendaFollowupCompleta[]> {
+  const supabase = await createClient();
+  const [agendasResp, itensResp] = await Promise.all([
+    supabase.from("agendas_followup").select("id, nome").order("nome"),
+    supabase
+      .from("agenda_itens")
+      .select(
+        "id, agenda_id, ordem, intervalo_valor, intervalo_unidade, canal, respeita_janela_comercial, conteudo",
+      )
+      .order("ordem"),
+  ]);
+
+  if (agendasResp.error) {
+    throw new Error(`Falha ao listar agendas de follow-up: ${agendasResp.error.message}`);
+  }
+  if (itensResp.error) {
+    throw new Error(`Falha ao listar itens de agenda: ${itensResp.error.message}`);
+  }
+
+  return (agendasResp.data ?? []).map((agenda) => ({
+    id: agenda.id,
+    nome: agenda.nome,
+    itens: (itensResp.data ?? [])
+      .filter((item) => item.agenda_id === agenda.id)
+      .map((item) => ({
+        id: item.id,
+        ordem: item.ordem,
+        intervaloValor: item.intervalo_valor,
+        intervaloUnidade: item.intervalo_unidade,
+        canal: item.canal,
+        respeitaJanelaComercial: item.respeita_janela_comercial,
+        conteudo: item.conteudo,
+      })),
+  }));
+}
+
+export async function salvarAgenda(id: string | null, nome: string): Promise<{ id: string }> {
+  const supabase = await createClient();
+  if (id) {
+    const { error } = await supabase.from("agendas_followup").update({ nome }).eq("id", id);
+    if (error) throw new Error(`Falha ao atualizar agenda: ${error.message}`);
+    return { id };
+  }
+  const { data, error } = await supabase.from("agendas_followup").insert({ nome }).select("id").single();
+  if (error) throw new Error(`Falha ao criar agenda: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirAgenda(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("agendas_followup").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir agenda: ${error.message}`);
+}
+
+export type EntradaSalvarAgendaItem = {
+  id: string | null;
+  agendaId: string;
+  ordem: number;
+  intervaloValor: number;
+  intervaloUnidade: "minutos" | "horas" | "dias";
+  canal: "whatsapp" | "email";
+  respeitaJanelaComercial: boolean;
+  conteudo: string;
+};
+
+export async function salvarAgendaItem(entrada: EntradaSalvarAgendaItem): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = {
+    agenda_id: entrada.agendaId,
+    ordem: entrada.ordem,
+    intervalo_valor: entrada.intervaloValor,
+    intervalo_unidade: entrada.intervaloUnidade,
+    canal: entrada.canal,
+    respeita_janela_comercial: entrada.respeitaJanelaComercial,
+    conteudo: entrada.conteudo,
+  };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("agenda_itens").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar item de agenda: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("agenda_itens").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar item de agenda: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirAgendaItem(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("agenda_itens").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir item de agenda: ${error.message}`);
+}
