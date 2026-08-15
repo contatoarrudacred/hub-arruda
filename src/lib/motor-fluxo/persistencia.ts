@@ -1,5 +1,7 @@
 import "server-only";
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
 import { substituirVariaveisTexto } from "./engine";
 import { ehUltimoItemDaAgenda, MOTIVO_PERDA_SEM_RESPOSTA } from "./motor-followup";
 import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
@@ -178,6 +180,24 @@ export async function registrarTurnoMalala(params: {
       .update({ nome_razao_social: dadosNovos.nome })
       .eq("id", pessoaId);
     if (error) throw new Error(`Falha ao sincronizar nome da pessoa: ${error.message}`);
+  }
+
+  if (dadosNovos.email) {
+    const { error } = await supabase.from("pessoas").update({ email: dadosNovos.email }).eq("id", pessoaId);
+    if (error) throw new Error(`Falha ao sincronizar e-mail da pessoa: ${error.message}`);
+
+    const { data: pessoa } = await supabase
+      .from("pessoas")
+      .select("nome_razao_social")
+      .eq("id", pessoaId)
+      .single();
+    // after() (Next.js) agenda o envio pra depois da resposta ser entregue — um e-mail de
+    // boas-vindas lento (ou fora do ar) não pode atrasar a resposta da Malala no WhatsApp. Sem
+    // isso, um `await` bloquearia o turno inteiro; um `void` simples arriscaria a função
+    // serverless ser encerrada antes do envio terminar.
+    const emailCapturado = dadosNovos.email;
+    const nomeConhecido = pessoa?.nome_razao_social ?? "";
+    after(() => enviarEmailBoasVindasSeNecessario(pessoaId, nomeConhecido, emailCapturado));
   }
 
   if (resultado.mensagens.length > 0) {
