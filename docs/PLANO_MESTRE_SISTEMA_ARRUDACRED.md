@@ -481,12 +481,13 @@ O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta —
 - ✅ Login (Supabase Auth) + guard de `/admin`
 - ✅ Editor visual do fluxo (React Flow): caixinhas editáveis em modal com abas (Mensagens/Fluxo/Avançado), prévia ao vivo, marcadores de Início/Fim/Perdida/referência externa, arestas mescladas por destino
 - ✅ Auto-layout hierárquico do canvas (dagre) + arestas ortogonais (90°) — botão "Reorganizar"
-- ✅ Upload de mídia (imagem/áudio/vídeo/documento) direto no editor — sobe pro Supabase Storage (bucket `midia-fluxo`), preenche a URL pública sozinho. **Pendente:** rodar a migration `20260814140000_storage_midia_fluxo.sql` no SQL Editor do Supabase pra criar o bucket em produção (só existe localmente até isso rodar)
-- ✅ Barra superior do editor: Voltar (lista de fluxos), Atualizar (recarrega), Ver tudo (fitView)
+- ✅ Upload de mídia (imagem/áudio/vídeo/documento) direto no editor — sobe pro Supabase Storage (bucket `midia-fluxo`), preenche a URL pública sozinho
+- ✅ Barra superior do editor: Preview (abre `/simulador` em nova aba), Atualizar (recarrega), Ver tudo (fitView)
 - ✅ Quadrinho mostra thumbnail de imagem de verdade e ícone grande pra áudio/vídeo/documento
 - ✅ Reordenar mensagens dentro de uma etapa (setas ▲▼ no modal)
 - ✅ Exclusão de etapa corrigida — o `window.confirm()` nativo era bloqueado silenciosamente pelo navegador (retornava "cancelado" sem mostrar nada), por isso parecia não funcionar; trocado por modal de confirmação próprio
-- ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, banco de objeções (tabela `objecoes`, nova — ver seção 10.2), preços por faixa, configurações, e gerenciar as agendas de follow-up em si — essa é a próxima peça
+- ✅ **Identidade visual + menu lateral (14/08/2026):** barra lateral fixa navy (`#141e33`)/dourado (`#c8a55d`) em todo `/admin/*` (`src/app/admin/(shell)/sidebar.tsx`), cores extraídas do site real da ArrudaCred. Hierarquia combinada com Luiz: "Configurações" é o único item de topo por enquanto (CRM/Kanban entra quando existir), sub-grupo "CRM" com Fluxos + FAQs/Objeções/Agendas de Follow-up ("em breve"), grupo "Geral" com Preços (inclui faixas de dívida) e Configurações gerais — Preços fica fora do sub-grupo CRM porque também vai alimentar a futura Vendas de Balcão. Simulador deixou de ser item de menu e virou botão "Preview" dentro do editor de fluxo. Login (`/admin/login`) fica fora do route group da sidebar de propósito, não herda o layout.
+- ⬜ **Falta:** telas de CRUD simples (tabela, não canvas) pra FAQs, banco de objeções (tabela `objecoes`), preços por faixa, configurações — essa é a próxima peça, cada uma acende o item correspondente no menu conforme for construída
 
 ### Decisões/correções registradas durante a construção (14/08/2026)
 - A saudação personalizada ("Oi [Nome], bom dia!") vive uma vez na abertura, não repetida por produto — corrigido no script, ver `SCRIPT_LIMPANOME_SERASA_SPC.md`
