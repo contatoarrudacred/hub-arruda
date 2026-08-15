@@ -13,13 +13,19 @@ import { EmailBoasVindas } from "./templates/boas-vindas";
 
 const LINK_BLOG_REPUTACAO = "https://arrudacred.com.br/empresa-confiavel-limpar-nome-arrudacred-reclame-aqui/";
 const TITULO_BLOG_REPUTACAO = "ArrudaCred é indicada ao Prêmio Reclame Aqui 2026";
-const CAPA_BLOG_REPUTACAO = "https://arrudacred.com.br/wp-content/uploads/2026/08/capa-arrudacred-premioRA-2026.png";
 
-// Vídeo de apresentação institucional passado por Luiz (15/08/2026). A miniatura vem direto do
-// YouTube (URL previsível a partir do id do vídeo, sem precisar de API/chave).
 const ID_VIDEO_APRESENTACAO = "RZVQQIBHr0Y";
 const LINK_VIDEO_APRESENTACAO = `https://youtu.be/${ID_VIDEO_APRESENTACAO}`;
-const CAPA_VIDEO_APRESENTACAO = `https://img.youtube.com/vi/${ID_VIDEO_APRESENTACAO}/hqdefault.jpg`;
+
+// Miniaturas do vídeo (YouTube) e do post (capa oficial do site) recortadas pro mesmo tamanho
+// (380x220) e hospedadas no Storage do projeto — as fontes originais têm proporções diferentes
+// (vídeo 4:3, post 3:2), o que deixava as duas miniaturas com alturas visivelmente diferentes
+// lado a lado (Luiz, 15/08/2026). Recortar preto-no-branco de antemão garante altura idêntica em
+// qualquer cliente de e-mail, sem depender de CSS (object-fit não é confiável em e-mail).
+const CAPA_VIDEO_APRESENTACAO =
+  "https://mzvaqjhalynaceecnayt.supabase.co/storage/v1/object/public/midia-fluxo/email/thumbs/video-apresentacao.png";
+const CAPA_BLOG_REPUTACAO =
+  "https://mzvaqjhalynaceecnayt.supabase.co/storage/v1/object/public/midia-fluxo/email/thumbs/post-premio-2026.png";
 
 function montarLinkWhatsapp(numero: string): string {
   const texto = "Olá! Vim do e-mail e quero continuar minha conversa sobre limpar meu nome 😊";
