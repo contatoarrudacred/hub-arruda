@@ -26,7 +26,7 @@ type Rascunho = {
   dadoSenao: string;
   kanbanSubetapa: string;
   digitando: boolean;
-  delayTipo: "nenhum" | "fixo" | "aleatorio";
+  delayTipo: "nenhum" | "fixo" | "aleatorio" | "automatico";
   delaySegundos: number;
   delayMin: number;
   delayMax: number;
@@ -60,7 +60,7 @@ function paraRascunho(
     dadoSenao: c?.proximo_por_dado?.senao ?? "",
     kanbanSubetapa: c?.kanban_subetapa ?? subetapaSugerida ?? KANBAN_SUBETAPAS[0].slug,
     digitando: c?.digitando ?? true,
-    delayTipo: c?.delay?.tipo ?? "nenhum",
+    delayTipo: c?.delay?.tipo ?? "automatico",
     delaySegundos: c?.delay?.tipo === "fixo" ? c.delay.segundos : 2,
     delayMin: c?.delay?.tipo === "aleatorio" ? c.delay.min_segundos : 1,
     delayMax: c?.delay?.tipo === "aleatorio" ? c.delay.max_segundos : 3,
@@ -84,7 +84,9 @@ function paraConteudo(r: Rascunho): ConteudoEtapa {
         ? { tipo: "fixo", segundos: r.delaySegundos }
         : r.delayTipo === "aleatorio"
           ? { tipo: "aleatorio", min_segundos: r.delayMin, max_segundos: r.delayMax }
-          : { tipo: "nenhum" },
+          : r.delayTipo === "automatico"
+            ? { tipo: "automatico" }
+            : { tipo: "nenhum" },
   };
 
   if (r.aguardaResposta && r.tipoResposta) {
@@ -652,6 +654,7 @@ export function EditorEtapaModal({
                     value={r.delayTipo}
                     onChange={(e) => atualizar("delayTipo", e.target.value as Rascunho["delayTipo"])}
                   >
+                    <option value="automatico">Automático (pelo tamanho da mensagem)</option>
                     <option value="nenhum">Sem delay</option>
                     <option value="fixo">Delay fixo</option>
                     <option value="aleatorio">Sorteio entre X e Y</option>
@@ -687,6 +690,13 @@ export function EditorEtapaModal({
                     </>
                   )}
                 </div>
+                {r.delayTipo === "automatico" && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Calcula sozinho a partir do tamanho de cada mensagem — dá um respiro maior pra
+                    mensagem mais longa e sorteia uma margem por cima, pra nunca repetir o mesmo
+                    tempo em conversas diferentes.
+                  </p>
+                )}
               </div>
 
               {r.aguardaResposta && (

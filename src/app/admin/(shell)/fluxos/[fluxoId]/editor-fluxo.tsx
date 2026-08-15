@@ -239,7 +239,10 @@ function EditorFluxoInterno({
   const ultimaEtapa = etapas[etapas.length - 1];
 
   return (
-    <div className="relative h-full w-full bg-zinc-100 dark:bg-zinc-950">
+    // Dourado clarinho (light) / dourado bem escurecido (dark) em vez do cinza padrão — pedido de
+    // Luiz (15/08/2026), pra gerar contraste com os quadrinhos brancos/escuros e reforçar a
+    // identidade navy/dourado também dentro do canvas, não só na sidebar.
+    <div className="relative h-full w-full bg-[#F8F1E4] dark:bg-[#1f1912]">
       <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2">
         <button
           onClick={() => setSimuladorAberto(true)}

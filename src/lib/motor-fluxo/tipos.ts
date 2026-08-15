@@ -67,7 +67,15 @@ export type MensagemEtapa =
 export type ConfigDelay =
   | { tipo: "nenhum" }
   | { tipo: "fixo"; segundos: number }
-  | { tipo: "aleatorio"; min_segundos: number; max_segundos: number };
+  | { tipo: "aleatorio"; min_segundos: number; max_segundos: number }
+  /**
+   * Delay calculado a partir do tamanho de cada mensagem, não um valor fixo salvo aqui — o motor
+   * resolve isto em `{tipo: "aleatorio", ...}` na hora de montar cada mensagem (ver
+   * `calcularDelayAutomatico` em engine.ts). Virou o padrão em 15/08/2026 (Luiz): dá um respiro
+   * proporcional ao tamanho do texto pro lead pensar, e a margem aleatória evita tempo idêntico
+   * em conversas diferentes — sem simular velocidade real de digitação (ficaria devagar demais).
+   */
+  | { tipo: "automatico" };
 
 /**
  * Toggle por checkpoint pra cair em interpretação por IA quando o parser determinístico não

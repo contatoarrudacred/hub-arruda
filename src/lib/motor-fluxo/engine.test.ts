@@ -174,6 +174,41 @@ describe("abertura e triagem", () => {
   });
 });
 
+describe("delay automático (baseado no tamanho da mensagem, Luiz 15/08/2026)", () => {
+  it("digitando fica ativo e o delay resolvido é sempre do tipo aleatório, dentro dos limites", async () => {
+    const r = await responder("triagem_menu", {}, "1");
+    expect(r.mensagens.length).toBeGreaterThan(0);
+    for (const m of r.mensagens) {
+      expect(m.digitando).toBe(true);
+      expect(m.delay.tipo).toBe("aleatorio");
+      if (m.delay.tipo !== "aleatorio") continue;
+      expect(m.delay.min_segundos).toBeGreaterThanOrEqual(0.8);
+      expect(m.delay.max_segundos).toBeLessThanOrEqual(4.0);
+      expect(m.delay.min_segundos).toBeLessThanOrEqual(m.delay.max_segundos);
+    }
+  });
+
+  it("mensagem mais longa recebe uma faixa de delay maior que uma mensagem curta", async () => {
+    const curta = await responder("pergunta_nome", {}, "Maria"); // "Oi Maria, bom dia!..." — resposta curta
+    const longa = await responder("triagem_menu", {}, "1"); // bloco de qualificação do LN — bem mais longo
+
+    const delayCurta = curta.mensagens[0].delay;
+    const delayLonga = longa.mensagens[0].delay;
+    expect(delayCurta.tipo).toBe("aleatorio");
+    expect(delayLonga.tipo).toBe("aleatorio");
+    if (delayCurta.tipo !== "aleatorio" || delayLonga.tipo !== "aleatorio") return;
+    expect(delayLonga.min_segundos).toBeGreaterThan(delayCurta.min_segundos);
+  });
+
+  it("nunca repete exatamente a mesma faixa — sempre sorteia um intervalo, não um valor fixo", async () => {
+    const r = await responder("triagem_menu", {}, "1");
+    const delay = r.mensagens[0].delay;
+    expect(delay.tipo).toBe("aleatorio");
+    if (delay.tipo !== "aleatorio") return;
+    expect(delay.max_segundos).toBeGreaterThan(delay.min_segundos);
+  });
+});
+
 describe("Limpeza de Nome — passo 8, mensagem condicional por origem", () => {
   it("inclui a mensagem extra quando o lead menciona ter encontrado pela internet", async () => {
     const r = await responder("ln_passo8", {}, "Já contratei antes e achei vocês pelo Instagram");

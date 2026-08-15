@@ -23,7 +23,16 @@ import type {
 
 const KANBAN_SUBETAPA_PERDIDA = "perdida";
 const KANBAN_SUBETAPA_PADRAO = "novo_lead_triagem";
-const DELAY_PADRAO: ConfigDelay = { tipo: "nenhum" };
+// Padrão mudou de "nenhum" pra "automatico" em 15/08/2026 (Luiz) — ver calcularDelayAutomatico.
+const DELAY_PADRAO: ConfigDelay = { tipo: "automatico" };
+
+// Parâmetros do delay automático (Luiz, 15/08/2026) — ainda fixos no código; migram pra
+// `configuracoes` (editável pelo admin) quando a tela de Configurações gerais existir (item #9).
+const DELAY_AUTOMATICO_BASE_SEGUNDOS = 0.6;
+const DELAY_AUTOMATICO_POR_CARACTERE = 0.016;
+const DELAY_AUTOMATICO_MIN_SEGUNDOS = 0.8;
+const DELAY_AUTOMATICO_MAX_SEGUNDOS = 4.0;
+const DELAY_AUTOMATICO_JITTER_SEGUNDOS = 0.5;
 
 /** Extrai um texto legível de qualquer tipo de mensagem — usado só pra retomar a pergunta quando a resposta não é reconhecida (não faz sentido re-perguntar "aqui está uma imagem", precisa de um resumo). */
 function textoDeMensagem(msg: MensagemEtapa): string {
@@ -53,12 +62,47 @@ function mensagemRetomada(conteudo: ConteudoEtapa): MensagemEtapa {
   };
 }
 
-/** Empacota uma mensagem com o digitando/delay da etapa de onde ela veio (default: digitando=true, sem delay). */
+/**
+ * Resolve `{tipo: "automatico"}` num `{tipo: "aleatorio", ...}` concreto, calculado a partir do
+ * tamanho da mensagem — objetivo duplo de Luiz (15/08/2026): dar um respiro proporcional ao
+ * tamanho do texto pro lead pensar, e nunca repetir o mesmo tempo em conversas diferentes (a
+ * margem de jitter por cima garante isso mesmo entre mensagens de tamanho parecido) — sem simular
+ * literalmente velocidade de digitação humana, por isso o teto de `DELAY_AUTOMATICO_MAX_SEGUNDOS`.
+ */
+function calcularDelayAutomatico(mensagem: MensagemEtapa): ConfigDelay {
+  const comprimento = textoDeMensagem(mensagem).length;
+  const alvo = DELAY_AUTOMATICO_BASE_SEGUNDOS + comprimento * DELAY_AUTOMATICO_POR_CARACTERE;
+  // deixa espaço pro jitter não estourar o teto absoluto
+  const alvoComEspacoPraJitter = Math.min(
+    alvo,
+    DELAY_AUTOMATICO_MAX_SEGUNDOS - DELAY_AUTOMATICO_JITTER_SEGUNDOS,
+  );
+  const min = Math.max(
+    DELAY_AUTOMATICO_MIN_SEGUNDOS,
+    alvoComEspacoPraJitter - DELAY_AUTOMATICO_JITTER_SEGUNDOS,
+  );
+  const max = Math.min(
+    DELAY_AUTOMATICO_MAX_SEGUNDOS,
+    alvoComEspacoPraJitter + DELAY_AUTOMATICO_JITTER_SEGUNDOS,
+  );
+  return {
+    tipo: "aleatorio",
+    min_segundos: Math.round(min * 10) / 10,
+    max_segundos: Math.round(max * 10) / 10,
+  };
+}
+
+function resolverDelay(configDelay: ConfigDelay | undefined, mensagem: MensagemEtapa): ConfigDelay {
+  const efetivo = configDelay ?? DELAY_PADRAO;
+  return efetivo.tipo === "automatico" ? calcularDelayAutomatico(mensagem) : efetivo;
+}
+
+/** Empacota uma mensagem com o digitando/delay da etapa de onde ela veio (default: digitando=true, delay automático por tamanho). */
 function empacotar(mensagem: MensagemEtapa, conteudo: ConteudoEtapa): MensagemEnviada {
   return {
     mensagem,
     digitando: conteudo.digitando ?? true,
-    delay: conteudo.delay ?? DELAY_PADRAO,
+    delay: resolverDelay(conteudo.delay, mensagem),
   };
 }
 
