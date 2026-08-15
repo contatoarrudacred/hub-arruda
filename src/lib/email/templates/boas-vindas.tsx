@@ -44,11 +44,12 @@ export type EmailBoasVindasProps = {
   redesSociais: { site: string; instagram: string; facebook: string; youtube: string };
 };
 
-function IconeRede({ href, src, alt }: { href: string; src: string; alt: string }) {
+function IconeRede({ href, src, alt, rotulo }: { href: string; src: string; alt: string; rotulo: string }) {
   return (
-    <td style={{ padding: "0 8px 0 0" }}>
-      <Link href={href}>
-        <Img src={src} alt={alt} width={40} height={40} style={{ display: "block" }} />
+    <td style={{ padding: "0 10px", textAlign: "center" }}>
+      <Link href={href} style={{ display: "block" }}>
+        <Img src={src} alt={alt} width={40} height={40} style={{ display: "block", margin: "0 auto 6px" }} />
+        <span style={{ fontSize: 11, color: NAVY }}>{rotulo}</span>
       </Link>
     </td>
   );
@@ -112,7 +113,7 @@ export function EmailBoasVindas({
                     <Text style={{ fontSize: 12, lineHeight: "17px", color: "#333333", margin: 0 }}>
                       👉{" "}
                       <Link href={linkVideo} style={{ color: NAVY, textDecoration: "underline" }}>
-                        Vídeo de apresentação da ArrudaCred
+                        Assista o vídeo de apresentação da ArrudaCred
                       </Link>
                     </Text>
                   </td>
@@ -124,7 +125,10 @@ export function EmailBoasVindas({
                       <Img src={capaBlog} alt={tituloBlog} width={190} style={{ display: "block", width: "100%", borderRadius: 8 }} />
                     </Link>
                     <Text style={{ fontSize: 12, lineHeight: "17px", color: "#333333", margin: 0 }}>
-                      👉 <Link href={linkBlog} style={{ color: NAVY, textDecoration: "underline" }}>{tituloBlog}</Link>
+                      👉 Leia o post:{" "}
+                      <Link href={linkBlog} style={{ color: NAVY, textDecoration: "underline" }}>
+                        &quot;{tituloBlog}&quot;
+                      </Link>
                     </Text>
                   </td>
                 </tr>
@@ -149,24 +153,20 @@ export function EmailBoasVindas({
               </Button>
             </Section>
 
-            <Text style={{ fontSize: 14, lineHeight: "22px", color: "#666666", margin: "0 0 20px" }}>
-              Quando quiser continuar, é só me chamar de volta — sigo por aqui te ajudando.
-            </Text>
-
             <Hr style={{ borderColor: "#e5e0d3", margin: "0 0 20px" }} />
 
-            <Text style={{ fontSize: 13, lineHeight: "20px", color: "#666666", margin: "0 0 12px" }}>
+            <Text style={{ fontSize: 13, lineHeight: "20px", color: "#666666", margin: "0 0 12px", textAlign: "center" }}>
               Quer ficar de olho em promoções, dicas financeiras e cupons de desconto? Acompanha a
               gente:
             </Text>
-            <table role="presentation" cellPadding={0} cellSpacing={0}>
+            <table role="presentation" cellPadding={0} cellSpacing={0} align="center" style={{ margin: "0 auto" }}>
               <tbody>
                 <tr>
-                  <IconeRede href={redesSociais.site} src={ICONES.site} alt="Site da ArrudaCred" />
-                  <IconeRede href={linkWhatsapp} src={ICONES.whatsapp} alt="WhatsApp" />
-                  <IconeRede href={redesSociais.instagram} src={ICONES.instagram} alt="Instagram" />
-                  <IconeRede href={redesSociais.facebook} src={ICONES.facebook} alt="Facebook" />
-                  <IconeRede href={redesSociais.youtube} src={ICONES.youtube} alt="YouTube" />
+                  <IconeRede href={redesSociais.site} src={ICONES.site} alt="Site da ArrudaCred" rotulo="Site" />
+                  <IconeRede href={linkWhatsapp} src={ICONES.whatsapp} alt="WhatsApp" rotulo="Whatsapp" />
+                  <IconeRede href={redesSociais.instagram} src={ICONES.instagram} alt="Instagram" rotulo="Instagram" />
+                  <IconeRede href={redesSociais.facebook} src={ICONES.facebook} alt="Facebook" rotulo="Facebook" />
+                  <IconeRede href={redesSociais.youtube} src={ICONES.youtube} alt="YouTube" rotulo="Youtube" />
                 </tr>
               </tbody>
             </table>
@@ -174,9 +174,17 @@ export function EmailBoasVindas({
 
           <Hr style={{ borderColor: "#e5e0d3", margin: 0 }} />
 
-          <Section style={{ padding: "20px 32px", backgroundColor: "#faf8f3" }}>
-            <Text style={{ fontSize: 11, lineHeight: "18px", color: "#999999", margin: "0 0 8px" }}>
-              L.H. DE ARRUDA D. DO VALLE SERVICOS LTDA (ArrudaCred) — CNPJ 40.342.851/0001-37
+          <Section style={{ padding: "20px 32px", backgroundColor: "#faf8f3", textAlign: "center" }}>
+            <Text style={{ fontSize: 11, lineHeight: "18px", color: "#999999", margin: "0 0 4px" }}>
+              <Link href={redesSociais.site} style={{ color: "#999999", textDecoration: "underline" }}>
+                www.arrudacred.com.br
+              </Link>
+            </Text>
+            <Text style={{ fontSize: 11, lineHeight: "18px", color: "#999999", margin: "0 0 4px" }}>
+              L.H. DE ARRUDA D. DO VALLE SERVICOS LTDA
+            </Text>
+            <Text style={{ fontSize: 11, lineHeight: "18px", color: "#999999", margin: "0 0 20px" }}>
+              CNPJ: 40.342.851/0001-37
             </Text>
             <Text style={{ fontSize: 11, lineHeight: "18px", color: "#999999", margin: 0 }}>
               Não quer mais receber nossos e-mails?{" "}
