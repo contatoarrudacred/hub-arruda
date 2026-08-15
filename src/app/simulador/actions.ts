@@ -32,6 +32,7 @@ export type EstadoSimulador = {
   dados: DadosConversa;
   conversaId: string | null;
   oportunidadeId: string | null;
+  pessoaId: string | null;
 };
 
 export type PassoSimulador = {
@@ -72,9 +73,9 @@ export async function iniciarSimulacaoComMensagem(primeiraMensagemLead: string):
     { saudacao: saudacaoPorHorario() },
   );
 
-  const { conversaId, oportunidadeId } = await criarConversaSimulador(dadosIniciais.nome ?? null);
+  const { conversaId, oportunidadeId, pessoaId } = await criarConversaSimulador(dadosIniciais.nome ?? null);
   await registrarMensagemLead(conversaId, primeiraMensagemLead);
-  await registrarTurnoMalala({ conversaId, oportunidadeId, resultado });
+  await registrarTurnoMalala({ conversaId, oportunidadeId, pessoaId, dadosNovos: dadosIniciais, resultado });
 
   return {
     mensagens: resultado.mensagens,
@@ -83,6 +84,7 @@ export async function iniciarSimulacaoComMensagem(primeiraMensagemLead: string):
       dados: dadosIniciais,
       conversaId,
       oportunidadeId,
+      pessoaId,
     },
     encerrado: resultado.etapaFinal === null,
     naoReconhecido: false,
@@ -93,7 +95,7 @@ export async function enviarResposta(
   estado: EstadoSimulador,
   respostaLead: string,
 ): Promise<PassoSimulador> {
-  if (!estado.etapaAtualCodigo || !estado.conversaId || !estado.oportunidadeId) {
+  if (!estado.etapaAtualCodigo || !estado.conversaId || !estado.oportunidadeId || !estado.pessoaId) {
     return { mensagens: [], estado, encerrado: true, naoReconhecido: false };
   }
 
@@ -116,6 +118,8 @@ export async function enviarResposta(
   await registrarTurnoMalala({
     conversaId: estado.conversaId,
     oportunidadeId: estado.oportunidadeId,
+    pessoaId: estado.pessoaId,
+    dadosNovos: resultado.dadosNovos,
     resultado,
   });
 
@@ -125,6 +129,7 @@ export async function enviarResposta(
       etapaAtualCodigo: resultado.etapaFinal?.conteudo.codigo ?? null,
       conversaId: estado.conversaId,
       oportunidadeId: estado.oportunidadeId,
+      pessoaId: estado.pessoaId,
       dados: { ...estado.dados, ...resultado.dadosNovos },
     },
     encerrado: resultado.etapaFinal === null,

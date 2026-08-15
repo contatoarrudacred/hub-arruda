@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularProximoDisparo, dentroJanelaComercial, offsetEmMs } from "./motor-followup";
+import { calcularProximoDisparo, dentroJanelaComercial, ehUltimoItemDaAgenda, offsetEmMs } from "./motor-followup";
 import type { ItemAgendaFollowupCarregado } from "./repositorio";
 
 function item(parcial: Partial<ItemAgendaFollowupCarregado>): ItemAgendaFollowupCarregado {
@@ -80,8 +80,30 @@ describe("calcularProximoDisparo", () => {
     expect(calcularProximoDisparo(itens, 1, origem, agora)?.id).toBe("i2");
   });
 
-  it("ignora itens de e-mail — não retorna o item 8 mesmo com todo o resto disparado", () => {
+  it("considera itens de e-mail também — retorna o item 8 quando o prazo dele vence (30 dias desde a origem)", () => {
+    const agora = new Date(origem.getTime() + 31 * 86_400_000);
+    expect(calcularProximoDisparo(itens, 2, origem, agora)?.id).toBe("i8");
+  });
+
+  it("nada mais pendente depois do último item disparado → null", () => {
     const agora = new Date(origem.getTime() + 60 * 86_400_000);
-    expect(calcularProximoDisparo(itens, 2, origem, agora)).toBeNull();
+    expect(calcularProximoDisparo(itens, 8, origem, agora)).toBeNull();
+  });
+});
+
+describe("ehUltimoItemDaAgenda", () => {
+  const itens = [
+    item({ id: "i1", ordem: 1 }),
+    item({ id: "i2", ordem: 2 }),
+    item({ id: "i8", ordem: 8, canal: "email" }),
+  ];
+
+  it("identifica o item de maior ordem como o último", () => {
+    expect(ehUltimoItemDaAgenda(itens, itens[2])).toBe(true);
+  });
+
+  it("itens que não são o de maior ordem não são o último", () => {
+    expect(ehUltimoItemDaAgenda(itens, itens[0])).toBe(false);
+    expect(ehUltimoItemDaAgenda(itens, itens[1])).toBe(false);
   });
 });

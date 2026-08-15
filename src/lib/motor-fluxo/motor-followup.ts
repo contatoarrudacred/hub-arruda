@@ -55,11 +55,11 @@ export function podeDispararAgora(item: ItemAgendaFollowupCarregado, agora: Date
 
 /**
  * Decide qual item da agenda (se algum) deveria disparar agora, dado o que já foi disparado
- * neste ciclo de espera. Só considera itens de WhatsApp — itens de e-mail (nutrição pós-perda,
- * ordem 8-10 na agenda Padrão) ficam fora do escopo deste motor por ora: não existe canal de
- * e-mail conectado, e a "fase de nutrição pós-perda" ainda precisa de desenho próprio
- * (SCRIPT_LIMPANOME_SERASA_SPC.md: "'Perdida' não é 100% terminal... precisa de suporte no
- * sistema" — suporte esse que ainda não existe).
+ * neste ciclo de espera. Considera a régua inteira, WhatsApp e e-mail — Luiz confirmou
+ * (15/08/2026) que o rastreio continua até o fim de verdade, mesmo depois da oportunidade virar
+ * Perdida (item de encerramento): a agenda Padrão segue com 3 tentativas de nutrição por e-mail
+ * (30/60/90 dias) depois disso. Quem manda cada tipo (grava em `mensagens` vs. `followup_emails`)
+ * é responsabilidade de quem chama (persistencia.ts), não desta função.
  *
  * Retorna null quando não há nada pendente, ou quando o próximo item pendente ainda não venceu.
  * Não verifica janela comercial — isso é responsabilidade de quem chama (podeDispararAgora),
@@ -72,7 +72,7 @@ export function calcularProximoDisparo(
   agora: Date,
 ): ItemAgendaFollowupCarregado | null {
   const proximoPendente = itens
-    .filter((item) => item.canal === "whatsapp" && item.ordem > proximoItemAgenda)
+    .filter((item) => item.ordem > proximoItemAgenda)
     .sort((a, b) => a.ordem - b.ordem)[0];
 
   if (!proximoPendente) return null;
@@ -81,6 +81,12 @@ export function calcularProximoDisparo(
     aguardandoDesde.getTime() + offsetEmMs(proximoPendente.intervaloValor, proximoPendente.intervaloUnidade);
 
   return agora.getTime() >= disparoPrevistoEm ? proximoPendente : null;
+}
+
+/** Último item da agenda (maior ordem) — quando ele dispara, a cadência de follow-up termina de vez (relógio para, conversa fecha). Diferente de `encerraAtendimento`, que é sobre marcar a oportunidade como Perdida (acontece antes, no meio da régua). */
+export function ehUltimoItemDaAgenda(itens: ItemAgendaFollowupCarregado[], item: ItemAgendaFollowupCarregado): boolean {
+  const maiorOrdem = Math.max(...itens.map((i) => i.ordem));
+  return item.ordem === maiorOrdem;
 }
 
 export const MOTIVO_PERDA_SEM_RESPOSTA = "LEAD PAROU DE RESPONDER";

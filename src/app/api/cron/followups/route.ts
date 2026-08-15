@@ -1,13 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { aplicarEfeitoNegocio } from "@/lib/motor-fluxo/persistencia";
-import { calcularProximoDisparo, MOTIVO_PERDA_SEM_RESPOSTA, podeDispararAgora } from "@/lib/motor-fluxo/motor-followup";
+import { dispararItemFollowup } from "@/lib/motor-fluxo/persistencia";
+import { calcularProximoDisparo, podeDispararAgora } from "@/lib/motor-fluxo/motor-followup";
 import { carregarItensAgenda, type ItemAgendaFollowupCarregado } from "@/lib/motor-fluxo/repositorio";
 
 // Cron de disparo de follow-up (Fase 6) — chamado periodicamente pelo Vercel Cron (ver
 // vercel.json). Varre conversas "aguardando resposta" e dispara o próximo item da agenda que já
-// venceu, respeitando a janela comercial. Não entrega de verdade via WhatsApp ainda (Zapster não
-// está conectado, Fase 7) — só grava a mensagem no histórico da conversa, exatamente como o
-// simulador já faz (persistencia.ts), pronto pra plugar o envio real depois.
+// venceu, respeitando a janela comercial — considera a régua inteira, incluindo os itens de
+// e-mail depois da Perdida (Luiz, 15/08/2026). Ainda não entrega de verdade (nem WhatsApp — Zapster
+// não conectado, Fase 7 —, nem e-mail — Resend não conectado ainda): só registra, via
+// dispararItemFollowup (persistencia.ts), pronto pra plugar o envio real de cada canal depois.
 //
 // Protegido por CRON_SECRET: o Vercel manda esse header automaticamente quando a variável de
 // ambiente CRON_SECRET está configurada no projeto — ver aviso no PLANO_MESTRE sobre configurar
@@ -71,26 +72,7 @@ export async function GET(request: Request) {
         continue; // fica pra uma próxima execução do cron, dentro da janela comercial
       }
 
-      const { error: erroMensagem } = await supabase.from("mensagens").insert({
-        conversa_id: conversa.id,
-        remetente: "malala",
-        conteudo: proximoItem.conteudo,
-      });
-      if (erroMensagem) throw new Error(erroMensagem.message);
-
-      const { error: erroConversa } = await supabase
-        .from("conversas")
-        .update({ proximo_item_agenda: proximoItem.ordem })
-        .eq("id", conversa.id);
-      if (erroConversa) throw new Error(erroConversa.message);
-
-      if (proximoItem.encerraAtendimento) {
-        await aplicarEfeitoNegocio(conversa.id, conversa.oportunidade_id, {
-          tipo: "marcar_perdida",
-          motivo: MOTIVO_PERDA_SEM_RESPOSTA,
-        });
-      }
-
+      await dispararItemFollowup(conversa.id, conversa.oportunidade_id, proximoItem, itens);
       disparados += 1;
     } catch (e) {
       erros.push(`conversa ${conversa.id}: ${e instanceof Error ? e.message : String(e)}`);

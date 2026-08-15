@@ -1,6 +1,8 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { carregarIdAgendaPadrao } from "./repositorio";
+import { substituirVariaveisTexto } from "./engine";
+import { ehUltimoItemDaAgenda, MOTIVO_PERDA_SEM_RESPOSTA } from "./motor-followup";
+import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
 import type { EfeitoNegocio, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
 
 // Persistência de conversa "de verdade" — grava em pessoas/oportunidades/conversas/mensagens.
@@ -50,7 +52,7 @@ function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; mid
 /** Cria a tripla pessoa/oportunidade/conversa no início de uma conversa simulada. `nomeConhecido` vem da extração determinística da primeira mensagem, quando o lead já se apresentou de cara. */
 export async function criarConversaSimulador(
   nomeConhecido: string | null,
-): Promise<{ conversaId: string; oportunidadeId: string }> {
+): Promise<{ conversaId: string; oportunidadeId: string; pessoaId: string }> {
   const supabase = createAdminClient();
 
   const { data: produto, error: erroProduto } = await supabase
@@ -89,7 +91,7 @@ export async function criarConversaSimulador(
     throw new Error(`Falha ao criar conversa: ${erroConversa?.message}`);
   }
 
-  return { conversaId: conversa.id, oportunidadeId: oportunidade.id };
+  return { conversaId: conversa.id, oportunidadeId: oportunidade.id, pessoaId: pessoa.id };
 }
 
 /** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. */
@@ -159,14 +161,24 @@ export async function aplicarEfeitoNegocio(
   }
 }
 
-/** Grava as mensagens que a Malala mandou neste turno, aplica os efeitos de negócio que o motor decidiu, e rearma (ou desarma) a cadência de follow-up conforme a etapa em que a conversa parou. */
+/** Grava as mensagens que a Malala mandou neste turno, aplica os efeitos de negócio que o motor decidiu, sincroniza o nome capturado com `pessoas` (pro follow-up conseguir montar `[Primeiro_Nome]` depois), e rearma (ou desarma) a cadência de follow-up conforme a etapa em que a conversa parou. */
 export async function registrarTurnoMalala(params: {
   conversaId: string;
   oportunidadeId: string;
+  pessoaId: string;
+  dadosNovos: Record<string, string>;
   resultado: Pick<ResultadoAvanco, "mensagens" | "etapaFinal" | "efeitos">;
 }): Promise<void> {
-  const { conversaId, oportunidadeId, resultado } = params;
+  const { conversaId, oportunidadeId, pessoaId, dadosNovos, resultado } = params;
   const supabase = createAdminClient();
+
+  if (dadosNovos.nome) {
+    const { error } = await supabase
+      .from("pessoas")
+      .update({ nome_razao_social: dadosNovos.nome })
+      .eq("id", pessoaId);
+    if (error) throw new Error(`Falha ao sincronizar nome da pessoa: ${error.message}`);
+  }
 
   if (resultado.mensagens.length > 0) {
     const linhas = resultado.mensagens.map((item: MensagemEnviada) => {
@@ -202,4 +214,69 @@ export async function registrarTurnoMalala(params: {
       .eq("id", conversaId);
     if (error) throw new Error(`Falha ao desarmar cadência de follow-up: ${error.message}`);
   }
+}
+
+/**
+ * Dispara um item da agenda de follow-up — usado tanto pelo cron (src/app/api/cron/followups)
+ * quanto pelo botão de teste do simulador (avançar manualmente, sem esperar o tempo real passar).
+ * WhatsApp grava em `mensagens` (mesmo histórico da conversa); e-mail grava em `followup_emails`
+ * (canal separado, não é conversa — Luiz, 15/08/2026). Marca a oportunidade como Perdida no item
+ * de encerramento (`encerraAtendimento`), e só finaliza a cadência de verdade (fecha a conversa,
+ * para o relógio) no ÚLTIMO item da agenda inteira — a régua continua depois da Perdida, com os
+ * itens de nutrição por e-mail, até realmente acabar.
+ */
+export async function dispararItemFollowup(
+  conversaId: string,
+  oportunidadeId: string,
+  item: ItemAgendaFollowupCarregado,
+  todosItensDaAgenda: ItemAgendaFollowupCarregado[],
+): Promise<string> {
+  const supabase = createAdminClient();
+
+  const { data: conversa } = await supabase
+    .from("conversas")
+    .select("pessoas(nome_razao_social, email)")
+    .eq("id", conversaId)
+    .single();
+  const pessoa = conversa?.pessoas as unknown as { nome_razao_social: string | null; email: string | null } | null;
+  const conteudo = substituirVariaveisTexto(item.conteudo, { nome: pessoa?.nome_razao_social ?? "" }, {});
+
+  if (item.canal === "whatsapp") {
+    const { error } = await supabase
+      .from("mensagens")
+      .insert({ conversa_id: conversaId, remetente: "malala", conteudo });
+    if (error) throw new Error(`Falha ao registrar mensagem de follow-up: ${error.message}`);
+  } else {
+    const { error } = await supabase.from("followup_emails").insert({
+      conversa_id: conversaId,
+      agenda_item_id: item.id,
+      destinatario_email: pessoa?.email ?? null,
+      descricao: conteudo,
+    });
+    if (error) throw new Error(`Falha ao registrar e-mail de follow-up: ${error.message}`);
+  }
+
+  const { error: erroProximo } = await supabase
+    .from("conversas")
+    .update({ proximo_item_agenda: item.ordem })
+    .eq("id", conversaId);
+  if (erroProximo) throw new Error(`Falha ao avançar cadência de follow-up: ${erroProximo.message}`);
+
+  if (item.encerraAtendimento) {
+    const { error } = await supabase
+      .from("oportunidades")
+      .update({ etapa_kanban: "perdida", motivo_perda: MOTIVO_PERDA_SEM_RESPOSTA })
+      .eq("id", oportunidadeId);
+    if (error) throw new Error(`Falha ao marcar oportunidade perdida: ${error.message}`);
+  }
+
+  if (ehUltimoItemDaAgenda(todosItensDaAgenda, item)) {
+    const { error } = await supabase
+      .from("conversas")
+      .update({ status: "encerrada", aguardando_resposta_desde: null })
+      .eq("id", conversaId);
+    if (error) throw new Error(`Falha ao finalizar cadência de follow-up: ${error.message}`);
+  }
+
+  return conteudo;
 }

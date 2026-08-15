@@ -4,14 +4,18 @@ import { BolhaMensagem } from "@/components/bolha-mensagem";
 import type { ConfigDelay, MensagemEnviada, MensagemEtapa } from "@/lib/motor-fluxo/tipos";
 import { useEffect, useRef, useState } from "react";
 import { enviarResposta, iniciarSimulacaoComMensagem, type EstadoSimulador } from "./actions";
+import { TesteFollowup } from "./teste-followup";
 
-type MensagemExibida = { autor: "malala" | "lead"; conteudo: MensagemEtapa };
+type MensagemExibida =
+  | { autor: "malala" | "lead"; conteudo: MensagemEtapa }
+  | { autor: "sistema"; texto: string };
 
 const ESTADO_INICIAL: EstadoSimulador = {
   etapaAtualCodigo: null,
   dados: {},
   conversaId: null,
   oportunidadeId: null,
+  pessoaId: null,
 };
 const DIGITANDO_MINIMO_MS = 500;
 
@@ -121,19 +125,25 @@ export function SimuladorChat({ aoFechar }: { aoFechar?: () => void } = {}) {
             sou Luiz e quero limpar meu nome&quot;) pra ver o que a Malala já reconhece de cara.
           </p>
         )}
-        {mensagens.map((m, i) => (
-          <div key={i} className={m.autor === "lead" ? "flex justify-end" : "flex justify-start"}>
-            <div
-              className={`max-w-md rounded-2xl px-4 py-2 text-sm ${
-                m.autor === "lead"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50"
-              }`}
-            >
-              <BolhaMensagem mensagem={m.conteudo} />
+        {mensagens.map((m, i) =>
+          m.autor === "sistema" ? (
+            <div key={i} className="text-center text-xs text-amber-700 dark:text-amber-500">
+              {m.texto}
             </div>
-          </div>
-        ))}
+          ) : (
+            <div key={i} className={m.autor === "lead" ? "flex justify-end" : "flex justify-start"}>
+              <div
+                className={`max-w-md rounded-2xl px-4 py-2 text-sm ${
+                  m.autor === "lead"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50"
+                }`}
+              >
+                <BolhaMensagem mensagem={m.conteudo} />
+              </div>
+            </div>
+          ),
+        )}
         {digitando && (
           <div className="flex justify-start">
             <div className="rounded-2xl bg-white px-4 py-2 text-sm text-zinc-400 shadow dark:bg-zinc-900">
@@ -148,6 +158,20 @@ export function SimuladorChat({ aoFechar }: { aoFechar?: () => void } = {}) {
         )}
         <div ref={fimDaLista} />
       </div>
+
+      <TesteFollowup
+        conversaId={estado.conversaId}
+        oportunidadeId={estado.oportunidadeId}
+        turno={mensagens.length}
+        desabilitado={ocupado}
+        onDisparoWhatsapp={(texto) =>
+          setMensagens((atual) => [...atual, { autor: "malala", conteudo: { tipo: "texto", texto } }])
+        }
+        onDisparoEmail={(descricao) =>
+          setMensagens((atual) => [...atual, { autor: "sistema", texto: `📧 E-mail simulado: ${descricao}` }])
+        }
+        onEncerrouAtendimento={() => setEncerrado(true)}
+      />
 
       <div className="flex gap-2 border-t border-zinc-200 p-4 dark:border-zinc-800">
         <input

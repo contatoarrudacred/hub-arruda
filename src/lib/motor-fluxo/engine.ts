@@ -106,8 +106,8 @@ function empacotar(mensagem: MensagemEtapa, conteudo: ConteudoEtapa): MensagemEn
   };
 }
 
-/** `[Primeiro_Nome]` vem de `dados.nome` (regra de negócio fixa); os demais placeholders (ex.: `[saudacao]`) vêm de `variaveisGlobais`, calculados por quem chama o motor (ex.: hora do dia) — mantém o motor determinístico/testável. */
-function substituirVariaveisTexto(
+/** `[Primeiro_Nome]` vem de `dados.nome` (regra de negócio fixa); os demais placeholders (ex.: `[saudacao]`) vêm de `variaveisGlobais`, calculados por quem chama o motor (ex.: hora do dia) — mantém o motor determinístico/testável. Exportada porque o motor de disparo de follow-up (persistencia.ts) reaproveita — o conteúdo dos itens da agenda usa o mesmo placeholder `[Primeiro_Nome]`. */
+export function substituirVariaveisTexto(
   texto: string,
   dados: DadosConversa,
   variaveisGlobais: Record<string, string>,
