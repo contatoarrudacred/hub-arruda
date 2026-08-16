@@ -49,6 +49,21 @@ function gerarCodigo(): string {
     return bin2hex(random_bytes(4)); // 8 caracteres, ex.: "a1b2c3d4"
 }
 
+// Reforço de segurança (16/08/2026): não grava clique de robô/crawler conhecido (inclui os que
+// geram preview de link — WhatsApp, Facebook, Telegram — quando alguém compartilha este link numa
+// conversa; eles ainda recebem a página normalmente, só não contam como clique de verdade).
+function pareceRobo(string $userAgent): bool {
+    if ($userAgent === '') return true; // navegador de verdade sempre manda User-Agent
+    $padroes = ['bot', 'crawl', 'spider', 'slurp', 'curl', 'wget', 'python', 'scrapy',
+        'headless', 'facebookexternalhit', 'whatsapp', 'telegrambot', 'googlebot', 'bingbot',
+        'semrush', 'ahrefs', 'mj12bot', 'go-http-client', 'libwww-perl', 'postman', 'insomnia'];
+    $normalizado = strtolower($userAgent);
+    foreach ($padroes as $padrao) {
+        if (str_contains($normalizado, $padrao)) return true;
+    }
+    return false;
+}
+
 function chamarSupabase(string $metodo, string $caminho, ?array $corpo = null, array $headersExtra = []): ?array {
     $ch = curl_init(SUPABASE_URL . $caminho);
     $headers = array_merge([
@@ -73,21 +88,25 @@ function chamarSupabase(string $metodo, string $caminho, ?array $corpo = null, a
 }
 
 $codigo = gerarCodigo();
+$userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
 // Salva o clique — melhor esforço: se falhar, não impede o redirecionamento (a pessoa não pode
-// ficar presa numa tela quebrada por causa de rastreamento).
-chamarSupabase('POST', '/rest/v1/cliques_rastreio', [
-    'codigo' => $codigo,
-    'referer' => $_SERVER['HTTP_REFERER'] ?? null,
-    'utm_source' => $_GET['utm_source'] ?? null,
-    'utm_medium' => $_GET['utm_medium'] ?? null,
-    'utm_campaign' => $_GET['utm_campaign'] ?? null,
-    'utm_content' => $_GET['utm_content'] ?? null,
-    'utm_term' => $_GET['utm_term'] ?? null,
-    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-    'ip' => ipDoVisitante(),
-    'idioma' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null,
-], ['Prefer: return=minimal']);
+// ficar presa numa tela quebrada por causa de rastreamento). Pula robôs conhecidos (pareceRobo) —
+// eles continuam vendo a página normalmente, só não sujam a tabela de rastreio.
+if (!pareceRobo($userAgent)) {
+    chamarSupabase('POST', '/rest/v1/cliques_rastreio', [
+        'codigo' => $codigo,
+        'referer' => $_SERVER['HTTP_REFERER'] ?? null,
+        'utm_source' => $_GET['utm_source'] ?? null,
+        'utm_medium' => $_GET['utm_medium'] ?? null,
+        'utm_campaign' => $_GET['utm_campaign'] ?? null,
+        'utm_content' => $_GET['utm_content'] ?? null,
+        'utm_term' => $_GET['utm_term'] ?? null,
+        'user_agent' => $userAgent ?: null,
+        'ip' => ipDoVisitante(),
+        'idioma' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null,
+    ], ['Prefer: return=minimal']);
+}
 
 // -----------------------------------------------------------------------------------------------
 // Número de WhatsApp atual (com fallback)
@@ -108,7 +127,9 @@ $numeroWhatsapp = preg_replace('/\D/', '', $numeroWhatsapp) ?: WHATSAPP_NUMERO_F
 // -----------------------------------------------------------------------------------------------
 // Monta o texto pré-preenchido: texto opcional da campanha (?text=) + código de rastreio
 // -----------------------------------------------------------------------------------------------
-$textoBase = isset($_GET['text']) ? trim((string) $_GET['text']) : '';
+// Limite de tamanho (16/08/2026, reforço de segurança) — evita link absurdamente longo se alguém
+// tentar abusar do parâmetro ?text=. 200 caracteres é generoso pra qualquer texto de campanha real.
+$textoBase = isset($_GET['text']) ? mb_substr(trim((string) $_GET['text']), 0, 200) : '';
 $textoFinal = $textoBase !== ''
     ? $textoBase . ' (ref: ' . $codigo . ')'
     : 'Olá! (ref: ' . $codigo . ')';
