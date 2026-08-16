@@ -6,6 +6,7 @@ import {
   atribuirParaAtendente,
   atribuirParaMalala,
   carregarConversaDetalhe,
+  carregarTextoEtapaScript,
   contarNaoLidas,
   contarNotificacoesNaoLidas,
   criarNotaInterna,
@@ -77,6 +78,10 @@ export async function contarNotificacoesNaoLidasAction(usuarioId: string): Promi
 export async function marcarNotificacaoLidaAction(id: string): Promise<void> {
   await marcarNotificacaoLida(id);
   revalidatePath("/admin/atendimento");
+}
+
+export async function carregarTextoEtapaScriptAction(etapaId: string): Promise<string | null> {
+  return carregarTextoEtapaScript(etapaId);
 }
 
 export type ResultadoEnviarMensagem = { sucesso: true } | { sucesso: false; erro: string };

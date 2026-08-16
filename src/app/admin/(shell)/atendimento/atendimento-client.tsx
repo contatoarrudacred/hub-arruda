@@ -17,6 +17,7 @@ import {
   atribuirParaAtendenteAction,
   atribuirParaMalalaAction,
   carregarConversaAction,
+  carregarTextoEtapaScriptAction,
   contarNaoLidasAction,
   contarNotificacoesNaoLidasAction,
   criarNotaAction,
@@ -542,6 +543,19 @@ export function AtendimentoClient({
     setTextoComposer(resposta.texto);
   }
 
+  const [carregandoProximaEtapa, setCarregandoProximaEtapa] = useState(false);
+  const [avisoProximaEtapa, setAvisoProximaEtapa] = useState<string | null>(null);
+
+  async function handleUsarProximaEtapa() {
+    if (!detalhe?.etapaFluxoAtualId) return;
+    setAvisoProximaEtapa(null);
+    setCarregandoProximaEtapa(true);
+    const texto = await carregarTextoEtapaScriptAction(detalhe.etapaFluxoAtualId);
+    setCarregandoProximaEtapa(false);
+    if (texto) setTextoComposer(texto);
+    else setAvisoProximaEtapa("Esta etapa do script não tem mensagem de texto pra reaproveitar.");
+  }
+
   async function handleSalvarNota() {
     if (!conversaSelecionadaId || !textoComposer.trim()) return;
     setEnviandoNota(true);
@@ -862,7 +876,19 @@ export function AtendimentoClient({
                 >
                   Nota interna
                 </button>
+                {modoComposer === "mensagem" && detalhe?.etapaFluxoAtualId && (
+                  <button
+                    type="button"
+                    onClick={handleUsarProximaEtapa}
+                    disabled={!composerHabilitado || carregandoProximaEtapa}
+                    title="Preenche o composer com a mensagem que a Malala mandaria a seguir, pra você revisar antes de enviar"
+                    className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
+                  >
+                    {carregandoProximaEtapa ? "..." : "⚡ Próxima etapa"}
+                  </button>
+                )}
               </div>
+              {avisoProximaEtapa && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoProximaEtapa}</p>}
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
               <div className="flex gap-2">
                 <div className="relative flex-1">

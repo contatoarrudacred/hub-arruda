@@ -286,6 +286,7 @@ export type ConversaDetalhe = {
   atendenteId: string | null;
   atendenteNome: string | null;
   atendenteCor: CorBadge | null;
+  etapaFluxoAtualId: string | null;
   notas: NotaInterna[];
   mensagens: MensagemConversa[];
 };
@@ -297,7 +298,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select(
-      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
+      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
     )
     .eq("id", conversaId)
     .single();
@@ -342,6 +343,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     atendenteId: conversa.atendente_id,
     atendenteNome: atendente?.pessoas?.nome_razao_social ?? null,
     atendenteCor: atendente && ehCorBadgeValida(atendente.cor_badge) ? (atendente.cor_badge as CorBadge) : null,
+    etapaFluxoAtualId: conversa.etapa_fluxo_atual_id,
     notas: (notas ?? []).map((n) => {
       const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
       return {
@@ -483,4 +485,21 @@ export async function marcarNotificacaoLida(notificacaoId: string): Promise<void
   const supabase = await createClient();
   const { error } = await supabase.from("notificacoes").update({ lida: true }).eq("id", notificacaoId);
   if (error) throw new Error(`Falha ao marcar notificação como lida: ${error.message}`);
+}
+
+/**
+ * Texto literal das mensagens de texto da etapa em que a conversa está parada agora — usado pelo
+ * atalho "⚡ Próxima etapa" do composer, pra o humano reaproveitar (e revisar/editar) exatamente o
+ * que a Malala mandaria a seguir. Mensagens que não são texto (imagem, pix etc.) são ignoradas: o
+ * composer só manda texto livre, mídia continua sendo responsabilidade de outro fluxo.
+ */
+export async function carregarTextoEtapaScript(etapaId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("etapas_fluxo").select("conteudo").eq("id", etapaId).maybeSingle();
+  if (error) throw new Error(`Falha ao carregar etapa do fluxo: ${error.message}`);
+  if (!data) return null;
+
+  const conteudo = data.conteudo as { mensagens?: { tipo: string; texto?: string }[] };
+  const textos = (conteudo.mensagens ?? []).filter((m) => m.tipo === "texto" && m.texto).map((m) => m.texto as string);
+  return textos.length > 0 ? textos.join("\n\n") : null;
 }
