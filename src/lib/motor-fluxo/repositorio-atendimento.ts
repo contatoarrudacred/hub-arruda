@@ -6,6 +6,17 @@ import { createClient } from "@/lib/supabase/server";
 // auditoria como "quem fez" (mesmo padrão já usado em repositorio-admin.ts). Ver
 // docs/TELA_ATENDIMENTO_ARRUDACRED.md pro desenho completo.
 
+/**
+ * Escapa um valor pra uso dentro de um filtro `.or()` do PostgREST — vírgula separa condições e
+ * parênteses agrupam, então um texto de busca digitado pelo atendente com esses caracteres
+ * alterava a estrutura do filtro em vez de ser tratado como texto literal (achado real na
+ * avaliação de 16/08/2026). Envolver o valor em aspas duplas trata tudo dentro como literal — só
+ * falta escapar aspas duplas/barra invertida que apareçam dentro do próprio texto de busca.
+ */
+function escaparValorFiltroOr(valor: string): string {
+  return valor.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 export type UsuarioSistema = {
   id: string;
   nome: string;
@@ -114,7 +125,8 @@ export async function listarConversasAtendimento(
   if (busca.trim()) {
     // Busca por nome/telefone direto na view; conteúdo de mensagem é uma segunda consulta (abaixo)
     // porque a view só traz a ÚLTIMA mensagem, não o histórico inteiro.
-    query = query.or(`pessoa_nome.ilike.%${busca}%,pessoa_telefone.ilike.%${busca}%`);
+    const buscaEscapada = escaparValorFiltroOr(busca.trim());
+    query = query.or(`pessoa_nome.ilike."%${buscaEscapada}%",pessoa_telefone.ilike."%${buscaEscapada}%"`);
   }
 
   const { data, error } = await query;
