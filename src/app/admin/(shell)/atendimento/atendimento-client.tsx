@@ -11,11 +11,13 @@ import type {
 import {
   assumirConversaAction,
   atribuirParaMalalaAction,
+  atualizarMinhaCorAction,
   carregarConversaAction,
   contarNaoLidasAction,
   enviarMensagemAction,
   listarConversasAction,
 } from "./actions";
+import { CORES_BADGE, CORES_BADGE_LISTA, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
 
 // Tela de Atendimento, Bloco A (fundação) — ver docs/TELA_ATENDIMENTO_ARRUDACRED.md. Simplificações
 // conscientes deste primeiro bloco, registradas lá: "não lida" é só "última mensagem é do lead" (sem
@@ -120,6 +122,43 @@ function ItemSubmenu({
   );
 }
 
+function SeletorDeCor({ corAtual, onEscolher }: { corAtual: string; onEscolher: (cor: string) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const tomAtual = CORES_BADGE[corAtual as keyof typeof CORES_BADGE] ?? CORES_BADGE.azul;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        title="Escolher minha cor"
+        className={`h-6 w-6 rounded-full border border-black/10 dark:border-white/10 ${tomAtual.bg}`}
+      />
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setAberto(false)} />
+          <div className="absolute right-0 z-20 mt-1 flex w-40 flex-wrap gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            {CORES_BADGE_LISTA.map((cor) => (
+              <button
+                key={cor}
+                type="button"
+                title={CORES_BADGE[cor].nome}
+                onClick={() => {
+                  onEscolher(cor);
+                  setAberto(false);
+                }}
+                className={`h-6 w-6 rounded-full border-2 ${CORES_BADGE[cor].bg} ${
+                  cor === corAtual ? "border-zinc-900 dark:border-white" : "border-transparent"
+                }`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AtendimentoClient({
   usuarioAtual,
   conversasIniciais,
@@ -139,7 +178,13 @@ export function AtendimentoClient({
   const [textoComposer, setTextoComposer] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const [corAtual, setCorAtual] = useState(usuarioAtual.corBadge);
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  async function handleTrocarCor(cor: string) {
+    const resultado = await atualizarMinhaCorAction(cor);
+    if (resultado.sucesso) setCorAtual(cor as typeof corAtual);
+  }
 
   const recarregarLista = useCallback(async () => {
     const resultado = await listarConversasAction(filtroPorChave(filtroChave, usuarioAtual.id), busca);
@@ -224,6 +269,9 @@ export function AtendimentoClient({
   }
 
   const composerHabilitado = detalhe?.sobSupervisor === true;
+  const tomConversa = detalhe
+    ? corControlador({ sobSupervisor: detalhe.sobSupervisor, atendenteCor: detalhe.atendenteCor })
+    : null;
   const humanoAtivo = filtroChave === "humano_minhas" || filtroChave === "humano_nao_atribuidas" || filtroChave === "humano_todas";
 
   return (
@@ -231,12 +279,15 @@ export function AtendimentoClient({
       {/* Painel esquerdo — lista de contatos */}
       <div className="flex w-96 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
         <div className="space-y-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por nome, telefone ou mensagem..."
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, telefone ou mensagem..."
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <SeletorDeCor corAtual={corAtual} onEscolher={handleTrocarCor} />
+          </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <BotaoFiltro rotulo="Tudo" ativo={filtroChave === "tudo"} contador={contagens.tudo} onClick={() => selecionarFiltro("tudo")} />
             <BotaoFiltro rotulo="Malala" ativo={filtroChave === "malala"} contador={contagens.malala} onClick={() => selecionarFiltro("malala")} />
@@ -316,11 +367,15 @@ export function AtendimentoClient({
                     {c.produtoNome}
                   </span>
                 )}
-                {!c.sobSupervisor && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
-                    Malala
-                  </span>
-                )}
+                {(() => {
+                  const tom = corControlador({ sobSupervisor: c.sobSupervisor, atendenteCor: c.atendenteCor });
+                  const rotulo = !c.sobSupervisor ? "Malala" : (c.atendenteNome ?? "Não atribuída");
+                  return (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tom.bg} ${tom.texto}`}>
+                      {rotulo}
+                    </span>
+                  );
+                })()}
               </div>
             </button>
           ))}
@@ -363,7 +418,7 @@ export function AtendimentoClient({
               </div>
             </div>
 
-            <div ref={timelineRef} className="flex-1 space-y-2 overflow-y-auto p-4">
+            <div ref={timelineRef} className={`flex-1 space-y-2 overflow-y-auto p-4 ${tomConversa?.bg ?? ""}`}>
               {detalhe.mensagens.map((m) => {
                 const doLead = m.remetente === "lead";
                 const cor = doLead

@@ -38,15 +38,43 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Nenhum admin autenticado.");
 
-  const { data: existente } = await supabase
+  const { data: existente, error: erroExistente } = await supabase
     .from("usuarios_sistema")
     .select("id, email, cor_badge, pessoas(nome_razao_social)")
     .eq("auth_user_id", user.id)
     .maybeSingle();
+  // Erro de verdade (ex.: coluna renomeada/removida, RLS bloqueando) não pode ser tratado como
+  // "usuário não existe" — isso já causou um bug real (16/08/2026): erro era ignorado, o código
+  // caía direto na criação de um usuário/pessoa novo a cada carregamento de página.
+  if (erroExistente) throw new Error(`Falha ao buscar usuário do sistema: ${erroExistente.message}`);
   if (existente) {
     const pessoa = existente.pessoas as unknown as { nome_razao_social: string } | null;
     const cor = ehCorBadgeValida(existente.cor_badge) ? existente.cor_badge : "azul";
     return { id: existente.id, email: existente.email, nome: pessoa?.nome_razao_social ?? existente.email, corBadge: cor };
+  }
+
+  // Pode existir um registro antigo com o mesmo e-mail mas auth_user_id desatualizado (ex.: o
+  // usuário do Supabase Auth foi recriado) — realinha em vez de tentar criar um duplicado e
+  // esbarrar na constraint de e-mail único (bug real encontrado em 16/08/2026, quebrava a tela
+  // de Atendimento inteira com "duplicate key value violates unique constraint
+  // usuarios_sistema_email_key").
+  if (user.email) {
+    const { data: porEmail, error: erroPorEmail } = await supabase
+      .from("usuarios_sistema")
+      .select("id, email, cor_badge, pessoas(nome_razao_social)")
+      .eq("email", user.email)
+      .maybeSingle();
+    if (erroPorEmail) throw new Error(`Falha ao buscar usuário do sistema por e-mail: ${erroPorEmail.message}`);
+    if (porEmail) {
+      const { error: erroRealinho } = await supabase
+        .from("usuarios_sistema")
+        .update({ auth_user_id: user.id })
+        .eq("id", porEmail.id);
+      if (erroRealinho) throw new Error(`Falha ao realinhar usuário do sistema: ${erroRealinho.message}`);
+      const pessoa = porEmail.pessoas as unknown as { nome_razao_social: string } | null;
+      const cor = ehCorBadgeValida(porEmail.cor_badge) ? porEmail.cor_badge : "azul";
+      return { id: porEmail.id, email: porEmail.email, nome: pessoa?.nome_razao_social ?? porEmail.email, corBadge: cor };
+    }
   }
 
   const nomeInicial = user.email?.split("@")[0] ?? "Admin";
