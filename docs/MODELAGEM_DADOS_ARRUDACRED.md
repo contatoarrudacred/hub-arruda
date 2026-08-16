@@ -100,7 +100,12 @@ Este bloco conecta ao núcleo Pessoa/Papel e realiza, em estrutura de dados, os 
 - **FAQS** — a base de conhecimento por produto, com CRUD completo (editar/desativar/excluir/criar) já exigido.
 - **OPORTUNIDADES** — liga Pessoa + Produto, com `etapa_kanban` (a etapa/subetapa que desenhamos) e `alto_valor` (a badge, não uma coluna separada — decisão já tomada).
 - **CONVERSAS** — uma conversa de WhatsApp ligada a uma Pessoa (e opcionalmente a uma Oportunidade). O campo `sob_supervisor` é exatamente o mecanismo de destaque visual que desenhamos no Kanban (bloco separado no topo da coluna) — não é uma etapa, é uma flag.
+  - **Colunas acrescentadas pela Tela de Atendimento (Blocos A+B, 16-17/08/2026):** `atendente_id` (FK → `usuarios_sistema`, opcional — atendente humano específico com a conversa, distinto de "sob supervisão" genérico), `etapa_fluxo_atual_id` (FK → `etapas_fluxo` — etapa em que a conversa está parada, usada pelo atalho "Próxima etapa" do composer pra reaproveitar a mensagem literal do script), `agenda_followup_id`/`aguardando_resposta_desde`/`proximo_item_agenda` (motor de follow-up, Fase 6), `followup_manual_ativo` (boolean, migration `20260817030000` — atendente humano ativou follow-up manualmente numa conversa que ele controla; sem isso o cron só cuida de conversas com a Malala no controle).
 - **MENSAGENS** — histórico de toda mensagem trocada, ligada à etapa do fluxo que a originou (`etapa_fluxo_id`) — isso dá rastreabilidade completa (auditoria) e é o que permite ao supervisor retomar uma conversa sabendo exatamente o que já foi dito.
+- **NOTAS_INTERNAS** (nova, migration `20260817010000`) — nota visível só pra equipe, ligada a uma `conversa_id`, nunca enviada pro lead no WhatsApp; `texto` pode conter `@PrimeiroNome` pra mencionar um colega. Campos: `id`, `conversa_id` (FK), `autor_id` (FK → `usuarios_sistema`), `texto`, `created_at`. Trigger de auditoria.
+- **NOTIFICACOES** (nova, migration `20260817010000`) — notificação in-app pro sino da Tela de Atendimento (@menção numa nota, ou atribuição de conversa recebida de outro atendente). Campos: `id`, `usuario_id` (FK), `tipo` (`mencao`/`atribuicao`), `conversa_id` (FK), `nota_id` (FK, opcional), `lida`, `created_at`. Sem trigger de auditoria de propósito (estado operacional efêmero, não registro de negócio).
+- **RESPOSTAS_PRONTAS** (nova, migration `20260817020000`) — mensagens pré-escritas reaproveitáveis pelo atendente (atalho "/" no composer). Campos: `id`, `atalho` (único), `texto`, `ativo`, `created_at`, `updated_at`. Trigger de auditoria.
+- **CRON_LOCKS** (nova, migration `20260816040000`) — lock genérico via upsert pra evitar disparo duplicado quando duas execuções do cron de follow-up se sobrepõem (`fn_tentar_lock_cron`/`fn_liberar_lock_cron`). Estado efêmero, sem trigger de auditoria.
 
 **Fora deste diagrama por enquanto (para não sobrecarregar), mas ainda pendentes de desenho:**
 - **RBAC/usuários admin** — quem pode editar o quê (supervisor vs. admin completo), ligado à seção 2 do plano mestre
@@ -153,6 +158,7 @@ Luiz definiu: por ora, um único nível de acesso — **ADMIN/MASTER**, com perm
 - `ativo`
 - `ultimo_login_at`
 - `created_at`, `updated_at`
+- `cor_badge` (acrescentada na migration `20260816050000` — cor do badge/painel do atendente na Tela de Atendimento, paleta fechada de 7 cores, `check` constraint. Definida pelo admin em `/admin/atendentes`, não é escolha do próprio atendente — decisão revisada depois da primeira versão, que era self-service.)
 
 ## Valores Configuráveis — modelo de dados (DECIDIDO em 11/08/2026)
 
