@@ -10,6 +10,7 @@ import type {
 } from "@/lib/motor-fluxo/repositorio-atendimento";
 import {
   assumirConversaAction,
+  atribuirParaAtendenteAction,
   atribuirParaMalalaAction,
   atualizarMinhaCorAction,
   carregarConversaAction,
@@ -30,9 +31,17 @@ import { CORES_BADGE, CORES_BADGE_LISTA, corControlador } from "@/lib/motor-flux
 
 const INTERVALO_POLLING_MS = 4000;
 
-type ChaveFiltro = "tudo" | "malala" | "humano_minhas" | "humano_nao_atribuidas" | "humano_todas" | "nao_lidas";
+type ChaveFiltro =
+  | "tudo"
+  | "malala"
+  | "humano_minhas"
+  | "humano_nao_atribuidas"
+  | "humano_todas"
+  | "nao_lidas"
+  | { atendenteId: string };
 
 function filtroPorChave(chave: ChaveFiltro, usuarioId: string): FiltroConversas {
+  if (typeof chave === "object") return { tipo: "humano_atendente", atendenteId: chave.atendenteId };
   switch (chave) {
     case "humano_minhas":
       return { tipo: "humano_minhas", usuarioId };
@@ -159,14 +168,73 @@ function SeletorDeCor({ corAtual, onEscolher }: { corAtual: string; onEscolher: 
   );
 }
 
+function DropdownAtribuir({
+  atendentes,
+  usuarioAtualId,
+  onEscolherMalala,
+  onEscolherAtendente,
+}: {
+  atendentes: UsuarioSistema[];
+  usuarioAtualId: string;
+  onEscolherMalala: () => void;
+  onEscolherAtendente: (atendenteId: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        className="rounded-full bg-[#141e33] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+      >
+        Atribuir a... ▾
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setAberto(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            <button
+              type="button"
+              onClick={() => {
+                onEscolherMalala();
+                setAberto(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              <span className="h-4 w-4 rounded-full bg-violet-100 dark:bg-violet-900" />
+              Malala
+            </button>
+            {atendentes.map((atendente) => (
+              <button
+                key={atendente.id}
+                type="button"
+                onClick={() => {
+                  onEscolherAtendente(atendente.id);
+                  setAberto(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <span className={`h-4 w-4 rounded-full ${CORES_BADGE[atendente.corBadge].bg}`} />
+                {atendente.id === usuarioAtualId ? "Mim" : atendente.nome}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AtendimentoClient({
   usuarioAtual,
   conversasIniciais,
   contagensIniciais,
+  atendentesIniciais,
 }: {
   usuarioAtual: UsuarioSistema;
   conversasIniciais: ConversaResumo[];
   contagensIniciais: ContagemNaoLidas;
+  atendentesIniciais: UsuarioSistema[];
 }) {
   const [filtroChave, setFiltroChave] = useState<ChaveFiltro>("tudo");
   const [menuHumanoAberto, setMenuHumanoAberto] = useState(false);
@@ -252,6 +320,14 @@ export function AtendimentoClient({
     await recarregarContagens();
   }
 
+  async function handleAtribuirAtendente(atendenteId: string) {
+    if (!conversaSelecionadaId) return;
+    await atribuirParaAtendenteAction(conversaSelecionadaId, atendenteId);
+    await recarregarDetalhe(conversaSelecionadaId);
+    await recarregarLista();
+    await recarregarContagens();
+  }
+
   async function handleEnviar() {
     if (!conversaSelecionadaId || !detalhe?.pessoaTelefone || !textoComposer.trim()) return;
     setEnviando(true);
@@ -272,7 +348,11 @@ export function AtendimentoClient({
   const tomConversa = detalhe
     ? corControlador({ sobSupervisor: detalhe.sobSupervisor, atendenteCor: detalhe.atendenteCor })
     : null;
-  const humanoAtivo = filtroChave === "humano_minhas" || filtroChave === "humano_nao_atribuidas" || filtroChave === "humano_todas";
+  const humanoAtivo =
+    filtroChave === "humano_minhas" ||
+    filtroChave === "humano_nao_atribuidas" ||
+    filtroChave === "humano_todas" ||
+    typeof filtroChave === "object";
 
   return (
     <div className="flex h-screen">
@@ -310,6 +390,16 @@ export function AtendimentoClient({
                       onClick={() => selecionarFiltro("humano_nao_atribuidas")}
                     />
                     <ItemSubmenu rotulo="Todas" contador={contagens.humanoTodas} onClick={() => selecionarFiltro("humano_todas")} />
+                    {atendentesIniciais
+                      .filter((a) => a.id !== usuarioAtual.id)
+                      .map((atendente) => (
+                        <ItemSubmenu
+                          key={atendente.id}
+                          rotulo={atendente.nome}
+                          contador={contagens.porAtendente[atendente.id]}
+                          onClick={() => selecionarFiltro({ atendenteId: atendente.id })}
+                        />
+                      ))}
                   </div>
                 </>
               )}
@@ -400,21 +490,14 @@ export function AtendimentoClient({
                 </p>
               </div>
               <div className="flex gap-2">
-                {detalhe.sobSupervisor ? (
-                  <button
-                    onClick={handleAtribuirMalala}
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    Atribuir pra Malala
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleAssumir}
-                    className="rounded-full bg-[#141e33] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
-                  >
-                    Assumir Chat
-                  </button>
-                )}
+                <DropdownAtribuir
+                  atendentes={atendentesIniciais}
+                  usuarioAtualId={usuarioAtual.id}
+                  onEscolherMalala={handleAtribuirMalala}
+                  onEscolherAtendente={(atendenteId) =>
+                    atendenteId === usuarioAtual.id ? handleAssumir() : handleAtribuirAtendente(atendenteId)
+                  }
+                />
               </div>
             </div>
 
