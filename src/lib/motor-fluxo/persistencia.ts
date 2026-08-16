@@ -5,7 +5,7 @@ import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
 import { substituirVariaveisTexto } from "./engine";
 import { ehUltimoItemDaAgenda, MOTIVO_PERDA_SEM_RESPOSTA } from "./motor-followup";
 import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
-import type { EfeitoNegocio, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
+import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
 
 // Persistência de conversa "de verdade" — grava em pessoas/oportunidades/conversas/mensagens.
 // Hoje só o /simulador chama isto (ver src/app/simulador/actions.ts), mas é a mesma peça que o
@@ -94,6 +94,109 @@ export async function criarConversaSimulador(
   }
 
   return { conversaId: conversa.id, oportunidadeId: oportunidade.id, pessoaId: pessoa.id };
+}
+
+export type ConversaWhatsappCarregada = {
+  conversaId: string;
+  oportunidadeId: string;
+  pessoaId: string;
+  /** null = conversa nova, ainda não entrou em nenhum fluxo (equivalente a `iniciarSimulacaoComMensagem`) */
+  etapaAtualCodigo: string | null;
+  dados: DadosConversa;
+  /** true = conversa escalada pro supervisor humano (PLANO_MESTRE 8.4) — quem chama não deve rodar o motor automatizado nem responder sozinho, só registrar a mensagem do lead. */
+  sobSupervisor: boolean;
+};
+
+/**
+ * Encontra a conversa de WhatsApp ativa de um telefone, ou cria pessoa/oportunidade/conversa do
+ * zero se for a primeira vez que esse número aparece (ou se a conversa anterior dele já encerrou).
+ * Existe porque o webhook do WhatsApp real (Fase 7) não tem client guardando `EstadoSimulador`
+ * entre uma mensagem e outra — cada mensagem recebida é uma invocação serverless nova, então a
+ * posição na conversa (etapa/dados) precisa ser reconstruída do banco a cada vez.
+ */
+export async function carregarOuCriarConversaWhatsapp(
+  telefone: string,
+  etapasPorCodigo: Record<string, EtapaCarregada>,
+): Promise<ConversaWhatsappCarregada> {
+  const supabase = createAdminClient();
+
+  const { data: pessoaExistente } = await supabase
+    .from("pessoas")
+    .select("id")
+    .eq("whatsapp", telefone)
+    .maybeSingle();
+
+  if (pessoaExistente) {
+    const { data: conversaAtiva } = await supabase
+      .from("conversas")
+      .select("id, oportunidade_id, etapa_fluxo_atual_id, dados, sob_supervisor")
+      .eq("pessoa_id", pessoaExistente.id)
+      .eq("canal", "whatsapp")
+      .eq("status", "ativa")
+      .maybeSingle();
+
+    if (conversaAtiva?.oportunidade_id) {
+      const etapa = conversaAtiva.etapa_fluxo_atual_id
+        ? Object.values(etapasPorCodigo).find((e) => e.id === conversaAtiva.etapa_fluxo_atual_id)
+        : undefined;
+      return {
+        conversaId: conversaAtiva.id,
+        oportunidadeId: conversaAtiva.oportunidade_id,
+        pessoaId: pessoaExistente.id,
+        etapaAtualCodigo: etapa?.conteudo.codigo ?? null,
+        dados: (conversaAtiva.dados as DadosConversa) ?? {},
+        sobSupervisor: conversaAtiva.sob_supervisor,
+      };
+    }
+  }
+
+  const { data: produto, error: erroProduto } = await supabase
+    .from("produtos")
+    .select("id")
+    .eq("nome", NOME_PRODUTO_LIMPEZA_NOME)
+    .single();
+  if (erroProduto || !produto) {
+    throw new Error(`Falha ao localizar produto "${NOME_PRODUTO_LIMPEZA_NOME}": ${erroProduto?.message}`);
+  }
+
+  const pessoaId = pessoaExistente
+    ? pessoaExistente.id
+    : await (async () => {
+        const { data: pessoa, error } = await supabase
+          .from("pessoas")
+          .insert({ tipo_pessoa: "pf", nome_razao_social: "Lead (WhatsApp)", whatsapp: telefone })
+          .select("id")
+          .single();
+        if (error || !pessoa) throw new Error(`Falha ao criar pessoa: ${error?.message}`);
+        return pessoa.id;
+      })();
+
+  const { data: oportunidade, error: erroOportunidade } = await supabase
+    .from("oportunidades")
+    .insert({ pessoa_id: pessoaId, produto_id: produto.id, etapa_kanban: "novo_lead_triagem" })
+    .select("id")
+    .single();
+  if (erroOportunidade || !oportunidade) {
+    throw new Error(`Falha ao criar oportunidade: ${erroOportunidade?.message}`);
+  }
+
+  const { data: conversa, error: erroConversa } = await supabase
+    .from("conversas")
+    .insert({ pessoa_id: pessoaId, oportunidade_id: oportunidade.id, canal: "whatsapp" })
+    .select("id")
+    .single();
+  if (erroConversa || !conversa) {
+    throw new Error(`Falha ao criar conversa: ${erroConversa?.message}`);
+  }
+
+  return {
+    conversaId: conversa.id,
+    oportunidadeId: oportunidade.id,
+    pessoaId,
+    etapaAtualCodigo: null,
+    dados: {},
+    sobSupervisor: false,
+  };
 }
 
 /** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. */
@@ -214,6 +317,22 @@ export async function registrarTurnoMalala(params: {
     const { error } = await supabase.from("mensagens").insert(linhas);
     if (error) throw new Error(`Falha ao registrar mensagens da Malala: ${error.message}`);
   }
+
+  // Posição na conversa (fluxo/etapa/dados acumulados) — o simulador guarda isso só no client
+  // (EstadoSimulador), mas o webhook do WhatsApp real (Fase 7) não tem client nenhum entre uma
+  // mensagem e outra: cada chamada é uma invocação serverless nova, então precisa reconstruir de
+  // onde a conversa parou a partir do banco. Gravar aqui sempre (não só quando vem do WhatsApp)
+  // mantém as duas portas de entrada consistentes.
+  const { data: dadosAtuais } = await supabase.from("conversas").select("dados").eq("id", conversaId).single();
+  const { error: erroPosicao } = await supabase
+    .from("conversas")
+    .update({
+      etapa_fluxo_atual_id: resultado.etapaFinal?.id ?? null,
+      fluxo_id: resultado.etapaFinal?.fluxoId ?? null,
+      dados: { ...(dadosAtuais?.dados ?? {}), ...dadosNovos },
+    })
+    .eq("id", conversaId);
+  if (erroPosicao) throw new Error(`Falha ao salvar posição da conversa: ${erroPosicao.message}`);
 
   for (const efeito of resultado.efeitos) {
     await aplicarEfeitoNegocio(conversaId, oportunidadeId, efeito);

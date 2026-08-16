@@ -62,12 +62,64 @@ Luiz também pediu suporte para redes sociais: stories, reels, posts estáticos 
 
 ## 5. Outras frentes do plano de marketing original (a desenvolver)
 
-O `Plano_Estrategico_Marketing_ArrudaCred.pdf` traz mais 6 "motores de aquisição" além do SEO (Google Maps/GMB, Redes Sociais Orgânicas, Remarketing, Parcerias B2B, Influenciadores, Native Ads/Taboola — este último já mencionado por Luiz anteriormente como preferência), programa de indicação de clientes (com script já validado e testado), infoprodutos/lançamentos, e podcast/YouTube. Nenhum desses foi transformado em especificação de sistema ainda — ficam como pauta para as próximas conversas sobre o módulo Marketing.
+O `Plano_Estrategico_Marketing_ArrudaCred.pdf` traz mais 6 "motores de aquisição" além do SEO (Google Maps/GMB, Redes Sociais Orgânicas, Remarketing, Parcerias B2B, Influenciadores, Native Ads/Taboola — este último já mencionado por Luiz anteriormente como preferência), programa de indicação de clientes (com script já validado e testado — **mecânica detalhada na seção 6 abaixo**), infoprodutos/lançamentos, e podcast/YouTube. Os demais (fora indicação) não foram transformados em especificação de sistema ainda — ficam como pauta para as próximas conversas sobre o módulo Marketing.
+
+---
+
+## 6. Programa de indicação de clientes ("Indicação Premiada") — mecânica real, extraída do script de Luiz (15/08/2026)
+
+**Distinto do programa formal de Parceiros/Afiliados** (`PARCEIROS_AFILIADOS_ARRUDACRED.md` — comissão B2B, com contrato e portal próprio). Este é um mecanismo de fidelização conduzido por WhatsApp diretamente com o cliente, depois que a venda já fechou. Até 15/08/2026 só existia uma menção de uma linha a esse programa (seção 5), sem nenhuma mecânica — Luiz então enviou o documento-fonte `Script - Indicação Premiada ArrudaCred.pdf` (39 páginas, majoritariamente mockups visuais em Canva; o texto literal do script está nas 3 primeiras páginas) com o script real, e revisou o desenho em conversa. **Esta seção substitui a versão anterior**, registrada com informação incompleta.
+
+**Fonte:** `Script - Indicação Premiada ArrudaCred.pdf` (Luiz, 15/08/2026) + decisões tomadas em conversa no mesmo dia.
+
+### 6.1 Gatilho de disparo
+
+**Dia Zero**, 30 minutos após a assinatura do contrato (e do pagamento da 1ª parcela, se o plano for PRÉ-PAGO). **Decisão de Luiz: por enquanto só documentar essa necessidade — quando/como automatizar o gatilho será decidido junto quando for viável.** Hoje o sistema não tem nenhum evento de "contrato assinado" nem "pagamento confirmado" (Financeiro/Jurídico ainda não desenhados), então este gatilho **não tem como ser automatizado no MVP1 tal como está** — fica registrado como requisito, não como tarefa pronta pra construir.
+
+**Repetição mensal:** o script original é de disparo único ("Dia Zero"); Luiz confirmou a expansão — a campanha deve rodar **todo mês, enquanto o cliente tiver parcelas em aberto**, sempre com o mesmo corte de 20 contatos novos (não repetidos vs. todo o histórico do cliente, não só o mês anterior).
+
+### 6.2 Script de convite ao cliente (5 partes, texto literal do PDF)
+
+1. **Convite:** "Olá, [Nome]! Nosso índice de satisfação cresce a cada dia, e hoje mais da metade dos nossos contratos vêm por indicação de clientes... Temos uma verba de marketing separada para isso e queremos te oferecer R$100 de desconto na primeira/próxima parcela. Quer aproveitar?" → aguarda resposta.
+2. **Como funciona** (só depois de resposta positiva): pede (a) estar seguindo `@arrudacred.br` no Instagram e (b) enviar 20 contatos do WhatsApp de pessoas que poderiam se beneficiar dos serviços — "não importa se vão fechar conosco, você só precisa indicar".
+3. **CTA:** pede pra anexar os contatos pelo clipe do WhatsApp (envio nativo de **cartão de contato/vCard**, não texto digitado) — com **janela de 30 minutos** a partir do início da conversa pra enviar. Assim que a IA confirmar os 20 contatos, os R$100 são lançados na próxima fatura.
+4. **Autorização LGPD:** depois de confirmado o envio dos 20 contatos, pede autorização explícita pra ArrudaCred contatar essas pessoas informando quem indicou — cliente precisa responder literalmente **"EU AUTORIZO"**. Sem essa resposta, os indicados não podem ser contatados.
+5. **Confirmação final:** agradece e confirma que o desconto será lançado na próxima fatura.
+
+**Adição de Luiz (ainda não estava no script original, pendência marcada no próprio PDF pelo Luiz):** pedir também, junto com os 20 contatos, **uma foto do cliente com expressão feliz/sorrindo fazendo sinal de joinha com as mãos**. Papel exato dessa foto, confirmado por Luiz: **não é comprovação interna** — serve para ser enviada **junto com o script de abordagem para cada um dos 20 indicados** (prova social: "olha quem te indicou, sorrindo, recomendando a gente"). Ainda assim, **a foto precisa ser guardada** (não é descartável após o uso) porque o mesmo cliente pode indicar de novo no mês seguinte e a foto pode ser reaproveitada.
+
+### 6.3 Validação dos 20 contatos — decidida por Luiz (15/08/2026)
+
+A confirmação é **automática (IA), não manual**. Critérios, por enquanto — **"a princípio"**, ou seja, pode crescer depois:
+1. Contato **não é duplicado** — nem dentro do mesmo mês, nem contra qualquer mês anterior indicado por aquele cliente (todo o histórico, não só o mês corrente).
+2. Contato **ainda não é cliente nosso**.
+
+**✅ Bloqueio técnico resolvido (16/08/2026):** confirmado na documentação do Zapster (`developer.zapsterapi.com/pt-BR/v1/webhooks/available-events`) que o webhook `message.received` já entrega cartão de contato/vCard de forma estruturada, sem precisar parsear o vCard bruto: `data.type = "vcard"`, `data.content.contacts` é um array (cobre o cliente anexando vários contatos de uma vez), cada contato tem `display_name`, `first_name`, `last_name` e um array `phones`, e cada telefone tem `waid` **só quando aquele número realmente tem WhatsApp ativo** — o próprio Zapster já ajuda a validar um dos critérios da seção 6.3 (contato precisa ser WhatsApp válido) antes mesmo de qualquer lógica nossa.
+
+### 6.4 Abordagem aos indicados — decisão pendente, com uma restrição já fechada
+
+Existe um segundo script no PDF ("Script Oficial — Contato com Indicados ArrudaCred"), pra abordar cada um dos 20 contatos indicados. No PDF original ele abre em nome de "Luiz Dória" — **Luiz confirmou que isso não vale**: quem vai abordar os indicados será **um nome/identidade diferente**, nem "Luiz Dória" nem "Malala" — a definir depois.
+
+**Restrição não-negociável, confirmada por Luiz (15/08/2026) — regra geral de segurança do número oficial, não só desta campanha:** a ArrudaCred **nunca** aborda um lead frio a partir do número oficial da empresa, e **nunca** faz disparo em massa via WhatsApp usando o número oficial — risco de banimento pela Meta. Por isso, o disparo dessas mensagens de abordagem aos 20 indicados **precisa vir de um número secundário/descartável** (fácil de substituir se tiver problema), **nunca do número oficial da Malala**. A mensagem de abertura para o indicado já identifica que é uma indicação e traz o **link de contato oficial da Malala** para quem quiser continuar a conversa de verdade — ou seja, o número descartável só faz a primeira abordagem fria; a conversa real de atendimento sempre migra pro número oficial. **Esta regra geral foi adicionada também ao PLANO_MESTRE, seção 8.5** (é uma decisão de arquitetura da integração WhatsApp, não só desta campanha).
+
+### 6.5 O que ainda falta decidir/investigar (lista viva)
+
+1. **Automação do gatilho "Dia Zero"** (seção 6.1) — decisão adiada de propósito por Luiz.
+2. ~~Se o Zapster lê cartão de contato/vCard~~ ✅ confirmado em 16/08/2026 (seção 6.3) — Zapster entrega os contatos já estruturados via webhook, sem precisar parsear vCard bruto.
+3. **Quem/qual identidade aborda os 20 indicados** (seção 6.4) — nome a definir; número secundário a provisionar.
+4. **Como o desconto de R$100 chega até a parcela** — o módulo Financeiro (parcelas, cobrança) **ainda não foi desenhado** (`MODELAGEM_DADOS_ARRUDACRED.md`); esta é a primeira necessidade concreta de "como um valor chega a uma fatura".
+5. **O que conta como "cliente elegível"** — qualquer cliente com parcela em aberto, independente do produto contratado (Limpa Nome, Bacen etc.)? A confirmar com Luiz quando for desenhar de verdade.
+6. Armazenamento: tabela de contatos indicados por cliente/mês (com histórico completo pra dedup) + local de guarda da foto do cliente (reaproveitável em meses seguintes) — nenhum dos dois existe ainda.
+
+**Atravessa quatro áreas, nenhuma cobre o caso hoje:** Comercial (quem conduz a conversa com o cliente e a abordagem aos indicados), Marketing (motor de aquisição por indicação), Financeiro (desconto numa parcela — módulo inexistente) e a própria integração WhatsApp/Fase 7 (número secundário, leitura de vCard).
+
+> Ver também `docs/AGENDA_POS_VENDA_ARRUDACRED.md` — a "Indicação Premiada" é só um dos itens dentro da agenda de comunicação pós-venda mais ampla que veio no mesmo documento-fonte; o restante da agenda (onboarding, dicas educativas, aviso de conclusão) está registrado lá, por ser um assunto diferente (relacionamento com o cliente, não aquisição de novos leads).
 
 ---
 
 ## Pendências deste documento
 - Nova matriz de conteúdo (temas/ângulos) para a frente de Crédito/Consórcio/Investimento — precisa de pesquisa de palavra-chave real com Luiz, não posso inventar
 - Detalhamento da fábrica de redes sociais (stories/reels/carrosséis)
-- Os demais motores de aquisição (GMB, remarketing, parcerias B2B, influenciadores, Taboola, indicação, infoprodutos, podcast/YouTube) — ainda não viraram especificação de sistema
+- Os demais motores de aquisição (GMB, remarketing, parcerias B2B, influenciadores, Taboola, infoprodutos, podcast/YouTube) — ainda não viraram especificação de sistema
+- Programa de indicação de clientes / "Indicação Premiada" (seção 6): mecânica real já registrada a partir do script de Luiz, mas a lista viva de pendências (seção 6.5) — automação do gatilho, se o Zapster lê cartão de contato, quem aborda os indicados, integração com Financeiro, critério de elegibilidade — ainda não tem resposta em nenhum item; vira especificação pronta pra construir só depois disso
 - Definir se/como o modelo de negócio "ArrudaCred Mídia" (produto comercializável de gestão de conteúdo para terceiros) recebe billing e isolamento de dados próprios, quando sair da fase "ajudar a família" para fase comercial

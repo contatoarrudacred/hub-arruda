@@ -103,7 +103,9 @@ Dá pra fazer — dentro do trigger, `current_query()` retorna o texto da instru
 
 ### 2.6 Escopo implementado
 
-Trigger aplicado em 6 tabelas: `etapas_fluxo`, `fluxos`, `usuarios_sistema`, `pessoas`, `conversas` (as 5 originalmente propostas) e `oportunidades` (adicionada — é o registro do CRM/Kanban, valor estimado e etapa do funil, claramente no mesmo nível de sensibilidade das outras). `faqs`, `precos_por_faixa`, `produtos`, `configuracoes`, `agendas_followup` ficaram de fora por enquanto (ainda sem tela de CRUD construída — item #9 pendente) — quando essas telas forem feitas, estender é uma linha (`create trigger ...`) por tabela, sem replanejar nada.
+Trigger aplicado em 6 tabelas: `etapas_fluxo`, `fluxos`, `usuarios_sistema`, `pessoas`, `conversas` (as 5 originalmente propostas) e `oportunidades` (adicionada — é o registro do CRM/Kanban, valor estimado e etapa do funil, claramente no mesmo nível de sensibilidade das outras). `faqs`, `precos_por_faixa`, `produtos`, `configuracoes`, `agendas_followup` ficaram de fora nesta primeira leva.
+
+**⚠️ Desatualizado (achado na revisão de documentação de 15/08/2026):** este trecho dizia que a extensão dependia das telas de CRUD ainda não existirem ("item #9 pendente"). O item #9 do backlog fechou em 15/08/2026 — `/admin/faqs`, `/admin/objecoes`, `/admin/precos`, `/admin/configuracoes` e `/admin/agendas` já existem e escrevem nessas tabelas. A extensão do trigger de auditoria pra essas 5 tabelas continua **não feita**, mas agora é só uma pendência de execução (uma linha `create trigger ...` por tabela, sem replanejar nada), não mais bloqueada por falta de tela.
 
 ### 2.7 Imutabilidade do log
 
@@ -117,3 +119,4 @@ O plano mestre já registra "log de auditoria imutável" como requisito. Na prá
 2. **MFA no login (seção 1.2):** confirmar se entra agora ou fica para quando houver mais de um admin (sugestão: esperar, não é urgente com um usuário só).
 3. **Coluna de SQL bruto opcional (seção 2.5):** não incluída na implementação — segue como possível extra futuro se Luiz achar valioso.
 4. Seções 1.1 e 1.3 não têm código para escrever ainda — são regras de arquitetura a manter quando a Fase 5 (IA real) e Fase 7 (WhatsApp real) forem implementadas. Ficam registradas aqui para não se perder até lá.
+5. **Estender o trigger de auditoria (seção 2.6) para `faqs`, `precos_por_faixa`, `produtos`, `configuracoes`, `agendas_followup`** — as telas de CRUD dessas 5 tabelas já existem desde 15/08/2026 (item #9 do backlog), então a única razão que faltava pra cobri-las (não ter tela ainda) não existe mais. Fica pendente até uma migration nova pendurar o trigger nelas.
