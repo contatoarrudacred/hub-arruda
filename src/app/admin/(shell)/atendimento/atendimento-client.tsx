@@ -674,6 +674,39 @@ export function AtendimentoClient({
     else setAvisoProximaEtapa("Esta etapa do script não tem mensagem de texto pra reaproveitar.");
   }
 
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [menuAcoesAberto, setMenuAcoesAberto] = useState(false);
+  const [emojiAberto, setEmojiAberto] = useState(false);
+
+  /** Campo cresce com o texto (1 linha → ~10 linhas, empurrando a timeline pra cima) e depois disso vira scroll interno — WhatsApp Web, pedido do Luiz (Bloco B2, 17/08/2026). */
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const ALTURA_LINHA_PX = 20;
+    const MAX_LINHAS = 10;
+    el.style.height = "auto";
+    const alturaMax = ALTURA_LINHA_PX * MAX_LINHAS + 16;
+    const alturaAlvo = Math.min(el.scrollHeight, alturaMax);
+    el.style.height = `${alturaAlvo}px`;
+    el.style.overflowY = el.scrollHeight > alturaMax ? "auto" : "hidden";
+  }, [textoComposer]);
+
+  function inserirNoComposer(trecho: string) {
+    const el = composerRef.current;
+    const posicao = el?.selectionStart ?? textoComposer.length;
+    const novoTexto = textoComposer.slice(0, posicao) + trecho + textoComposer.slice(posicao);
+    setTextoComposer(novoTexto);
+    Promise.resolve().then(() => {
+      el?.focus();
+      el?.setSelectionRange(posicao + trecho.length, posicao + trecho.length);
+    });
+  }
+
+  const EMOJIS_COMPOSER = [
+    "😀", "😂", "😊", "😍", "🙏", "👍", "👏", "🎉", "❤️", "😢", "😮", "🤔",
+    "✅", "❌", "🙌", "🔥", "💪", "😴", "😅", "🥳", "😉", "🤝", "📌", "⏰",
+  ];
+
   /**
    * Troca de conversa "de verdade" — intercepta quando a conversa que está sendo deixada tem uma
    * mensagem nossa (não da Malala/simulador — daqui só passa quem é humano de verdade) sem
@@ -1093,30 +1126,55 @@ export function AtendimentoClient({
 
                 <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
 
-                {detalhe?.etapaFluxoAtualId && (
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
-                    onClick={handleUsarProximaEtapa}
-                    disabled={modoComposer !== "mensagem" || !composerHabilitado || carregandoProximaEtapa}
-                    title="Preenche o composer com a mensagem que a Malala mandaria a seguir, pra você revisar antes de enviar"
+                    onClick={() => setMenuAcoesAberto((v) => !v)}
+                    disabled={modoComposer !== "mensagem"}
                     className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
                   >
-                    {carregandoProximaEtapa ? "..." : "⚡ Próxima etapa"}
+                    ⚡ Ações ▾
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setMenuRespostasAberto((v) => !v)}
-                  disabled={modoComposer !== "mensagem"}
-                  title="Respostas prontas"
-                  className={`rounded-full px-3 py-0.5 text-xs font-medium disabled:opacity-40 ${
-                    menuRespostasAberto
-                      ? "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
-                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-                  }`}
-                >
-                  💬 Respostas prontas
-                </button>
+                  {menuAcoesAberto && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMenuAcoesAberto(false)} />
+                      <div className="absolute bottom-full left-0 z-20 mb-1 w-56 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                        {detalhe?.etapaFluxoAtualId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuAcoesAberto(false);
+                              handleUsarProximaEtapa();
+                            }}
+                            disabled={!composerHabilitado || carregandoProximaEtapa}
+                            title="Preenche o composer com a mensagem que a Malala mandaria a seguir, pra você revisar antes de enviar"
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          >
+                            ⚡ {carregandoProximaEtapa ? "Carregando..." : "Próxima etapa"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuAcoesAberto(false);
+                            setMenuRespostasAberto(true);
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          💬 Respostas prontas
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          title="Em breve"
+                          className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 dark:text-zinc-600"
+                        >
+                          📅 Agendar
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button
                   type="button"
                   disabled
@@ -1133,18 +1191,41 @@ export function AtendimentoClient({
                 >
                   🎤 Áudio
                 </button>
-                <button
-                  type="button"
-                  disabled
-                  title="Em breve"
-                  className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-0.5 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
-                >
-                  📅 Agendar
-                </button>
               </div>
               {avisoProximaEtapa && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoProximaEtapa}</p>}
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
-              <div className="flex gap-2">
+              <div className="flex items-end gap-2">
+                <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => setEmojiAberto((v) => !v)}
+                    disabled={modoComposer === "nota" ? enviandoNota : !composerHabilitado || enviando}
+                    title="Emoji"
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  >
+                    😀
+                  </button>
+                  {emojiAberto && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setEmojiAberto(false)} />
+                      <div className="absolute bottom-full left-0 z-20 mb-1 grid w-56 grid-cols-6 gap-1 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                        {EMOJIS_COMPOSER.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => {
+                              inserirNoComposer(emoji);
+                              setEmojiAberto(false);
+                            }}
+                            className="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
                 <div className="relative flex-1">
                   {sugestoesRespostas.length > 0 && (
                     <div className="absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
@@ -1161,7 +1242,9 @@ export function AtendimentoClient({
                       ))}
                     </div>
                   )}
-                  <input
+                  <textarea
+                    ref={composerRef}
+                    rows={1}
                     value={textoComposer}
                     onChange={(e) => setTextoComposer(e.target.value)}
                     onKeyDown={(e) => {
@@ -1178,7 +1261,7 @@ export function AtendimentoClient({
                           ? 'Digite uma mensagem... ("/" pra respostas prontas)'
                           : "A Malala está no controle desta conversa"
                     }
-                    className="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    className="w-full resize-none rounded-3xl border border-zinc-300 bg-white px-4 py-2 text-sm leading-5 text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                   />
                 </div>
                 <button
