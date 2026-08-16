@@ -21,7 +21,6 @@ function rotuloIntervalo(valor: number, unidade: string): string {
 export function TesteFollowup({
   etapaAtualCodigo,
   dados,
-  turno,
   desabilitado,
   onMostrarWhatsapp,
   onMostrarEmail,
@@ -29,8 +28,6 @@ export function TesteFollowup({
 }: {
   etapaAtualCodigo: string | null;
   dados: DadosConversa;
-  /** muda a cada turno real da conversa — sinaliza pro quadrinho recarregar o preview */
-  turno: number;
   desabilitado: boolean;
   onMostrarWhatsapp: (texto: string) => void;
   onMostrarEmail: (descricao: string) => void;
@@ -41,6 +38,11 @@ export function TesteFollowup({
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Recarrega só quando o CHECKPOINT muda de verdade (etapaAtualCodigo) — nunca por causa de um
+  // clique em "Ver", que só adiciona uma mensagem ao chat (mensagens.length muda) sem tocar em
+  // qual etapa a conversa está. Bug real encontrado ao testar (16/08/2026): usar mensagens.length
+  // como dependência aqui fazia o índice voltar pro item 1 a cada clique, porque mostrar o preview
+  // também conta como "mudou alguma coisa no chat".
   const recarregar = useCallback(async () => {
     if (!etapaAtualCodigo) {
       setItens(null);
@@ -57,7 +59,7 @@ export function TesteFollowup({
       setCarregando(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etapaAtualCodigo, turno]);
+  }, [etapaAtualCodigo]);
 
   useEffect(() => {
     Promise.resolve().then(() => recarregar());

@@ -162,7 +162,6 @@ export function SimuladorChat({ aoFechar }: { aoFechar?: () => void } = {}) {
       <TesteFollowup
         etapaAtualCodigo={estado.etapaAtualCodigo}
         dados={estado.dados}
-        turno={mensagens.length}
         desabilitado={ocupado}
         onMostrarWhatsapp={(texto) =>
           setMensagens((atual) => [...atual, { autor: "malala", conteudo: { tipo: "texto", texto } }])
