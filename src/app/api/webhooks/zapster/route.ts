@@ -69,6 +69,10 @@ async function processarMensagemRecebida(telefone: string, texto: string): Promi
     let dadosNovos;
     if (estado.etapaAtualCodigo === null) {
       const dadosIniciais = criarExtratorAbertura()(texto);
+      // O canal já forneceu o telefone (é de onde a mensagem veio) — não faz sentido perguntar de
+      // novo (regra de checkpoint já respondido, engine.ts). Só o canal WhatsApp faz isso; outros
+      // canais (widget do site, por exemplo) continuam perguntando normalmente.
+      dadosIniciais.telefone = telefone;
       const resultadoPercurso = iniciarFluxo(
         "saudacao_inicial",
         etapasPorCodigo,
