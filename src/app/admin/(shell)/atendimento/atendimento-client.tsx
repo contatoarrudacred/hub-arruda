@@ -28,6 +28,7 @@ import {
   marcarNotificacaoLidaAction,
 } from "./actions";
 import { resetarConversaAction } from "../reset-conversa/actions";
+import { sair } from "../actions";
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
 
 // Tela de Atendimento, Bloco A (fundação) — ver docs/TELA_ATENDIMENTO_ARRUDACRED.md. Simplificações
@@ -374,6 +375,45 @@ function SinoNotificacoes({
   );
 }
 
+function BarraUsuarioAtual({ usuarioAtual }: { usuarioAtual: UsuarioSistema }) {
+  const [aberto, setAberto] = useState(false);
+  const tom = CORES_BADGE[usuarioAtual.corBadge];
+
+  return (
+    <div className="flex items-center justify-end border-b border-zinc-200 bg-white px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setAberto((v) => !v)}
+          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        >
+          <span
+            className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${tom.bg} ${tom.texto}`}
+          >
+            {usuarioAtual.nome.charAt(0).toUpperCase()}
+          </span>
+          <span className="text-sm text-zinc-700 dark:text-zinc-300">{usuarioAtual.nome}</span>
+        </button>
+        {aberto && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setAberto(false)} />
+            <div className="absolute right-0 z-20 mt-1 w-36 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <form action={sair}>
+                <button
+                  type="submit"
+                  className="flex w-full items-center px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Sair
+                </button>
+              </form>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AtendimentoClient({
   usuarioAtual,
   conversasIniciais,
@@ -649,7 +689,9 @@ export function AtendimentoClient({
 
   return (
     <>
-    <div className="flex h-screen">
+    <div className="flex h-screen flex-col">
+    <BarraUsuarioAtual usuarioAtual={usuarioAtual} />
+    <div className="flex min-h-0 flex-1">
       {/* Painel esquerdo — lista de contatos */}
       <div className="flex w-96 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
         <div className="space-y-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
@@ -1097,6 +1139,7 @@ export function AtendimentoClient({
           </div>
         </div>
       )}
+    </div>
     </div>
     </div>
 
