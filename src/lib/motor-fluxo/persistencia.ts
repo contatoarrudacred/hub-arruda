@@ -419,3 +419,28 @@ export async function dispararItemFollowup(
 
   return conteudo;
 }
+
+const PADRAO_CODIGO_RASTREIO = /\s*\(ref:\s*([a-f0-9]{8})\)\s*$/i;
+
+/**
+ * Tira o código de rastreio (`(ref: a1b2c3d4)`, embutido pela página zap.arrudacred.com.br — ver
+ * docs/RASTREIO_CLIQUES_WHATSAPP.md) do texto que a Malala/o motor enxergam, sem perder o código
+ * em si (quem chama usa ele em `correlacionarCliqueRastreio`). Sem código encontrado, devolve o
+ * texto original sem alteração.
+ */
+export function extrairCodigoRastreio(textoOriginal: string): { texto: string; codigo: string | null } {
+  const encontrado = textoOriginal.match(PADRAO_CODIGO_RASTREIO);
+  if (!encontrado) return { texto: textoOriginal, codigo: null };
+  return { texto: textoOriginal.slice(0, encontrado.index).trimEnd(), codigo: encontrado[1].toLowerCase() };
+}
+
+/** Liga um clique já registrado em `cliques_rastreio` à pessoa cuja primeira mensagem trouxe o código correspondente. Silencioso — clique não encontrado (código errado, expirado, ou a pessoa editou o texto pré-preenchido) não pode travar o atendimento. */
+export async function correlacionarCliqueRastreio(codigo: string, pessoaId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("cliques_rastreio")
+    .update({ pessoa_id: pessoaId })
+    .eq("codigo", codigo)
+    .is("pessoa_id", null);
+  if (error) console.error(`Falha ao correlacionar clique de rastreio "${codigo}":`, error.message);
+}

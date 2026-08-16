@@ -7,6 +7,8 @@ import {
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import {
   carregarOuCriarConversaWhatsapp,
+  correlacionarCliqueRastreio,
+  extrairCodigoRastreio,
   registrarMensagemLead,
   registrarTurnoMalala,
 } from "@/lib/motor-fluxo/persistencia";
@@ -55,10 +57,18 @@ async function montarDependencias() {
   };
 }
 
-async function processarMensagemRecebida(telefone: string, texto: string): Promise<void> {
+async function processarMensagemRecebida(telefone: string, textoRecebido: string): Promise<void> {
+  // Código de rastreio (zap.arrudacred.com.br, ver docs/RASTREIO_CLIQUES_WHATSAPP.md) tirado antes
+  // de qualquer outra coisa — a Malala/o motor nunca veem "(ref: a1b2c3d4)" como parte da conversa.
+  const { texto, codigo: codigoRastreio } = extrairCodigoRastreio(textoRecebido);
+
   try {
     const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } = await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
+
+    if (codigoRastreio) {
+      await correlacionarCliqueRastreio(codigoRastreio, estado.pessoaId);
+    }
 
     if (estado.sobSupervisor) {
       await registrarMensagemLead(estado.conversaId, texto);
