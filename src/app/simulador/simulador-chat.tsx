@@ -160,17 +160,17 @@ export function SimuladorChat({ aoFechar }: { aoFechar?: () => void } = {}) {
       </div>
 
       <TesteFollowup
-        conversaId={estado.conversaId}
-        oportunidadeId={estado.oportunidadeId}
+        etapaAtualCodigo={estado.etapaAtualCodigo}
+        dados={estado.dados}
         turno={mensagens.length}
         desabilitado={ocupado}
-        onDisparoWhatsapp={(texto) =>
+        onMostrarWhatsapp={(texto) =>
           setMensagens((atual) => [...atual, { autor: "malala", conteudo: { tipo: "texto", texto } }])
         }
-        onDisparoEmail={(descricao) =>
-          setMensagens((atual) => [...atual, { autor: "sistema", texto: `📧 E-mail simulado: ${descricao}` }])
+        onMostrarEmail={(descricao) =>
+          setMensagens((atual) => [...atual, { autor: "sistema", texto: `📧 Preview de e-mail: ${descricao}` }])
         }
-        onEncerrouAtendimento={() => setEncerrado(true)}
+        onFimDaCadencia={() => setEncerrado(true)}
       />
 
       <div className="flex gap-2 border-t border-zinc-200 p-4 dark:border-zinc-800">
