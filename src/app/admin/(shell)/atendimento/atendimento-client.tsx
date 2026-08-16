@@ -556,14 +556,20 @@ export function AtendimentoClient({
   const [modoComposer, setModoComposer] = useState<"mensagem" | "nota">("mensagem");
   const [enviandoNota, setEnviandoNota] = useState(false);
 
+  const [menuRespostasAberto, setMenuRespostasAberto] = useState(false);
+
   const sugestoesRespostas = useMemo(() => {
-    if (modoComposer !== "mensagem" || !textoComposer.startsWith("/")) return [];
-    const termo = textoComposer.slice(1).toLowerCase();
-    return respostasProntasIniciais.filter((r) => r.atalho.toLowerCase().includes(termo));
-  }, [modoComposer, textoComposer, respostasProntasIniciais]);
+    if (modoComposer !== "mensagem") return [];
+    if (textoComposer.startsWith("/")) {
+      const termo = textoComposer.slice(1).toLowerCase();
+      return respostasProntasIniciais.filter((r) => r.atalho.toLowerCase().includes(termo));
+    }
+    return menuRespostasAberto ? respostasProntasIniciais : [];
+  }, [modoComposer, textoComposer, respostasProntasIniciais, menuRespostasAberto]);
 
   function inserirRespostaPronta(resposta: RespostaPronta) {
     setTextoComposer(resposta.texto);
+    setMenuRespostasAberto(false);
   }
 
   const [carregandoProximaEtapa, setCarregandoProximaEtapa] = useState(false);
@@ -923,7 +929,7 @@ export function AtendimentoClient({
             </div>
 
             <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="mb-2 flex gap-1">
+              <div className="mb-2 flex flex-wrap items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setModoComposer("mensagem")}
@@ -946,17 +952,57 @@ export function AtendimentoClient({
                 >
                   Nota interna
                 </button>
-                {modoComposer === "mensagem" && detalhe?.etapaFluxoAtualId && (
+
+                <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+                {detalhe?.etapaFluxoAtualId && (
                   <button
                     type="button"
                     onClick={handleUsarProximaEtapa}
-                    disabled={!composerHabilitado || carregandoProximaEtapa}
+                    disabled={modoComposer !== "mensagem" || !composerHabilitado || carregandoProximaEtapa}
                     title="Preenche o composer com a mensagem que a Malala mandaria a seguir, pra você revisar antes de enviar"
                     className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
                   >
                     {carregandoProximaEtapa ? "..." : "⚡ Próxima etapa"}
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setMenuRespostasAberto((v) => !v)}
+                  disabled={modoComposer !== "mensagem"}
+                  title="Respostas prontas"
+                  className={`rounded-full px-3 py-0.5 text-xs font-medium disabled:opacity-40 ${
+                    menuRespostasAberto
+                      ? "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                  }`}
+                >
+                  💬 Respostas prontas
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="Em breve"
+                  className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-0.5 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
+                >
+                  📎 Anexo
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="Em breve"
+                  className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-0.5 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
+                >
+                  🎤 Áudio
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="Em breve"
+                  className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-0.5 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
+                >
+                  📅 Agendar
+                </button>
               </div>
               {avisoProximaEtapa && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoProximaEtapa}</p>}
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
