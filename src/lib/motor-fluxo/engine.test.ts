@@ -182,8 +182,8 @@ describe("delay automático (baseado no tamanho da mensagem, Luiz 15/08/2026)", 
       expect(m.digitando).toBe(true);
       expect(m.delay.tipo).toBe("aleatorio");
       if (m.delay.tipo !== "aleatorio") continue;
-      expect(m.delay.min_segundos).toBeGreaterThanOrEqual(0.8);
-      expect(m.delay.max_segundos).toBeLessThanOrEqual(4.0);
+      expect(m.delay.min_segundos).toBeGreaterThanOrEqual(3.0);
+      expect(m.delay.max_segundos).toBeLessThanOrEqual(6.0);
       expect(m.delay.min_segundos).toBeLessThanOrEqual(m.delay.max_segundos);
     }
   });

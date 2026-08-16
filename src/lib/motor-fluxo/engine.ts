@@ -26,12 +26,18 @@ const KANBAN_SUBETAPA_PADRAO = "novo_lead_triagem";
 // Padrão mudou de "nenhum" pra "automatico" em 15/08/2026 (Luiz) — ver calcularDelayAutomatico.
 const DELAY_PADRAO: ConfigDelay = { tipo: "automatico" };
 
-// Parâmetros do delay automático (Luiz, 15/08/2026) — ainda fixos no código; migram pra
-// `configuracoes` (editável pelo admin) quando a tela de Configurações gerais existir (item #9).
+// Parâmetros do delay automático (Luiz, 15/08/2026; piso/teto aumentados em 16/08/2026) — ainda
+// fixos no código; migram pra `configuracoes` (editável pelo admin) quando a tela de Configurações
+// gerais existir (item #9). Piso subiu de 0,8s pra 3s depois de um teste real no WhatsApp (Zapster,
+// modo não oficial) mostrar mensagens entregues fora de ordem quando enviadas rápido demais uma
+// atrás da outra — a Zapster não garante ordem de entrega nesse modo (ver mensagem de Luiz,
+// 16/08/2026). Juntar as mensagens num envio só foi cogitado e descartado: estragaria o ritmo do
+// script de vendas (pausas entre balões são intencionais). Delay maior é a mitigação aceita por
+// enquanto — resolve por si só quando migrar pro WABA oficial (Fase 7, entrega via infra da Meta).
 const DELAY_AUTOMATICO_BASE_SEGUNDOS = 0.6;
 const DELAY_AUTOMATICO_POR_CARACTERE = 0.016;
-const DELAY_AUTOMATICO_MIN_SEGUNDOS = 0.8;
-const DELAY_AUTOMATICO_MAX_SEGUNDOS = 4.0;
+const DELAY_AUTOMATICO_MIN_SEGUNDOS = 3.0;
+const DELAY_AUTOMATICO_MAX_SEGUNDOS = 6.0;
 const DELAY_AUTOMATICO_JITTER_SEGUNDOS = 0.5;
 
 /** Extrai um texto legível de qualquer tipo de mensagem — usado só pra retomar a pergunta quando a resposta não é reconhecida (não faz sentido re-perguntar "aqui está uma imagem", precisa de um resumo). */
