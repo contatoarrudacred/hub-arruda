@@ -14,7 +14,11 @@ import {
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
 } from "@/lib/motor-fluxo/repositorio";
-import { enviarMensagemWhatsapp } from "@/lib/whatsapp/enviar";
+import { enviarSequenciaWhatsapp } from "@/lib/whatsapp/enviar";
+
+// Delay/digitando entre mensagens (ver enviarSequenciaWhatsapp) pode somar alguns segundos por
+// turno — maxDuration maior evita que a função seja encerrada no meio de uma sequência de envio.
+export const maxDuration = 60;
 
 // Webhook de entrada do WhatsApp real (Fase 7, Zapster, modo não-oficial). Mesmo motor que o
 // /simulador usa (ver actions.ts) — a diferença é que aqui não existe client guardando
@@ -113,9 +117,7 @@ export async function POST(request: Request) {
       resultado,
     });
 
-    for (const item of resultado.mensagens) {
-      await enviarMensagemWhatsapp(telefone, item.mensagem);
-    }
+    await enviarSequenciaWhatsapp(telefone, resultado.mensagens);
 
     return Response.json({ processado: true, mensagensEnviadas: resultado.mensagens.length });
   } catch (e) {

@@ -47,6 +47,24 @@ export async function enviarMensagemTexto(telefone: string, texto: string): Prom
   return { messageId: corpo?.message_id ?? "" };
 }
 
+/** Mostra "digitando..." (ou "gravando áudio...") pro destinatário até a próxima mensagem ser enviada (ou por até 10 min, o que vier primeiro). Não lança erro — indicador de presença é cosmético, uma falha aqui não pode travar o envio da mensagem de verdade. */
+export async function definirDigitando(telefone: string): Promise<void> {
+  const { baseUrl, token, instanceId } = obterConfig();
+  try {
+    await fetch(`${baseUrl}/wa/instances/${instanceId}/presence`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipient: normalizarTelefone(telefone),
+        status: "typing",
+        duration_strategy: "until_next_message",
+      }),
+    });
+  } catch {
+    // cosmético — ignora falha
+  }
+}
+
 /** Envia uma mídia (imagem/áudio/vídeo/documento) por URL — a mesma URL do Supabase Storage já usada no editor de fluxo/simulador. Lança erro em caso de falha. */
 export async function enviarMensagemMidia(
   telefone: string,
