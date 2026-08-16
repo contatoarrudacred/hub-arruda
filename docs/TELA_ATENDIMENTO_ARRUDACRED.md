@@ -48,6 +48,7 @@
 - **Atribuir pra Malala** — com opção de escolher pra qual fluxo/etapa a conversa deve retomar (não necessariamente do zero)
 - Botão que abre o painel lateral com todos os dados do contato e da Oportunidade no CRM
 - **Indicador de colisão** — se outro atendente também está com essa conversa aberta no momento, mostra algo como "Fulano também está vendo esta conversa agora", pra evitar os dois responderem a mesma coisa sem saber
+- **Resetar conversa** (16/08/2026) — mesma função do utilitário de teste `/admin/reset-conversa`, agora também disponível direto na tela de atendimento. Clicar abre uma modal de alerta avisando que **a ação é irreversível** e vai apagar tudo daquele número de telefone (pessoa, oportunidade, conversa, mensagens) — precisa confirmar antes de executar. Pensado pra continuar sendo uso de teste/exceção, não parte do fluxo normal de atendimento — por isso o alerta forte.
 
 **Timeline da conversa — unificada, tudo intercalado por horário:**
 - Mensagens de WhatsApp normais (lead ↔ Malala/humano)
