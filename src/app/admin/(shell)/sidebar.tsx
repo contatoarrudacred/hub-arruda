@@ -71,7 +71,9 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
         <span className="text-sm font-medium text-white">Hub Arruda</span>
       </div>
 
-      <p className="px-2.5 pb-1 text-xs font-medium uppercase tracking-wide text-white/40">
+      <ItemNav item={{ rotulo: "Atendimento", href: "/admin/atendimento" }} pathname={pathname} />
+
+      <p className="px-2.5 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-white/40">
         Configurações
       </p>
 
