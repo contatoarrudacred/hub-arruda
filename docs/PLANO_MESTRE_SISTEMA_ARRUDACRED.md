@@ -196,6 +196,7 @@ MODELAGEM_DADOS_ARRUDACRED.md             ← núcleo de dados (Pessoa/Papel, mu
 SCRIPT_LIMPANOME_SERASA_SPC.md            ← script de atendimento do produto Limpeza de Nome
 FAQ_LIMPANOME_SERASA_SPC.md               ← base de conhecimento da Malala (mesmo produto)
 KANBAN_COMERCIAL_LIMPANOME.md             ← funil/Kanban do Comercial (mesmo produto)
+TELA_ATENDIMENTO_ARRUDACRED.md            ← tela de CRM pra acompanhar/assumir atendimento real (WhatsApp), ainda não construída
 REGUA_COBRANCA_ARRUDACRED.md              ← régua de cobrança pós-contrato, cliente em atraso (uso futuro, Financeiro)
 AGENDA_POS_VENDA_ARRUDACRED.md            ← régua de relacionamento pós-contrato, cliente em dia (uso futuro)
 MODULO_MARKETING_CONTEUDO_ARRUDACRED.md   ← pipeline de conteúdo/blog multi-site + campanha de indicação de clientes
@@ -544,6 +545,9 @@ Luiz pediu um e-mail automático assim que a Malala captura o e-mail do lead (ch
 - ✅ **Descadastro funcional** (`/descadastro?p=<id-da-pessoa>`) — página de confirmação (não dispara só ao abrir o link, evita descadastro acidental por scanner de e-mail) + `pessoas.email_marketing_opt_out`, checado antes de qualquer envio de marketing (este e-mail e, no futuro, a nutrição pós-perda).
 - ✅ **Testado com envio real** — e-mail de teste disparado de verdade via Resend pro próprio Luiz conferir na caixa de entrada (não só o preview renderizado).
 - ⬜ **Aviso pra quando for testar pelo `/simulador`:** o envio é de verdade — digitar um e-mail real na etapa `abertura_email` do simulador manda um e-mail de verdade pra essa caixa.
+
+### Tela de Atendimento (CRM) ⬜ requisito registrado, ainda não construída (16/08/2026)
+Luiz considera essa a tela mais importante do CRM — onde o admin/atendente acompanha o atendimento da Malala em tempo real e assume/atende conversas manualmente. Desenho completo fechado após pesquisa de mercado (Chatwoot, Umbler Talk, Digisac, Octadesk) — ver **`TELA_ATENDIMENTO_ARRUDACRED.md`** pra especificação inteira (lista de contatos, conversa, composer, colaboração entre os 2 atendentes humanos já existentes, confirmação de leitura, e a limitação técnica confirmada de chamada de voz/vídeo — Zapster não expõe evento de chamada). Depende parcialmente da Fase 5 (IA real) pra alguns recursos (resumo automático ao assumir, detector de objeção, assist de IA no composer).
 
 ### Painel de status de integrações externas ⬜ requisito registrado, ainda não construído (15/08/2026)
 Luiz pediu (15/08/2026), ao conectar a Resend — a primeira API de terceiro que o projeto passou a usar de verdade: sempre que ele (ou outro admin do sistema) acessar o painel, precisa existir um lugar com visão clara e objetiva do estado de **todo recurso externo** de que o sistema depende pra funcionar. Ainda não desenhado em detalhe — registrado aqui pra não esquecer antes de crescer o número de integrações (Zapster/WhatsApp na Fase 7, e o que mais vier depois).
