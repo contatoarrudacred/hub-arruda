@@ -1,5 +1,5 @@
 # Tela de Atendimento — CRM (WhatsApp)
-**Status:** Desenho fechado com Luiz em 16/08/2026, após pesquisa de mercado (Chatwoot, Umbler Talk, Digisac, Octadesk) e várias rodadas de "fala comigo". **Nada construído ainda** — este documento é a especificação completa pra quando a construção começar.
+**Status:** Desenho fechado com Luiz em 16/08/2026, após pesquisa de mercado (Chatwoot, Umbler Talk, Digisac, Octadesk) e várias rodadas de "fala comigo". **Bloco A construído e em produção (16/08/2026)** — lista de contatos, conversa, Assumir Chat/Atribuir pra Malala e composer básico, testados no navegador e commitados (`cdd4121`, `37a136d`, `4f28132`). Blocos B/C/D e Fase 5 (IA) ainda não construídos — ver `PLANO_MESTRE_SISTEMA_ARRUDACRED.md`, seção "Progresso de Produção", pra detalhe do que já existe vs. o que falta.
 **Objetivo:** tela onde o admin (ou qualquer atendente humano) acompanha em tempo real o que a Malala está fazendo, assume qualquer conversa quando precisar, e atende diretamente quando a conversa está com humano. É a tela mais importante do CRM na visão de Luiz.
 **Referências:** `MODELAGEM_DADOS_ARRUDACRED.md` (schema de pessoas/conversas/oportunidades), `PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 8.4 (escalonamento pra supervisor, já parcialmente implementado — `conversas.sob_supervisor`), `SEGURANCA_E_AUDITORIA_ARRUDACRED.md` (trilha de auditoria que alimenta a trilha de atividade da seção 3), Fase 7 (WhatsApp real, Zapster) já em produção.
 
@@ -19,13 +19,14 @@
 
 **Busca** (topo da lista): nome, telefone e conteúdo das mensagens trocadas — busca em tudo, um campo só.
 
-**Filtros rápidos em botão** (com "+Filtros" abrindo um painel flutuante para o resto):
+**Filtros rápidos em botão** — desenho revisado com Luiz em 16/08/2026, já construído no Bloco A:
 - Tudo
 - Malala (bot no controle)
-- Minhas (atribuídas ao atendente logado)
-- **[Nome do outro atendente]** (atribuídas a ele)
-- Não atribuídas (escalada pra humano, ninguém assumiu ainda)
+- **Humano** — abre um submenu com Minhas / Não atribuídas / Todas (substitui o desenho anterior de um botão por atendente nomeado; atribuição a um atendente específico por nome volta no Bloco B — seção 6)
 - Não lidas
+- **+Filtros** — reservado o espaço (botão desabilitado, "em breve"); o painel avançado ainda não foi desenhado
+
+Cada botão (e cada item do submenu Humano) mostra um **badge vermelho com a contagem de conversas não lidas** naquele escopo.
 
 **Cada card da lista mostra:**
 - Foto do contato (a mais recente — ver seção 4 sobre histórico de fotos)
