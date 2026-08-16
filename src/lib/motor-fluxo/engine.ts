@@ -277,7 +277,8 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   // pro [Primeiro_Nome]) — sem isto, uma resposta tipo "sou Luiz, boa tarde!" vira o nome inteiro
   // "sou Luiz, boa tarde!", e o [Primeiro_Nome] usa só a primeira palavra bruta ("sou").
   if (reconhecido && etapaAtual.campoSalvo === "nome" && conteudo.tipo_resposta === "texto_livre") {
-    reconhecido = { ...reconhecido, valor: extrairNomeDeResposta(reconhecido.valor) };
+    const nomeExtraido = extrairNomeDeResposta(reconhecido.valor);
+    reconhecido = nomeExtraido ? { ...reconhecido, valor: nomeExtraido } : null;
   }
 
   let interpretadoPorIA = false;

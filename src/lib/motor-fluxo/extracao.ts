@@ -29,6 +29,28 @@ const PADROES_NOME = [
 // (ex.: "Luiz da Silva", não "Luiz Da Silva").
 const CONECTORES_NOME = new Set(["de", "da", "do", "das", "dos", "e"]);
 
+// Respostas cumprimento/preenchimento comuns a "Com quem eu falo?" que NÃO são o nome do lead
+// (achado real, 16/08/2026: lead respondeu só "oi" e o fallback ingênuo virou nome "Oi", produzindo
+// "Oi Oi, bom dia!" na mensagem seguinte). Sem IA (Fase 5) pra desambiguar, a saída seguinte é
+// tratar como não reconhecido e repetir a pergunta — melhor que aceitar um nome claramente errado.
+const RESPOSTAS_NAO_SAO_NOME = new Set([
+  "oi",
+  "oii",
+  "oiii",
+  "oie",
+  "olá",
+  "ola",
+  "opa",
+  "eae",
+  "e ai",
+  "eai",
+  "alo",
+  "alô",
+  "bom dia",
+  "boa tarde",
+  "boa noite",
+]);
+
 function capitalizarNome(nome: string): string {
   return nome
     .split(/\s+/)
@@ -53,13 +75,16 @@ export function extrairNomeSaudacao(mensagem: string): string | null {
  * Extrai o nome de uma resposta DIRETA à pergunta "Com quem eu falo?" (não a mensagem de abertura
  * espontânea, que usa `extrairNomeSaudacao` acima). Tenta os mesmos padrões de auto-apresentação
  * primeiro ("sou Luiz, boa tarde!" → "Luiz") — se o lead respondeu só o nome puro, sem nenhuma
- * frase de apresentação ("Luiz"), cai no fallback de usar a resposta inteira, que já é o
- * comportamento correto nesse caso.
+ * frase de apresentação ("Luiz"), cai no fallback de usar a resposta inteira. Retorna `null` quando
+ * a resposta é só um cumprimento/preenchimento (ver RESPOSTAS_NAO_SAO_NOME) — quem chama trata como
+ * não reconhecido e repete a pergunta, em vez de aceitar "Oi" como nome.
  */
-export function extrairNomeDeResposta(resposta: string): string {
+export function extrairNomeDeResposta(resposta: string): string | null {
   const viaPadrao = extrairNomeSaudacao(resposta);
   if (viaPadrao) return viaPadrao;
-  return capitalizarNome(resposta.trim());
+  const bruta = resposta.trim();
+  if (RESPOSTAS_NAO_SAO_NOME.has(bruta.toLowerCase())) return null;
+  return capitalizarNome(bruta);
 }
 
 export function extrairDadosAbertura(mensagem: string): DadosConversa {
