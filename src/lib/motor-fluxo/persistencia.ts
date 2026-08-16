@@ -412,3 +412,25 @@ export async function correlacionarCliqueRastreio(codigo: string, pessoaId: stri
     .is("pessoa_id", null);
   if (error) console.error(`Falha ao correlacionar clique de rastreio "${codigo}":`, error.message);
 }
+
+/**
+ * Marca uma mensagem nossa (Malala/humano) como entregue ou lida, a partir dos webhooks
+ * message.delivered/message.read da Zapster (Bloco B2, 17/08/2026) — alimenta o check ✓/✓✓/✓✓azul
+ * no card de contato. Silencioso de propósito: `zapsterMessageId` não achar nada é esperado (evento
+ * de uma mensagem antiga, anterior a esta migration, ou o nome do campo no payload da Zapster
+ * divergir do que estamos lendo — payload ainda não confirmado contra tráfego real, mesmo
+ * caso já registrado em `message.received`) e não pode derrubar o processamento do webhook.
+ */
+export async function marcarStatusMensagem(
+  zapsterMessageId: string,
+  status: "entregue" | "lido",
+  quando: string,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const coluna = status === "entregue" ? "entregue_em" : "lido_em";
+  const { error } = await supabase
+    .from("mensagens")
+    .update({ [coluna]: quando })
+    .eq("zapster_message_id", zapsterMessageId);
+  if (error) console.error(`Falha ao marcar mensagem ${zapsterMessageId} como ${status}:`, error.message);
+}

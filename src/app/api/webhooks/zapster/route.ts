@@ -10,6 +10,7 @@ import {
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
   extrairCodigoRastreio,
+  marcarStatusMensagem,
   registrarMensagemLead,
   registrarTurnoMalala,
 } from "@/lib/motor-fluxo/persistencia";
@@ -153,8 +154,27 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   console.log("[webhook zapster] payload recebido:", JSON.stringify(payload));
 
-  if (!payload || payload.type !== "message.received") {
-    return Response.json({ ignorado: true, motivo: "não é message.received" });
+  if (!payload) {
+    return Response.json({ ignorado: true, motivo: "payload vazio" });
+  }
+
+  // Confirmação de entrega/leitura (Bloco B2, 17/08/2026) — alimenta o check ✓/✓✓/✓✓azul do card
+  // de contato. Nome exato do campo de correlação com a mensagem ainda não confirmado contra
+  // tráfego real (mesmo caso já registrado abaixo pra message.received) — tenta os caminhos mais
+  // prováveis do payload; ajustar aqui assim que o formato real for visto no log acima.
+  if (payload.type === "message.delivered" || payload.type === "message.read") {
+    const zapsterMessageId: string | undefined =
+      payload.data?.message_id ?? payload.data?.id ?? payload.data?.message?.id;
+    const quando: string = payload.data?.timestamp ?? payload.timestamp ?? new Date().toISOString();
+    if (zapsterMessageId) {
+      const status = payload.type === "message.delivered" ? "entregue" : "lido";
+      after(() => marcarStatusMensagem(zapsterMessageId, status, quando));
+    }
+    return Response.json({ recebido: true });
+  }
+
+  if (payload.type !== "message.received") {
+    return Response.json({ ignorado: true, motivo: `tipo de evento "${payload.type}" ainda não tratado` });
   }
 
   const data = payload.data;

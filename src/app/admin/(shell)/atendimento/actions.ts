@@ -105,8 +105,8 @@ export async function enviarMensagemAction(
 ): Promise<ResultadoEnviarMensagem> {
   if (!texto.trim()) return { sucesso: false, erro: "Mensagem vazia." };
   try {
-    await enviarMensagemTexto(telefone, texto);
-    await registrarMensagemHumana(conversaId, texto);
+    const { messageId } = await enviarMensagemTexto(telefone, texto);
+    await registrarMensagemHumana(conversaId, texto, messageId || null);
     revalidatePath("/admin/atendimento");
     return { sucesso: true };
   } catch (e) {

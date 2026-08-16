@@ -425,11 +425,15 @@ export async function atribuirParaAtendente(conversaId: string, atendenteId: str
 }
 
 /** Grava a mensagem de um atendente humano — o envio real via WhatsApp é feito por quem chama (fora daqui, mesmo adaptador de canal da Fase 7). */
-export async function registrarMensagemHumana(conversaId: string, texto: string): Promise<void> {
+export async function registrarMensagemHumana(
+  conversaId: string,
+  texto: string,
+  zapsterMessageId: string | null,
+): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase
     .from("mensagens")
-    .insert({ conversa_id: conversaId, remetente: "supervisor", conteudo: texto });
+    .insert({ conversa_id: conversaId, remetente: "supervisor", conteudo: texto, zapster_message_id: zapsterMessageId });
   if (error) throw new Error(`Falha ao registrar mensagem: ${error.message}`);
 }
 
