@@ -6,6 +6,9 @@ import type {
   ConversaDetalhe,
   ConversaResumo,
   FiltroConversas,
+  MensagemConversa,
+  NotaInterna,
+  Notificacao,
   UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
 import {
@@ -14,8 +17,12 @@ import {
   atribuirParaMalalaAction,
   carregarConversaAction,
   contarNaoLidasAction,
+  contarNotificacoesNaoLidasAction,
+  criarNotaAction,
   enviarMensagemAction,
   listarConversasAction,
+  listarNotificacoesAction,
+  marcarNotificacaoLidaAction,
 } from "./actions";
 import { resetarConversaAction } from "../reset-conversa/actions";
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
@@ -39,6 +46,8 @@ type ChaveFiltro =
   | "humano_todas"
   | "nao_lidas"
   | { atendenteId: string };
+
+type ItemTimeline = { tipo: "mensagem"; dado: MensagemConversa } | { tipo: "nota"; dado: NotaInterna };
 
 function filtroPorChave(chave: ChaveFiltro, usuarioId: string): FiltroConversas {
   if (typeof chave === "object") return { tipo: "humano_atendente", atendenteId: chave.atendenteId };
@@ -202,6 +211,25 @@ function DropdownAtribuir({
   );
 }
 
+function renderizarTextoComMencoes(texto: string, atendentes: UsuarioSistema[]) {
+  const partes = texto.split(/(@\w+)/g);
+  return partes.map((parte, i) => {
+    if (parte.startsWith("@")) {
+      const nomeBuscado = parte.slice(1).toLowerCase();
+      const atendente = atendentes.find((a) => a.nome.split(" ")[0].toLowerCase() === nomeBuscado);
+      if (atendente) {
+        const tom = CORES_BADGE[atendente.corBadge];
+        return (
+          <span key={i} className={`rounded px-1 font-medium ${tom.bg} ${tom.texto}`}>
+            {parte}
+          </span>
+        );
+      }
+    }
+    return <span key={i}>{parte}</span>;
+  });
+}
+
 function MenuAcoesCabecalho({ telefone, onResetar }: { telefone: string | null; onResetar: () => void }) {
   const [aberto, setAberto] = useState(false);
   const [copiado, setCopiado] = useState(false);
@@ -279,6 +307,17 @@ export function AtendimentoClient({
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  const itensTimeline = useMemo<ItemTimeline[]>(() => {
+    if (!detalhe) return [];
+    const msgs: ItemTimeline[] = detalhe.mensagens.map((m) => ({ tipo: "mensagem", dado: m }));
+    const notas: ItemTimeline[] = detalhe.notas.map((n) => ({ tipo: "nota", dado: n }));
+    return [...msgs, ...notas].sort((a, b) => {
+      const ta = a.tipo === "mensagem" ? a.dado.enviadoEm : a.dado.criadoEm;
+      const tb = b.tipo === "mensagem" ? b.dado.enviadoEm : b.dado.criadoEm;
+      return ta.localeCompare(tb);
+    });
+  }, [detalhe]);
 
   const resultadosBusca = useMemo(() => {
     const termo = termoBuscaConversa.trim().toLowerCase();
@@ -406,6 +445,20 @@ export function AtendimentoClient({
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
     await recarregarContagens();
+  }
+
+  const [modoComposer, setModoComposer] = useState<"mensagem" | "nota">("mensagem");
+  const [enviandoNota, setEnviandoNota] = useState(false);
+
+  async function handleSalvarNota() {
+    if (!conversaSelecionadaId || !textoComposer.trim()) return;
+    setEnviandoNota(true);
+    const resultado = await criarNotaAction(conversaSelecionadaId, textoComposer);
+    setEnviandoNota(false);
+    if (resultado.sucesso) {
+      setTextoComposer("");
+      await recarregarDetalhe(conversaSelecionadaId);
+    }
   }
 
   const composerHabilitado = detalhe?.sobSupervisor === true;
@@ -645,7 +698,26 @@ export function AtendimentoClient({
             )}
 
             <div ref={timelineRef} className={`flex-1 space-y-2 overflow-y-auto p-4 ${tomConversa?.bg ?? ""}`}>
-              {detalhe.mensagens.map((m) => {
+              {itensTimeline.map((item) => {
+                if (item.tipo === "nota") {
+                  const nota = item.dado;
+                  return (
+                    <div
+                      key={`nota-${nota.id}`}
+                      className="rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm dark:border-amber-500 dark:bg-amber-950/30"
+                    >
+                      <p className="text-xs font-medium text-amber-800 dark:text-amber-300">📝 {nota.autorNome}</p>
+                      <p className="mt-0.5 text-zinc-700 dark:text-zinc-300">
+                        {renderizarTextoComMencoes(nota.texto, atendentesIniciais)}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-amber-700/70 dark:text-amber-400/70">
+                        {formatarHora(nota.criadoEm)} · só a equipe vê
+                      </p>
+                    </div>
+                  );
+                }
+
+                const m = item.dado;
                 const doLead = m.remetente === "lead";
                 const cor = doLead
                   ? "bg-emerald-600 text-white"
@@ -672,27 +744,63 @@ export function AtendimentoClient({
             </div>
 
             <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+              <div className="mb-2 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setModoComposer("mensagem")}
+                  className={`rounded-full px-3 py-0.5 text-xs font-medium ${
+                    modoComposer === "mensagem"
+                      ? "bg-[#141e33] text-white"
+                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                  }`}
+                >
+                  Mensagem
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoComposer("nota")}
+                  className={`rounded-full px-3 py-0.5 text-xs font-medium ${
+                    modoComposer === "nota"
+                      ? "bg-amber-500 text-white"
+                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                  }`}
+                >
+                  Nota interna
+                </button>
+              </div>
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
               <div className="flex gap-2">
                 <input
                   value={textoComposer}
                   onChange={(e) => setTextoComposer(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleEnviar();
-                    }
+                    if (e.key !== "Enter" || e.shiftKey) return;
+                    e.preventDefault();
+                    if (modoComposer === "nota") handleSalvarNota();
+                    else handleEnviar();
                   }}
-                  disabled={!composerHabilitado || enviando}
-                  placeholder={composerHabilitado ? "Digite uma mensagem..." : "A Malala está no controle desta conversa"}
+                  disabled={modoComposer === "nota" ? enviandoNota : !composerHabilitado || enviando}
+                  placeholder={
+                    modoComposer === "nota"
+                      ? "Escrever nota interna... (@PrimeiroNome pra mencionar)"
+                      : composerHabilitado
+                        ? "Digite uma mensagem..."
+                        : "A Malala está no controle desta conversa"
+                  }
                   className="flex-1 rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                 />
                 <button
-                  onClick={handleEnviar}
-                  disabled={!composerHabilitado || enviando || !textoComposer.trim()}
-                  className="rounded-full bg-[#141e33] px-4 py-2 text-sm text-white disabled:opacity-40"
+                  onClick={modoComposer === "nota" ? handleSalvarNota : handleEnviar}
+                  disabled={
+                    modoComposer === "nota"
+                      ? enviandoNota || !textoComposer.trim()
+                      : !composerHabilitado || enviando || !textoComposer.trim()
+                  }
+                  className={`rounded-full px-4 py-2 text-sm text-white disabled:opacity-40 ${
+                    modoComposer === "nota" ? "bg-amber-500" : "bg-[#141e33]"
+                  }`}
                 >
-                  {enviando ? "..." : "Enviar"}
+                  {modoComposer === "nota" ? (enviandoNota ? "..." : "Salvar nota") : enviando ? "..." : "Enviar"}
                 </button>
               </div>
             </div>
