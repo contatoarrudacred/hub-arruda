@@ -22,6 +22,7 @@ const GRUPO_CRM: ItemMenu[] = [
   { rotulo: "FAQs", href: "/admin/faqs" },
   { rotulo: "Objeções", href: "/admin/objecoes" },
   { rotulo: "Agendas de Follow-up", href: "/admin/agendas" },
+  { rotulo: "Respostas prontas", href: "/admin/respostas-prontas" },
 ];
 
 const GRUPO_GERAL: ItemMenu[] = [

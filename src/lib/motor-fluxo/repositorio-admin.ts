@@ -514,3 +514,63 @@ export async function excluirAgendaItem(id: string): Promise<void> {
   const { error } = await supabase.from("agenda_itens").delete().eq("id", id);
   if (error) throw new Error(`Falha ao excluir item de agenda: ${error.message}`);
 }
+
+export type RespostaPronta = {
+  id: string;
+  atalho: string;
+  texto: string;
+  ativo: boolean;
+};
+
+/** Só as ativas — usado pelo atalho "/" do composer da Tela de Atendimento. */
+export async function listarRespostasProntasAtivas(): Promise<RespostaPronta[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("respostas_prontas")
+    .select("id, atalho, texto, ativo")
+    .eq("ativo", true)
+    .order("atalho");
+
+  if (error) throw new Error(`Falha ao listar respostas prontas: ${error.message}`);
+  return data ?? [];
+}
+
+/** Todas (ativas e inativas) — usado pelo CRUD em /admin/respostas-prontas. */
+export async function listarRespostasProntas(): Promise<RespostaPronta[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("respostas_prontas")
+    .select("id, atalho, texto, ativo")
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`Falha ao listar respostas prontas: ${error.message}`);
+  return data ?? [];
+}
+
+export type EntradaSalvarRespostaPronta = {
+  id: string | null;
+  atalho: string;
+  texto: string;
+  ativo: boolean;
+};
+
+export async function salvarRespostaPronta(entrada: EntradaSalvarRespostaPronta): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = { atalho: entrada.atalho, texto: entrada.texto, ativo: entrada.ativo };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("respostas_prontas").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar resposta pronta: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("respostas_prontas").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar resposta pronta: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirRespostaPronta(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("respostas_prontas").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir resposta pronta: ${error.message}`);
+}

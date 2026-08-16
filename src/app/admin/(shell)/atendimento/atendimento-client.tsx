@@ -11,6 +11,7 @@ import type {
   Notificacao,
   UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
+import type { RespostaPronta } from "@/lib/motor-fluxo/repositorio-admin";
 import {
   assumirConversaAction,
   atribuirParaAtendenteAction,
@@ -363,11 +364,13 @@ export function AtendimentoClient({
   conversasIniciais,
   contagensIniciais,
   atendentesIniciais,
+  respostasProntasIniciais,
 }: {
   usuarioAtual: UsuarioSistema;
   conversasIniciais: ConversaResumo[];
   contagensIniciais: ContagemNaoLidas;
   atendentesIniciais: UsuarioSistema[];
+  respostasProntasIniciais: RespostaPronta[];
 }) {
   const [filtroChave, setFiltroChave] = useState<ChaveFiltro>("tudo");
   const [menuHumanoAberto, setMenuHumanoAberto] = useState(false);
@@ -528,6 +531,16 @@ export function AtendimentoClient({
 
   const [modoComposer, setModoComposer] = useState<"mensagem" | "nota">("mensagem");
   const [enviandoNota, setEnviandoNota] = useState(false);
+
+  const sugestoesRespostas = useMemo(() => {
+    if (modoComposer !== "mensagem" || !textoComposer.startsWith("/")) return [];
+    const termo = textoComposer.slice(1).toLowerCase();
+    return respostasProntasIniciais.filter((r) => r.atalho.toLowerCase().includes(termo));
+  }, [modoComposer, textoComposer, respostasProntasIniciais]);
+
+  function inserirRespostaPronta(resposta: RespostaPronta) {
+    setTextoComposer(resposta.texto);
+  }
 
   async function handleSalvarNota() {
     if (!conversaSelecionadaId || !textoComposer.trim()) return;
@@ -852,25 +865,42 @@ export function AtendimentoClient({
               </div>
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
               <div className="flex gap-2">
-                <input
-                  value={textoComposer}
-                  onChange={(e) => setTextoComposer(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" || e.shiftKey) return;
-                    e.preventDefault();
-                    if (modoComposer === "nota") handleSalvarNota();
-                    else handleEnviar();
-                  }}
-                  disabled={modoComposer === "nota" ? enviandoNota : !composerHabilitado || enviando}
-                  placeholder={
-                    modoComposer === "nota"
-                      ? "Escrever nota interna... (@PrimeiroNome pra mencionar)"
-                      : composerHabilitado
-                        ? "Digite uma mensagem..."
-                        : "A Malala está no controle desta conversa"
-                  }
-                  className="flex-1 rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-                />
+                <div className="relative flex-1">
+                  {sugestoesRespostas.length > 0 && (
+                    <div className="absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                      {sugestoesRespostas.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => inserirRespostaPronta(r)}
+                          className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">/{r.atalho}</span>
+                          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{r.texto}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    value={textoComposer}
+                    onChange={(e) => setTextoComposer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" || e.shiftKey) return;
+                      e.preventDefault();
+                      if (modoComposer === "nota") handleSalvarNota();
+                      else handleEnviar();
+                    }}
+                    disabled={modoComposer === "nota" ? enviandoNota : !composerHabilitado || enviando}
+                    placeholder={
+                      modoComposer === "nota"
+                        ? "Escrever nota interna... (@PrimeiroNome pra mencionar)"
+                        : composerHabilitado
+                          ? 'Digite uma mensagem... ("/" pra respostas prontas)'
+                          : "A Malala está no controle desta conversa"
+                    }
+                    className="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                  />
+                </div>
                 <button
                   onClick={modoComposer === "nota" ? handleSalvarNota : handleEnviar}
                   disabled={
