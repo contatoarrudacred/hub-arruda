@@ -7,14 +7,19 @@ import {
   atribuirParaMalala,
   carregarConversaDetalhe,
   contarNaoLidas,
+  contarNotificacoesNaoLidas,
+  criarNotaInterna,
   listarConversasAtendimento,
+  listarNotificacoes,
   listarUsuariosSistema,
+  marcarNotificacaoLida,
   obterUsuarioSistemaAtual,
   registrarMensagemHumana,
   type ContagemNaoLidas,
   type ConversaDetalhe,
   type ConversaResumo,
   type FiltroConversas,
+  type Notificacao,
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
 import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
@@ -49,6 +54,28 @@ export async function atribuirParaMalalaAction(conversaId: string): Promise<void
 
 export async function atribuirParaAtendenteAction(conversaId: string, atendenteId: string): Promise<void> {
   await atribuirParaAtendente(conversaId, atendenteId);
+  revalidatePath("/admin/atendimento");
+}
+
+export type ResultadoCriarNota = { sucesso: true } | { sucesso: false; erro: string };
+
+export async function criarNotaAction(conversaId: string, texto: string): Promise<ResultadoCriarNota> {
+  if (!texto.trim()) return { sucesso: false, erro: "Nota vazia." };
+  await criarNotaInterna(conversaId, texto.trim());
+  revalidatePath("/admin/atendimento");
+  return { sucesso: true };
+}
+
+export async function listarNotificacoesAction(usuarioId: string): Promise<Notificacao[]> {
+  return listarNotificacoes(usuarioId);
+}
+
+export async function contarNotificacoesNaoLidasAction(usuarioId: string): Promise<number> {
+  return contarNotificacoesNaoLidas(usuarioId);
+}
+
+export async function marcarNotificacaoLidaAction(id: string): Promise<void> {
+  await marcarNotificacaoLida(id);
   revalidatePath("/admin/atendimento");
 }
 
