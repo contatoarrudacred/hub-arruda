@@ -479,7 +479,7 @@ Luiz pediu explicitamente que objeções vivam no banco, não em arquivo de text
 Projeto criado, conectado ao Supabase de ponta a ponta, migrations 001-004 organizadas em `supabase/migrations/` (as duas originais + duas novas: Supabase Auth em `usuarios_sistema`, e estado de conversa do motor — `fluxos.produto_id` virou opcional, `conversas` ganhou `dados`/`fluxo_id`/`etapa_fluxo_atual_id`).
 
 ### Fase 1 — Motor de Fluxo ✅ concluída (13-14/08/2026)
-O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta — testado (22 testes automatizados), sem WhatsApp real ainda (testado via `/simulador`, chat de texto no navegador). Cobre:
+O "motor" que lê `etapas_fluxo` e decide o que a Malala faz a cada resposta — testado (46 testes automatizados em 16/08/2026, incluindo os de regressão da rodada de avaliação geral abaixo), sem WhatsApp real ainda (testado via `/simulador`, chat de texto no navegador). Cobre:
 - Todo o script da Limpeza de Nome Serasa/SPC (abertura → triagem → qualificação → faixa de valor/alto valor → proposta → coleta de dados), até onde o MVP1 vai (Malala para na solicitação de dados/documentos pro contrato — resto é manual, ver seção 8.10)
 - Mensagens canal-agnósticas (texto/imagem/áudio/vídeo/documento/localização/contato/pix) — pensando na Camada de Adaptadores de Canal futura, não só WhatsApp
 - Regra de "checkpoint já respondido": o lead pode se apresentar de cara ("Oi, sou Luiz e quero limpar meu nome") e o motor pula as perguntas correspondentes — extração determinística hoje, cai pra IA (quando ligada) nos casos que não reconhece
@@ -558,6 +558,25 @@ Luiz considera essa a tela mais importante do CRM — onde o admin/atendente aco
 - ⬜ **Bloco D — refinamentos:** histórico de fotos do contato, selo de risco de esfriar, confirmação de leitura, roteamento de lead novo (3 modos configuráveis), configuração de rejeição de chamada.
 
 **Ordem de construção acordada:** Tela de Atendimento (blocos A-D) + Fase 5 → Kanban (cards se movendo sozinhos conforme a Malala avança o atendimento) → Dashboard de KPIs (recursos de terceiros + métricas de oportunidades/conversas).
+
+### Avaliação geral do projeto ✅ concluída, ganhos rápidos aplicados (16/08/2026)
+A pedido de Luiz, antes de iniciar o Bloco B: revisão estruturada de tudo que já foi construído até aqui (banco/segurança, arquitetura frontend, cobertura de testes + code review, teste real das telas no navegador, conteúdo externo), usando 5 agentes em paralelo. Achados e decisões completos ficam só na conversa (não vale duplicar aqui) — resumo do que foi **corrigido nesta rodada**:
+
+- ✅ **Bug real de fuso horário:** `saudacaoPorHorario` (`engine.ts`) lia a hora do processo (UTC na Vercel) em vez de `America/Sao_Paulo` — a saudação da Malala batia errado boa parte do dia em produção. Corrigido com o mesmo padrão já usado em `motor-followup.ts`, com teste de regressão.
+- ✅ **Teste de regressão faltando:** rejeição de cumprimento ("oi"/"olá") como nome (bug já corrigido antes, mas sem trava contra regressão) — adicionado.
+- ✅ **Bug real de performance:** busca no editor de fluxo recalculava o layout `dagre` inteiro a cada tecla digitada (quadrinhos "pulavam" de posição). Corrigido separando recálculo de posição (só quando as etapas mudam) da opacidade do filtro.
+- ✅ **Bug real de dado:** `precos_por_faixa` estava com as 5 faixas duplicadas (10 linhas) — a migration 013 tinha sido rodada duas vezes. Migration de limpeza + índice único pra não repetir.
+- ✅ **Bug/segurança real:** busca da Tela de Atendimento interpolava o texto digitado direto na sintaxe de filtro do PostgREST (`.or()`) sem escapar — corrigido.
+- ✅ **Fail-open real no webhook:** se `ZAPSTER_WEBHOOK_SECRET` não estivesse configurada, a checagem de segredo era pulada (não bloqueada) — agora falha fechado em produção (mesmo padrão já usado no `CRON_SECRET` do cron), e a comparação passou a ser em tempo constante.
+- ✅ **Cron de follow-up ganhou lock** (`cron_locks` + `fn_tentar_lock_cron`/`fn_liberar_lock_cron`) — evita disparo duplicado se duas execuções se sobrepuserem.
+- ✅ **`ON DELETE CASCADE` formalizado** nas tabelas que `/admin/reset-conversa` já apagava manualmente (mensagens, followup_emails, conversas, oportunidades, pessoa_papeis) + 3 que ele deveria cobrir e não cobria (identidades_canal, enderecos, cliques_rastreio) — a ferramenta de teste ficou muito mais simples (um delete só na pessoa) e mais completa. `pessoa_representantes`/`usuarios_sistema.pessoa_id` continuam bloqueando de propósito.
+- ✅ **Gap de auditoria fechado:** trigger em `produtos` (RLS já tinha, faltava o trigger — mesmo achado já registrado em `SEGURANCA_E_AUDITORIA_ARRUDACRED.md`).
+- ✅ **Índices faltando:** `pessoas.whatsapp` (ponto de entrada de toda mensagem de WhatsApp) e um índice parcial em `conversas` cobrindo o filtro que o cron de follow-up já roda a cada execução.
+- ✅ **Fonte Geist não estava sendo aplicada** (`globals.css` tinha um `font-family: Arial...` hardcoded, sobrando do template do `create-next-app`, sobrepondo a variável já carregada) — corrigido; título da aba trocado de "Create Next App" pra "Hub Arruda" de propósito, mesmo achado.
+- ✅ **Higiene de git:** branch órfã `worktree-agent-*` (resquício do incidente de worktree commitado por engano, já mesclada) apagada.
+- 🔶 **Pendente de ação manual de Luiz:** rodar a migration [`20260816040000_avaliacao_quick_wins.sql`](../supabase/migrations/20260816040000_avaliacao_quick_wins.sql) no SQL Editor do Supabase (junta a limpeza de preços duplicados, os dois índices, o trigger de `produtos`, o `cron_locks` e os `ON DELETE CASCADE` — tudo numa idas só).
+
+**Registrado pra decidir depois, não bloqueia nada agora (achados da mesma rodada, não corrigidos ainda):** condição de corrida em mensagens concorrentes do mesmo lead (read-modify-write sem lock otimista em `persistencia.ts`), falha de envio parcial no webhook sem compensação, `registrarTurnoMalala` sem transação — os três pedem desenho de solução, não são "ganho rápido". Recomendação de **não migrar pra shadcn/ui agora** (custo/risco maior que o ganho no estágio atual) também ficou registrada, a reavaliar só se/quando o Kanban (Bloco D) virar tela nova grande.
 
 ### Painel de status de integrações externas ⬜ requisito registrado, ainda não construído (15/08/2026)
 Luiz pediu (15/08/2026), ao conectar a Resend — a primeira API de terceiro que o projeto passou a usar de verdade: sempre que ele (ou outro admin do sistema) acessar o painel, precisa existir um lugar com visão clara e objetiva do estado de **todo recurso externo** de que o sistema depende pra funcionar. Ainda não desenhado em detalhe — registrado aqui pra não esquecer antes de crescer o número de integrações (Zapster/WhatsApp na Fase 7, e o que mais vier depois).

@@ -107,8 +107,8 @@ Dá pra fazer — dentro do trigger, `current_query()` retorna o texto da instru
 
 **Achado de segurança real, não só de auditoria (16/08/2026):** ao construir o utilitário de reset de conversa de teste (`/admin/reset-conversa`, que usa o cliente autenticado do admin, não `service_role`), descobrimos que `mensagens` e `followup_emails` **nunca tiveram política de RLS nenhuma** — só funcionava até então porque toda escrita real nessas tabelas vinha do `service_role` (webhook do WhatsApp, cron de follow-up), que ignora RLS por completo. Qualquer tela que precisasse ler/escrever essas tabelas pelo cliente autenticado teria falhado em silêncio (RLS bloqueando sem erro nenhum) — foi exatamente isso que aconteceu com o `DELETE` do reset de conversa antes da correção (migration `20260816010000_mensagens_followup_emails_rls.sql`, que já pendura o trigger de auditoria nas duas tabelas junto com a política de RLS).
 
-**Continua pendente (achado nesta mesma revisão):**
-- **`produtos`** tem RLS mas **não tem trigger de auditoria** (migration `20260815090000` — provável esquecimento, não decisão registrada).
+**Continua pendente:**
+- ~~`produtos` tem RLS mas não tem trigger de auditoria~~ ✅ corrigido em 16/08/2026, migration [`20260816040000_avaliacao_quick_wins.sql`](../supabase/migrations/20260816040000_avaliacao_quick_wins.sql) (pendente só de Luiz rodar no SQL Editor).
 - **`enderecos`, `entidades_legais`, `identidades_canal`, `pessoa_papeis`, `pessoa_representantes`, `unidades_negocio`** — tabelas do núcleo (Fase 1), nenhuma tem RLS nem trigger de auditoria ainda. Ainda não apareceu no radar porque nenhuma tela de admin escreve nelas diretamente hoje (mesmo padrão de descoberta das outras lacunas: só aparece quando alguma tela começa a usar o cliente autenticado nessas tabelas).
 
 ### 2.7 Imutabilidade do log
@@ -123,4 +123,5 @@ O plano mestre já registra "log de auditoria imutável" como requisito. Na prá
 2. **MFA no login (seção 1.2):** confirmar se entra agora ou fica para quando houver mais de um admin (sugestão: esperar, não é urgente com um usuário só).
 3. **Coluna de SQL bruto opcional (seção 2.5):** não incluída na implementação — segue como possível extra futuro se Luiz achar valioso.
 4. Seções 1.1 e 1.3 não têm código para escrever ainda — são regras de arquitetura a manter quando a Fase 5 (IA real) e Fase 7 (WhatsApp real) forem implementadas. Ficam registradas aqui para não se perder até lá.
-5. **Estender RLS + trigger de auditoria (seção 2.6) para as tabelas do núcleo ainda descobertas** (`enderecos`, `entidades_legais`, `identidades_canal`, `pessoa_papeis`, `pessoa_representantes`, `unidades_negocio`) e **adicionar o trigger que falta em `produtos`** — ver detalhe na seção 2.6, achado na revisão de 16/08/2026.
+5. **Estender RLS + trigger de auditoria (seção 2.6) para as tabelas do núcleo ainda descobertas** (`enderecos`, `entidades_legais`, `identidades_canal`, `pessoa_papeis`, `pessoa_representantes`, `unidades_negocio`) — ver detalhe na seção 2.6. ~~Trigger que faltava em `produtos`~~ ✅ corrigido em 16/08/2026 (avaliação geral do projeto, ver `PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 11).
+6. **Webhook fail-open corrigido (16/08/2026):** `/api/webhooks/zapster` deixava de checar `ZAPSTER_WEBHOOK_SECRET` por completo se a env var não estivesse configurada (achado real na avaliação geral) — agora falha fechado em produção (`process.env.VERCEL`), mesmo padrão já usado no `CRON_SECRET`, e a comparação passou a ser em tempo constante (`timingSafeEqual`).
