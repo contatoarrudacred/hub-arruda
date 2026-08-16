@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   assumirConversa,
   atribuirParaMalala,
+  atualizarCorBadge,
   carregarConversaDetalhe,
   contarNaoLidas,
   listarConversasAtendimento,
@@ -16,6 +17,7 @@ import {
   type FiltroConversas,
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
+import { ehCorBadgeValida } from "@/lib/motor-fluxo/cores-atendimento";
 import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
 
 export async function listarConversasAction(filtro: FiltroConversas, busca: string): Promise<ConversaResumo[]> {
@@ -44,6 +46,17 @@ export async function assumirConversaAction(conversaId: string): Promise<void> {
 export async function atribuirParaMalalaAction(conversaId: string): Promise<void> {
   await atribuirParaMalala(conversaId);
   revalidatePath("/admin/atendimento");
+}
+
+export type ResultadoAtualizarCor = { sucesso: true } | { sucesso: false; erro: string };
+
+/** Só troca a cor do próprio usuário logado — nunca aceita usuarioId do cliente, pra ninguém trocar a cor de outro atendente. */
+export async function atualizarMinhaCorAction(cor: string): Promise<ResultadoAtualizarCor> {
+  if (!ehCorBadgeValida(cor)) return { sucesso: false, erro: "Cor inválida." };
+  const usuario = await obterUsuarioSistemaAtual();
+  await atualizarCorBadge(usuario.id, cor);
+  revalidatePath("/admin/atendimento");
+  return { sucesso: true };
 }
 
 export type ResultadoEnviarMensagem = { sucesso: true } | { sucesso: false; erro: string };

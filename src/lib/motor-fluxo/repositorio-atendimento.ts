@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { ehCorBadgeValida, type CorBadge } from "./cores-atendimento";
 
 // Camada de dados da Tela de Atendimento (Bloco A) — usa sempre o cliente autenticado (não
 // service_role), porque toda ação aqui é feita por um admin logado e precisa aparecer na trilha de
@@ -21,6 +22,7 @@ export type UsuarioSistema = {
   id: string;
   nome: string;
   email: string;
+  corBadge: CorBadge;
 };
 
 /**
@@ -38,12 +40,13 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
 
   const { data: existente } = await supabase
     .from("usuarios_sistema")
-    .select("id, email, pessoas(nome_razao_social)")
+    .select("id, email, cor_badge, pessoas(nome_razao_social)")
     .eq("auth_user_id", user.id)
     .maybeSingle();
   if (existente) {
     const pessoa = existente.pessoas as unknown as { nome_razao_social: string } | null;
-    return { id: existente.id, email: existente.email, nome: pessoa?.nome_razao_social ?? existente.email };
+    const cor = ehCorBadgeValida(existente.cor_badge) ? existente.cor_badge : "azul";
+    return { id: existente.id, email: existente.email, nome: pessoa?.nome_razao_social ?? existente.email, corBadge: cor };
   }
 
   const nomeInicial = user.email?.split("@")[0] ?? "Admin";
@@ -61,7 +64,7 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
     .single();
   if (erroUsuario || !usuario) throw new Error(`Falha ao criar usuário do sistema: ${erroUsuario?.message}`);
 
-  return { id: usuario.id, email: user.email ?? "", nome: nomeInicial };
+  return { id: usuario.id, email: user.email ?? "", nome: nomeInicial, corBadge: "azul" };
 }
 
 /** Todos os atendentes humanos cadastrados — usado pros filtros rápidos ("Minhas" / "[Fulano]"). */
@@ -69,12 +72,13 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("usuarios_sistema")
-    .select("id, email, pessoas(nome_razao_social)")
+    .select("id, email, cor_badge, pessoas(nome_razao_social)")
     .eq("ativo", true);
   if (error) throw new Error(`Falha ao listar usuários do sistema: ${error.message}`);
   return (data ?? []).map((linha) => {
     const pessoa = linha.pessoas as unknown as { nome_razao_social: string } | null;
-    return { id: linha.id, email: linha.email, nome: pessoa?.nome_razao_social ?? linha.email };
+    const cor = ehCorBadgeValida(linha.cor_badge) ? linha.cor_badge : "azul";
+    return { id: linha.id, email: linha.email, nome: pessoa?.nome_razao_social ?? linha.email, corBadge: cor };
   });
 }
 
@@ -99,6 +103,8 @@ export type ConversaResumo = {
   naoLida: boolean;
   atendenteId: string | null;
   sobSupervisor: boolean;
+  atendenteNome: string | null;
+  atendenteCor: CorBadge | null;
 };
 
 /** Lista de contatos (painel esquerdo) — por padrão só conversas ativas, não perdidas. */
@@ -166,6 +172,8 @@ export async function listarConversasAtendimento(
     naoLida: linha.ultima_mensagem_remetente === "lead",
     atendenteId: linha.atendente_id,
     sobSupervisor: linha.sob_supervisor,
+    atendenteNome: linha.atendente_nome,
+    atendenteCor: ehCorBadgeValida(linha.atendente_cor ?? "") ? (linha.atendente_cor as CorBadge) : null,
   }));
 
   if (filtro.tipo === "nao_lidas") return resumo.filter((c) => c.naoLida);
@@ -221,6 +229,8 @@ export type ConversaDetalhe = {
   valorEstimado: number | null;
   sobSupervisor: boolean;
   atendenteId: string | null;
+  atendenteNome: string | null;
+  atendenteCor: CorBadge | null;
   mensagens: MensagemConversa[];
 };
 
@@ -231,7 +241,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select(
-      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome))",
+      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
     )
     .eq("id", conversaId)
     .single();
@@ -242,6 +252,10 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     etapa_kanban: string;
     valor_estimado: number | null;
     produtos: { nome: string } | null;
+  } | null;
+  const atendente = conversa.usuarios_sistema as unknown as {
+    cor_badge: string;
+    pessoas: { nome_razao_social: string } | null;
   } | null;
 
   const { data: mensagens, error: erroMensagens } = await supabase
@@ -263,6 +277,8 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     valorEstimado: oportunidade?.valor_estimado ?? null,
     sobSupervisor: conversa.sob_supervisor,
     atendenteId: conversa.atendente_id,
+    atendenteNome: atendente?.pessoas?.nome_razao_social ?? null,
+    atendenteCor: atendente && ehCorBadgeValida(atendente.cor_badge) ? (atendente.cor_badge as CorBadge) : null,
     mensagens: (mensagens ?? []).map((m) => ({
       id: m.id,
       remetente: m.remetente,
@@ -291,6 +307,13 @@ export async function atribuirParaMalala(conversaId: string): Promise<void> {
     .update({ sob_supervisor: false, atendente_id: null })
     .eq("id", conversaId);
   if (error) throw new Error(`Falha ao atribuir conversa pra Malala: ${error.message}`);
+}
+
+/** Troca a cor do próprio atendente (paleta fechada, ver cores-atendimento.ts). */
+export async function atualizarCorBadge(usuarioId: string, cor: CorBadge): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("usuarios_sistema").update({ cor_badge: cor }).eq("id", usuarioId);
+  if (error) throw new Error(`Falha ao atualizar cor: ${error.message}`);
 }
 
 /** Grava a mensagem de um atendente humano — o envio real via WhatsApp é feito por quem chama (fora daqui, mesmo adaptador de canal da Fase 7). */
