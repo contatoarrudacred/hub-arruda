@@ -4,9 +4,17 @@ import { createClient } from "@/lib/supabase/server";
 
 // Utilitário de teste (16/08/2026, pedido de Luiz) — não é uma tela pensada pra uso diário, é pra
 // resetar a conversa de WhatsApp real de um número de teste (o dele) sem precisar mexer direto no
-// Supabase. Apaga pessoa/oportunidade/conversa/mensagens desse telefone — a próxima mensagem que
+// Supabase. Apaga a pessoa desse telefone e tudo que pertence só a ela — a próxima mensagem que
 // esse número mandar cria tudo de novo do zero (ver carregarOuCriarConversaWhatsapp em
-// persistencia.ts). Não tem cascade no banco (FKs sem ON DELETE), então a ordem de exclusão importa.
+// persistencia.ts).
+//
+// Migration 20260816040000 acrescentou ON DELETE CASCADE de pessoas para conversas/mensagens/
+// followup_emails/oportunidades/pessoa_papeis/identidades_canal/enderecos/cliques_rastreio — um
+// delete só na pessoa resolve tudo isso agora (antes era apagar na ordem certa manualmente, e três
+// dessas tabelas nem estavam cobertas). Deliberadamente NÃO cascateia pessoa_representantes nem
+// usuarios_sistema.pessoa_id — se o telefone informado pertencer a um representante legal de PJ ou
+// a um usuário do sistema, o delete falha com erro de FK em vez de apagar em silêncio, o que é o
+// comportamento certo pra essa ferramenta de teste.
 
 export type ResultadoResetarConversa =
   | { sucesso: true; encontrado: true }
@@ -32,37 +40,6 @@ export async function resetarConversaAction(telefoneBruto: string): Promise<Resu
     .maybeSingle();
   if (erroPessoa) return { sucesso: false, erro: `Falha ao buscar pessoa: ${erroPessoa.message}` };
   if (!pessoa) return { sucesso: true, encontrado: false };
-
-  const { data: conversas, error: erroConversas } = await supabase
-    .from("conversas")
-    .select("id")
-    .eq("pessoa_id", pessoa.id);
-  if (erroConversas) return { sucesso: false, erro: `Falha ao buscar conversas: ${erroConversas.message}` };
-  const idsConversas = (conversas ?? []).map((c) => c.id);
-
-  if (idsConversas.length > 0) {
-    const { error: erroMensagens } = await supabase.from("mensagens").delete().in("conversa_id", idsConversas);
-    if (erroMensagens) return { sucesso: false, erro: `Falha ao apagar mensagens: ${erroMensagens.message}` };
-
-    const { error: erroFollowupEmails } = await supabase
-      .from("followup_emails")
-      .delete()
-      .in("conversa_id", idsConversas);
-    if (erroFollowupEmails) {
-      return { sucesso: false, erro: `Falha ao apagar e-mails de follow-up: ${erroFollowupEmails.message}` };
-    }
-
-    const { error: erroConversasDel } = await supabase.from("conversas").delete().in("id", idsConversas);
-    if (erroConversasDel) return { sucesso: false, erro: `Falha ao apagar conversas: ${erroConversasDel.message}` };
-  }
-
-  const { error: erroOportunidades } = await supabase.from("oportunidades").delete().eq("pessoa_id", pessoa.id);
-  if (erroOportunidades) {
-    return { sucesso: false, erro: `Falha ao apagar oportunidades: ${erroOportunidades.message}` };
-  }
-
-  const { error: erroPapeis } = await supabase.from("pessoa_papeis").delete().eq("pessoa_id", pessoa.id);
-  if (erroPapeis) return { sucesso: false, erro: `Falha ao apagar papéis da pessoa: ${erroPapeis.message}` };
 
   const { error: erroPessoaDel } = await supabase.from("pessoas").delete().eq("id", pessoa.id);
   if (erroPessoaDel) return { sucesso: false, erro: `Falha ao apagar pessoa: ${erroPessoaDel.message}` };
