@@ -11,9 +11,10 @@ import type {
   Notificacao,
   UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
-import type { RespostaPronta } from "@/lib/motor-fluxo/repositorio-admin";
+import type { AgendaAdmin, RespostaPronta } from "@/lib/motor-fluxo/repositorio-admin";
 import {
   assumirConversaAction,
+  ativarFollowupManualAction,
   atribuirParaAtendenteAction,
   atribuirParaMalalaAction,
   carregarConversaAction,
@@ -72,6 +73,19 @@ function filtroPorChave(chave: ChaveFiltro, usuarioId: string): FiltroConversas 
 function formatarHora(iso: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Rótulo curto tipo "em ~10 min" / "em ~4h" / "amanhã" — usado no chip de follow-up ativo, não precisa de precisão de segundo (o polling de 4s já mantém isso razoavelmente fresco). */
+function formatarTempoRelativo(iso: string | null): string {
+  if (!iso) return "";
+  const diffMs = new Date(iso).getTime() - Date.now();
+  if (diffMs <= 0) return "a qualquer momento";
+  const min = Math.round(diffMs / 60_000);
+  if (min < 60) return `em ~${min} min`;
+  const horas = Math.round(min / 60);
+  if (horas < 24) return `em ~${horas}h`;
+  const dias = Math.round(horas / 24);
+  return dias === 1 ? "amanhã" : `em ~${dias} dias`;
 }
 
 function formatarTelefone(telefone: string | null): string {
@@ -366,12 +380,14 @@ export function AtendimentoClient({
   contagensIniciais,
   atendentesIniciais,
   respostasProntasIniciais,
+  agendasFollowupIniciais,
 }: {
   usuarioAtual: UsuarioSistema;
   conversasIniciais: ConversaResumo[];
   contagensIniciais: ContagemNaoLidas;
   atendentesIniciais: UsuarioSistema[];
   respostasProntasIniciais: RespostaPronta[];
+  agendasFollowupIniciais: AgendaAdmin[];
 }) {
   const [filtroChave, setFiltroChave] = useState<ChaveFiltro>("tudo");
   const [menuHumanoAberto, setMenuHumanoAberto] = useState(false);
@@ -389,6 +405,13 @@ export function AtendimentoClient({
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
+  const [modalFollowupPendente, setModalFollowupPendente] = useState<{
+    conversaId: string;
+    proximoId: string | null;
+    agendaId: string;
+  } | null>(null);
+  const [ativandoFollowup, setAtivandoFollowup] = useState(false);
+  const recusadosFollowupRef = useRef<Set<string>>(new Set());
   const timelineRef = useRef<HTMLDivElement>(null);
 
   const itensTimeline = useMemo<ItemTimeline[]>(() => {
@@ -556,6 +579,47 @@ export function AtendimentoClient({
     else setAvisoProximaEtapa("Esta etapa do script não tem mensagem de texto pra reaproveitar.");
   }
 
+  /**
+   * Troca de conversa "de verdade" — intercepta quando a conversa que está sendo deixada tem uma
+   * mensagem nossa (não da Malala/simulador — daqui só passa quem é humano de verdade) sem
+   * resposta do lead e ainda não tem follow-up ativo: pergunta antes de sair (modal), em vez de
+   * trocar direto. Todo clique que muda `conversaSelecionadaId` (card da lista, sino) passa por
+   * aqui — só o fluxo de resetar conversa (linha ~540) troca direto, de propósito.
+   */
+  function selecionarConversa(novoId: string | null) {
+    const podeAparecerPrompt =
+      conversaSelecionadaId &&
+      conversaSelecionadaId !== novoId &&
+      detalhe &&
+      detalhe.conversaId === conversaSelecionadaId &&
+      !detalhe.followupAtivo &&
+      !recusadosFollowupRef.current.has(conversaSelecionadaId) &&
+      detalhe.mensagens.length > 0 &&
+      detalhe.mensagens[detalhe.mensagens.length - 1].remetente !== "lead";
+
+    if (podeAparecerPrompt) {
+      const agendaPadraoId =
+        agendasFollowupIniciais.find((a) => a.nome === "Padrão")?.id ?? agendasFollowupIniciais[0]?.id ?? "";
+      setModalFollowupPendente({ conversaId: conversaSelecionadaId as string, proximoId: novoId, agendaId: agendaPadraoId });
+      return;
+    }
+    setConversaSelecionadaId(novoId);
+  }
+
+  async function confirmarFollowupModal(ativar: boolean) {
+    if (!modalFollowupPendente) return;
+    if (ativar && modalFollowupPendente.agendaId) {
+      setAtivandoFollowup(true);
+      await ativarFollowupManualAction(modalFollowupPendente.conversaId, modalFollowupPendente.agendaId);
+      setAtivandoFollowup(false);
+    } else {
+      recusadosFollowupRef.current.add(modalFollowupPendente.conversaId);
+    }
+    const proximoId = modalFollowupPendente.proximoId;
+    setModalFollowupPendente(null);
+    setConversaSelecionadaId(proximoId);
+  }
+
   async function handleSalvarNota() {
     if (!conversaSelecionadaId || !textoComposer.trim()) return;
     setEnviandoNota(true);
@@ -590,7 +654,7 @@ export function AtendimentoClient({
               placeholder="Buscar por nome, telefone ou mensagem..."
               className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
-            <SinoNotificacoes usuarioId={usuarioAtual.id} onAbrirConversa={(conversaId) => setConversaSelecionadaId(conversaId)} />
+            <SinoNotificacoes usuarioId={usuarioAtual.id} onAbrirConversa={(conversaId) => selecionarConversa(conversaId)} />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <BotaoFiltro rotulo="Tudo" ativo={filtroChave === "tudo"} contador={contagens.tudo} onClick={() => selecionarFiltro("tudo")} />
@@ -651,9 +715,9 @@ export function AtendimentoClient({
               key={c.conversaId}
               role="button"
               tabIndex={0}
-              onClick={() => setConversaSelecionadaId(c.conversaId)}
+              onClick={() => selecionarConversa(c.conversaId)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") setConversaSelecionadaId(c.conversaId);
+                if (e.key === "Enter" || e.key === " ") selecionarConversa(c.conversaId);
               }}
               className={`flex w-full cursor-pointer flex-col gap-1 border-b border-zinc-100 px-3 py-2.5 text-left dark:border-zinc-900 ${
                 conversaSelecionadaId === c.conversaId
@@ -764,6 +828,12 @@ export function AtendimentoClient({
                 <MenuAcoesCabecalho telefone={detalhe.pessoaTelefone} onResetar={() => setConfirmandoReset(true)} />
               </div>
             </div>
+
+            {detalhe.followupAtivo && (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                🕐 Follow-up ativo — próximo envio {formatarTempoRelativo(detalhe.followupProximoEm)}
+              </div>
+            )}
 
             {buscaConversaAberta && (
               <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -1007,6 +1077,47 @@ export function AtendimentoClient({
               className="rounded-full bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-40"
             >
               {resetando ? "Resetando..." : "Resetar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {modalFollowupPendente && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Ativar follow-up automático?</p>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            A última mensagem desta conversa é sua e o lead ainda não respondeu. Quer que o sistema retome contato
+            automaticamente pela régua abaixo, se ele continuar sem responder?
+          </p>
+          {agendasFollowupIniciais.length > 0 && (
+            <select
+              value={modalFollowupPendente.agendaId}
+              onChange={(e) => setModalFollowupPendente({ ...modalFollowupPendente, agendaId: e.target.value })}
+              className="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            >
+              {agendasFollowupIniciais.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.nome}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              onClick={() => confirmarFollowupModal(false)}
+              disabled={ativandoFollowup}
+              className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Não, obrigado
+            </button>
+            <button
+              onClick={() => confirmarFollowupModal(true)}
+              disabled={ativandoFollowup || !modalFollowupPendente.agendaId}
+              className="rounded-full bg-[#141e33] px-4 py-1.5 text-sm text-white disabled:opacity-40"
+            >
+              {ativandoFollowup ? "Ativando..." : "Ativar follow-up"}
             </button>
           </div>
         </div>

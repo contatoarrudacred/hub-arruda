@@ -4,16 +4,17 @@ import {
   listarUsuariosSistema,
   obterUsuarioSistemaAtual,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
-import { listarRespostasProntasAtivas } from "@/lib/motor-fluxo/repositorio-admin";
+import { listarAgendasFollowup, listarRespostasProntasAtivas } from "@/lib/motor-fluxo/repositorio-admin";
 import { AtendimentoClient } from "./atendimento-client";
 
 export default async function AtendimentoPage() {
   const usuarioAtual = await obterUsuarioSistemaAtual();
-  const [conversas, contagens, atendentes, respostasProntas] = await Promise.all([
+  const [conversas, contagens, atendentes, respostasProntas, agendasFollowup] = await Promise.all([
     listarConversasAtendimento({ tipo: "tudo" }, ""),
     contarNaoLidas(usuarioAtual.id),
     listarUsuariosSistema(),
     listarRespostasProntasAtivas(),
+    listarAgendasFollowup(),
   ]);
 
   return (
@@ -23,6 +24,7 @@ export default async function AtendimentoPage() {
       contagensIniciais={contagens}
       atendentesIniciais={atendentes}
       respostasProntasIniciais={respostasProntas}
+      agendasFollowupIniciais={agendasFollowup}
     />
   );
 }
