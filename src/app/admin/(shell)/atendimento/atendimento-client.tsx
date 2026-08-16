@@ -279,6 +279,85 @@ function MenuAcoesCabecalho({ telefone, onResetar }: { telefone: string | null; 
   );
 }
 
+function SinoNotificacoes({
+  usuarioId,
+  onAbrirConversa,
+}: {
+  usuarioId: string;
+  onAbrirConversa: (conversaId: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
+  const [naoLidas, setNaoLidas] = useState(0);
+
+  const recarregar = useCallback(async () => {
+    const [lista, contagem] = await Promise.all([
+      listarNotificacoesAction(usuarioId),
+      contarNotificacoesNaoLidasAction(usuarioId),
+    ]);
+    setNotificacoes(lista);
+    setNaoLidas(contagem);
+  }, [usuarioId]);
+
+  useEffect(() => {
+    Promise.resolve().then(() => recarregar());
+    const intervalo = setInterval(recarregar, INTERVALO_POLLING_MS);
+    return () => clearInterval(intervalo);
+  }, [recarregar]);
+
+  async function abrirNotificacao(n: Notificacao) {
+    if (!n.lida) await marcarNotificacaoLidaAction(n.id);
+    setAberto(false);
+    onAbrirConversa(n.conversaId);
+    recarregar();
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        title="Notificações"
+        className="relative flex h-8 w-8 items-center justify-center rounded-full text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      >
+        🔔
+        {naoLidas > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+            {naoLidas > 99 ? "99+" : naoLidas}
+          </span>
+        )}
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setAberto(false)} />
+          <div className="absolute left-0 z-20 mt-1 max-h-96 w-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            {notificacoes.length === 0 && (
+              <p className="px-3 py-4 text-center text-xs text-zinc-400">Nenhuma notificação ainda.</p>
+            )}
+            {notificacoes.map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => abrirNotificacao(n)}
+                className={`flex w-full flex-col gap-0.5 border-b border-zinc-100 px-3 py-2 text-left text-xs hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800 ${
+                  n.lida ? "opacity-60" : ""
+                }`}
+              >
+                <span className="text-zinc-700 dark:text-zinc-300">
+                  {n.tipo === "mencao"
+                    ? `📝 Você foi mencionado numa nota de ${n.pessoaNome}`
+                    : `👤 ${n.pessoaNome} foi atribuída a você`}
+                </span>
+                <span className="text-[10px] text-zinc-400">{formatarHora(n.criadoEm)}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AtendimentoClient({
   usuarioAtual,
   conversasIniciais,
@@ -477,12 +556,15 @@ export function AtendimentoClient({
       {/* Painel esquerdo — lista de contatos */}
       <div className="flex w-96 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
         <div className="space-y-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por nome, telefone ou mensagem..."
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, telefone ou mensagem..."
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <SinoNotificacoes usuarioId={usuarioAtual.id} onAbrirConversa={(conversaId) => setConversaSelecionadaId(conversaId)} />
+          </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <BotaoFiltro rotulo="Tudo" ativo={filtroChave === "tudo"} contador={contagens.tudo} onClick={() => selecionarFiltro("tudo")} />
             <BotaoFiltro rotulo="Malala" ativo={filtroChave === "malala"} contador={contagens.malala} onClick={() => selecionarFiltro("malala")} />
