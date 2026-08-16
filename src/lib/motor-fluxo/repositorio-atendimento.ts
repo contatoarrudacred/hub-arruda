@@ -100,6 +100,10 @@ export async function listarConversasAtendimento(
     .from("conversas_resumo")
     .select("*")
     .eq("status", "ativa")
+    // Escopo padrão (TELA_ATENDIMENTO_ARRUDACRED.md seção 2): esconde oportunidade "perdida" —
+    // volta a aparecer sozinha se o lead responder de novo (a oportunidade reabre na última etapa,
+    // motor-followup.ts, sem precisar de filtro nenhum aqui).
+    .or("etapa_kanban.is.null,etapa_kanban.neq.perdida")
     .order("ultima_mensagem_em", { ascending: false, nullsFirst: false });
 
   if (filtro.tipo === "malala") query = query.eq("sob_supervisor", false);

@@ -129,13 +129,26 @@ export async function carregarOuCriarConversaWhatsapp(
   if (pessoaExistente) {
     const { data: conversaAtiva } = await supabase
       .from("conversas")
-      .select("id, oportunidade_id, etapa_fluxo_atual_id, dados, sob_supervisor")
+      .select("id, oportunidade_id, etapa_fluxo_atual_id, dados, sob_supervisor, oportunidades(etapa_kanban)")
       .eq("pessoa_id", pessoaExistente.id)
       .eq("canal", "whatsapp")
       .eq("status", "ativa")
       .maybeSingle();
 
     if (conversaAtiva?.oportunidade_id) {
+      // Lead que tinha sido marcado Perdida voltou a responder — reabre a oportunidade (decisão de
+      // Luiz, planejamento da Tela de Atendimento, 16/08/2026). A conversa/fluxo em si nunca parou
+      // de rastrear (por isso ainda está "ativa" aqui) — só a etapa do Kanban precisa voltar,
+      // sinalizando pro time que esse lead reengajou. Volta pro início do funil (não temos histórico
+      // de qual subetapa era antes de "perdida" hoje) — reclassificar manualmente se fizer sentido.
+      const oportunidadeAtual = conversaAtiva.oportunidades as unknown as { etapa_kanban: string } | null;
+      if (oportunidadeAtual?.etapa_kanban === "perdida") {
+        await supabase
+          .from("oportunidades")
+          .update({ etapa_kanban: "novo_lead_triagem", motivo_perda: null })
+          .eq("id", conversaAtiva.oportunidade_id);
+      }
+
       const etapa = conversaAtiva.etapa_fluxo_atual_id
         ? Object.values(etapasPorCodigo).find((e) => e.id === conversaAtiva.etapa_fluxo_atual_id)
         : undefined;
