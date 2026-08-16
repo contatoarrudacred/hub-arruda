@@ -17,6 +17,7 @@ import {
   enviarMensagemAction,
   listarConversasAction,
 } from "./actions";
+import { resetarConversaAction } from "../reset-conversa/actions";
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
 
 // Tela de Atendimento, Bloco A (fundação) — ver docs/TELA_ATENDIMENTO_ARRUDACRED.md. Simplificações
@@ -201,6 +202,55 @@ function DropdownAtribuir({
   );
 }
 
+function MenuAcoesCabecalho({ telefone, onResetar }: { telefone: string | null; onResetar: () => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
+  async function copiarTelefone() {
+    if (!telefone) return;
+    await navigator.clipboard.writeText(telefone);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 1500);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        title="Mais ações"
+        className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      >
+        ⋮
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setAberto(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            <button
+              type="button"
+              onClick={copiarTelefone}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              📋 {copiado ? "Copiado!" : "Copiar telefone"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAberto(false);
+                onResetar();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+            >
+              🗑️ Resetar conversa
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AtendimentoClient({
   usuarioAtual,
   conversasIniciais,
@@ -223,6 +273,8 @@ export function AtendimentoClient({
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [painelContatoAberto, setPainelContatoAberto] = useState(true);
+  const [confirmandoReset, setConfirmandoReset] = useState(false);
+  const [resetando, setResetando] = useState(false);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
@@ -329,6 +381,17 @@ export function AtendimentoClient({
     await recarregarContagens();
   }
 
+  async function confirmarReset() {
+    if (!detalhe?.pessoaTelefone) return;
+    setResetando(true);
+    await resetarConversaAction(detalhe.pessoaTelefone);
+    setResetando(false);
+    setConfirmandoReset(false);
+    setConversaSelecionadaId(null);
+    await recarregarLista();
+    await recarregarContagens();
+  }
+
   async function handleEnviar() {
     if (!conversaSelecionadaId || !detalhe?.pessoaTelefone || !textoComposer.trim()) return;
     setEnviando(true);
@@ -356,6 +419,7 @@ export function AtendimentoClient({
     typeof filtroChave === "object";
 
   return (
+    <>
     <div className="flex h-screen">
       {/* Painel esquerdo — lista de contatos */}
       <div className="flex w-96 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
@@ -535,6 +599,7 @@ export function AtendimentoClient({
                     else atribuirAtendente(conversaSelecionadaId, atendenteId);
                   }}
                 />
+                <MenuAcoesCabecalho telefone={detalhe.pessoaTelefone} onResetar={() => setConfirmandoReset(true)} />
               </div>
             </div>
 
@@ -672,5 +737,35 @@ export function AtendimentoClient({
       )}
     </div>
     </div>
+
+    {confirmandoReset && detalhe && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            Resetar a conversa com {detalhe.pessoaNome}?
+          </p>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Apaga pessoa, oportunidade, conversa e mensagens desse número — ação irreversível. A
+            próxima mensagem desse número no WhatsApp começa do zero.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              onClick={() => setConfirmandoReset(false)}
+              className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmarReset}
+              disabled={resetando}
+              className="rounded-full bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-40"
+            >
+              {resetando ? "Resetando..." : "Resetar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
