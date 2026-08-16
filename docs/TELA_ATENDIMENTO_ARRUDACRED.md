@@ -85,6 +85,26 @@
 
 ---
 
+## 5-B. Roteamento automático — qual fluxo atende cada mensagem (registrado 16/08/2026)
+
+Hoje o comportamento é fixo no código: toda mensagem nova aciona o mesmo fluxo (`saudacao_inicial`). Passa a ser configurável, com **3 modos, mutuamente exclusivos** — só um deles é o padrão do sistema por vez (decisão de Luiz: não são camadas combináveis, é sempre um dos três):
+
+1. **Sempre acionar um fluxo fixo** — toda mensagem nova de um número desconhecido aciona o mesmo fluxo escolhido (é o comportamento de hoje, só que configurável em vez de fixo no código).
+2. **Regras de palavra-chave** — lista de regras cadastráveis, cada uma com um conjunto de termos (array de strings) apontando pra um fluxo. Várias regras podem existir ao mesmo tempo, cada uma disparando um fluxo diferente (N termos → 1 fluxo, por regra). Se a primeira mensagem do lead contém algum dos termos de uma regra, aciona o fluxo daquela regra.
+3. **Não fazer nada automaticamente** — só cria o card "Novo Lead", posiciona na subetapa de novo lead, e a conversa fica sem resposta automática até um atendente humano assumir ou acionar um fluxo manualmente.
+
+### Troca de assunto em conversa já em andamento
+
+Problema relacionado, mas diferente: uma pessoa pode ter mais de uma oportunidade ativa ao mesmo tempo (ex.: Limpa Nome já concluído + Bacen ainda em negociação), mas só existe **uma** conversa de WhatsApp com aquele número — uma conversa nunca está em mais de um fluxo ao mesmo tempo.
+
+- **Enquanto existe uma pergunta pendente** (`aguarda_resposta: true` na etapa atual), a resposta do lead é sempre tratada como resposta a ela — mesma regra de desvio que já existe hoje (responde pergunta lateral, retoma o que estava perguntando). Sem ambiguidade nesse caso.
+- **Quando o lead manda uma mensagem espontânea** (sem pergunta pendente) que parece ser sobre um produto/fluxo **diferente** do que está ativo na conversa no momento, a Malala não troca de assunto sozinha nem ignora — ela **pergunta**, de forma sutil e educada: algo como *"Consigo te ajudar com uma coisa de cada vez — quer finalizar o assunto de [produto atual] antes, ou prefere que eu já mude pra [novo assunto]?"*
+  - Se o lead escolhe mudar: a conversa passa a ser guiada pela outra oportunidade, retomando no ponto exato em que aquele fluxo tinha parado (mesma regra que já vale pra oportunidade Perdida que volta a responder).
+  - Se escolhe continuar no assunto atual (ou simplesmente responde algo relacionado): nada muda.
+- **Detecção de troca de assunto:** sem IA real ainda, usa o **mesmo mecanismo de palavras-chave** das regras de roteamento acima — se a mensagem espontânea bate com os termos de um produto diferente do fluxo ativo, dispara a pergunta de troca. Quando a Fase 5 existir, essa detecção evolui pra algo mais inteligente sem mudar o resto do desenho (mesmo padrão dos outros recursos que dependem de IA, seção 10).
+
+---
+
 ## 6. Colaboração entre atendentes (2 humanos hoje, desenho já pensado pra crescer)
 
 - **Nota interna** — mensagem visível só pra equipe, nunca pro lead, nunca notifica o lead, nunca sai do sistema. Recurso universal em todo concorrente pesquisado (Chatwoot, Digisac, Octadesk) — faltava no desenho original, incorporado.
@@ -126,16 +146,22 @@ Levantamento do que provavelmente precisa de tabela/coluna nova quando for const
 - **Atribuição de conversa a atendente específico** — `conversas` precisa de um campo de "atribuído a" (referência a `usuarios_sistema`), hoje só existe o boolean `sob_supervisor`.
 - **Timeline unificada** (mensagens + e-mails + trilha de atividade) — `mensagens.remetente` hoje só aceita `malala`/`lead`/`supervisor`; precisa de um jeito de representar anotação de e-mail e evento de sistema na mesma timeline (novo tipo/discriminador, ou union de fontes no client — decisão de implementação, não de produto).
 - **Confirmação de leitura por mensagem** — `mensagens` não tem campo de "lida"/`lido_em` hoje.
-- **Configurações novas** (encaixam no padrão já existente de `configuracoes`, sem tabela nova): régua padrão de follow-up pro modal de saída, permitir/não permitir assumir de outro humano, habilitado/desabilitado de chamada (+ granularidade áudio/vídeo), texto da mensagem de rejeição de chamada, liga/desliga de transcrição automática de áudio.
+- **Configurações novas** (encaixam no padrão já existente de `configuracoes`, sem tabela nova): régua padrão de follow-up pro modal de saída, permitir/não permitir assumir de outro humano, habilitado/desabilitado de chamada (+ granularidade áudio/vídeo), texto da mensagem de rejeição de chamada, liga/desliga de transcrição automática de áudio, **modo de roteamento de lead novo** (um dos 3, seção 5-B) + suas regras de palavra-chave.
+- **Regras de palavra-chave → fluxo** (roteamento de lead novo e detecção de troca de assunto, seção 5-B) — tabela nova, cada linha com um array de termos e o fluxo de destino.
 - **Objeção detectada por mensagem** — depende da Fase 5 (IA real) pra existir de verdade; quando existir, precisa ligar a mensagem/turno ao registro de `objecoes` correspondente.
 
 ---
 
 ## 10. Dependências
 
-- **Fase 5 (IA real, ainda não implementada):** resumo automático ao assumir, badge de objeção detectada + sugestão, assist de IA no composer. O encaixe (`InterpretadorIA`) já existe no motor (`engine.ts`), só falta a chamada real.
+- **Fase 5 (IA real) — decisão de Luiz (16/08/2026): construir junto com esta tela, não depois.** Metade do valor diferenciado da tela (resumo automático ao assumir, detector de objeção + sugestão, assist de IA no composer) só existe com IA de verdade — e a transcrição de áudio (seção 3) depende de IA de qualquer forma, então já é pré-requisito nessa entrada, com ou sem o nome "Fase 5". Desenho: **módulo de IA único e compartilhado**, chamado por qualquer parte do sistema que precisar (interpretação de checkpoint no fluxo automatizado — encaixe `InterpretadorIA` já existe em `engine.ts` — resumo de conversa, detector de objeção, assist do composer, transcrição de áudio, detecção de troca de assunto). Não é preciso todo recurso de IA estar pronto/polido antes da tela ir pro ar — alguns (transcrição) são diretos e podem sair já funcionando; outros (resumo, detector de objeção) podem entrar como "ligados depois", uma vez o resto da tela estável. **Provedor de IA ainda não decidido** — Claude direto (Anthropic API) ou via um gateway unificado (ex.: Vercel AI Gateway, que dá fallback entre modelos e observabilidade de custo) — decisão a fechar no início da construção.
 - **Fase 7 (WhatsApp real, já em produção):** toda a base de mensagens/conversas reais que essa tela vai ler e escrever.
 - **Painel de status de integrações externas** (registrado, ainda não construído): não é dependência bloqueante, mas reforça a necessidade — essa tela também vai depender de a Zapster estar de pé.
+
+### Ordem de construção acordada com Luiz (16/08/2026)
+1. **Esta tela + Fase 5 (IA), juntas** — próximo passo.
+2. **Kanban** com movimentação automática dos cards conforme a Malala avança o atendimento.
+3. **Dashboard de KPIs** — dois blocos: status/uso dos recursos de terceiros (o "Painel de status de integrações externas" já registrado) e KPIs de oportunidades/conversas (métricas de negócio: quantas abertas, taxa de conversão por etapa, tempo médio de resposta, etc. — a detalhar quando chegar a vez).
 
 ---
 
