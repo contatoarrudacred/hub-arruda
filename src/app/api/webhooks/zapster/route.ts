@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { avancarConversa, iniciarFluxo, saudacaoPorHorario } from "@/lib/motor-fluxo/engine";
 import {
   criarCalculadoraDadosDerivados,
@@ -32,6 +33,14 @@ export const maxDuration = 60;
 //
 // Formato do payload ainda não testado contra tráfego real — sempre loga o corpo bruto primeiro,
 // pra dar pra ajustar rápido se o formato divergir do que a documentação da Zapster descreve.
+//
+// Responde IMEDIATAMENTE (via after(), mesmo padrão já usado pro e-mail de boas-vindas em
+// persistencia.ts) — não espera o motor rodar nem as mensagens serem enviadas. Achado real
+// (16/08/2026, Luiz): o processamento síncrono (rodar o motor + mandar várias mensagens com pausa
+// de 3-6s cada) demorava mais do que a Zapster espera por uma resposta, e ela reenviava o mesmo
+// webhook — o reenvio chegava depois que a 1ª tentativa já tinha avançado a conversa, e a mensagem
+// do lead era processada DUAS vezes (uma como abertura, outra como se fosse resposta pro próximo
+// checkpoint). Responder na hora elimina o motivo do reenvio.
 
 async function montarDependencias() {
   const [etapasPorCodigo, faixas, config] = await Promise.all([
@@ -46,38 +55,14 @@ async function montarDependencias() {
   };
 }
 
-export async function POST(request: Request) {
-  const segredo = process.env.ZAPSTER_WEBHOOK_SECRET;
-  const secretDaUrl = new URL(request.url).searchParams.get("secret");
-  if (segredo && secretDaUrl !== segredo) {
-    return new Response("Não autorizado", { status: 401 });
-  }
-
-  const payload = await request.json().catch(() => null);
-  console.log("[webhook zapster] payload recebido:", JSON.stringify(payload));
-
-  if (!payload || payload.type !== "message.received") {
-    return Response.json({ ignorado: true, motivo: "não é message.received" });
-  }
-
-  const data = payload.data;
-  if (data?.type !== "text" || !data?.content?.text) {
-    return Response.json({ ignorado: true, motivo: `tipo de mensagem "${data?.type}" ainda não tratado` });
-  }
-
-  const telefone: string | undefined = data.sender?.phone_number ?? data.recipient?.phone_number;
-  const texto: string = data.content.text;
-  if (!telefone) {
-    return Response.json({ ignorado: true, motivo: "sem phone_number no payload" });
-  }
-
+async function processarMensagemRecebida(telefone: string, texto: string): Promise<void> {
   try {
     const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } = await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
 
     if (estado.sobSupervisor) {
       await registrarMensagemLead(estado.conversaId, texto);
-      return Response.json({ processado: true, sobSupervisor: true });
+      return;
     }
 
     let resultado;
@@ -118,10 +103,37 @@ export async function POST(request: Request) {
     });
 
     await enviarSequenciaWhatsapp(telefone, resultado.mensagens);
-
-    return Response.json({ processado: true, mensagensEnviadas: resultado.mensagens.length });
   } catch (e) {
     console.error("[webhook zapster] erro ao processar:", e);
-    return Response.json({ erro: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  const segredo = process.env.ZAPSTER_WEBHOOK_SECRET;
+  const secretDaUrl = new URL(request.url).searchParams.get("secret");
+  if (segredo && secretDaUrl !== segredo) {
+    return new Response("Não autorizado", { status: 401 });
+  }
+
+  const payload = await request.json().catch(() => null);
+  console.log("[webhook zapster] payload recebido:", JSON.stringify(payload));
+
+  if (!payload || payload.type !== "message.received") {
+    return Response.json({ ignorado: true, motivo: "não é message.received" });
+  }
+
+  const data = payload.data;
+  if (data?.type !== "text" || !data?.content?.text) {
+    return Response.json({ ignorado: true, motivo: `tipo de mensagem "${data?.type}" ainda não tratado` });
+  }
+
+  const telefone: string | undefined = data.sender?.phone_number ?? data.recipient?.phone_number;
+  const texto: string = data.content.text;
+  if (!telefone) {
+    return Response.json({ ignorado: true, motivo: "sem phone_number no payload" });
+  }
+
+  after(() => processarMensagemRecebida(telefone, texto));
+
+  return Response.json({ recebido: true });
 }

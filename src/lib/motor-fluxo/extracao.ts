@@ -83,7 +83,10 @@ export function extrairNomeDeResposta(resposta: string): string | null {
   const viaPadrao = extrairNomeSaudacao(resposta);
   if (viaPadrao) return viaPadrao;
   const bruta = resposta.trim();
-  if (RESPOSTAS_NAO_SAO_NOME.has(bruta.toLowerCase())) return null;
+  // Ignora pontuação de fim de frase ("Olá!!", "Oi.", "bom dia?") na comparação com o filtro —
+  // achado real (16/08/2026): "Olá!!" não batia com "olá" no Set e virava nome "Olá!!".
+  const semPontuacaoFinal = bruta.toLowerCase().replace(/[!?.,;]+$/, "").trim();
+  if (RESPOSTAS_NAO_SAO_NOME.has(semPontuacaoFinal)) return null;
   return capitalizarNome(bruta);
 }
 
