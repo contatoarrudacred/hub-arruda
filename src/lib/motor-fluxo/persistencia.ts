@@ -51,51 +51,6 @@ function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; mid
   }
 }
 
-/** Cria a tripla pessoa/oportunidade/conversa no início de uma conversa simulada. `nomeConhecido` vem da extração determinística da primeira mensagem, quando o lead já se apresentou de cara. */
-export async function criarConversaSimulador(
-  nomeConhecido: string | null,
-): Promise<{ conversaId: string; oportunidadeId: string; pessoaId: string }> {
-  const supabase = createAdminClient();
-
-  const { data: produto, error: erroProduto } = await supabase
-    .from("produtos")
-    .select("id")
-    .eq("nome", NOME_PRODUTO_LIMPEZA_NOME)
-    .single();
-  if (erroProduto || !produto) {
-    throw new Error(`Falha ao localizar produto "${NOME_PRODUTO_LIMPEZA_NOME}": ${erroProduto?.message}`);
-  }
-
-  const { data: pessoa, error: erroPessoa } = await supabase
-    .from("pessoas")
-    .insert({ tipo_pessoa: "pf", nome_razao_social: nomeConhecido ?? "Lead (simulador)" })
-    .select("id")
-    .single();
-  if (erroPessoa || !pessoa) {
-    throw new Error(`Falha ao criar pessoa: ${erroPessoa?.message}`);
-  }
-
-  const { data: oportunidade, error: erroOportunidade } = await supabase
-    .from("oportunidades")
-    .insert({ pessoa_id: pessoa.id, produto_id: produto.id, etapa_kanban: "novo_lead_triagem" })
-    .select("id")
-    .single();
-  if (erroOportunidade || !oportunidade) {
-    throw new Error(`Falha ao criar oportunidade: ${erroOportunidade?.message}`);
-  }
-
-  const { data: conversa, error: erroConversa } = await supabase
-    .from("conversas")
-    .insert({ pessoa_id: pessoa.id, oportunidade_id: oportunidade.id, canal: "simulador" })
-    .select("id")
-    .single();
-  if (erroConversa || !conversa) {
-    throw new Error(`Falha ao criar conversa: ${erroConversa?.message}`);
-  }
-
-  return { conversaId: conversa.id, oportunidadeId: oportunidade.id, pessoaId: pessoa.id };
-}
-
 export type ConversaWhatsappCarregada = {
   conversaId: string;
   oportunidadeId: string;
