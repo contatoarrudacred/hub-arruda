@@ -4,11 +4,12 @@ import { calcularProximoDisparo, podeDispararAgora } from "@/lib/motor-fluxo/mot
 import { carregarItensAgenda, type ItemAgendaFollowupCarregado } from "@/lib/motor-fluxo/repositorio";
 
 // Cron de disparo de follow-up (Fase 6) — chamado periodicamente pelo Vercel Cron (ver
-// vercel.json). Varre conversas "aguardando resposta" e dispara o próximo item da agenda que já
-// venceu, respeitando a janela comercial — considera a régua inteira, incluindo os itens de
-// e-mail depois da Perdida (Luiz, 15/08/2026). Ainda não entrega de verdade (nem WhatsApp — Zapster
-// não conectado, Fase 7 —, nem e-mail — Resend não conectado ainda): só registra, via
-// dispararItemFollowup (persistencia.ts), pronto pra plugar o envio real de cada canal depois.
+// vercel.json). Varre conversas "aguardando resposta" (Malala no controle, ou humano que ativou
+// follow-up manual na Tela de Atendimento — followup_manual_ativo, Fase 8 do Bloco B) e dispara o
+// próximo item da agenda que já venceu, respeitando a janela comercial — considera a régua
+// inteira, incluindo os itens de e-mail depois da Perdida (Luiz, 15/08/2026). Disparo do WhatsApp
+// em si (dispararItemFollowup, persistencia.ts) só registra em `mensagens`/`followup_emails` —
+// entrega de verdade pelo adaptador de canal ainda não está plugada aqui.
 //
 // Protegido por CRON_SECRET: o Vercel manda esse header automaticamente quando a variável de
 // ambiente CRON_SECRET está configurada no projeto — ver aviso no PLANO_MESTRE sobre configurar
@@ -56,7 +57,10 @@ export async function GET(request: Request) {
       .from("conversas")
       .select("id, oportunidade_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda")
       .eq("status", "ativa")
-      .eq("sob_supervisor", false)
+      // Malala no controle dispara sozinha (sob_supervisor=false); com um humano no controle, só
+      // dispara se ele ativou manualmente (followup_manual_ativo — modal da Tela de Atendimento,
+      // Fase 8 do Bloco B, evita disparo automático indesejado por padrão).
+      .or("sob_supervisor.eq.false,followup_manual_ativo.eq.true")
       .not("aguardando_resposta_desde", "is", null)
       .not("agenda_followup_id", "is", null)
       .returns<ConversaElegivel[]>();

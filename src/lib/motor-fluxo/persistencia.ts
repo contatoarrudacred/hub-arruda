@@ -180,7 +180,7 @@ export async function registrarMensagemLead(conversaId: string, texto: string): 
 
   const { error: erroConversa } = await supabase
     .from("conversas")
-    .update({ aguardando_resposta_desde: null, proximo_item_agenda: 0 })
+    .update({ aguardando_resposta_desde: null, proximo_item_agenda: 0, followup_manual_ativo: false })
     .eq("id", conversaId);
   if (erroConversa) {
     throw new Error(`Falha ao atualizar conversa após resposta do lead: ${erroConversa.message}`);
@@ -380,7 +380,7 @@ export async function dispararItemFollowup(
   if (ehUltimoItemDaAgenda(todosItensDaAgenda, item)) {
     const { error } = await supabase
       .from("conversas")
-      .update({ status: "encerrada", aguardando_resposta_desde: null })
+      .update({ status: "encerrada", aguardando_resposta_desde: null, followup_manual_ativo: false })
       .eq("id", conversaId);
     if (error) throw new Error(`Falha ao finalizar cadência de follow-up: ${error.message}`);
   }
