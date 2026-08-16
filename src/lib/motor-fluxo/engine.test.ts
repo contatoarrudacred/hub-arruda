@@ -3,7 +3,7 @@ import {
   CONFIG_PRECIFICACAO_LIMPEZA_NOME as CONFIG,
   FAIXAS_PRECOS_LIMPEZA_NOME as FAIXAS_PRECOS,
 } from "./dados-referencia-limpeza-nome";
-import { avancarConversa, iniciarFluxo } from "./engine";
+import { avancarConversa, iniciarFluxo, saudacaoPorHorario } from "./engine";
 import {
   construirEtapasPorCodigo,
   criarCalculadoraDadosDerivados,
@@ -125,6 +125,26 @@ describe("extração de nome — resposta direta a 'Com quem eu falo?'", () => {
     // funciona normalmente ("meu nome é Luiz Silva" capturaria "Luiz Silva" inteiro).
     r = await responder("pergunta_nome", {}, "meu nome é luiz silva");
     expect(r.dadosNovos.nome).toBe("Luiz");
+  });
+
+  it("não trata cumprimento como nome (bug real: 'oi' virou nome no WhatsApp de produção)", async () => {
+    for (const cumprimento of ["oi", "Olá!!", "bom dia", "boa tarde"]) {
+      const r = await responder("pergunta_nome", {}, cumprimento);
+      expect(r.naoReconhecido).toBe(true);
+      expect(r.dadosNovos.nome).toBeUndefined();
+    }
+  });
+});
+
+describe("saudacaoPorHorario", () => {
+  it("usa o horário de São Paulo, não o fuso do processo (bug real: UTC na Vercel dava 'boa noite' ao meio-dia)", () => {
+    // 9h em São Paulo = 12h UTC (sem horário de verão) — se a função lesse a hora em UTC direto
+    // (meio-dia), já cairia no ramo "boa tarde" em vez de "bom dia".
+    expect(saudacaoPorHorario(new Date("2026-08-16T12:00:00.000Z"))).toBe("bom dia");
+    // 14h em SP = 17h UTC — "boa tarde".
+    expect(saudacaoPorHorario(new Date("2026-08-16T17:00:00.000Z"))).toBe("boa tarde");
+    // 20h em SP = 23h UTC — "boa noite".
+    expect(saudacaoPorHorario(new Date("2026-08-16T23:00:00.000Z"))).toBe("boa noite");
   });
 });
 

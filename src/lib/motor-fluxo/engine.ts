@@ -384,9 +384,21 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   };
 }
 
-/** Saudação por horário (script pede "bom dia/tarde/noite conforme envio") — função do relógio, por isso fica de fora do motor puro e é injetada via `variaveisGlobais`. */
+/**
+ * Saudação por horário (script pede "bom dia/tarde/noite conforme envio") — função do relógio, por isso fica de fora do motor puro e é injetada via `variaveisGlobais`.
+ *
+ * Usa o fuso de São Paulo explicitamente (mesmo padrão de `dentroJanelaComercial` em
+ * motor-followup.ts) — `agora.getHours()` lia o fuso do processo, que em produção na Vercel é UTC,
+ * então a saudação batia errado boa parte do dia (ex.: meio-dia em SP = 15h UTC = "boa noite").
+ */
 export function saudacaoPorHorario(agora: Date = new Date()): string {
-  const hora = agora.getHours();
+  const hora = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(agora),
+  );
   if (hora < 12) return "bom dia";
   if (hora < 18) return "boa tarde";
   return "boa noite";
