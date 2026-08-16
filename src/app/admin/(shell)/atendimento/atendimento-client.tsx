@@ -222,6 +222,7 @@ export function AtendimentoClient({
   const [textoComposer, setTextoComposer] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const [painelContatoAberto, setPainelContatoAberto] = useState(true);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
@@ -485,7 +486,8 @@ export function AtendimentoClient({
         </div>
       </div>
 
-      {/* Painel direito — conversa */}
+      {/* Painel direito — conversa + dados do contato */}
+      <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         {!detalhe ? (
           <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
@@ -512,6 +514,16 @@ export function AtendimentoClient({
                   }`}
                 >
                   🔍
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPainelContatoAberto((v) => !v)}
+                  title="Dados do contato e da oportunidade"
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
+                    painelContatoAberto ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  👤
                 </button>
                 <DropdownAtribuir
                   atendentes={atendentesIniciais}
@@ -622,6 +634,43 @@ export function AtendimentoClient({
           </>
         )}
       </div>
+
+      {painelContatoAberto && detalhe && (
+        <div className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-zinc-200 p-4 dark:border-zinc-800">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Contato</p>
+            <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">{detalhe.pessoaNome}</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">{formatarTelefone(detalhe.pessoaTelefone)}</p>
+            {detalhe.pessoaEmail && <p className="text-xs text-zinc-500 dark:text-zinc-400">{detalhe.pessoaEmail}</p>}
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Oportunidade</p>
+            {detalhe.produtoNome && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{detalhe.produtoNome}</p>}
+            {detalhe.etapaKanban && (
+              <span className="mt-1 inline-block rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
+                {detalhe.etapaKanban}
+              </span>
+            )}
+            {detalhe.valorEstimado != null && (
+              <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
+                R$ {detalhe.valorEstimado.toLocaleString("pt-BR")}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Atendimento</p>
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  corControlador({ sobSupervisor: detalhe.sobSupervisor, atendenteCor: detalhe.atendenteCor }).bg
+                }`}
+              />
+              {!detalhe.sobSupervisor ? "Malala" : (detalhe.atendenteNome ?? "Não atribuída")}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
     </div>
   );
 }
