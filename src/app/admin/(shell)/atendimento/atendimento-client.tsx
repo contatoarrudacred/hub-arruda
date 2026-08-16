@@ -130,26 +130,40 @@ function ItemSubmenu({
   );
 }
 
+/**
+ * Menu de atribuição (Malala / mim / atendente específico) — usado tanto como o botão "Atribuir
+ * a..." do cabeçalho da conversa aberta quanto como o "⋮" de ações rápidas do card na lista (Fase
+ * 3 do Bloco B, reaproveita a Fase 2). `stopPropagation` em tudo porque, no card, este menu vive
+ * dentro da linha inteira que também tem onClick pra selecionar a conversa — sem isso, abrir o
+ * menu ou escolher uma opção também "clicaria" no card por baixo.
+ */
 function DropdownAtribuir({
   atendentes,
   usuarioAtualId,
   onEscolherMalala,
   onEscolherAtendente,
+  compacto = false,
 }: {
   atendentes: UsuarioSistema[];
   usuarioAtualId: string;
   onEscolherMalala: () => void;
   onEscolherAtendente: (atendenteId: string) => void;
+  compacto?: boolean;
 }) {
   const [aberto, setAberto] = useState(false);
   return (
-    <div className="relative">
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        className="rounded-full bg-[#141e33] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+        title={compacto ? "Ações rápidas" : undefined}
+        className={
+          compacto
+            ? "flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 dark:text-zinc-500 dark:hover:bg-zinc-700"
+            : "rounded-full bg-[#141e33] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+        }
       >
-        Atribuir a... ▾
+        {compacto ? "⋮" : "Atribuir a... ▾"}
       </button>
       {aberto && (
         <>
@@ -260,26 +274,26 @@ export function AtendimentoClient({
     setMenuHumanoAberto(false);
   }
 
-  async function handleAssumir() {
-    if (!conversaSelecionadaId) return;
-    await assumirConversaAction(conversaSelecionadaId);
-    await recarregarDetalhe(conversaSelecionadaId);
+  // Recebem o conversaId explícito (não presumem "a conversa aberta") pra servir tanto o dropdown
+  // do cabeçalho (age sobre conversaSelecionadaId) quanto o "⋮" do card na lista (age sobre
+  // qualquer card, aberto ou não — Fase 3 do Bloco B).
+  async function assumir(conversaId: string) {
+    await assumirConversaAction(conversaId);
+    if (conversaId === conversaSelecionadaId) await recarregarDetalhe(conversaId);
     await recarregarLista();
     await recarregarContagens();
   }
 
-  async function handleAtribuirMalala() {
-    if (!conversaSelecionadaId) return;
-    await atribuirParaMalalaAction(conversaSelecionadaId);
-    await recarregarDetalhe(conversaSelecionadaId);
+  async function atribuirMalala(conversaId: string) {
+    await atribuirParaMalalaAction(conversaId);
+    if (conversaId === conversaSelecionadaId) await recarregarDetalhe(conversaId);
     await recarregarLista();
     await recarregarContagens();
   }
 
-  async function handleAtribuirAtendente(atendenteId: string) {
-    if (!conversaSelecionadaId) return;
-    await atribuirParaAtendenteAction(conversaSelecionadaId, atendenteId);
-    await recarregarDetalhe(conversaSelecionadaId);
+  async function atribuirAtendente(conversaId: string, atendenteId: string) {
+    await atribuirParaAtendenteAction(conversaId, atendenteId);
+    if (conversaId === conversaSelecionadaId) await recarregarDetalhe(conversaId);
     await recarregarLista();
     await recarregarContagens();
   }
@@ -376,10 +390,15 @@ export function AtendimentoClient({
             <p className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhuma conversa aqui.</p>
           )}
           {conversas.map((c) => (
-            <button
+            <div
               key={c.conversaId}
+              role="button"
+              tabIndex={0}
               onClick={() => setConversaSelecionadaId(c.conversaId)}
-              className={`flex w-full flex-col gap-1 border-b border-zinc-100 px-3 py-2.5 text-left dark:border-zinc-900 ${
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setConversaSelecionadaId(c.conversaId);
+              }}
+              className={`flex w-full cursor-pointer flex-col gap-1 border-b border-zinc-100 px-3 py-2.5 text-left dark:border-zinc-900 ${
                 conversaSelecionadaId === c.conversaId
                   ? "bg-zinc-100 dark:bg-zinc-800"
                   : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
@@ -399,7 +418,7 @@ export function AtendimentoClient({
                 </span>
                 {c.naoLida && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-emerald-500" />}
               </div>
-              <div className="flex flex-wrap gap-1 pt-0.5">
+              <div className="flex flex-wrap items-center gap-1 pt-0.5">
                 {c.etapaKanban && (
                   <span className="rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
                     {c.etapaKanban}
@@ -419,8 +438,19 @@ export function AtendimentoClient({
                     </span>
                   );
                 })()}
+                <DropdownAtribuir
+                  compacto
+                  atendentes={atendentesIniciais}
+                  usuarioAtualId={usuarioAtual.id}
+                  onEscolherMalala={() => atribuirMalala(c.conversaId)}
+                  onEscolherAtendente={(atendenteId) =>
+                    atendenteId === usuarioAtual.id
+                      ? assumir(c.conversaId)
+                      : atribuirAtendente(c.conversaId, atendenteId)
+                  }
+                />
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -446,10 +476,12 @@ export function AtendimentoClient({
                 <DropdownAtribuir
                   atendentes={atendentesIniciais}
                   usuarioAtualId={usuarioAtual.id}
-                  onEscolherMalala={handleAtribuirMalala}
-                  onEscolherAtendente={(atendenteId) =>
-                    atendenteId === usuarioAtual.id ? handleAssumir() : handleAtribuirAtendente(atendenteId)
-                  }
+                  onEscolherMalala={() => conversaSelecionadaId && atribuirMalala(conversaSelecionadaId)}
+                  onEscolherAtendente={(atendenteId) => {
+                    if (!conversaSelecionadaId) return;
+                    if (atendenteId === usuarioAtual.id) assumir(conversaSelecionadaId);
+                    else atribuirAtendente(conversaSelecionadaId, atendenteId);
+                  }}
                 />
               </div>
             </div>
