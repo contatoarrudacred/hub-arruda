@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calcularProximoDisparo, dentroJanelaComercial, ehUltimoItemDaAgenda, offsetEmMs } from "./motor-followup";
+import {
+  calcularProximoDisparo,
+  dentroJanelaComercial,
+  ehUltimoItemDaAgenda,
+  offsetEmMs,
+  proximoDisparoPrevisto,
+} from "./motor-followup";
 import type { ItemAgendaFollowupCarregado } from "./repositorio";
 
 function item(parcial: Partial<ItemAgendaFollowupCarregado>): ItemAgendaFollowupCarregado {
@@ -88,6 +94,28 @@ describe("calcularProximoDisparo", () => {
   it("nada mais pendente depois do último item disparado → null", () => {
     const agora = new Date(origem.getTime() + 60 * 86_400_000);
     expect(calcularProximoDisparo(itens, 8, origem, agora)).toBeNull();
+  });
+});
+
+describe("proximoDisparoPrevisto", () => {
+  const origem = new Date("2026-01-05T12:00:00Z");
+  const itens = [
+    item({ id: "i1", ordem: 1, intervaloValor: 10, intervaloUnidade: "minutos" }),
+    item({ id: "i2", ordem: 2, intervaloValor: 45, intervaloUnidade: "minutos" }),
+  ];
+
+  it("retorna a data prevista do próximo item pendente, mesmo que ainda não tenha vencido", () => {
+    const previsto = proximoDisparoPrevisto(itens, 0, origem);
+    expect(previsto?.toISOString()).toBe(new Date(origem.getTime() + 10 * 60_000).toISOString());
+  });
+
+  it("pula pro item seguinte quando o anterior já disparou", () => {
+    const previsto = proximoDisparoPrevisto(itens, 1, origem);
+    expect(previsto?.toISOString()).toBe(new Date(origem.getTime() + 45 * 60_000).toISOString());
+  });
+
+  it("null quando não há mais item pendente", () => {
+    expect(proximoDisparoPrevisto(itens, 2, origem)).toBeNull();
   });
 });
 

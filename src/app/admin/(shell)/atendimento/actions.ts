@@ -5,6 +5,7 @@ import {
   assumirConversa,
   atribuirParaAtendente,
   atribuirParaMalala,
+  ativarFollowupManual,
   carregarConversaDetalhe,
   carregarTextoEtapaScript,
   contarNaoLidas,
@@ -23,6 +24,7 @@ import {
   type Notificacao,
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
+import { listarAgendasFollowup, type AgendaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
 import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
 
 export async function listarConversasAction(filtro: FiltroConversas, busca: string): Promise<ConversaResumo[]> {
@@ -82,6 +84,15 @@ export async function marcarNotificacaoLidaAction(id: string): Promise<void> {
 
 export async function carregarTextoEtapaScriptAction(etapaId: string): Promise<string | null> {
   return carregarTextoEtapaScript(etapaId);
+}
+
+export async function listarAgendasFollowupAction(): Promise<AgendaAdmin[]> {
+  return listarAgendasFollowup();
+}
+
+export async function ativarFollowupManualAction(conversaId: string, agendaId: string): Promise<void> {
+  await ativarFollowupManual(conversaId, agendaId);
+  revalidatePath("/admin/atendimento");
 }
 
 export type ResultadoEnviarMensagem = { sucesso: true } | { sucesso: false; erro: string };

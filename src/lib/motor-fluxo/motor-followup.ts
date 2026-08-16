@@ -83,6 +83,27 @@ export function calcularProximoDisparo(
   return agora.getTime() >= disparoPrevistoEm ? proximoPendente : null;
 }
 
+/**
+ * Data prevista do próximo item pendente da agenda, mesmo que ainda não tenha vencido — só pra
+ * exibição (chip "follow-up ativo" na Tela de Atendimento, Fase 8 do Bloco B). Não decide se
+ * dispara agora (isso é `calcularProximoDisparo`) nem checa janela comercial.
+ */
+export function proximoDisparoPrevisto(
+  itens: ItemAgendaFollowupCarregado[],
+  proximoItemAgenda: number,
+  aguardandoDesde: Date,
+): Date | null {
+  const proximoPendente = itens
+    .filter((item) => item.ordem > proximoItemAgenda)
+    .sort((a, b) => a.ordem - b.ordem)[0];
+
+  if (!proximoPendente) return null;
+
+  return new Date(
+    aguardandoDesde.getTime() + offsetEmMs(proximoPendente.intervaloValor, proximoPendente.intervaloUnidade),
+  );
+}
+
 /** Último item da agenda (maior ordem) — quando ele dispara, a cadência de follow-up termina de vez (relógio para, conversa fecha). Diferente de `encerraAtendimento`, que é sobre marcar a oportunidade como Perdida (acontece antes, no meio da régua). */
 export function ehUltimoItemDaAgenda(itens: ItemAgendaFollowupCarregado[], item: ItemAgendaFollowupCarregado): boolean {
   const maiorOrdem = Math.max(...itens.map((i) => i.ordem));

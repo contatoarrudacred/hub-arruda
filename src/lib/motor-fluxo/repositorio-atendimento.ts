@@ -1,6 +1,8 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { ehCorBadgeValida, type CorBadge } from "./cores-atendimento";
+import { proximoDisparoPrevisto } from "./motor-followup";
+import { carregarItensAgenda } from "./repositorio";
 
 // Camada de dados da Tela de Atendimento (Bloco A) — usa sempre o cliente autenticado (não
 // service_role), porque toda ação aqui é feita por um admin logado e precisa aparecer na trilha de
@@ -287,6 +289,8 @@ export type ConversaDetalhe = {
   atendenteNome: string | null;
   atendenteCor: CorBadge | null;
   etapaFluxoAtualId: string | null;
+  followupAtivo: boolean;
+  followupProximoEm: string | null;
   notas: NotaInterna[];
   mensagens: MensagemConversa[];
 };
@@ -298,7 +302,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select(
-      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
+      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
     )
     .eq("id", conversaId)
     .single();
@@ -329,6 +333,17 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     .order("created_at", { ascending: true });
   if (erroNotas) throw new Error(`Falha ao carregar notas internas: ${erroNotas.message}`);
 
+  const followupAtivo =
+    Boolean(conversa.aguardando_resposta_desde) &&
+    Boolean(conversa.agenda_followup_id) &&
+    (!conversa.sob_supervisor || conversa.followup_manual_ativo);
+  let followupProximoEm: string | null = null;
+  if (followupAtivo && conversa.agenda_followup_id && conversa.aguardando_resposta_desde) {
+    const itens = await carregarItensAgenda(conversa.agenda_followup_id);
+    const previsto = proximoDisparoPrevisto(itens, conversa.proximo_item_agenda, new Date(conversa.aguardando_resposta_desde));
+    followupProximoEm = previsto?.toISOString() ?? null;
+  }
+
   return {
     conversaId: conversa.id,
     pessoaId: conversa.pessoa_id,
@@ -344,6 +359,8 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     atendenteNome: atendente?.pessoas?.nome_razao_social ?? null,
     atendenteCor: atendente && ehCorBadgeValida(atendente.cor_badge) ? (atendente.cor_badge as CorBadge) : null,
     etapaFluxoAtualId: conversa.etapa_fluxo_atual_id,
+    followupAtivo,
+    followupProximoEm,
     notas: (notas ?? []).map((n) => {
       const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
       return {
@@ -485,6 +502,25 @@ export async function marcarNotificacaoLida(notificacaoId: string): Promise<void
   const supabase = await createClient();
   const { error } = await supabase.from("notificacoes").update({ lida: true }).eq("id", notificacaoId);
   if (error) throw new Error(`Falha ao marcar notificação como lida: ${error.message}`);
+}
+
+/**
+ * Ativa follow-up automático numa conversa com humano no controle — sem isso o cron
+ * (api/cron/followups) ignora conversas com `sob_supervisor=true` (ver `followup_manual_ativo`,
+ * migration 025). Acionado pelo modal "trocar de conversa sem resposta" da Tela de Atendimento.
+ */
+export async function ativarFollowupManual(conversaId: string, agendaFollowupId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("conversas")
+    .update({
+      agenda_followup_id: agendaFollowupId,
+      aguardando_resposta_desde: new Date().toISOString(),
+      proximo_item_agenda: 0,
+      followup_manual_ativo: true,
+    })
+    .eq("id", conversaId);
+  if (error) throw new Error(`Falha ao ativar follow-up manual: ${error.message}`);
 }
 
 /**
