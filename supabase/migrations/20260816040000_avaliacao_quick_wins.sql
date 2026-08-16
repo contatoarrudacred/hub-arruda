@@ -39,7 +39,7 @@ where a.produto_id = b.produto_id
 -- unique comum trataria duas linhas com faixa_max null como "diferentes" (regra padrão do
 -- Postgres pra NULL em unique) — usa índice com coalesce pra fechar esse buraco também,
 -- já pensando na faixa aberta ("acima de X") que ainda não existe como linha hoje.
-create unique index precos_por_faixa_produto_faixa_key
+create unique index if not exists precos_por_faixa_produto_faixa_key
   on precos_por_faixa (produto_id, faixa_min, coalesce(faixa_max, -1));
 comment on index precos_por_faixa_produto_faixa_key is
   'Evita duplicar a mesma faixa de preço pro mesmo produto — achado real em 16/08/2026 (migration 013 tinha sido rodada duas vezes, /admin/precos mostrava cada faixa repetida).';
@@ -59,7 +59,7 @@ comment on index idx_conversas_followup_pendente is
 -- 4. Trigger de auditoria faltando em produtos
 -- ----------------------------------------------------------------------------
 
-create trigger trg_auditoria_produtos
+create or replace trigger trg_auditoria_produtos
   after insert or update or delete on produtos
   for each row execute function fn_auditoria_log();
 
@@ -77,7 +77,7 @@ comment on column conversas.proximo_item_agenda is
 --    execuções sobrepostas — self-expira, não precisa de release garantido)
 -- ----------------------------------------------------------------------------
 
-create table cron_locks (
+create table if not exists cron_locks (
   id text primary key,
   locked_until timestamptz not null
 );
@@ -85,6 +85,7 @@ comment on table cron_locks is
   'Trava de exclusão mútua para jobs periódicos que não podem rodar sobrepostos (hoje só o cron de follow-up). Não tem trigger de auditoria de propósito — é estado operacional efêmero, não dado de negócio.';
 
 alter table cron_locks enable row level security;
+drop policy if exists service_role_only on cron_locks;
 create policy service_role_only on cron_locks for all to authenticated using (false) with check (false);
 comment on policy service_role_only on cron_locks is
   'Ninguém autenticado via painel precisa mexer aqui — só o cron (service_role, que ignora RLS) usa esta tabela.';

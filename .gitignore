@@ -47,3 +47,6 @@ next-env.d.ts
 
 # worktrees isolados de subagentes (cópias temporárias do repo, nunca devem ser versionadas)
 .claude/worktrees/
+
+# mockups do brainstorming visual (skill superpowers:brainstorming) — descartáveis, não são deliverable
+.superpowers/
