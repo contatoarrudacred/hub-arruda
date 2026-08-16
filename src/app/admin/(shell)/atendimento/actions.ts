@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   assumirConversa,
+  atribuirParaAtendente,
   atribuirParaMalala,
   atualizarCorBadge,
   carregarConversaDetalhe,
@@ -45,6 +46,11 @@ export async function assumirConversaAction(conversaId: string): Promise<void> {
 
 export async function atribuirParaMalalaAction(conversaId: string): Promise<void> {
   await atribuirParaMalala(conversaId);
+  revalidatePath("/admin/atendimento");
+}
+
+export async function atribuirParaAtendenteAction(conversaId: string, atendenteId: string): Promise<void> {
+  await atribuirParaAtendente(conversaId, atendenteId);
   revalidatePath("/admin/atendimento");
 }
 
