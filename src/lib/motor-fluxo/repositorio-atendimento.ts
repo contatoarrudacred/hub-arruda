@@ -254,6 +254,24 @@ export type MensagemConversa = {
   enviadoEm: string;
 };
 
+export type NotaInterna = {
+  id: string;
+  conversaId: string;
+  autorId: string;
+  autorNome: string;
+  texto: string;
+  criadoEm: string;
+};
+
+export type Notificacao = {
+  id: string;
+  tipo: "mencao" | "atribuicao";
+  conversaId: string;
+  pessoaNome: string;
+  lida: boolean;
+  criadoEm: string;
+};
+
 export type ConversaDetalhe = {
   conversaId: string;
   pessoaId: string;
@@ -268,6 +286,7 @@ export type ConversaDetalhe = {
   atendenteId: string | null;
   atendenteNome: string | null;
   atendenteCor: CorBadge | null;
+  notas: NotaInterna[];
   mensagens: MensagemConversa[];
 };
 
@@ -302,6 +321,13 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     .order("enviado_em", { ascending: true });
   if (erroMensagens) throw new Error(`Falha ao carregar mensagens: ${erroMensagens.message}`);
 
+  const { data: notas, error: erroNotas } = await supabase
+    .from("notas_internas")
+    .select("id, autor_id, texto, created_at, usuarios_sistema(pessoas(nome_razao_social))")
+    .eq("conversa_id", conversaId)
+    .order("created_at", { ascending: true });
+  if (erroNotas) throw new Error(`Falha ao carregar notas internas: ${erroNotas.message}`);
+
   return {
     conversaId: conversa.id,
     pessoaId: conversa.pessoa_id,
@@ -316,6 +342,17 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     atendenteId: conversa.atendente_id,
     atendenteNome: atendente?.pessoas?.nome_razao_social ?? null,
     atendenteCor: atendente && ehCorBadgeValida(atendente.cor_badge) ? (atendente.cor_badge as CorBadge) : null,
+    notas: (notas ?? []).map((n) => {
+      const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
+      return {
+        id: n.id,
+        conversaId,
+        autorId: n.autor_id,
+        autorNome: autorInfo?.pessoas?.nome_razao_social ?? "Atendente",
+        texto: n.texto,
+        criadoEm: n.created_at,
+      };
+    }),
     mensagens: (mensagens ?? []).map((m) => ({
       id: m.id,
       remetente: m.remetente,
@@ -353,7 +390,7 @@ export async function atualizarCorBadge(usuarioId: string, cor: CorBadge): Promi
   if (error) throw new Error(`Falha ao atualizar cor: ${error.message}`);
 }
 
-/** Atribui a conversa a um atendente humano específico (diferente de "Assumir" — pode ser feito por qualquer atendente, não só o destinatário). */
+/** Atribui a conversa a um atendente humano específico (diferente de "Assumir" — pode ser feito por qualquer atendente, não só o destinatário) e notifica quem recebeu. */
 export async function atribuirParaAtendente(conversaId: string, atendenteId: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase
@@ -361,6 +398,11 @@ export async function atribuirParaAtendente(conversaId: string, atendenteId: str
     .update({ sob_supervisor: true, atendente_id: atendenteId })
     .eq("id", conversaId);
   if (error) throw new Error(`Falha ao atribuir conversa ao atendente: ${error.message}`);
+
+  const { error: erroNotif } = await supabase
+    .from("notificacoes")
+    .insert({ usuario_id: atendenteId, tipo: "atribuicao", conversa_id: conversaId });
+  if (erroNotif) throw new Error(`Falha ao notificar atribuição: ${erroNotif.message}`);
 }
 
 /** Grava a mensagem de um atendente humano — o envio real via WhatsApp é feito por quem chama (fora daqui, mesmo adaptador de canal da Fase 7). */
@@ -370,4 +412,75 @@ export async function registrarMensagemHumana(conversaId: string, texto: string)
     .from("mensagens")
     .insert({ conversa_id: conversaId, remetente: "supervisor", conteudo: texto });
   if (error) throw new Error(`Falha ao registrar mensagem: ${error.message}`);
+}
+
+/** Casa @PrimeiroNome (case-insensitive, limite de palavra) contra os atendentes ativos. Sem autocomplete nesta fase — é resolução de texto simples. */
+function extrairMencoes(texto: string, atendentes: UsuarioSistema[]): UsuarioSistema[] {
+  return atendentes.filter((atendente) => {
+    const primeiroNome = atendente.nome.split(" ")[0];
+    const regex = new RegExp(`@${primeiroNome}\\b`, "i");
+    return regex.test(texto);
+  });
+}
+
+/** Cria uma nota interna e notifica quem foi @mencionado (exceto o próprio autor, se ele se mencionar). */
+export async function criarNotaInterna(conversaId: string, texto: string): Promise<void> {
+  const supabase = await createClient();
+  const autor = await obterUsuarioSistemaAtual();
+
+  const { data: nota, error } = await supabase
+    .from("notas_internas")
+    .insert({ conversa_id: conversaId, autor_id: autor.id, texto })
+    .select("id")
+    .single();
+  if (error || !nota) throw new Error(`Falha ao criar nota interna: ${error?.message}`);
+
+  const atendentes = await listarUsuariosSistema();
+  const mencionados = extrairMencoes(texto, atendentes).filter((a) => a.id !== autor.id);
+  if (mencionados.length > 0) {
+    const { error: erroNotif } = await supabase
+      .from("notificacoes")
+      .insert(mencionados.map((m) => ({ usuario_id: m.id, tipo: "mencao", conversa_id: conversaId, nota_id: nota.id })));
+    if (erroNotif) throw new Error(`Falha ao notificar menção: ${erroNotif.message}`);
+  }
+}
+
+/** Notificações do usuário, mais recentes primeiro — usadas pelo sino da Tela de Atendimento. */
+export async function listarNotificacoes(usuarioId: string): Promise<Notificacao[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("notificacoes")
+    .select("id, tipo, conversa_id, lida, created_at, conversas(pessoas(nome_razao_social))")
+    .eq("usuario_id", usuarioId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw new Error(`Falha ao listar notificações: ${error.message}`);
+  return (data ?? []).map((n) => {
+    const conversaInfo = n.conversas as unknown as { pessoas: { nome_razao_social: string } | null } | null;
+    return {
+      id: n.id,
+      tipo: n.tipo as "mencao" | "atribuicao",
+      conversaId: n.conversa_id,
+      pessoaNome: conversaInfo?.pessoas?.nome_razao_social ?? "Contato",
+      lida: n.lida,
+      criadoEm: n.created_at,
+    };
+  });
+}
+
+export async function contarNotificacoesNaoLidas(usuarioId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("notificacoes")
+    .select("id", { count: "exact", head: true })
+    .eq("usuario_id", usuarioId)
+    .eq("lida", false);
+  if (error) throw new Error(`Falha ao contar notificações: ${error.message}`);
+  return count ?? 0;
+}
+
+export async function marcarNotificacaoLida(notificacaoId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("notificacoes").update({ lida: true }).eq("id", notificacaoId);
+  if (error) throw new Error(`Falha ao marcar notificação como lida: ${error.message}`);
 }
