@@ -7,29 +7,25 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import {
-  criarConversaSimulador,
-  registrarMensagemLead,
-  registrarTurnoMalala,
-} from "@/lib/motor-fluxo/persistencia";
-import {
   carregarConfigPrecificacao,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
 } from "@/lib/motor-fluxo/repositorio";
 import type { DadosConversa, MensagemEnviada } from "@/lib/motor-fluxo/tipos";
 
-// Server Actions que dão vida ao simulador (src/app/simulador/simulador-chat.tsx). O estado de
-// navegação do fluxo (em que etapa está, o que já foi capturado) fica no client — mas, desde
-// 15/08/2026, cada mensagem também é gravada de verdade em pessoas/oportunidades/conversas/
-// mensagens (ver persistencia.ts), pra alimentar o motor de disparo de follow-up (Fase 6) e servir
-// de rascunho pro webhook do WhatsApp real (Fase 7) reaproveitar a mesma persistência depois. O
-// conteúdo do script (etapas_fluxo, precos_por_faixa, configuracoes) já vinha do Supabase a cada
-// chamada, então editar o script no banco continua mudando o simulador na hora.
+// Server Actions que dão vida ao simulador (src/app/simulador/simulador-chat.tsx). 100% client-side
+// a partir de 16/08/2026 (decisão de Luiz: "o simulador só simula, não é real") — não grava pessoa,
+// oportunidade, conversa, mensagem nem dispara e-mail de boas-vindas. O estado de navegação do
+// fluxo (em que etapa está, o que já foi capturado) vive só em EstadoSimulador, no navegador. O
+// conteúdo do script (etapas_fluxo, precos_por_faixa, configuracoes) continua vindo do Supabase a
+// cada chamada, então editar o script no banco continua mudando o simulador na hora — só o
+// RESULTADO da conversa simulada é que não persiste em lugar nenhum.
 
 export type EstadoSimulador = {
   /** null = fluxo automatizado encerrado (perdida, handoff humano, ou fim do MVP1) */
   etapaAtualCodigo: string | null;
   dados: DadosConversa;
+  /** Sempre null — não existe conversa/oportunidade/pessoa real por trás de uma sessão do simulador. */
   conversaId: string | null;
   oportunidadeId: string | null;
   pessoaId: string | null;
@@ -73,18 +69,14 @@ export async function iniciarSimulacaoComMensagem(primeiraMensagemLead: string):
     { saudacao: saudacaoPorHorario() },
   );
 
-  const { conversaId, oportunidadeId, pessoaId } = await criarConversaSimulador(dadosIniciais.nome ?? null);
-  await registrarMensagemLead(conversaId, primeiraMensagemLead);
-  await registrarTurnoMalala({ conversaId, oportunidadeId, pessoaId, dadosNovos: dadosIniciais, resultado });
-
   return {
     mensagens: resultado.mensagens,
     estado: {
       etapaAtualCodigo: resultado.etapaFinal?.conteudo.codigo ?? null,
       dados: dadosIniciais,
-      conversaId,
-      oportunidadeId,
-      pessoaId,
+      conversaId: null,
+      oportunidadeId: null,
+      pessoaId: null,
     },
     encerrado: resultado.etapaFinal === null,
     naoReconhecido: false,
@@ -95,15 +87,13 @@ export async function enviarResposta(
   estado: EstadoSimulador,
   respostaLead: string,
 ): Promise<PassoSimulador> {
-  if (!estado.etapaAtualCodigo || !estado.conversaId || !estado.oportunidadeId || !estado.pessoaId) {
+  if (!estado.etapaAtualCodigo) {
     return { mensagens: [], estado, encerrado: true, naoReconhecido: false };
   }
 
   const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } =
     await montarDependencias();
   const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
-
-  await registrarMensagemLead(estado.conversaId, respostaLead);
 
   const resultado = await avancarConversa({
     etapaAtual,
@@ -115,21 +105,13 @@ export async function enviarResposta(
     variaveisGlobais: { saudacao: saudacaoPorHorario() },
   });
 
-  await registrarTurnoMalala({
-    conversaId: estado.conversaId,
-    oportunidadeId: estado.oportunidadeId,
-    pessoaId: estado.pessoaId,
-    dadosNovos: resultado.dadosNovos,
-    resultado,
-  });
-
   return {
     mensagens: resultado.mensagens,
     estado: {
       etapaAtualCodigo: resultado.etapaFinal?.conteudo.codigo ?? null,
-      conversaId: estado.conversaId,
-      oportunidadeId: estado.oportunidadeId,
-      pessoaId: estado.pessoaId,
+      conversaId: null,
+      oportunidadeId: null,
+      pessoaId: null,
       dados: { ...estado.dados, ...resultado.dadosNovos },
     },
     encerrado: resultado.etapaFinal === null,
