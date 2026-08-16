@@ -125,18 +125,28 @@ export type ConversaResumo = {
   conversaId: string;
   pessoaId: string;
   pessoaNome: string;
+  /** Placeholder ("Lead (WhatsApp)"/"Novo Lead") — ver `nomeConhecido`, não usar `pessoaNome` sozinho pra decidir o que mostrar no card. */
+  nomeConhecido: boolean;
   pessoaTelefone: string | null;
   etapaKanban: string | null;
   produtoNome: string | null;
+  produtoNomeReduzido: string | null;
+  valorEstimado: number | null;
   ultimaMensagemConteudo: string | null;
   ultimaMensagemRemetente: string | null;
   ultimaMensagemEm: string | null;
-  naoLida: boolean;
+  ultimaMensagemEntregueEm: string | null;
+  ultimaMensagemLidoEm: string | null;
+  naoLidasContagem: number;
   atendenteId: string | null;
   sobSupervisor: boolean;
   atendenteNome: string | null;
   atendenteCor: CorBadge | null;
+  favorita: boolean;
 };
+
+/** Placeholders gravados por `carregarOuCriarConversaWhatsapp`/repositorio-atendimento quando o lead ainda não disse o nome — string exata, não é o ideal (frágil a typo), mas evita uma coluna nova só pra isto agora. */
+const NOMES_PLACEHOLDER = new Set(["Lead (WhatsApp)", "Novo Lead"]);
 
 /** Lista de contatos (painel esquerdo) — por padrão só conversas ativas, não perdidas. */
 export async function listarConversasAtendimento(
@@ -191,25 +201,44 @@ export async function listarConversasAtendimento(
     }
   }
 
-  const resumo: ConversaResumo[] = linhas.map((linha) => ({
-    conversaId: linha.conversa_id,
-    pessoaId: linha.pessoa_id,
-    pessoaNome: linha.pessoa_nome ?? "Novo Lead",
-    pessoaTelefone: linha.pessoa_telefone,
-    etapaKanban: linha.etapa_kanban,
-    produtoNome: linha.produto_nome,
-    ultimaMensagemConteudo: linha.ultima_mensagem_conteudo,
-    ultimaMensagemRemetente: linha.ultima_mensagem_remetente,
-    ultimaMensagemEm: linha.ultima_mensagem_em,
-    naoLida: linha.ultima_mensagem_remetente === "lead",
-    atendenteId: linha.atendente_id,
-    sobSupervisor: linha.sob_supervisor,
-    atendenteNome: linha.atendente_nome,
-    atendenteCor: ehCorBadgeValida(linha.atendente_cor ?? "") ? (linha.atendente_cor as CorBadge) : null,
-  }));
+  const resumo: ConversaResumo[] = linhas.map((linha) => {
+    const nome = linha.pessoa_nome ?? "Novo Lead";
+    return {
+      conversaId: linha.conversa_id,
+      pessoaId: linha.pessoa_id,
+      pessoaNome: nome,
+      nomeConhecido: !NOMES_PLACEHOLDER.has(nome),
+      pessoaTelefone: linha.pessoa_telefone,
+      etapaKanban: linha.etapa_kanban,
+      produtoNome: linha.produto_nome,
+      produtoNomeReduzido: linha.produto_nome_reduzido,
+      valorEstimado: linha.valor_estimado,
+      ultimaMensagemConteudo: linha.ultima_mensagem_conteudo,
+      ultimaMensagemRemetente: linha.ultima_mensagem_remetente,
+      ultimaMensagemEm: linha.ultima_mensagem_em,
+      ultimaMensagemEntregueEm: linha.ultima_mensagem_entregue_em,
+      ultimaMensagemLidoEm: linha.ultima_mensagem_lido_em,
+      naoLidasContagem: linha.nao_lidas_contagem ?? 0,
+      atendenteId: linha.atendente_id,
+      sobSupervisor: linha.sob_supervisor,
+      atendenteNome: linha.atendente_nome,
+      atendenteCor: ehCorBadgeValida(linha.atendente_cor ?? "") ? (linha.atendente_cor as CorBadge) : null,
+      favorita: linha.favorita ?? false,
+    };
+  });
 
-  if (filtro.tipo === "nao_lidas") return resumo.filter((c) => c.naoLida);
-  return resumo.sort((a, b) => (b.ultimaMensagemEm ?? "").localeCompare(a.ultimaMensagemEm ?? ""));
+  const filtrado = filtro.tipo === "nao_lidas" ? resumo.filter((c) => c.naoLidasContagem > 0) : resumo;
+  return filtrado.sort((a, b) => {
+    if (a.favorita !== b.favorita) return a.favorita ? -1 : 1;
+    return (b.ultimaMensagemEm ?? "").localeCompare(a.ultimaMensagemEm ?? "");
+  });
+}
+
+/** Liga/desliga o favorito da conversa (sobe pro topo da lista de contatos quando favoritada). */
+export async function alternarFavorita(conversaId: string, favorita: boolean): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("conversas").update({ favorita }).eq("id", conversaId);
+  if (error) throw new Error(`Falha ao favoritar conversa: ${error.message}`);
 }
 
 export type ContagemNaoLidas = {

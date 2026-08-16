@@ -13,6 +13,7 @@ import type {
 } from "@/lib/motor-fluxo/repositorio-atendimento";
 import type { AgendaAdmin, RespostaPronta } from "@/lib/motor-fluxo/repositorio-admin";
 import {
+  alternarFavoritaAction,
   assumirConversaAction,
   ativarFollowupManualAction,
   atribuirParaAtendenteAction,
@@ -74,6 +75,30 @@ function filtroPorChave(chave: ChaveFiltro, usuarioId: string): FiltroConversas 
 function formatarHora(iso: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Só hora quando a mensagem é de hoje; "DD/MM - HH:MM" quando é de outro dia (card de contato, Bloco B2). */
+function formatarHoraOuData(iso: string | null): string {
+  if (!iso) return "";
+  const data = new Date(iso);
+  const hoje = new Date();
+  const mesmoDia =
+    data.getFullYear() === hoje.getFullYear() && data.getMonth() === hoje.getMonth() && data.getDate() === hoje.getDate();
+  const hora = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (mesmoDia) return hora;
+  const dataCurta = data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return `${dataCurta} - ${hora}`;
+}
+
+function iniciais(nome: string): string {
+  return nome.trim().charAt(0).toUpperCase() || "?";
+}
+
+/** ✓ cinza (enviado) / ✓✓ cinza (entregue) / ✓✓ azul (lido) — só faz sentido pra mensagens nossas (não do lead). */
+function IconeStatusEntrega({ entregueEm, lidoEm }: { entregueEm: string | null; lidoEm: string | null }) {
+  if (lidoEm) return <span className="text-[13px] text-blue-500" title="Lido">✓✓</span>;
+  if (entregueEm) return <span className="text-[13px] text-zinc-400" title="Entregue">✓✓</span>;
+  return <span className="text-[13px] text-zinc-400" title="Enviado">✓</span>;
 }
 
 /** Rótulo curto tipo "em ~10 min" / "em ~4h" / "amanhã" — usado no chip de follow-up ativo, não precisa de precisão de segundo (o polling de 4s já mantém isso razoavelmente fresco). */
@@ -170,12 +195,16 @@ function DropdownAtribuir({
   onEscolherMalala,
   onEscolherAtendente,
   compacto = false,
+  favorita,
+  onAlternarFavorita,
 }: {
   atendentes: UsuarioSistema[];
   usuarioAtualId: string;
   onEscolherMalala: () => void;
   onEscolherAtendente: (atendenteId: string) => void;
   compacto?: boolean;
+  favorita?: boolean;
+  onAlternarFavorita?: () => void;
 }) {
   const [aberto, setAberto] = useState(false);
   return (
@@ -221,6 +250,21 @@ function DropdownAtribuir({
                 {atendente.id === usuarioAtualId ? "Mim" : atendente.nome}
               </button>
             ))}
+            {onAlternarFavorita && (
+              <>
+                <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAlternarFavorita();
+                    setAberto(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  {favorita ? "☆ Desfavoritar" : "⭐ Favoritar"}
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -566,6 +610,11 @@ export function AtendimentoClient({
     await recarregarContagens();
   }
 
+  async function alternarFavorita(conversaId: string, favoritaAtual: boolean) {
+    await alternarFavoritaAction(conversaId, !favoritaAtual);
+    await recarregarLista();
+  }
+
   async function confirmarReset() {
     if (!detalhe?.pessoaTelefone) return;
     setResetando(true);
@@ -758,69 +807,116 @@ export function AtendimentoClient({
           {conversas.length === 0 && (
             <p className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhuma conversa aqui.</p>
           )}
-          {conversas.map((c) => (
-            <div
-              key={c.conversaId}
-              role="button"
-              tabIndex={0}
-              onClick={() => selecionarConversa(c.conversaId)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") selecionarConversa(c.conversaId);
-              }}
-              className={`flex w-full cursor-pointer flex-col gap-1 border-b border-zinc-100 px-3 py-2.5 text-left dark:border-zinc-900 ${
-                conversaSelecionadaId === c.conversaId
-                  ? "bg-zinc-100 dark:bg-zinc-800"
-                  : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`truncate text-sm ${c.naoLida ? "font-semibold text-zinc-900 dark:text-zinc-50" : "text-zinc-700 dark:text-zinc-300"}`}>
-                  {c.pessoaNome}
-                </span>
-                <span className="shrink-0 text-[11px] text-zinc-400">{formatarHora(c.ultimaMensagemEm)}</span>
-              </div>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">{formatarTelefone(c.pessoaTelefone)}</span>
-              <div className="flex items-center gap-1">
-                <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {c.ultimaMensagemRemetente === "lead" ? "" : "Você: "}
-                  {c.ultimaMensagemConteudo || "(sem texto)"}
-                </span>
-                {c.naoLida && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-emerald-500" />}
-              </div>
-              <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                {c.etapaKanban && (
-                  <span className="rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
-                    {c.etapaKanban}
+          {conversas.map((c) => {
+            const tom = corControlador({ sobSupervisor: c.sobSupervisor, atendenteCor: c.atendenteCor });
+            const rotuloAtendente = !c.sobSupervisor ? "Malala" : (c.atendenteNome ?? "Não atribuída");
+            const naoLida = c.naoLidasContagem > 0;
+            const nomeOuTelefone = c.nomeConhecido ? c.pessoaNome : formatarTelefone(c.pessoaTelefone) || c.pessoaNome;
+            const nossaMensagem = c.ultimaMensagemRemetente !== null && c.ultimaMensagemRemetente !== "lead";
+            return (
+              <div
+                key={c.conversaId}
+                role="button"
+                tabIndex={0}
+                onClick={() => selecionarConversa(c.conversaId)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") selecionarConversa(c.conversaId);
+                }}
+                className={`flex w-full cursor-pointer flex-col gap-2 border-b border-zinc-100 px-3 py-2.5 text-left dark:border-zinc-900 ${
+                  conversaSelecionadaId === c.conversaId
+                    ? "bg-zinc-100 dark:bg-zinc-800"
+                    : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                }`}
+              >
+                <div className="flex gap-2.5">
+                  <div className="relative shrink-0">
+                    <div
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium ${tom.bg} ${tom.texto}`}
+                    >
+                      {c.nomeConhecido ? iniciais(c.pessoaNome) : "☎"}
+                    </div>
+                    {c.favorita && (
+                      <span className="absolute -left-1 -top-1 text-[11px]" title="Favorita">
+                        ⭐
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span
+                        className={`truncate text-sm ${naoLida ? "font-semibold text-zinc-900 dark:text-zinc-50" : "font-normal text-zinc-700 dark:text-zinc-300"}`}
+                      >
+                        {nomeOuTelefone}
+                        {c.nomeConhecido && (
+                          <span className="ml-1 text-[11px] font-normal text-zinc-400">
+                            {formatarTelefone(c.pessoaTelefone)}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-zinc-400">{formatarHoraOuData(c.ultimaMensagemEm)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="truncate text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                        {nossaMensagem ? "Você: " : ""}
+                        {c.ultimaMensagemConteudo || "(sem texto)"}
+                      </span>
+                      <span className="ml-auto flex shrink-0 items-center gap-1">
+                        {nossaMensagem && (
+                          <IconeStatusEntrega entregueEm={c.ultimaMensagemEntregueEm} lidoEm={c.ultimaMensagemLidoEm} />
+                        )}
+                        {naoLida && (
+                          <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-semibold text-white">
+                            {c.naoLidasContagem > 99 ? "99+" : c.naoLidasContagem}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tom.bg} ${tom.texto}`}>
+                    <span aria-hidden="true">👤</span>
+                    {rotuloAtendente}
                   </span>
-                )}
-                {c.produtoNome && (
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                    {c.produtoNome}
-                  </span>
-                )}
-                {(() => {
-                  const tom = corControlador({ sobSupervisor: c.sobSupervisor, atendenteCor: c.atendenteCor });
-                  const rotulo = !c.sobSupervisor ? "Malala" : (c.atendenteNome ?? "Não atribuída");
-                  return (
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tom.bg} ${tom.texto}`}>
-                      {rotulo}
+                  {c.etapaKanban && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
+                      <span aria-hidden="true">📋</span>
+                      {c.etapaKanban}
                     </span>
-                  );
-                })()}
-                <DropdownAtribuir
-                  compacto
-                  atendentes={atendentesIniciais}
-                  usuarioAtualId={usuarioAtual.id}
-                  onEscolherMalala={() => atribuirMalala(c.conversaId)}
-                  onEscolherAtendente={(atendenteId) =>
-                    atendenteId === usuarioAtual.id
-                      ? assumir(c.conversaId)
-                      : atribuirAtendente(c.conversaId, atendenteId)
-                  }
-                />
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {c.produtoNome && (
+                    <>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                        <span aria-hidden="true">🏷</span>
+                        {c.produtoNomeReduzido || c.produtoNome}
+                      </span>
+                      {c.valorEstimado != null && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+                          <span aria-hidden="true">💲</span>
+                          R$ {c.valorEstimado.toLocaleString("pt-BR")}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  <DropdownAtribuir
+                    compacto
+                    atendentes={atendentesIniciais}
+                    usuarioAtualId={usuarioAtual.id}
+                    onEscolherMalala={() => atribuirMalala(c.conversaId)}
+                    onEscolherAtendente={(atendenteId) =>
+                      atendenteId === usuarioAtual.id
+                        ? assumir(c.conversaId)
+                        : atribuirAtendente(c.conversaId, atendenteId)
+                    }
+                    favorita={c.favorita}
+                    onAlternarFavorita={() => alternarFavorita(c.conversaId, c.favorita)}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

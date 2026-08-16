@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  alternarFavorita,
   assumirConversa,
   atribuirParaAtendente,
   atribuirParaMalala,
@@ -92,6 +93,11 @@ export async function listarAgendasFollowupAction(): Promise<AgendaAdmin[]> {
 
 export async function ativarFollowupManualAction(conversaId: string, agendaId: string): Promise<void> {
   await ativarFollowupManual(conversaId, agendaId);
+  revalidatePath("/admin/atendimento");
+}
+
+export async function alternarFavoritaAction(conversaId: string, favorita: boolean): Promise<void> {
+  await alternarFavorita(conversaId, favorita);
   revalidatePath("/admin/atendimento");
 }
 
