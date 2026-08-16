@@ -116,6 +116,7 @@ export type FiltroConversas =
   | { tipo: "humano_minhas"; usuarioId: string }
   | { tipo: "humano_nao_atribuidas" }
   | { tipo: "humano_todas" }
+  | { tipo: "humano_atendente"; atendenteId: string }
   | { tipo: "nao_lidas" };
 
 export type ConversaResumo = {
@@ -155,6 +156,7 @@ export async function listarConversasAtendimento(
   if (filtro.tipo === "humano_minhas") query = query.eq("atendente_id", filtro.usuarioId);
   if (filtro.tipo === "humano_nao_atribuidas") query = query.eq("sob_supervisor", true).is("atendente_id", null);
   if (filtro.tipo === "humano_todas") query = query.eq("sob_supervisor", true);
+  if (filtro.tipo === "humano_atendente") query = query.eq("atendente_id", filtro.atendenteId);
 
   if (busca.trim()) {
     // Busca por nome/telefone direto na view; conteúdo de mensagem é uma segunda consulta (abaixo)
@@ -214,6 +216,7 @@ export type ContagemNaoLidas = {
   humanoMinhas: number;
   humanoNaoAtribuidas: number;
   humanoTodas: number;
+  porAtendente: Record<string, number>;
 };
 
 /** Quantidade de conversas não lidas por filtro (badges vermelhos na barra de filtros). */
@@ -228,12 +231,18 @@ export async function contarNaoLidas(usuarioId: string): Promise<ContagemNaoLida
 
   const naoLidas = (data ?? []).filter((linha) => linha.ultima_mensagem_remetente === "lead");
 
+  const porAtendente: Record<string, number> = {};
+  for (const linha of naoLidas) {
+    if (linha.atendente_id) porAtendente[linha.atendente_id] = (porAtendente[linha.atendente_id] ?? 0) + 1;
+  }
+
   return {
     tudo: naoLidas.length,
     malala: naoLidas.filter((linha) => !linha.sob_supervisor).length,
     humanoMinhas: naoLidas.filter((linha) => linha.atendente_id === usuarioId).length,
     humanoNaoAtribuidas: naoLidas.filter((linha) => linha.sob_supervisor && !linha.atendente_id).length,
     humanoTodas: naoLidas.filter((linha) => linha.sob_supervisor).length,
+    porAtendente,
   };
 }
 
@@ -342,6 +351,16 @@ export async function atualizarCorBadge(usuarioId: string, cor: CorBadge): Promi
   const supabase = await createClient();
   const { error } = await supabase.from("usuarios_sistema").update({ cor_badge: cor }).eq("id", usuarioId);
   if (error) throw new Error(`Falha ao atualizar cor: ${error.message}`);
+}
+
+/** Atribui a conversa a um atendente humano específico (diferente de "Assumir" — pode ser feito por qualquer atendente, não só o destinatário). */
+export async function atribuirParaAtendente(conversaId: string, atendenteId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("conversas")
+    .update({ sob_supervisor: true, atendente_id: atendenteId })
+    .eq("id", conversaId);
+  if (error) throw new Error(`Falha ao atribuir conversa ao atendente: ${error.message}`);
 }
 
 /** Grava a mensagem de um atendente humano — o envio real via WhatsApp é feito por quem chama (fora daqui, mesmo adaptador de canal da Fase 7). */
