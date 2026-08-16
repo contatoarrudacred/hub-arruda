@@ -26,6 +26,7 @@ const GRUPO_CRM: ItemMenu[] = [
 
 const GRUPO_GERAL: ItemMenu[] = [
   { rotulo: "Preços", href: "/admin/precos" },
+  { rotulo: "Atendentes", href: "/admin/atendentes" },
   { rotulo: "Configurações gerais", href: "/admin/configuracoes" },
 ];
 
