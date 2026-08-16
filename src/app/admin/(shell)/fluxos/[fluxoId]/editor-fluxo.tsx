@@ -215,11 +215,25 @@ function EditorFluxoInterno({
     setEdges(grafo.edges);
   }
 
-  // Recalcula o layout sempre que a lista de etapas ou o filtro de busca mudam — o admin pode
-  // arrastar nós à vontade durante a sessão (React Flow cuida disso via onNodesChange), mas nunca
-  // fica "preso" numa bagunça: qualquer edição ou o botão "Reorganizar" volta pro layout limpo.
+  // Recalcula o layout (dagre) só quando a lista de etapas muda — o admin pode arrastar nós à
+  // vontade durante a sessão (React Flow cuida disso via onNodesChange), mas nunca fica "preso"
+  // numa bagunça: qualquer edição ou o botão "Reorganizar" volta pro layout limpo.
+  // Deliberadamente NÃO depende de idsFiltrados: a busca só muda opacidade, nunca posição — dagre
+  // não precisa rodar de novo a cada tecla (bug real corrigido: fazia os quadrinhos "pularem" de
+  // posição a cada letra digitada). Ver efeito abaixo pra atualização de opacidade sem relayout.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(reorganizar, [etapas, idsFiltrados]);
+  useEffect(reorganizar, [etapas]);
+
+  // Aplica só a opacidade do filtro de busca em cima dos nós já posicionados pelo dagre.
+  useEffect(() => {
+    setNodes((atual) =>
+      atual.map((n) =>
+        n.type !== "etapa"
+          ? n
+          : { ...n, style: !idsFiltrados || idsFiltrados.has(n.id) ? undefined : { opacity: 0.15 } },
+      ),
+    );
+  }, [idsFiltrados, setNodes]);
 
   function aoSalvarEtapa(etapaSalva: EtapaAdmin) {
     setEtapas((atual) => {
