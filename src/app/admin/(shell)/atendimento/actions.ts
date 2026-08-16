@@ -5,10 +5,12 @@ import {
   assumirConversa,
   atribuirParaMalala,
   carregarConversaDetalhe,
+  contarNaoLidas,
   listarConversasAtendimento,
   listarUsuariosSistema,
   obterUsuarioSistemaAtual,
   registrarMensagemHumana,
+  type ContagemNaoLidas,
   type ConversaDetalhe,
   type ConversaResumo,
   type FiltroConversas,
@@ -22,6 +24,10 @@ export async function listarConversasAction(filtro: FiltroConversas, busca: stri
 
 export async function carregarConversaAction(conversaId: string): Promise<ConversaDetalhe> {
   return carregarConversaDetalhe(conversaId);
+}
+
+export async function contarNaoLidasAction(usuarioId: string): Promise<ContagemNaoLidas> {
+  return contarNaoLidas(usuarioId);
 }
 
 export async function contextoAtendimentoAction(): Promise<{ usuarioAtual: UsuarioSistema; atendentes: UsuarioSistema[] }> {

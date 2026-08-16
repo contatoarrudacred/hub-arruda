@@ -70,9 +70,9 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
 export type FiltroConversas =
   | { tipo: "tudo" }
   | { tipo: "malala" }
-  | { tipo: "minhas"; usuarioId: string }
-  | { tipo: "atendente"; usuarioId: string }
-  | { tipo: "nao_atribuidas" }
+  | { tipo: "humano_minhas"; usuarioId: string }
+  | { tipo: "humano_nao_atribuidas" }
+  | { tipo: "humano_todas" }
   | { tipo: "nao_lidas" };
 
 export type ConversaResumo = {
@@ -107,9 +107,9 @@ export async function listarConversasAtendimento(
     .order("ultima_mensagem_em", { ascending: false, nullsFirst: false });
 
   if (filtro.tipo === "malala") query = query.eq("sob_supervisor", false);
-  if (filtro.tipo === "minhas") query = query.eq("atendente_id", filtro.usuarioId);
-  if (filtro.tipo === "atendente") query = query.eq("atendente_id", filtro.usuarioId);
-  if (filtro.tipo === "nao_atribuidas") query = query.eq("sob_supervisor", true).is("atendente_id", null);
+  if (filtro.tipo === "humano_minhas") query = query.eq("atendente_id", filtro.usuarioId);
+  if (filtro.tipo === "humano_nao_atribuidas") query = query.eq("sob_supervisor", true).is("atendente_id", null);
+  if (filtro.tipo === "humano_todas") query = query.eq("sob_supervisor", true);
 
   if (busca.trim()) {
     // Busca por nome/telefone direto na view; conteúdo de mensagem é uma segunda consulta (abaixo)
@@ -158,6 +158,35 @@ export async function listarConversasAtendimento(
 
   if (filtro.tipo === "nao_lidas") return resumo.filter((c) => c.naoLida);
   return resumo.sort((a, b) => (b.ultimaMensagemEm ?? "").localeCompare(a.ultimaMensagemEm ?? ""));
+}
+
+export type ContagemNaoLidas = {
+  tudo: number;
+  malala: number;
+  humanoMinhas: number;
+  humanoNaoAtribuidas: number;
+  humanoTodas: number;
+};
+
+/** Quantidade de conversas não lidas por filtro (badges vermelhos na barra de filtros). */
+export async function contarNaoLidas(usuarioId: string): Promise<ContagemNaoLidas> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("conversas_resumo")
+    .select("sob_supervisor, atendente_id, ultima_mensagem_remetente")
+    .eq("status", "ativa")
+    .or("etapa_kanban.is.null,etapa_kanban.neq.perdida");
+  if (error) throw new Error(`Falha ao contar não lidas: ${error.message}`);
+
+  const naoLidas = (data ?? []).filter((linha) => linha.ultima_mensagem_remetente === "lead");
+
+  return {
+    tudo: naoLidas.length,
+    malala: naoLidas.filter((linha) => !linha.sob_supervisor).length,
+    humanoMinhas: naoLidas.filter((linha) => linha.atendente_id === usuarioId).length,
+    humanoNaoAtribuidas: naoLidas.filter((linha) => linha.sob_supervisor && !linha.atendente_id).length,
+    humanoTodas: naoLidas.filter((linha) => linha.sob_supervisor).length,
+  };
 }
 
 export type MensagemConversa = {

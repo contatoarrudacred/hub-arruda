@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  ContagemNaoLidas,
   ConversaDetalhe,
   ConversaResumo,
   FiltroConversas,
@@ -11,6 +12,7 @@ import {
   assumirConversaAction,
   atribuirParaMalalaAction,
   carregarConversaAction,
+  contarNaoLidasAction,
   enviarMensagemAction,
   listarConversasAction,
 } from "./actions";
@@ -20,11 +22,30 @@ import {
 // granularidade por atendente ainda); atualização é por polling simples (4s), não Supabase Realtime;
 // um card só mostra o produto/etapa da oportunidade ligada à conversa (agregação de múltiplos
 // produtos por pessoa fica pro Bloco D); composer libera pra qualquer humano quando a conversa está
-// sob supervisão, não só pra quem assumiu (a config de "assumir de outro humano" ainda não existe).
+// sob supervisão, não só pra quem assumiu (a config de "assumir de outro humano" ainda não existe);
+// "Humano > Minhas/Não atribuídas/Todas" ainda não distingue outros atendentes específicos por nome
+// na barra de filtros (isso volta no Bloco B, junto com atribuição a atendente específico).
 
 const INTERVALO_POLLING_MS = 4000;
 
-type FiltroRotulo = { chave: string; rotulo: string; filtro: FiltroConversas };
+type ChaveFiltro = "tudo" | "malala" | "humano_minhas" | "humano_nao_atribuidas" | "humano_todas" | "nao_lidas";
+
+function filtroPorChave(chave: ChaveFiltro, usuarioId: string): FiltroConversas {
+  switch (chave) {
+    case "humano_minhas":
+      return { tipo: "humano_minhas", usuarioId };
+    case "humano_nao_atribuidas":
+      return { tipo: "humano_nao_atribuidas" };
+    case "humano_todas":
+      return { tipo: "humano_todas" };
+    case "nao_lidas":
+      return { tipo: "nao_lidas" };
+    case "malala":
+      return { tipo: "malala" };
+    default:
+      return { tipo: "tudo" };
+  }
+}
 
 function formatarHora(iso: string | null): string {
   if (!iso) return "";
@@ -42,18 +63,77 @@ function formatarTelefone(telefone: string | null): string {
   return `(${ddd}) ${meio}${fim ? "-" + fim : ""}`;
 }
 
+function Contador({ valor }: { valor: number | undefined }) {
+  if (!valor) return null;
+  return (
+    <span className="ml-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-4 text-white">
+      {valor > 99 ? "99+" : valor}
+    </span>
+  );
+}
+
+function BotaoFiltro({
+  rotulo,
+  ativo,
+  contador,
+  onClick,
+}: {
+  rotulo: string;
+  ativo: boolean;
+  contador: number | undefined;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+        ativo
+          ? "bg-[#141e33] text-white"
+          : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+      }`}
+    >
+      {rotulo}
+      <Contador valor={contador} />
+    </button>
+  );
+}
+
+function ItemSubmenu({
+  rotulo,
+  contador,
+  onClick,
+}: {
+  rotulo: string;
+  contador: number | undefined;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    >
+      {rotulo}
+      <Contador valor={contador} />
+    </button>
+  );
+}
+
 export function AtendimentoClient({
   usuarioAtual,
-  atendentes,
   conversasIniciais,
+  contagensIniciais,
 }: {
   usuarioAtual: UsuarioSistema;
-  atendentes: UsuarioSistema[];
   conversasIniciais: ConversaResumo[];
+  contagensIniciais: ContagemNaoLidas;
 }) {
-  const [filtroChave, setFiltroChave] = useState("tudo");
+  const [filtroChave, setFiltroChave] = useState<ChaveFiltro>("tudo");
+  const [menuHumanoAberto, setMenuHumanoAberto] = useState(false);
   const [busca, setBusca] = useState("");
   const [conversas, setConversas] = useState(conversasIniciais);
+  const [contagens, setContagens] = useState<ContagemNaoLidas>(contagensIniciais);
   const [conversaSelecionadaId, setConversaSelecionadaId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<ConversaDetalhe | null>(null);
   const [textoComposer, setTextoComposer] = useState("");
@@ -61,28 +141,15 @@ export function AtendimentoClient({
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  const filtros: FiltroRotulo[] = [
-    { chave: "tudo", rotulo: "Tudo", filtro: { tipo: "tudo" } },
-    { chave: "malala", rotulo: "Malala", filtro: { tipo: "malala" } },
-    { chave: "minhas", rotulo: "Minhas", filtro: { tipo: "minhas", usuarioId: usuarioAtual.id } },
-    ...atendentes
-      .filter((a) => a.id !== usuarioAtual.id)
-      .map((a): FiltroRotulo => ({
-        chave: `atendente:${a.id}`,
-        rotulo: a.nome,
-        filtro: { tipo: "atendente", usuarioId: a.id },
-      })),
-    { chave: "nao_atribuidas", rotulo: "Não atribuídas", filtro: { tipo: "nao_atribuidas" } },
-    { chave: "nao_lidas", rotulo: "Não lidas", filtro: { tipo: "nao_lidas" } },
-  ];
-
-  const filtroAtual = filtros.find((f) => f.chave === filtroChave)?.filtro ?? { tipo: "tudo" };
-
   const recarregarLista = useCallback(async () => {
-    const resultado = await listarConversasAction(filtroAtual, busca);
+    const resultado = await listarConversasAction(filtroPorChave(filtroChave, usuarioAtual.id), busca);
     setConversas(resultado);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroChave, busca]);
+  }, [filtroChave, busca, usuarioAtual.id]);
+
+  const recarregarContagens = useCallback(async () => {
+    const resultado = await contarNaoLidasAction(usuarioAtual.id);
+    setContagens(resultado);
+  }, [usuarioAtual.id]);
 
   const recarregarDetalhe = useCallback(async (id: string) => {
     const resultado = await carregarConversaAction(id);
@@ -94,6 +161,10 @@ export function AtendimentoClient({
   }, [recarregarLista]);
 
   useEffect(() => {
+    Promise.resolve().then(() => recarregarContagens());
+  }, [recarregarContagens]);
+
+  useEffect(() => {
     if (!conversaSelecionadaId) {
       Promise.resolve().then(() => setDetalhe(null));
       return;
@@ -101,24 +172,31 @@ export function AtendimentoClient({
     Promise.resolve().then(() => recarregarDetalhe(conversaSelecionadaId));
   }, [conversaSelecionadaId, recarregarDetalhe]);
 
-  // Polling simples — mantém a lista e a conversa aberta "ao vivo" sem precisar de Realtime ainda.
+  // Polling simples — mantém a lista, os badges e a conversa aberta "ao vivo" sem precisar de Realtime ainda.
   useEffect(() => {
     const intervalo = setInterval(() => {
       recarregarLista();
+      recarregarContagens();
       if (conversaSelecionadaId) recarregarDetalhe(conversaSelecionadaId);
     }, INTERVALO_POLLING_MS);
     return () => clearInterval(intervalo);
-  }, [conversaSelecionadaId, recarregarLista, recarregarDetalhe]);
+  }, [conversaSelecionadaId, recarregarLista, recarregarContagens, recarregarDetalhe]);
 
   useEffect(() => {
     timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight });
   }, [detalhe?.mensagens.length]);
+
+  function selecionarFiltro(chave: ChaveFiltro) {
+    setFiltroChave(chave);
+    setMenuHumanoAberto(false);
+  }
 
   async function handleAssumir() {
     if (!conversaSelecionadaId) return;
     await assumirConversaAction(conversaSelecionadaId);
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
+    await recarregarContagens();
   }
 
   async function handleAtribuirMalala() {
@@ -126,6 +204,7 @@ export function AtendimentoClient({
     await atribuirParaMalalaAction(conversaSelecionadaId);
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
+    await recarregarContagens();
   }
 
   async function handleEnviar() {
@@ -141,9 +220,11 @@ export function AtendimentoClient({
     setTextoComposer("");
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
+    await recarregarContagens();
   }
 
   const composerHabilitado = detalhe?.sobSupervisor === true;
+  const humanoAtivo = filtroChave === "humano_minhas" || filtroChave === "humano_nao_atribuidas" || filtroChave === "humano_todas";
 
   return (
     <div className="flex h-screen">
@@ -156,20 +237,43 @@ export function AtendimentoClient({
             placeholder="Buscar por nome, telefone ou mensagem..."
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
           />
-          <div className="flex flex-wrap gap-1.5">
-            {filtros.map((f) => (
-              <button
-                key={f.chave}
-                onClick={() => setFiltroChave(f.chave)}
-                className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  filtroChave === f.chave
-                    ? "bg-[#141e33] text-white"
-                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                }`}
-              >
-                {f.rotulo}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <BotaoFiltro rotulo="Tudo" ativo={filtroChave === "tudo"} contador={contagens.tudo} onClick={() => selecionarFiltro("tudo")} />
+            <BotaoFiltro rotulo="Malala" ativo={filtroChave === "malala"} contador={contagens.malala} onClick={() => selecionarFiltro("malala")} />
+
+            <div className="relative">
+              <BotaoFiltro
+                rotulo="Humano ▾"
+                ativo={humanoAtivo}
+                contador={contagens.humanoTodas}
+                onClick={() => setMenuHumanoAberto((v) => !v)}
+              />
+              {menuHumanoAberto && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuHumanoAberto(false)} />
+                  <div className="absolute left-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                    <ItemSubmenu rotulo="Minhas" contador={contagens.humanoMinhas} onClick={() => selecionarFiltro("humano_minhas")} />
+                    <ItemSubmenu
+                      rotulo="Não atribuídas"
+                      contador={contagens.humanoNaoAtribuidas}
+                      onClick={() => selecionarFiltro("humano_nao_atribuidas")}
+                    />
+                    <ItemSubmenu rotulo="Todas" contador={contagens.humanoTodas} onClick={() => selecionarFiltro("humano_todas")} />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <BotaoFiltro rotulo="Não lidas" ativo={filtroChave === "nao_lidas"} contador={contagens.tudo} onClick={() => selecionarFiltro("nao_lidas")} />
+
+            <button
+              type="button"
+              disabled
+              title="Em breve"
+              className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-1 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
+            >
+              + Filtros
+            </button>
           </div>
         </div>
 
