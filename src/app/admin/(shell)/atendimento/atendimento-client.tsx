@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ContagemNaoLidas,
   ConversaDetalhe,
@@ -222,7 +222,37 @@ export function AtendimentoClient({
   const [textoComposer, setTextoComposer] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
+  const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
+  const [indiceResultado, setIndiceResultado] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  const resultadosBusca = useMemo(() => {
+    const termo = termoBuscaConversa.trim().toLowerCase();
+    if (!termo || !detalhe) return [];
+    return detalhe.mensagens.filter((m) => m.conteudo?.toLowerCase().includes(termo));
+  }, [termoBuscaConversa, detalhe]);
+
+  useEffect(() => {
+    const alvo = resultadosBusca[indiceResultado];
+    if (!alvo) return;
+    document.getElementById(`mensagem-${alvo.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [indiceResultado, resultadosBusca]);
+
+  function irParaResultadoAnterior() {
+    if (resultadosBusca.length === 0) return;
+    setIndiceResultado((i) => (i - 1 + resultadosBusca.length) % resultadosBusca.length);
+  }
+
+  function irParaProximoResultado() {
+    if (resultadosBusca.length === 0) return;
+    setIndiceResultado((i) => (i + 1) % resultadosBusca.length);
+  }
+
+  function fecharBuscaConversa() {
+    setBuscaConversaAberta(false);
+    setTermoBuscaConversa("");
+  }
 
   const recarregarLista = useCallback(async () => {
     const resultado = await listarConversasAction(filtroPorChave(filtroChave, usuarioAtual.id), busca);
@@ -473,6 +503,16 @@ export function AtendimentoClient({
                 </p>
               </div>
               <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBuscaConversaAberta((v) => !v)}
+                  title="Buscar nesta conversa"
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
+                    buscaConversaAberta ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  🔍
+                </button>
                 <DropdownAtribuir
                   atendentes={atendentesIniciais}
                   usuarioAtualId={usuarioAtual.id}
@@ -486,6 +526,47 @@ export function AtendimentoClient({
               </div>
             </div>
 
+            {buscaConversaAberta && (
+              <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+                <input
+                  autoFocus
+                  value={termoBuscaConversa}
+                  onChange={(e) => {
+                    setTermoBuscaConversa(e.target.value);
+                    setIndiceResultado(0);
+                  }}
+                  placeholder="Buscar nesta conversa..."
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+                <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                  {resultadosBusca.length > 0 ? `${indiceResultado + 1} de ${resultadosBusca.length}` : "0 resultados"}
+                </span>
+                <button
+                  type="button"
+                  onClick={irParaResultadoAnterior}
+                  disabled={resultadosBusca.length === 0}
+                  className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-200 disabled:opacity-30 dark:hover:bg-zinc-800"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={irParaProximoResultado}
+                  disabled={resultadosBusca.length === 0}
+                  className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-200 disabled:opacity-30 dark:hover:bg-zinc-800"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  onClick={fecharBuscaConversa}
+                  className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             <div ref={timelineRef} className={`flex-1 space-y-2 overflow-y-auto p-4 ${tomConversa?.bg ?? ""}`}>
               {detalhe.mensagens.map((m) => {
                 const doLead = m.remetente === "lead";
@@ -495,8 +576,12 @@ export function AtendimentoClient({
                     ? "bg-[#c8a55d] text-[#141e33]"
                     : "bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50";
                 return (
-                  <div key={m.id} className={`flex ${doLead ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-md rounded-2xl px-4 py-2 text-sm ${cor}`}>
+                  <div key={m.id} id={`mensagem-${m.id}`} className={`flex ${doLead ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-md rounded-2xl px-4 py-2 text-sm ${cor} ${
+                        resultadosBusca[indiceResultado]?.id === m.id ? "ring-2 ring-amber-400" : ""
+                      }`}
+                    >
                       {m.midiaUrl && (
                         // eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa
                         <img src={m.midiaUrl} alt="" className="mb-1 max-w-full rounded-lg" />
