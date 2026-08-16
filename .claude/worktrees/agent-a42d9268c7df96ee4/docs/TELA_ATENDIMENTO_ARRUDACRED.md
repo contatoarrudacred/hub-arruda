@@ -1,7 +1,7 @@
 # Tela de Atendimento — CRM (WhatsApp)
 **Status:** Desenho fechado com Luiz em 16/08/2026, após pesquisa de mercado (Chatwoot, Umbler Talk, Digisac, Octadesk) e várias rodadas de "fala comigo". **Nada construído ainda** — este documento é a especificação completa pra quando a construção começar.
 **Objetivo:** tela onde o admin (ou qualquer atendente humano) acompanha em tempo real o que a Malala está fazendo, assume qualquer conversa quando precisar, e atende diretamente quando a conversa está com humano. É a tela mais importante do CRM na visão de Luiz.
-**Referências:** `MODELAGEM_DADOS_ARRUDACRED.md` (schema de pessoas/conversas/oportunidades), `PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 8.4 (escalonamento pra supervisor, já parcialmente implementado — `conversas.sob_supervisor`), `SEGURANCA_E_AUDITORIA_ARRUDACRED.md` (trilha de auditoria que alimenta a trilha de atividade da seção 3), Fase 7 (WhatsApp real, Zapster) já em produção.
+**Referências:** `MODELAGEM_DADOS_ARRUDACRED.md` (schema de pessoas/conversas/oportunidades), `PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 8.4 (escalonamento pra supervisor, já parcialmente implementado — `conversas.sob_supervisor`), Fase 7 (WhatsApp real, Zapster) já em produção.
 
 ---
 

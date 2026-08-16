@@ -1,5 +1,5 @@
 # Rastreio de Cliques — zap.arrudacred.com.br
-**Status:** ✅ Construído e **em produção desde 16/08/2026** — migration rodada, subdomínio criado, arquivo publicado na Hostinger, testado e confirmado funcionando de ponta a ponta (clique capturado em `cliques_rastreio`, redirecionamento correto, correlação com a pessoa ao mandar a mensagem).
+**Status:** Construído em 16/08/2026. Falta só a parte que só Luiz consegue fazer (criar o subdomínio na Hostinger, subir o arquivo, rodar a migration) — ver "Pendências" no fim.
 **Objetivo:** saber de onde um lead veio (anúncio, rede social, campanha específica) antes dele mandar a primeira mensagem no WhatsApp — informação que o WhatsApp em si nunca entrega. Resolve de quebra um segundo problema: o link publicado (bio, anúncios) para de depender do número de WhatsApp atual, que pode mudar.
 
 ---
@@ -22,10 +22,6 @@ Investigado e confirmado (16/08/2026): a API da Zapster não expõe nenhum dado 
 | IP (pra geolocalização aproximada, cidade/região — não é endereço nem GPS) | Disponível |
 | Idioma do navegador | Disponível |
 | **Nome, e-mail, telefone, CPF, qualquer dado pessoal direto** | **Não disponível** — navegador nunca expõe isso sem a pessoa preencher um formulário. Decisão de Luiz (16/08/2026): não colocar formulário nessa página — ver "Alternativas descartadas" abaixo |
-
-**Reforços de segurança/qualidade de dado, adicionados após a primeira versão (16/08/2026):**
-- **Filtro de robô/crawler** (`pareceRobo()`) — não grava clique de user-agent que bate com um bot conhecido (inclui os que geram preview de link — WhatsApp, Facebook, Telegram — quando o link é compartilhado numa conversa). Esses visitantes continuam vendo a página normalmente, só não sujam a tabela de rastreio.
-- **Limite de 200 caracteres** no parâmetro `?text=` recebido, antes de montar o texto pré-preenchido — evita link absurdamente longo se alguém tentar abusar do parâmetro.
 
 ---
 
@@ -73,6 +69,9 @@ Lead manda a mensagem pré-preenchida (a maioria não edita)
 
 ---
 
-## Pendências
+## Pendências (ação manual de Luiz)
 
-Nenhuma — ~~rodar migration~~, ~~criar subdomínio~~, ~~publicar arquivo~~ e ~~testar~~ concluídos por Luiz em 16/08/2026. Único detalhe sem importância prática: o arquivo está publicado na Hostinger como `default.php` (não `index.php`, o nome usado no repositório) — funciona normalmente, o nome do arquivo no servidor não precisa bater com o nome no repositório.
+1. **Rodar a migration** [`20260816020000_cliques_rastreio.sql`](../supabase/migrations/20260816020000_cliques_rastreio.sql) no SQL Editor do Supabase.
+2. **Criar o subdomínio `zap.arrudacred.com.br`** no painel da Hostinger, apontando pra uma pasta nova.
+3. **Subir `hostinger-zap/index.php`** pra essa pasta (FTP ou gerenciador de arquivos) — ver `hostinger-zap/README.md`.
+4. Depois disso, testar acessando `https://zap.arrudacred.com.br/?utm_source=teste&text=Teste` e conferir se: (a) redireciona certo pro WhatsApp, (b) o texto pré-preenchido tem o código no final, (c) uma linha nova aparece em `cliques_rastreio` no Supabase.

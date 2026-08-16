@@ -195,7 +195,6 @@ PLANO_MESTRE_SISTEMA_ARRUDACRED.md        ← este arquivo (índice + visão ger
 MODELAGEM_DADOS_ARRUDACRED.md             ← núcleo de dados (Pessoa/Papel, multi-canal, RBAC, config)
 SCRIPT_LIMPANOME_SERASA_SPC.md            ← script de atendimento do produto Limpeza de Nome
 FAQ_LIMPANOME_SERASA_SPC.md               ← base de conhecimento da Malala (mesmo produto)
-PERSONA_MALALA_PROMPT_SISTEMA.md          ← persona/prompt de sistema da Malala (identidade, tom, técnicas comerciais)
 KANBAN_COMERCIAL_LIMPANOME.md             ← funil/Kanban do Comercial (mesmo produto)
 TELA_ATENDIMENTO_ARRUDACRED.md            ← tela de CRM pra acompanhar/assumir atendimento real (WhatsApp), ainda não construída
 RASTREIO_CLIQUES_WHATSAPP.md              ← página zap.arrudacred.com.br — rastreio de origem do lead antes do WhatsApp
@@ -204,7 +203,6 @@ AGENDA_POS_VENDA_ARRUDACRED.md            ← régua de relacionamento pós-cont
 MODULO_MARKETING_CONTEUDO_ARRUDACRED.md   ← pipeline de conteúdo/blog multi-site + campanha de indicação de clientes
 PARCEIROS_AFILIADOS_ARRUDACRED.md         ← parceiros (revenda) e afiliados (comissão)
 SEGURANCA_E_AUDITORIA_ARRUDACRED.md       ← segurança externa + trilha de auditoria interna
-KICKOFF_CLAUDE_CODE.md                    ← notas históricas do kickoff do projeto (estável, raramente muda)
 ```
 
 **Regra prática (mantida):** ao final de cada sessão de planejamento, peça para eu atualizar o(s) arquivo(s) correspondente(s) antes de encerrar — assim nada se perde mesmo que a conversa fique longa. Quando um assunto novo começa a crescer dentro de um documento existente, ele ganha um documento próprio (foi o caso do Marketing e de Parceiros/Afiliados) — o plano mestre sempre aponta para onde cada assunto mora.
@@ -584,9 +582,6 @@ Perguntas em aberto pra quando for desenhar de verdade: cada provedor tem API pr
 ---
 
 ## Próximos Passos
-
-> ⚠️ Este checklist é o histórico das decisões iniciais do projeto (parou na Fase 2) — **para o status atual e completo, ver a seção 11 "Progresso de Produção" acima**, que é atualizada a cada avanço. Próximo passo combinado com Luiz (16/08/2026): Tela de Atendimento + Fase 5 (IA) → Kanban → Dashboard de KPIs.
-
 - [x] Confirmar preferência de hospedagem → Supabase + Vercel + GitHub (região São Paulo), VPS Hostinger como reserva
 - [x] Fechar ordem de prioridade dos módulos → Comercial (WhatsApp/leads) → Marketing → Financeiro → Jurídico
 - [x] Ferramenta de IA principal para código → Claude Code (recomendado, aceito por padrão — pode trocar a qualquer momento)

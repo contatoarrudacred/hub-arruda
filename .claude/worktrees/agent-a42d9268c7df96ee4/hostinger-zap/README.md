@@ -7,7 +7,7 @@ Página de redirecionamento inteligente pro WhatsApp da Malala — captura dados
 ## Como publicar
 
 1. No painel da Hostinger, crie o subdomínio `zap.arrudacred.com.br` apontando pra uma pasta nova (ex.: `zap/`).
-2. Suba o arquivo `index.php` pra essa pasta (FTP ou gerenciador de arquivos do hPanel) — **o nome do arquivo no servidor não precisa ser `index.php`**, qualquer nome que a Hostinger reconheça como documento padrão da pasta funciona (ex.: já testado em produção como `default.php`).
+2. Suba o arquivo `index.php` pra essa pasta (FTP ou gerenciador de arquivos do hPanel).
 3. Pronto — acessar `https://zap.arrudacred.com.br/` já funciona.
 
 ## Como usar o link em campanhas
