@@ -31,7 +31,9 @@ import {
 } from "./actions";
 import { resetarConversaAction } from "../reset-conversa/actions";
 import { sair } from "../actions";
+import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
+import { rotuloCurtoDaSubetapa, rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
 
 // Tela de Atendimento, Bloco A (fundação) — ver docs/TELA_ATENDIMENTO_ARRUDACRED.md. Simplificações
 // conscientes deste primeiro bloco, registradas lá: "não lida" é só "última mensagem é do lead" (sem
@@ -656,10 +658,8 @@ export function AtendimentoClient({
     input.click();
   }
 
-  async function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
-    const arquivo = e.target.files?.[0];
-    e.target.value = "";
-    if (!arquivo || !conversaSelecionadaId || !detalhe?.pessoaTelefone) return;
+  async function enviarArquivo(arquivo: File) {
+    if (!conversaSelecionadaId || !detalhe?.pessoaTelefone) return;
     setEnviandoMidia(true);
     setErroEnvio(null);
     const formData = new FormData();
@@ -674,6 +674,90 @@ export function AtendimentoClient({
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
     await recarregarContagens();
+  }
+
+  async function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!arquivo) return;
+    await enviarArquivo(arquivo);
+  }
+
+  const [menuAudioAberto, setMenuAudioAberto] = useState(false);
+  const [gravando, setGravando] = useState(false);
+  const [tempoGravacao, setTempoGravacao] = useState(0);
+  const [erroGravacao, setErroGravacao] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksGravacaoRef = useRef<Blob[]>([]);
+  const streamGravacaoRef = useRef<MediaStream | null>(null);
+  const timerGravacaoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function iniciarGravacao() {
+    setMenuAudioAberto(false);
+    setErroGravacao(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamGravacaoRef.current = stream;
+      chunksGravacaoRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksGravacaoRef.current.push(e.data);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setGravando(true);
+      setTempoGravacao(0);
+      timerGravacaoRef.current = setInterval(() => setTempoGravacao((t) => t + 1), 1000);
+    } catch {
+      setErroGravacao("Não consegui acessar o microfone — verifique a permissão do navegador.");
+    }
+  }
+
+  function pararStreamGravacao() {
+    streamGravacaoRef.current?.getTracks().forEach((t) => t.stop());
+    streamGravacaoRef.current = null;
+    if (timerGravacaoRef.current) clearInterval(timerGravacaoRef.current);
+    setGravando(false);
+  }
+
+  function cancelarGravacao() {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    pararStreamGravacao();
+    chunksGravacaoRef.current = [];
+  }
+
+  // Segurança: nunca deixar o microfone ligado em segundo plano — cancela qualquer gravação em
+  // andamento ao trocar de conversa ou sair da tela (getUserMedia só libera o dispositivo quando a
+  // track é parada explicitamente, não sozinho ao trocar de componente).
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current) cancelarGravacao();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversaSelecionadaId]);
+
+  async function pararEEnviarGravacao() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    const aoParar = new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+    });
+    if (recorder.state !== "inactive") recorder.stop();
+    pararStreamGravacao();
+    await aoParar;
+    const blob = new Blob(chunksGravacaoRef.current, { type: recorder.mimeType || "audio/webm" });
+    chunksGravacaoRef.current = [];
+    if (blob.size === 0) return;
+    const extensao = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+    const arquivo = new File([blob], `audio-${Date.now()}.${extensao}`, { type: blob.type });
+    await enviarArquivo(arquivo);
+  }
+
+  function formatarTempoGravacao(segundos: number): string {
+    const min = Math.floor(segundos / 60);
+    const seg = segundos % 60;
+    return `${min}:${seg.toString().padStart(2, "0")}`;
   }
 
   const [modoComposer, setModoComposer] = useState<"mensagem" | "nota">("mensagem");
@@ -736,11 +820,6 @@ export function AtendimentoClient({
       el?.setSelectionRange(posicao + trecho.length, posicao + trecho.length);
     });
   }
-
-  const EMOJIS_COMPOSER = [
-    "😀", "😂", "😊", "😍", "🙏", "👍", "👏", "🎉", "❤️", "😢", "😮", "🤔",
-    "✅", "❌", "🙌", "🔥", "💪", "😴", "😅", "🥳", "😉", "🤝", "📌", "⏰",
-  ];
 
   /**
    * Troca de conversa "de verdade" — intercepta quando a conversa que está sendo deixada tem uma
@@ -949,7 +1028,7 @@ export function AtendimentoClient({
                   {c.etapaKanban && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
                       <span aria-hidden="true">📋</span>
-                      {c.etapaKanban}
+                      {rotuloCurtoDaSubetapa(c.etapaKanban)}
                     </span>
                   )}
                 </div>
@@ -1263,17 +1342,67 @@ export function AtendimentoClient({
                     </>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => abrirSeletorArquivo("audio/*")}
-                  disabled={modoComposer !== "mensagem" || !composerHabilitado || enviandoMidia}
-                  className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
-                >
-                  🎤 Áudio
-                </button>
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => setMenuAudioAberto((v) => !v)}
+                    disabled={modoComposer !== "mensagem" || !composerHabilitado || enviandoMidia || gravando}
+                    className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
+                  >
+                    🎤 Áudio
+                  </button>
+                  {menuAudioAberto && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMenuAudioAberto(false)} />
+                      <div className="absolute bottom-full left-0 z-20 mb-1 w-44 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                        <button
+                          type="button"
+                          onClick={iniciarGravacao}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          🔴 Gravar agora
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuAudioAberto(false);
+                            abrirSeletorArquivo("audio/*");
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          📁 Enviar arquivo
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               {avisoProximaEtapa && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoProximaEtapa}</p>}
+              {erroGravacao && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroGravacao}</p>}
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
+              {gravando && (
+                <div className="mb-2 flex items-center gap-3 rounded-full bg-red-50 px-4 py-2 dark:bg-red-950/30">
+                  <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
+                  <span className="text-sm text-red-700 dark:text-red-300">Gravando... {formatarTempoGravacao(tempoGravacao)}</span>
+                  <button
+                    type="button"
+                    onClick={cancelarGravacao}
+                    title="Cancelar gravação"
+                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                  >
+                    ✕
+                  </button>
+                  <button
+                    type="button"
+                    onClick={pararEEnviarGravacao}
+                    disabled={enviandoMidia}
+                    title="Parar e enviar"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-[#141e33] text-white disabled:opacity-40"
+                  >
+                    ✓
+                  </button>
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
@@ -1288,20 +1417,17 @@ export function AtendimentoClient({
                   {emojiAberto && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setEmojiAberto(false)} />
-                      <div className="absolute bottom-full left-0 z-20 mb-1 grid w-56 grid-cols-6 gap-1 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                        {EMOJIS_COMPOSER.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => {
-                              inserirNoComposer(emoji);
-                              setEmojiAberto(false);
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
+                      <div className="absolute bottom-full left-0 z-20 mb-1">
+                        <EmojiPicker
+                          theme={Theme.AUTO}
+                          lazyLoadEmojis
+                          width={320}
+                          height={380}
+                          onEmojiClick={(dado: EmojiClickData) => {
+                            inserirNoComposer(dado.emoji);
+                            setEmojiAberto(false);
+                          }}
+                        />
                       </div>
                     </>
                   )}
@@ -1376,7 +1502,7 @@ export function AtendimentoClient({
             {detalhe.produtoNome && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{detalhe.produtoNome}</p>}
             {detalhe.etapaKanban && (
               <span className="mt-1 inline-block rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
-                {detalhe.etapaKanban}
+                {rotuloDaSubetapa(detalhe.etapaKanban)}
               </span>
             )}
             {detalhe.valorEstimado != null && (

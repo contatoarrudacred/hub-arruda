@@ -25,3 +25,10 @@ export function corDaSubetapa(slug: string | undefined): string {
 export function rotuloDaSubetapa(slug: string | undefined): string {
   return KANBAN_SUBETAPAS.find((s) => s.slug === slug)?.label ?? "(sem subetapa)";
 }
+
+/** Mesmo rótulo sem o prefixo numérico ("1.1 · ") — pro espaço apertado do card de contato da Tela de Atendimento. Sem subetapa reconhecida, cai no slug bruto em vez de "(sem subetapa)" (aqui o valor quase sempre existe, só não está nesta lista fechada por algum motivo imprevisto). */
+export function rotuloCurtoDaSubetapa(slug: string | undefined): string {
+  if (!slug) return "";
+  const encontrada = KANBAN_SUBETAPAS.find((s) => s.slug === slug);
+  return encontrada ? encontrada.label.replace(/^\d+\.\d+ · /, "") : slug;
+}
