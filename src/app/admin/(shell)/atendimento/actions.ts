@@ -25,6 +25,7 @@ import {
   type Notificacao,
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
+import { sugerirResposta } from "@/lib/motor-fluxo/composer-assist";
 import { detectarObjecao, type ObjecaoDetectada } from "@/lib/motor-fluxo/detector-objecao";
 import { rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
 import { listarAgendasFollowup, listarObjecoes, type AgendaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
@@ -80,6 +81,12 @@ export async function detectarObjecaoAction(conversaId: string): Promise<Objecao
     ultimaMensagemLead.conteudo,
     objecoes.map((o) => ({ id: o.id, objecao: o.objecao, comoLidar: o.comoLidar })),
   );
+}
+
+/** Assist do composer (Bloco C/Fase 5) — sugere um rascunho de resposta na voz da Malala, pro atendente revisar/editar antes de enviar. Nunca envia sozinho. */
+export async function sugerirRespostaAction(conversaId: string): Promise<string | null> {
+  const detalhe = await carregarConversaDetalhe(conversaId);
+  return sugerirResposta(detalhe.mensagens.map((m) => ({ remetente: m.remetente, conteudo: m.conteudo })));
 }
 
 export async function atribuirParaMalalaAction(conversaId: string): Promise<void> {

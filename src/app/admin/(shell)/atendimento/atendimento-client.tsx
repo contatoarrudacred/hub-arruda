@@ -31,6 +31,7 @@ import {
   listarConversasAction,
   listarNotificacoesAction,
   marcarNotificacaoLidaAction,
+  sugerirRespostaAction,
 } from "./actions";
 import { resetarConversaAction } from "../reset-conversa/actions";
 import { sair } from "../actions";
@@ -937,6 +938,21 @@ export function AtendimentoClient({
     setObjecaoDetectada({ conversaId: conversaSelecionadaId, carregando: false, resultado });
   }
 
+  // Assist do composer (Sonnet, Bloco C/Fase 5) — sugere um rascunho na voz da Malala.
+  const [gerandoSugestao, setGerandoSugestao] = useState(false);
+  const [avisoSugestao, setAvisoSugestao] = useState<string | null>(null);
+
+  async function handleSugerirResposta() {
+    if (!conversaSelecionadaId) return;
+    setMenuAcoesAberto(false);
+    setAvisoSugestao(null);
+    setGerandoSugestao(true);
+    const texto = await sugerirRespostaAction(conversaSelecionadaId);
+    setGerandoSugestao(false);
+    if (texto) setTextoComposer(texto);
+    else setAvisoSugestao("Não foi possível gerar uma sugestão desta vez.");
+  }
+
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [menuAcoesAberto, setMenuAcoesAberto] = useState(false);
   const [menuAnexoAberto, setMenuAnexoAberto] = useState(false);
@@ -1484,6 +1500,15 @@ export function AtendimentoClient({
                         </button>
                         <button
                           type="button"
+                          onClick={handleSugerirResposta}
+                          disabled={!composerHabilitado || gerandoSugestao}
+                          title="Gera um rascunho de resposta na voz da Malala, pra você revisar antes de enviar"
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          ✨ {gerandoSugestao ? "Gerando..." : "Sugerir resposta"}
+                        </button>
+                        <button
+                          type="button"
                           disabled
                           title="Em breve"
                           className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 dark:text-zinc-600"
@@ -1583,6 +1608,7 @@ export function AtendimentoClient({
                 </div>
               </div>
               {avisoProximaEtapa && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoProximaEtapa}</p>}
+              {avisoSugestao && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoSugestao}</p>}
               {erroGravacao && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroGravacao}</p>}
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
               {gravando && (
