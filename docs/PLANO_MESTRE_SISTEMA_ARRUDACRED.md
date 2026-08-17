@@ -234,6 +234,24 @@ Stack escolhida por Luiz:
 
 Esse é um stack moderno e muito usado por times enxutos — combina bem com os agentes de IA de código (todos eles — Claude Code, Cursor, Replit — trabalham bem nesse conjunto GitHub+Vercel+Supabase).
 
+### 7.1.1 Login do Supabase CLI na máquina — resolvido em 17/08/2026
+
+Este ambiente de desenvolvimento **não tem Docker** (então `supabase db reset`/local não funciona) **nem login do Supabase CLI persistido por padrão**. Migrations precisam ser aplicadas manualmente por Luiz via SQL Editor do Supabase (já era o padrão adotado — ver pendências de "rodar migration no SQL Editor" registradas ao longo deste documento), e comandos como `pnpm db:types` (que gera `src/lib/supabase/database.types.ts` a partir do projeto remoto) exigem o Supabase CLI autenticado.
+
+**O agente (Claude, via Bash) não consegue fazer esse login sozinho** — `npx supabase login` roda um fluxo de autorização por navegador que exige um terminal interativo de verdade (TTY); rodado pelo agente, falha com `"Cannot use automatic login flow inside non-TTY environments"`.
+
+**Método (Luiz precisa rodar, uma vez por máquina):**
+1. Abrir um terminal (PowerShell) — não precisa estar em nenhuma pasta específica do projeto.
+2. Rodar `npx supabase login`.
+3. Confirmar a instalação do pacote se perguntado (`y`).
+4. O terminal mostra um link (e tenta abrir o navegador sozinho) — na página, autorizar o acesso.
+5. A página mostra um **código de verificação** (muda a cada tentativa) — esse código já é preenchido/confirmado automaticamente no fluxo, sem precisar ação extra além de autorizar.
+6. Terminal confirma: `"You are now logged in. Happy coding!"`.
+
+**Persistência confirmada (17/08/2026):** o Supabase CLI salva a credencial localmente na máquina — uma vez feito o login, o mesmo terminal/máquina usado pelo Claude Code via Bash já passa a enxergar o login automaticamente em comandos futuros (`supabase projects list`, `pnpm db:types` etc.), sem precisar repetir o processo a cada sessão. Só repetir se: o token expirar/for revogado, ou for uma máquina/ambiente novo.
+
+**Nunca registrar o token em si em nenhum documento ou arquivo do repositório** — ele fica só localmente, gerenciado pelo próprio Supabase CLI (arquivo de config fora do projeto). O que este documento guarda é o método, não a credencial.
+
 ### 7.2 Ferramenta de IA principal para código — RECOMENDAÇÃO (pendente de confirmação)
 Ver seção 4 acima. Recomendação: **Claude Code** como parceiro principal, com possibilidade de usar Cursor como apoio visual pontual. Motivo detalhado na conversa: você já tem um jeito de trabalhar comigo (iterativo, revisando cada mudança) e o Claude Code mantém essa mesma dinâmica, só que dentro do código, além de se integrar bem com GitHub.
 
