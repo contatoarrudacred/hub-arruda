@@ -424,6 +424,18 @@ Confirmado por Luiz durante o levantamento do script real: o fluxo de atendiment
 
 **Desativação da pergunta:** monitorar o volume de respostas 1/2 ao longo do tempo; quando cair para um nível baixo, a pergunta deixa de ser necessária. **Fica como toggle configurável pelo admin** (liga/desliga manualmente), em vez de um critério de desativação 100% automático — consistente com o padrão de configurabilidade já usado em todo o resto do sistema.
 
+### 8.12 E-mail no funil — justificativa de valor + regra de não-bloqueio (novo, 17/08/2026, registrado — não construído ainda)
+
+**Problema identificado por Luiz:** o checkpoint `abertura_email` pergunta o e-mail do lead logo na abertura da conversa (ver 8.x acima), mas hoje não existe uma resposta pronta pra quando o lead pergunta "pra quê?" ou diz que não tem e-mail — e o checkpoint, por padrão, fica esperando uma resposta válida indefinidamente (nenhum checkpoint do motor hoje tem uma saída de "desistir e seguir em frente").
+
+**Decisão de Luiz (17/08/2026):**
+- **Justificativa de valor no escopo da Malala:** precisa existir uma razão que beneficie o lead de verdade pra justificar pedir o e-mail — não "é processo interno nosso", e sim algo como receber a proposta por escrito, cupons/dicas de desconto (o texto já em produção no banco, `abertura_email`, menciona isso — mas não cobre o caso do lead perguntar "pra quê" ou resistir), ou cópia do que for negociado. Precisa entrar no **escopo/prompt da Malala** (seção 10.1) e/ou na `instrucao` da IA do checkpoint, pra ela conseguir responder bem quando o lead questionar. **Texto exato ainda não fechado com Luiz.**
+- **Nunca pode travar o funil:** se depois de **2 tentativas** a Malala não conseguir extrair um e-mail válido (lead recusa, ignora, ou insiste que não tem), ela deve reconhecer isso ("sem problema, deixamos isso pra depois") e seguir para a próxima etapa — registrando o campo como vazio/nulo, nunca ficando presa no checkpoint.
+
+**Gap técnico identificado (ainda não construído):** o motor (`engine.ts`) hoje não conta tentativas consecutivas de um mesmo checkpoint entre turnos — cada resposta não reconhecida (`naoReconhecido: true`) só gera a mensagem de retomada, sem nenhum contador persistido em `dados`. Implementar "depois de 2 tentativas, desiste e segue" exige um mecanismo novo — provavelmente reaproveitável por qualquer checkpoint "opcional" que precise da mesma regra (não é exclusivo do e-mail): um contador de tentativas por etapa guardado em `dados` (incrementado a cada `naoReconhecido`, resetado ao avançar de etapa), que ao atingir o limite força a etapa a prosseguir como se tivesse sido respondida com valor vazio/nulo.
+
+**Pendente antes de construir:** (1) fechar com Luiz o texto exato da justificativa de valor; (2) decidir se o mecanismo de "tentativas antes de desistir" é genérico (qualquer `ConteudoEtapa` pode marcar um campo como opcional-com-limite) ou específico do `abertura_email`; (3) implementar e testar via webhook real, mesmo padrão das fases anteriores.
+
 ---
 
 ## 9. Controle de Custos de Recursos Externos (transversal, novo — 11/08/2026)
