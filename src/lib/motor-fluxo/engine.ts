@@ -40,8 +40,8 @@ const DELAY_AUTOMATICO_MIN_SEGUNDOS = 3.0;
 const DELAY_AUTOMATICO_MAX_SEGUNDOS = 6.0;
 const DELAY_AUTOMATICO_JITTER_SEGUNDOS = 0.5;
 
-/** Extrai um texto legível de qualquer tipo de mensagem — usado só pra retomar a pergunta quando a resposta não é reconhecida (não faz sentido re-perguntar "aqui está uma imagem", precisa de um resumo). */
-function textoDeMensagem(msg: MensagemEtapa): string {
+/** Extrai um texto legível de qualquer tipo de mensagem — usado tanto pra retomar a pergunta quando a resposta não é reconhecida quanto pra dar contexto do checkpoint pra interpretação por IA (interpretacao-ia.ts). */
+export function textoDeMensagem(msg: MensagemEtapa): string {
   switch (msg.tipo) {
     case "texto":
       return msg.texto;

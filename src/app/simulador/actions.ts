@@ -6,6 +6,7 @@ import {
   criarExtratorAbertura,
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
+import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
 import {
   carregarConfigPrecificacao,
   carregarEtapasPorCodigo,
@@ -102,6 +103,7 @@ export async function enviarResposta(
     respostaLead,
     resolverMensagensDinamicas,
     calcularDadosDerivados,
+    interpretarComIA,
     variaveisGlobais: { saudacao: saudacaoPorHorario() },
   });
 

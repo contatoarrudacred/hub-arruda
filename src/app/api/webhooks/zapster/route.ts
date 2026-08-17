@@ -6,6 +6,7 @@ import {
   criarExtratorAbertura,
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
+import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
 import {
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
@@ -121,6 +122,7 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
         respostaLead: texto,
         resolverMensagensDinamicas,
         calcularDadosDerivados,
+        interpretarComIA,
         variaveisGlobais: { saudacao: saudacaoPorHorario() },
       });
       dadosNovos = resultado.dadosNovos;

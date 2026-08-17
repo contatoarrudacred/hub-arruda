@@ -168,6 +168,11 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
         { valor: "outro_assunto", rotulos: ["8", "8️⃣"], proximo_codigo: "handoff_humano" },
       ],
       kanban_subetapa: KANBAN_TRIAGEM,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre em vez do número da opção (ex.: 'preciso limpar meu nome' em vez de '1', 'quero saber sobre o score' em vez de '2'). Escolha a opção que melhor corresponde à intenção dele — se a mensagem não tiver relação clara com nenhuma das 8 opções, não force uma escolha.",
+      },
     },
   },
   {
