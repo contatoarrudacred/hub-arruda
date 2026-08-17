@@ -99,6 +99,34 @@ describe("extração determinística da abertura", () => {
     const extrator = criarExtratorAbertura();
     expect(extrator("oi, sou luiz e quero limpar meu nome").nome).toBe("Luiz");
   });
+
+  it("reconhece valor de dívida mencionado de cara, sem repetir a pergunta de faixa depois (achado real, 17/08/2026)", () => {
+    // Antes desta correção, "sou joao, devo 10 mil e quero limpar meu nome" ignorava o "devo 10
+    // mil" — a Malala perguntava a faixa de novo em ln_passo6, repetindo o que o lead já tinha dito.
+    const extrator = criarExtratorAbertura();
+    const dados = extrator("sou joao, devo 10 mil e quero limpar meu nome");
+    expect(dados.faixa_valor).toBe("10_30mil");
+  });
+
+  it("não deixa a vírgula da frase virar o valor por engano", () => {
+    // Bug real encontrado ao corrigir o achado acima: "sou pedro, devo 10 mil..." — o regex
+    // [\d.,]+ casava a vírgula depois de "pedro" antes de chegar no "10" de verdade, resultando em
+    // NaN e nenhum valor extraído.
+    const extrator = criarExtratorAbertura();
+    const dados = extrator("sou pedro, devo 10 mil e quero limpar meu nome");
+    expect(dados.faixa_valor).toBe("10_30mil");
+  });
+
+  it("exige sinal de valor (mil/R$/reais) antes de tentar extrair um número — não confunde outro número da frase", () => {
+    const extrator = criarExtratorAbertura();
+    expect(extrator("preciso limpar meu nome, moro há 10 anos aqui").faixa_valor).toBeUndefined();
+  });
+
+  it("classifica corretamente as faixas baixa e alta com refinamento", () => {
+    const extrator = criarExtratorAbertura();
+    expect(extrator("quero limpar meu nome, devo uns 2 mil").faixa_valor_detalhe).toBe("menos_3mil");
+    expect(extrator("quero limpar meu nome, devo R$ 200.000").valor_aproximado).toBe("200000");
+  });
 });
 
 describe("extração de nome — resposta direta a 'Com quem eu falo?'", () => {

@@ -313,11 +313,7 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     campoSalvo: "faixa_valor",
     conteudo: {
       codigo: "ln_passo6",
-      mensagens: [
-        t(
-          "👉 *Em qual das faixas abaixo melhor se enquadra o valor das restrições neste CPF atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n1️⃣ Menos de 10 mil\n2️⃣ Entre 10 e 30 mil\n3️⃣ Entre 30 e 50 mil\n4️⃣ Entre 50 e 100 mil\n5️⃣ Mais de 100 mil",
-        ),
-      ],
+      mensagens: [t("(faixa de valor calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)")],
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
@@ -498,11 +494,7 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     campoSalvo: "urgencia",
     conteudo: {
       codigo: "ln_passo12",
-      mensagens: [
-        t(
-          "📣 *Para eu conseguir te orientar melhor me diz: para quando você tem necessidade do CPF limpo?*\n\n1️⃣ Só está pesquisando\n2️⃣ Urgente\n3️⃣ Em 30-45 dias\n4️⃣ 3 a 6 meses\n5️⃣ Outro, me explique!",
-        ),
-      ],
+      mensagens: [t("(pergunta de urgência calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)")],
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
@@ -555,11 +547,7 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     campoSalvo: "prioridade_fechar_hoje",
     conteudo: {
       codigo: "ln_passo14",
-      mensagens: [
-        t(
-          "📌 Nós recebemos alguns vouchers da Associação que nos permitem oferecer uma condição especial muito expressiva. Como são limitados, para liberar a proposta com a melhor condição possível, precisamos saber:\n\n👉 *É prioridade para você já entrar com o CPF para ser limpo e começar a contar o prazo hoje?*\n1️⃣ Sim\n2️⃣ Não",
-        ),
-      ],
+      mensagens: [t("(pergunta de voucher calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)")],
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
@@ -786,12 +774,47 @@ function extrairProdutoInteresse(mensagem: string): string | null {
   return null;
 }
 
-/** Combina a extração genérica (nome, ver extracao.ts) com a específica deste menu (produto) — usado na primeira mensagem da conversa, antes do motor começar a perguntar. */
+/**
+ * Achado real (17/08/2026, lead "João"): "sou joao, devo 10 mil e quero limpar meu nome" ignorava
+ * completamente o "devo 10 mil" — a Malala perguntava a faixa de novo mais adiante (ln_passo6),
+ * repetindo informação que o lead já tinha dado de cara. Exige um sinal explícito de valor (R$/mil/
+ * reais) antes de tentar extrair um número — evita confundir outro número solto na frase (ex.: "há
+ * 10 anos moro aqui") com valor de dívida.
+ */
+function extrairValorMencionadoNaAbertura(mensagem: string): number | null {
+  const normalizado = mensagem.toLowerCase();
+  if (!/\br\$|\bmil\b|\breais?\b/.test(normalizado)) return null;
+
+  const semSimbolos = mensagem.replace(/[Rr]\$/g, "").trim();
+  // Precisa começar por um dígito — sem isso, "sou pedro, devo 10 mil..." casava a vírgula depois
+  // de "pedro" antes de chegar no "10" de verdade (achado real, 17/08/2026).
+  const numeroMatch = semSimbolos.match(/\d[\d.,]*/);
+  if (!numeroMatch) return null;
+
+  const numero = Number(numeroMatch[0].replace(/\./g, "").replace(",", "."));
+  if (Number.isNaN(numero)) return null;
+
+  return /\bmil\b/.test(normalizado) ? numero * 1000 : numero;
+}
+
+/** Classifica um valor bruto nos mesmos buckets das opções de ln_passo6/ln_passo6_refino_baixo — pra que a regra de "checkpoint já respondido" (engine.ts) pule essas perguntas sozinha quando os campos batem com uma opção conhecida. */
+function dadosDaFaixaPorValor(valor: number): DadosConversa {
+  if (valor < 3000) return { faixa_valor: "menos_10mil", faixa_valor_detalhe: "menos_3mil" };
+  if (valor < 10000) return { faixa_valor: "menos_10mil", faixa_valor_detalhe: "3_10mil" };
+  if (valor < 30000) return { faixa_valor: "10_30mil" };
+  if (valor < 50000) return { faixa_valor: "30_50mil" };
+  if (valor < 100000) return { faixa_valor: "50_100mil" };
+  return { faixa_valor: "mais_100mil", valor_aproximado: String(valor) };
+}
+
+/** Combina a extração genérica (nome, ver extracao.ts) com as específicas deste menu (produto, valor mencionado de cara) — usado na primeira mensagem da conversa, antes do motor começar a perguntar. */
 export function criarExtratorAbertura() {
   return (mensagem: string): DadosConversa => {
     const dados = extrairDadosAbertura(mensagem);
     const produto = extrairProdutoInteresse(mensagem);
     if (produto) dados.produto_interesse = produto;
+    const valor = extrairValorMencionadoNaAbertura(mensagem);
+    if (valor !== null) Object.assign(dados, dadosDaFaixaPorValor(valor));
     return dados;
   };
 }
@@ -825,11 +848,63 @@ function obterValorRestricao(dados: DadosConversa): number | null {
   return resolverValorRestricao(dados);
 }
 
+// ---------------------------------------------------------------------------
+// Texto que muda conforme o lead respondeu CPF/CNPJ em ln_passo4 (`dados.tipo_documento`) — achado
+// real (17/08/2026, mesmo lead "João"): 3 mensagens adiante do script citavam "CPF" fixo mesmo
+// quando o lead tinha acabado de dizer que era CNPJ. O script original (SCRIPT_LIMPANOME_SERASA_SPC.md,
+// Passos 6/12) já previa isso como "pergunta dinâmica conforme tipo capturado" — nunca foi ligado.
+// ---------------------------------------------------------------------------
+
+/** "neste CPF" / "neste CNPJ" / "nestes documentos" — usado em ln_passo6. */
+function fraseNesteDocumento(dados: DadosConversa): string {
+  if (dados.tipo_documento === "cnpj") return "neste CNPJ";
+  if (dados.tipo_documento === "cpf_e_cnpj") return "nestes documentos";
+  return "neste CPF";
+}
+
+/** "do CPF limpo" / "do CNPJ limpo" / "dos documentos limpos" — usado em ln_passo12. */
+function fraseNecessidadeDocumentoLimpo(dados: DadosConversa): string {
+  if (dados.tipo_documento === "cnpj") return "do CNPJ limpo";
+  if (dados.tipo_documento === "cpf_e_cnpj") return "dos documentos limpos";
+  return "do CPF limpo";
+}
+
+/** "o CPF" / "o CNPJ" / "os documentos" — usado em ln_passo14. */
+function fraseEntrarComDocumento(dados: DadosConversa): string {
+  if (dados.tipo_documento === "cnpj") return "o CNPJ";
+  if (dados.tipo_documento === "cpf_e_cnpj") return "os documentos";
+  return "o CPF";
+}
+
 export function criarResolverMensagensDinamicas(
   faixasPrecos: FaixaPreco[],
   config: ConfigPrecificacaoLimpaNome,
 ) {
   return (codigo: string, dados: DadosConversa): MensagemEtapa[] | null => {
+    if (codigo === "ln_passo6") {
+      return [
+        t(
+          `👉 *Em qual das faixas abaixo melhor se enquadra o valor das restrições ${fraseNesteDocumento(dados)} atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n1️⃣ Menos de 10 mil\n2️⃣ Entre 10 e 30 mil\n3️⃣ Entre 30 e 50 mil\n4️⃣ Entre 50 e 100 mil\n5️⃣ Mais de 100 mil`,
+        ),
+      ];
+    }
+
+    if (codigo === "ln_passo12") {
+      return [
+        t(
+          `📣 *Para eu conseguir te orientar melhor me diz: para quando você tem necessidade ${fraseNecessidadeDocumentoLimpo(dados)}?*\n\n1️⃣ Só está pesquisando\n2️⃣ Urgente\n3️⃣ Em 30-45 dias\n4️⃣ 3 a 6 meses\n5️⃣ Outro, me explique!`,
+        ),
+      ];
+    }
+
+    if (codigo === "ln_passo14") {
+      return [
+        t(
+          `📌 Nós recebemos alguns vouchers da Associação que nos permitem oferecer uma condição especial muito expressiva. Como são limitados, para liberar a proposta com a melhor condição possível, precisamos saber:\n\n👉 *É prioridade para você já entrar com ${fraseEntrarComDocumento(dados)} para ser limpo e começar a contar o prazo hoje?*\n1️⃣ Sim\n2️⃣ Não`,
+        ),
+      ];
+    }
+
     if (codigo === "ln_passo15_normal") {
       if (dados.faixa_valor_detalhe === "menos_3mil") {
         return montarPropostaBaixoValor(config).map(t);

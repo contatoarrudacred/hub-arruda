@@ -57,7 +57,10 @@ function parseNumeroOuNaoSei(resposta: string): ResultadoParse {
 
   const semSimbolos = resposta.replace(/[Rr]\$/g, "").trim();
   const temMil = /mil/i.test(semSimbolos);
-  const numeroMatch = semSimbolos.match(/[\d.,]+/);
+  // Precisa começar por um dígito — sem isso, uma resposta tipo "bom, uns 10 mil" casava a vírgula
+  // antes de chegar no número de verdade (mesmo achado real de extrairValorMencionadoNaAbertura,
+  // fluxo-limpeza-nome.ts, 17/08/2026).
+  const numeroMatch = semSimbolos.match(/\d[\d.,]*/);
   if (!numeroMatch) return { reconhecido: false };
 
   let numero = Number(numeroMatch[0].replace(/\./g, "").replace(",", "."));
