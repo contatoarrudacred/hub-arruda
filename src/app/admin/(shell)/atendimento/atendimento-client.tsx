@@ -25,6 +25,7 @@ import {
   criarNotaAction,
   enviarMensagemAction,
   enviarMidiaAction,
+  gerarResumoConversaAction,
   listarConversasAction,
   listarNotificacoesAction,
   marcarNotificacaoLidaAction,
@@ -559,6 +560,9 @@ export function AtendimentoClient({
   const [contagens, setContagens] = useState<ContagemNaoLidas>(contagensIniciais);
   const [conversaSelecionadaId, setConversaSelecionadaId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<ConversaDetalhe | null>(null);
+  // Resumo por IA ao assumir (Bloco C/Fase 5) — amarrado ao conversaId pra não vazar o resumo de
+  // uma conversa pra outra enquanto o de destino ainda está carregando.
+  const [resumoIA, setResumoIA] = useState<{ conversaId: string; texto: string | null; carregando: boolean } | null>(null);
   const [textoComposer, setTextoComposer] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
@@ -674,6 +678,9 @@ export function AtendimentoClient({
     if (conversaId === conversaSelecionadaId) await recarregarDetalhe(conversaId);
     await recarregarLista();
     await recarregarContagens();
+    setResumoIA({ conversaId, texto: null, carregando: true });
+    const texto = await gerarResumoConversaAction(conversaId);
+    setResumoIA((atual) => (atual?.conversaId === conversaId ? { conversaId, texto, carregando: false } : atual));
   }
 
   async function atribuirMalala(conversaId: string) {
@@ -1295,6 +1302,19 @@ export function AtendimentoClient({
                 >
                   ✕
                 </button>
+              </div>
+            )}
+
+            {resumoIA?.conversaId === conversaSelecionadaId && (
+              <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-sm dark:border-indigo-900 dark:bg-indigo-950/30">
+                <span className="font-semibold text-indigo-700 dark:text-indigo-300">🤖 Resumo da IA ao assumir</span>
+                {resumoIA.carregando ? (
+                  <p className="mt-0.5 text-indigo-600/70 dark:text-indigo-400/70">Gerando resumo...</p>
+                ) : resumoIA.texto ? (
+                  <p className="mt-0.5 whitespace-pre-line text-indigo-900 dark:text-indigo-100">{resumoIA.texto}</p>
+                ) : (
+                  <p className="mt-0.5 text-indigo-600/70 dark:text-indigo-400/70">Não foi possível gerar o resumo desta vez.</p>
+                )}
               </div>
             )}
 

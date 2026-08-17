@@ -25,7 +25,9 @@ import {
   type Notificacao,
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
+import { rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
 import { listarAgendasFollowup, type AgendaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
+import { gerarResumoConversa } from "@/lib/motor-fluxo/resumo-conversa";
 import { uploadMidiaAction } from "../fluxos/actions";
 import { enviarMensagemMidia, enviarMensagemTexto } from "@/lib/whatsapp/zapster";
 
@@ -50,6 +52,16 @@ export async function assumirConversaAction(conversaId: string): Promise<void> {
   const usuario = await obterUsuarioSistemaAtual();
   await assumirConversa(conversaId, usuario.id);
   revalidatePath("/admin/atendimento");
+}
+
+/** Resumo por IA ao assumir uma conversa (Bloco C/Fase 5) — gerado sob demanda, não persistido: o custo de regenerar (poucas linhas, Haiku) é irrelevante e evita schema novo. Retorna null em qualquer falha — nunca deve travar o "Assumir Chat". */
+export async function gerarResumoConversaAction(conversaId: string): Promise<string | null> {
+  const detalhe = await carregarConversaDetalhe(conversaId);
+  const etapaRotulo = detalhe.etapaKanban ? rotuloDaSubetapa(detalhe.etapaKanban) : null;
+  return gerarResumoConversa(
+    detalhe.mensagens.map((m) => ({ remetente: m.remetente, conteudo: m.conteudo })),
+    etapaRotulo,
+  );
 }
 
 export async function atribuirParaMalalaAction(conversaId: string): Promise<void> {
