@@ -638,7 +638,7 @@ import type { ItemChecklistCarregado, PautaCarregada } from "./tipos";
 
 vi.mock("@anthropic-ai/sdk", () => {
   const create = vi.fn();
-  return { default: vi.fn(() => ({ messages: { create } })) };
+  return { default: vi.fn(function () { return { messages: { create } }; }) };
 });
 
 const pauta: PautaCarregada = {
@@ -829,7 +829,7 @@ import type { ConteudoGerado, ItemChecklistCarregado } from "./tipos";
 
 vi.mock("@anthropic-ai/sdk", () => {
   const create = vi.fn();
-  return { default: vi.fn(() => ({ messages: { create } })) };
+  return { default: vi.fn(function () { return { messages: { create } }; }) };
 });
 
 const conteudo: ConteudoGerado = {
