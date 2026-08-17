@@ -26,7 +26,8 @@ import {
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
 import { listarAgendasFollowup, type AgendaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
-import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
+import { uploadMidiaAction } from "../fluxos/actions";
+import { enviarMensagemMidia, enviarMensagemTexto } from "@/lib/whatsapp/zapster";
 
 export async function listarConversasAction(filtro: FiltroConversas, busca: string): Promise<ConversaResumo[]> {
   return listarConversasAtendimento(filtro, busca);
@@ -113,6 +114,30 @@ export async function enviarMensagemAction(
   try {
     const { messageId } = await enviarMensagemTexto(telefone, texto);
     await registrarMensagemHumana(conversaId, texto, messageId || null);
+    revalidatePath("/admin/atendimento");
+    return { sucesso: true };
+  } catch (e) {
+    return { sucesso: false, erro: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Envia um anexo (documento/foto/vídeo/áudio) de verdade via WhatsApp — menu "+" do composer
+ * (Bloco B2, Fase 5). Reaproveita o mesmo upload pro Supabase Storage já usado no editor de fluxo
+ * (`uploadMidiaAction`, bucket `midia-fluxo`) — não existe endpoint de upload próprio da Zapster,
+ * a mídia precisa estar numa URL pública antes de ser enviada.
+ */
+export async function enviarMidiaAction(
+  conversaId: string,
+  telefone: string,
+  formData: FormData,
+  legenda: string,
+): Promise<ResultadoEnviarMensagem> {
+  const upload = await uploadMidiaAction(formData);
+  if (!upload.sucesso) return { sucesso: false, erro: upload.erro };
+  try {
+    const { messageId } = await enviarMensagemMidia(telefone, upload.url, legenda || undefined);
+    await registrarMensagemHumana(conversaId, legenda, messageId || null, upload.url);
     revalidatePath("/admin/atendimento");
     return { sucesso: true };
   } catch (e) {

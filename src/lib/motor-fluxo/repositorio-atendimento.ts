@@ -453,16 +453,21 @@ export async function atribuirParaAtendente(conversaId: string, atendenteId: str
   if (erroNotif) throw new Error(`Falha ao notificar atribuição: ${erroNotif.message}`);
 }
 
-/** Grava a mensagem de um atendente humano — o envio real via WhatsApp é feito por quem chama (fora daqui, mesmo adaptador de canal da Fase 7). */
+/** Grava a mensagem de um atendente humano — o envio real via WhatsApp é feito por quem chama (fora daqui, mesmo adaptador de canal da Fase 7). `midiaUrl` preenchido quando é uma mensagem de anexo (Bloco B2, Fase 5). */
 export async function registrarMensagemHumana(
   conversaId: string,
   texto: string,
   zapsterMessageId: string | null,
+  midiaUrl: string | null = null,
 ): Promise<void> {
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("mensagens")
-    .insert({ conversa_id: conversaId, remetente: "supervisor", conteudo: texto, zapster_message_id: zapsterMessageId });
+  const { error } = await supabase.from("mensagens").insert({
+    conversa_id: conversaId,
+    remetente: "supervisor",
+    conteudo: texto || null,
+    midia_url: midiaUrl,
+    zapster_message_id: zapsterMessageId,
+  });
   if (error) throw new Error(`Falha ao registrar mensagem: ${error.message}`);
 }
 

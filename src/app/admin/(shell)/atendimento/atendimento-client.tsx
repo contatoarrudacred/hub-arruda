@@ -24,6 +24,7 @@ import {
   contarNotificacoesNaoLidasAction,
   criarNotaAction,
   enviarMensagemAction,
+  enviarMidiaAction,
   listarConversasAction,
   listarNotificacoesAction,
   marcarNotificacaoLidaAction,
@@ -642,6 +643,39 @@ export function AtendimentoClient({
     await recarregarContagens();
   }
 
+  const inputArquivoRef = useRef<HTMLInputElement>(null);
+  const [enviandoMidia, setEnviandoMidia] = useState(false);
+
+  /** Ajusta o "accept"/"capture" do input escondido e abre o seletor nativo do navegador — um único input reaproveitado pelas opções do menu de anexo (Documento/Fotos e vídeos/Câmera/Áudio), só os tipos que a Zapster já envia de verdade hoje (`enviarMensagemMidia`). */
+  function abrirSeletorArquivo(accept: string, capture?: "environment") {
+    const input = inputArquivoRef.current;
+    if (!input) return;
+    input.accept = accept;
+    if (capture) input.setAttribute("capture", capture);
+    else input.removeAttribute("capture");
+    input.click();
+  }
+
+  async function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!arquivo || !conversaSelecionadaId || !detalhe?.pessoaTelefone) return;
+    setEnviandoMidia(true);
+    setErroEnvio(null);
+    const formData = new FormData();
+    formData.append("arquivo", arquivo);
+    const resultado = await enviarMidiaAction(conversaSelecionadaId, detalhe.pessoaTelefone, formData, textoComposer);
+    setEnviandoMidia(false);
+    if (!resultado.sucesso) {
+      setErroEnvio(resultado.erro);
+      return;
+    }
+    setTextoComposer("");
+    await recarregarDetalhe(conversaSelecionadaId);
+    await recarregarLista();
+    await recarregarContagens();
+  }
+
   const [modoComposer, setModoComposer] = useState<"mensagem" | "nota">("mensagem");
   const [enviandoNota, setEnviandoNota] = useState(false);
 
@@ -676,6 +710,7 @@ export function AtendimentoClient({
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [menuAcoesAberto, setMenuAcoesAberto] = useState(false);
+  const [menuAnexoAberto, setMenuAnexoAberto] = useState(false);
   const [emojiAberto, setEmojiAberto] = useState(false);
 
   /** Campo cresce com o texto (1 linha → ~10 linhas, empurrando a timeline pra cima) e depois disso vira scroll interno — WhatsApp Web, pedido do Luiz (Bloco B2, 17/08/2026). */
@@ -1175,19 +1210,64 @@ export function AtendimentoClient({
                     </>
                   )}
                 </div>
+                <input
+                  ref={inputArquivoRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleArquivoSelecionado}
+                />
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => setMenuAnexoAberto((v) => !v)}
+                    disabled={modoComposer !== "mensagem" || !composerHabilitado || enviandoMidia}
+                    className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
+                  >
+                    {enviandoMidia ? "Enviando..." : "📎 Anexo"}
+                  </button>
+                  {menuAnexoAberto && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMenuAnexoAberto(false)} />
+                      <div className="absolute bottom-full left-0 z-20 mb-1 w-48 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuAnexoAberto(false);
+                            abrirSeletorArquivo(".pdf,.doc,.docx,.xls,.xlsx,.txt,application/*");
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          📄 Documento
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuAnexoAberto(false);
+                            abrirSeletorArquivo("image/*,video/*");
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          🖼️ Fotos e vídeos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuAnexoAberto(false);
+                            abrirSeletorArquivo("image/*", "environment");
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          📷 Câmera
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button
                   type="button"
-                  disabled
-                  title="Em breve"
-                  className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-0.5 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
-                >
-                  📎 Anexo
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  title="Em breve"
-                  className="cursor-not-allowed rounded-full bg-zinc-50 px-3 py-0.5 text-xs font-medium text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
+                  onClick={() => abrirSeletorArquivo("audio/*")}
+                  disabled={modoComposer !== "mensagem" || !composerHabilitado || enviandoMidia}
+                  className="rounded-full bg-zinc-100 px-3 py-0.5 text-xs font-medium text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400"
                 >
                   🎤 Áudio
                 </button>
