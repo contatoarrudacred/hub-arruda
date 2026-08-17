@@ -279,8 +279,8 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
-        { valor: "cpf", rotulos: ["cpf"], proximo_codigo: "ln_passo5" },
-        { valor: "cnpj", rotulos: ["cnpj"], proximo_codigo: "ln_passo5" },
+        { valor: "cpf", rotulos: ["cpf", "pessoa fisica"], proximo_codigo: "ln_passo5" },
+        { valor: "cnpj", rotulos: ["cnpj", "empresa", "pessoa juridica"], proximo_codigo: "ln_passo5" },
         {
           valor: "cpf_e_cnpj",
           rotulos: ["cpf e cnpj", "os dois", "ambos", "cnpj e cpf"],
@@ -291,7 +291,7 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
       interpretacao_ia: {
         habilitado: true,
         instrucao:
-          "O lead pode responder em frase completa (ex.: 'só o CPF mesmo', 'preciso limpar os dois', 'é pessoa jurídica' → cnpj). Escolha a opção que corresponde ao que ele quis dizer.",
+          "O lead pode responder em frase completa mencionando pessoa física/CPF de um lado, ou empresa/pessoa jurídica/CNPJ do outro (ex.: 'só o CPF mesmo', 'preciso limpar os dois', 'é pessoa jurídica' → cnpj, 'é da minha empresa' → cnpj, 'tenho uma empresa envolvida' → cnpj). Qualquer menção clara a empresa/negócio/jurídica deve ser tratada como CNPJ, mesmo sem a palavra 'CNPJ' aparecer — não seja excessivamente conservador nesse caso específico. Escolha a opção que corresponde ao que ele quis dizer.",
       },
     },
   },
