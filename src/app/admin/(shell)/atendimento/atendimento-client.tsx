@@ -735,29 +735,73 @@ export function AtendimentoClient({
     input.click();
   }
 
-  async function enviarArquivo(arquivo: File) {
+  async function enviarArquivo(arquivo: File, legenda: string) {
     if (!conversaSelecionadaId || !detalhe?.pessoaTelefone) return;
     setEnviandoMidia(true);
     setErroEnvio(null);
     const formData = new FormData();
     formData.append("arquivo", arquivo);
-    const resultado = await enviarMidiaAction(conversaSelecionadaId, detalhe.pessoaTelefone, formData, textoComposer);
+    const resultado = await enviarMidiaAction(conversaSelecionadaId, detalhe.pessoaTelefone, formData, legenda);
     setEnviandoMidia(false);
     if (!resultado.sucesso) {
       setErroEnvio(resultado.erro);
       return;
     }
-    setTextoComposer("");
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
     await recarregarContagens();
   }
 
+  /** Preview + legenda antes de enviar (Bloco B2, WhatsApp-like) — em vez de subir na hora, guarda o arquivo escolhido e só chama `enviarArquivo` quando o usuário confirma no modal. */
+  const [previewMidia, setPreviewMidia] = useState<{ arquivo: File; url: string; tipo: string } | null>(null);
+  const [legendaPreview, setLegendaPreview] = useState("");
+
+  function midiaTipoDoMimetypeCliente(mimetype: string): string {
+    if (mimetype.startsWith("image/")) return "imagem";
+    if (mimetype.startsWith("audio/")) return "audio";
+    if (mimetype.startsWith("video/")) return "video";
+    return "documento";
+  }
+
+  function abrirPreviewMidia(arquivo: File) {
+    setLegendaPreview("");
+    setPreviewMidia({ arquivo, url: URL.createObjectURL(arquivo), tipo: midiaTipoDoMimetypeCliente(arquivo.type) });
+  }
+
+  function fecharPreviewMidia() {
+    setPreviewMidia((atual) => {
+      if (atual) URL.revokeObjectURL(atual.url);
+      return null;
+    });
+    setLegendaPreview("");
+  }
+
+  async function confirmarEnvioMidia() {
+    if (!previewMidia) return;
+    const { arquivo, url } = previewMidia;
+    const legenda = legendaPreview;
+    URL.revokeObjectURL(url);
+    setPreviewMidia(null);
+    setLegendaPreview("");
+    await enviarArquivo(arquivo, legenda);
+  }
+
+  // Segurança: nunca deixar um object URL de preview vazando — revoga se o usuário trocar de
+  // conversa ou sair da tela com um preview de mídia ainda aberto.
+  useEffect(() => {
+    return () => {
+      setPreviewMidia((atual) => {
+        if (atual) URL.revokeObjectURL(atual.url);
+        return null;
+      });
+    };
+  }, [conversaSelecionadaId]);
+
   async function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
     e.target.value = "";
     if (!arquivo) return;
-    await enviarArquivo(arquivo);
+    abrirPreviewMidia(arquivo);
   }
 
   const [menuAudioAberto, setMenuAudioAberto] = useState(false);
@@ -814,7 +858,7 @@ export function AtendimentoClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversaSelecionadaId]);
 
-  async function pararEEnviarGravacao() {
+  async function pararGravacaoEAbrirPreview() {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
     const aoParar = new Promise<void>((resolve) => {
@@ -828,7 +872,7 @@ export function AtendimentoClient({
     if (blob.size === 0) return;
     const extensao = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
     const arquivo = new File([blob], `audio-${Date.now()}.${extensao}`, { type: blob.type });
-    await enviarArquivo(arquivo);
+    abrirPreviewMidia(arquivo);
   }
 
   function formatarTempoGravacao(segundos: number): string {
@@ -1480,7 +1524,7 @@ export function AtendimentoClient({
                   </button>
                   <button
                     type="button"
-                    onClick={pararEEnviarGravacao}
+                    onClick={pararGravacaoEAbrirPreview}
                     disabled={enviandoMidia}
                     title="Parar e enviar"
                     className="flex h-7 w-7 items-center justify-center rounded-full bg-[#141e33] text-white disabled:opacity-40"
@@ -1658,6 +1702,53 @@ export function AtendimentoClient({
             onClick={(e) => e.stopPropagation()}
           />
         )}
+      </div>
+    )}
+
+    {previewMidia && (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+        <div className="flex w-full max-w-sm flex-col rounded-xl bg-white shadow-xl dark:bg-zinc-900">
+          <div className="flex items-center justify-center rounded-t-xl bg-zinc-100 p-4 dark:bg-zinc-800">
+            {previewMidia.tipo === "imagem" && (
+              // eslint-disable-next-line @next/next/no-img-element -- preview local (object URL) do arquivo escolhido, antes de enviar
+              <img src={previewMidia.url} alt="" className="max-h-72 max-w-full rounded-lg object-contain" />
+            )}
+            {previewMidia.tipo === "video" && (
+              <video src={previewMidia.url} controls className="max-h-72 max-w-full rounded-lg" />
+            )}
+            {previewMidia.tipo === "audio" && <audio src={previewMidia.url} controls className="w-full" />}
+            {previewMidia.tipo === "documento" && (
+              <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm text-zinc-700 shadow dark:bg-zinc-900 dark:text-zinc-300">
+                📄 {previewMidia.arquivo.name}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-3 p-4">
+            <input
+              value={legendaPreview}
+              onChange={(e) => setLegendaPreview(e.target.value)}
+              placeholder="Adicionar legenda..."
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-[#c8a55d] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            />
+            {erroEnvio && <p className="text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={fecharPreviewMidia}
+                disabled={enviandoMidia}
+                className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEnvioMidia}
+                disabled={enviandoMidia}
+                className="rounded-full bg-[#141e33] px-4 py-1.5 text-sm text-white disabled:opacity-40"
+              >
+                {enviandoMidia ? "..." : "Enviar"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     )}
 
