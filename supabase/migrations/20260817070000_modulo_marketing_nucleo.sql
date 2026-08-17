@@ -30,6 +30,8 @@ create table matrizes_conteudo (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+comment on table matrizes_conteudo is
+  'Os eixos de conteúdo (temas/ângulos/geografias/sazonalidade) por propriedade, configuráveis — uma propriedade pode ter mais de uma matriz ativa. Ver MODULO_MARKETING_CONTEUDO_ARRUDACRED.md seção 2.';
 comment on column matrizes_conteudo.eixos is
   'jsonb livre: {"temas": [...], "angulos": [...], "geografias": [...] | null, "sazonalidade": [...]}. Populado pelo Construtor de Matriz de Conteúdo (ainda não construído).';
 
@@ -50,6 +52,8 @@ create table pautas (
   prioridade_score int not null default 0,
   created_at timestamptz not null default now()
 );
+comment on table pautas is
+  'Fila gerada pelo Agente Estrategista — cada linha é um post ainda não escrito, aguardando produção. tentativas/motivo_ultima_reprovacao alimentam o circuit breaker do workflow.';
 comment on column pautas.tipo_conteudo is
   'Catálogo de formatos, MODULO_MARKETING_CONTEUDO_ARRUDACRED.md seção 5.3.';
 
@@ -71,6 +75,8 @@ create table posts (
   atualizado_em timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+comment on table posts is
+  'Rascunhos e publicados gerados pelo pipeline — um post por pauta produzida. status/canais rastreiam o estado de publicação em cada plataforma.';
 comment on column posts.canais is
   'jsonb por plataforma: {"wordpress": {"rascunho_id", "status", "url"}, "gmb": {...}, ...}. Só "wordpress" é escrito nesta fase (núcleo); as demais chaves são da plan de distribuição multi-canal.';
 
@@ -82,6 +88,10 @@ create table checklist_qa_itens (
   ativo boolean not null default true,
   created_at timestamptz not null default now()
 );
+comment on table checklist_qa_itens is
+  'Padrão de qualidade obrigatório por propriedade — o Agente Revisor valida cada rascunho contra estes itens antes de aprovar publicação. Catálogo padrão de 11 itens em MODULO_MARKETING_CONTEUDO_ARRUDACRED.md seção 5.2, mas customizável por propriedade (ex.: qual "fonte oficial do nicho" citar).';
+comment on column checklist_qa_itens.peso is
+  'Peso do item na soma ponderada do score de aprovação (score mínimo 80/100 pra aprovar, ver Agente Revisor).';
 
 -- RLS + auditoria, mesmo padrão do restante do sistema (ver 20260815120000_precos_config_agendas_rls.sql)
 alter table propriedades_digitais enable row level security;
