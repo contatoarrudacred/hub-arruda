@@ -22,6 +22,7 @@ import {
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
 } from "@/lib/motor-fluxo/repositorio";
+import { transcreverAudio } from "@/lib/motor-fluxo/transcricao-audio";
 import { enviarSequenciaWhatsapp } from "@/lib/whatsapp/enviar";
 
 // Delay/digitando entre mensagens (ver enviarSequenciaWhatsapp) pode somar alguns segundos por
@@ -78,7 +79,37 @@ async function processarMidiaRecebida(telefone: string, midiaUrl: string, midiaT
   }
 }
 
-async function processarMensagemRecebida(telefone: string, textoRecebido: string): Promise<void> {
+/**
+ * Áudio recebido do lead (Bloco C/Fase 5, 17/08/2026) — diferente dos outros tipos de mídia:
+ * transcreve primeiro (`transcricao-audio.ts`, OpenAI) e roda o texto transcrito no motor de fluxo
+ * normalmente, igual a uma mensagem digitada — a Malala passa a "entender" áudio. Se a transcrição
+ * falhar (sem API key, OpenAI fora do ar, etc.), cai pro comportamento antigo — só registra o
+ * áudio pro humano ouvir na Tela de Atendimento, sem rodar o motor em cima (não dá pra interpretar
+ * uma resposta que não conseguimos entender).
+ */
+async function processarAudioRecebido(telefone: string, audioUrl: string): Promise<void> {
+  const textoTranscrito = await transcreverAudio(audioUrl);
+
+  if (!textoTranscrito) {
+    await processarMidiaRecebida(telefone, audioUrl, "audio", null);
+    return;
+  }
+
+  await processarMensagemRecebida(telefone, textoTranscrito, audioUrl, "audio");
+}
+
+/**
+ * `midiaUrl`/`midiaTipo` são pra quando o texto veio de uma transcrição de áudio (ver
+ * `processarAudioRecebido` abaixo) — a mensagem do lead fica ligada ao áudio original na timeline
+ * (toca + mostra a transcrição como legenda), mas o texto transcrito é o que roda no motor,
+ * igualzinho a uma mensagem digitada.
+ */
+async function processarMensagemRecebida(
+  telefone: string,
+  textoRecebido: string,
+  midiaUrl: string | null = null,
+  midiaTipo: string | null = null,
+): Promise<void> {
   // Código de rastreio (zap.arrudacred.com.br, ver docs/RASTREIO_CLIQUES_WHATSAPP.md) tirado antes
   // de qualquer outra coisa — a Malala/o motor nunca veem "(ref: a1b2c3d4)" como parte da conversa.
   const { texto, codigo: codigoRastreio } = extrairCodigoRastreio(textoRecebido);
@@ -92,7 +123,7 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
     }
 
     if (estado.sobSupervisor) {
-      await registrarMensagemLead(estado.conversaId, texto);
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
       return;
     }
 
@@ -113,10 +144,10 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
       );
       resultado = resultadoPercurso;
       dadosNovos = dadosIniciais;
-      await registrarMensagemLead(estado.conversaId, texto);
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
     } else {
       const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
-      await registrarMensagemLead(estado.conversaId, texto);
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
       resultado = await avancarConversa({
         etapaAtual,
         etapasPorCodigo,
@@ -211,11 +242,19 @@ export async function POST(request: Request) {
     return Response.json({ recebido: true });
   }
 
-  // Mídia (foto/áudio/vídeo/figurinha) — payload confirmado na doc real da Zapster
+  // Áudio (Bloco C/Fase 5, 17/08/2026) — tratado separado dos outros tipos de mídia: transcreve e
+  // roda o motor de fluxo em cima do texto, não só registra. Ver processarAudioRecebido.
+  const audioUrl: string | undefined = data?.content?.media?.url;
+  if (data?.type === "audio" && audioUrl) {
+    after(() => processarAudioRecebido(telefone, audioUrl));
+    return Response.json({ recebido: true });
+  }
+
+  // Mídia (foto/vídeo/figurinha) — payload confirmado na doc real da Zapster
   // (developer.zapsterapi.com/pt-BR/v1/webhooks/event-schemas/message, 17/08/2026):
   // data.content.media.url é a URL do arquivo, data.content.text é a legenda (opcional).
   // "document" não aparece no enum de tipos deles — se aparecer no log acima, precisa mapear aqui.
-  const TIPOS_MIDIA_SUPORTADOS: Record<string, string> = { image: "imagem", sticker: "imagem", video: "video", audio: "audio" };
+  const TIPOS_MIDIA_SUPORTADOS: Record<string, string> = { image: "imagem", sticker: "imagem", video: "video" };
   const midiaTipo = data?.type ? TIPOS_MIDIA_SUPORTADOS[data.type] : undefined;
   const midiaUrl: string | undefined = data?.content?.media?.url;
   if (midiaTipo && midiaUrl) {
