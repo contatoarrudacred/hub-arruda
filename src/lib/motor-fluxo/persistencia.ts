@@ -167,13 +167,18 @@ export async function carregarOuCriarConversaWhatsapp(
   };
 }
 
-/** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. */
-export async function registrarMensagemLead(conversaId: string, texto: string): Promise<void> {
+/** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. `midiaUrl`/`midiaTipo` preenchidos quando o lead manda foto/áudio/vídeo (Bloco B2, ver processarMensagemRecebida). */
+export async function registrarMensagemLead(
+  conversaId: string,
+  texto: string | null,
+  midiaUrl: string | null = null,
+  midiaTipo: string | null = null,
+): Promise<void> {
   const supabase = createAdminClient();
 
   const { error: erroMensagem } = await supabase
     .from("mensagens")
-    .insert({ conversa_id: conversaId, remetente: "lead", conteudo: texto });
+    .insert({ conversa_id: conversaId, remetente: "lead", conteudo: texto, midia_url: midiaUrl, midia_tipo: midiaTipo });
   if (erroMensagem) {
     throw new Error(`Falha ao registrar mensagem do lead: ${erroMensagem.message}`);
   }

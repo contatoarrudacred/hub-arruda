@@ -59,6 +59,22 @@ async function montarDependencias() {
   };
 }
 
+/**
+ * Mídia recebida do lead (foto/áudio/vídeo/figurinha) — Bloco B2, 17/08/2026. Diferente de texto:
+ * só registra na conversa (pro humano ver na Tela de Atendimento), nunca roda o motor de fluxo em
+ * cima — mesmo com a Malala no controle. A Malala só entende texto (parser determinístico); tratar
+ * a URL de uma mídia como se fosse a resposta do lead corromperia a posição da conversa.
+ */
+async function processarMidiaRecebida(telefone: string, midiaUrl: string, midiaTipo: string, legenda: string | null): Promise<void> {
+  try {
+    const { etapasPorCodigo } = await montarDependencias();
+    const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
+    await registrarMensagemLead(estado.conversaId, legenda, midiaUrl, midiaTipo);
+  } catch (e) {
+    console.error("[webhook zapster] erro ao processar mídia recebida:", e);
+  }
+}
+
 async function processarMensagemRecebida(telefone: string, textoRecebido: string): Promise<void> {
   // Código de rastreio (zap.arrudacred.com.br, ver docs/RASTREIO_CLIQUES_WHATSAPP.md) tirado antes
   // de qualquer outra coisa — a Malala/o motor nunca veem "(ref: a1b2c3d4)" como parte da conversa.
@@ -178,17 +194,28 @@ export async function POST(request: Request) {
   }
 
   const data = payload.data;
-  if (data?.type !== "text" || !data?.content?.text) {
-    return Response.json({ ignorado: true, motivo: `tipo de mensagem "${data?.type}" ainda não tratado` });
-  }
-
-  const telefone: string | undefined = data.sender?.phone_number ?? data.recipient?.phone_number;
-  const texto: string = data.content.text;
+  const telefone: string | undefined = data?.sender?.phone_number ?? data?.recipient?.phone_number;
   if (!telefone) {
     return Response.json({ ignorado: true, motivo: "sem phone_number no payload" });
   }
 
-  after(() => processarMensagemRecebida(telefone, texto));
+  if (data?.type === "text" && data?.content?.text) {
+    after(() => processarMensagemRecebida(telefone, data.content.text));
+    return Response.json({ recebido: true });
+  }
 
-  return Response.json({ recebido: true });
+  // Mídia (foto/áudio/vídeo/figurinha) — payload confirmado na doc real da Zapster
+  // (developer.zapsterapi.com/pt-BR/v1/webhooks/event-schemas/message, 17/08/2026):
+  // data.content.media.url é a URL do arquivo, data.content.text é a legenda (opcional).
+  // "document" não aparece no enum de tipos deles — se aparecer no log acima, precisa mapear aqui.
+  const TIPOS_MIDIA_SUPORTADOS: Record<string, string> = { image: "imagem", sticker: "imagem", video: "video", audio: "audio" };
+  const midiaTipo = data?.type ? TIPOS_MIDIA_SUPORTADOS[data.type] : undefined;
+  const midiaUrl: string | undefined = data?.content?.media?.url;
+  if (midiaTipo && midiaUrl) {
+    const legenda: string | null = data.content?.text || null;
+    after(() => processarMidiaRecebida(telefone, midiaUrl, midiaTipo, legenda));
+    return Response.json({ recebido: true });
+  }
+
+  return Response.json({ ignorado: true, motivo: `tipo de mensagem "${data?.type}" ainda não tratado` });
 }
