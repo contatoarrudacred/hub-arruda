@@ -25,8 +25,9 @@ import {
   type Notificacao,
   type UsuarioSistema,
 } from "@/lib/motor-fluxo/repositorio-atendimento";
+import { detectarObjecao, type ObjecaoDetectada } from "@/lib/motor-fluxo/detector-objecao";
 import { rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
-import { listarAgendasFollowup, type AgendaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
+import { listarAgendasFollowup, listarObjecoes, type AgendaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
 import { gerarResumoConversa } from "@/lib/motor-fluxo/resumo-conversa";
 import { uploadMidiaAction } from "../fluxos/actions";
 import { enviarMensagemMidia, enviarMensagemTexto } from "@/lib/whatsapp/zapster";
@@ -61,6 +62,23 @@ export async function gerarResumoConversaAction(conversaId: string): Promise<str
   return gerarResumoConversa(
     detalhe.mensagens.map((m) => ({ remetente: m.remetente, conteudo: m.conteudo })),
     etapaRotulo,
+  );
+}
+
+/**
+ * Detector de objeção (Bloco C/Fase 5) — acionado sob demanda pelo atendente (botão "🚩 Detectar
+ * objeção" no menu de Ações), não automático a cada mensagem, pra não gerar chamada de IA a cada
+ * poll (4s). Cruza a última mensagem do lead com o banco de objeções ativas.
+ */
+export async function detectarObjecaoAction(conversaId: string): Promise<ObjecaoDetectada | null> {
+  const detalhe = await carregarConversaDetalhe(conversaId);
+  const ultimaMensagemLead = [...detalhe.mensagens].reverse().find((m) => m.remetente === "lead");
+  if (!ultimaMensagemLead?.conteudo) return null;
+
+  const objecoes = (await listarObjecoes()).filter((o) => o.ativo);
+  return detectarObjecao(
+    ultimaMensagemLead.conteudo,
+    objecoes.map((o) => ({ id: o.id, objecao: o.objecao, comoLidar: o.comoLidar })),
   );
 }
 

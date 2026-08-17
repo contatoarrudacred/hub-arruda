@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ObjecaoDetectada } from "@/lib/motor-fluxo/detector-objecao";
 import type {
   ContagemNaoLidas,
   ConversaDetalhe,
@@ -23,6 +24,7 @@ import {
   contarNaoLidasAction,
   contarNotificacoesNaoLidasAction,
   criarNotaAction,
+  detectarObjecaoAction,
   enviarMensagemAction,
   enviarMidiaAction,
   gerarResumoConversaAction,
@@ -920,6 +922,21 @@ export function AtendimentoClient({
     else setAvisoProximaEtapa("Esta etapa do script não tem mensagem de texto pra reaproveitar.");
   }
 
+  // Detector de objeção (Bloco C/Fase 5) — acionado sob demanda pelo atendente, não a cada poll.
+  const [objecaoDetectada, setObjecaoDetectada] = useState<{
+    conversaId: string;
+    carregando: boolean;
+    resultado: ObjecaoDetectada | null;
+  } | null>(null);
+
+  async function handleDetectarObjecao() {
+    if (!conversaSelecionadaId) return;
+    setMenuAcoesAberto(false);
+    setObjecaoDetectada({ conversaId: conversaSelecionadaId, carregando: true, resultado: null });
+    const resultado = await detectarObjecaoAction(conversaSelecionadaId);
+    setObjecaoDetectada({ conversaId: conversaSelecionadaId, carregando: false, resultado });
+  }
+
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [menuAcoesAberto, setMenuAcoesAberto] = useState(false);
   const [menuAnexoAberto, setMenuAnexoAberto] = useState(false);
@@ -1318,6 +1335,35 @@ export function AtendimentoClient({
               </div>
             )}
 
+            {objecaoDetectada?.conversaId === conversaSelecionadaId && (
+              <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-semibold text-amber-800 dark:text-amber-300">🚩 Objeção detectada</span>
+                  <button
+                    type="button"
+                    onClick={() => setObjecaoDetectada(null)}
+                    className="text-xs text-amber-700/70 hover:text-amber-900 dark:text-amber-400/70 dark:hover:text-amber-200"
+                  >
+                    Dispensar
+                  </button>
+                </div>
+                {objecaoDetectada.carregando ? (
+                  <p className="mt-0.5 text-amber-700/70 dark:text-amber-400/70">Analisando última mensagem do lead...</p>
+                ) : objecaoDetectada.resultado ? (
+                  <div className="mt-0.5 text-amber-900 dark:text-amber-100">
+                    <p className="font-medium">{objecaoDetectada.resultado.objecao}</p>
+                    <p className="mt-0.5 text-amber-800/90 dark:text-amber-200/80">
+                      <span className="font-medium">Como lidar:</span> {objecaoDetectada.resultado.comoLidar}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-0.5 text-amber-700/70 dark:text-amber-400/70">
+                    Nenhuma objeção cadastrada corresponde à última mensagem do lead.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div ref={timelineRef} className={`flex-1 space-y-2 overflow-y-auto p-4 ${tomConversa?.bg ?? ""}`}>
               {itensTimeline.map((item) => {
                 if (item.tipo === "nota") {
@@ -1426,6 +1472,15 @@ export function AtendimentoClient({
                           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                         >
                           💬 Respostas prontas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDetectarObjecao}
+                          disabled={!composerHabilitado || objecaoDetectada?.carregando}
+                          title="Cruza a última mensagem do lead com o banco de objeções cadastradas"
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          🚩 {objecaoDetectada?.carregando ? "Detectando..." : "Detectar objeção"}
                         </button>
                         <button
                           type="button"
