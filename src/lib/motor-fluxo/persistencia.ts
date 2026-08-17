@@ -2,8 +2,15 @@ import "server-only";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
+import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
 import { substituirVariaveisTexto } from "./engine";
-import { ehUltimoItemDaAgenda, MOTIVO_PERDA_SEM_RESPOSTA } from "./motor-followup";
+import {
+  ehUltimoItemDaAgenda,
+  leadProvavelmenteBloqueouWhatsapp,
+  LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA,
+  MOTIVO_PERDA_BLOQUEIO_WHATSAPP,
+  MOTIVO_PERDA_SEM_RESPOSTA,
+} from "./motor-followup";
 import { criarDocumentosOportunidadeSeNecessario } from "./oportunidade-documentos";
 import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
 import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
@@ -344,35 +351,85 @@ export async function registrarTurnoMalala(params: {
   }
 }
 
+export type ResultadoDisparoFollowup =
+  | { disparado: true; conteudo: string }
+  | { disparado: false; motivo: "bloqueio_whatsapp_detectado" };
+
 /**
- * Dispara um item da agenda de follow-up — usado tanto pelo cron (src/app/api/cron/followups)
- * quanto pelo botão de teste do simulador (avançar manualmente, sem esperar o tempo real passar).
- * WhatsApp grava em `mensagens` (mesmo histórico da conversa); e-mail grava em `followup_emails`
- * (canal separado, não é conversa — Luiz, 15/08/2026). Marca a oportunidade como Perdida no item
- * de encerramento (`encerraAtendimento`), e só finaliza a cadência de verdade (fecha a conversa,
- * para o relógio) no ÚLTIMO item da agenda inteira — a régua continua depois da Perdida, com os
- * itens de nutrição por e-mail, até realmente acabar.
+ * Dispara um item da agenda de follow-up — chamado pelo cron (src/app/api/cron/followups).
+ * WhatsApp envia de verdade (Zapster, `enviarMensagemTexto`) e grava em `mensagens` (mesmo
+ * histórico da conversa, `origem_followup=true`); e-mail grava em `followup_emails` (canal
+ * separado, não é conversa — Luiz, 15/08/2026). Marca a oportunidade como Perdida no item de
+ * encerramento (`encerraAtendimento`), e só finaliza a cadência de verdade (fecha a conversa, para
+ * o relógio) no ÚLTIMO item da agenda inteira — a régua continua depois da Perdida, com os itens
+ * de nutrição por e-mail, até realmente acabar.
+ *
+ * Antes de mandar um item de WhatsApp, checa se as últimas `LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA`
+ * mensagens de follow-up já disparadas pra esta conversa não foram entregues — sinal de bloqueio
+ * do número pelo lead (Luiz, 17/08/2026). Se detectar, marca Perdida com motivo específico, liga
+ * `conversas.followup_whatsapp_bloqueado` (o cron passa a pular os itens de canal whatsapp dessa
+ * conversa daí em diante, mas continua a régua de e-mail normalmente) e NÃO dispara este item.
  */
 export async function dispararItemFollowup(
   conversaId: string,
   oportunidadeId: string,
   item: ItemAgendaFollowupCarregado,
   todosItensDaAgenda: ItemAgendaFollowupCarregado[],
-): Promise<string> {
+): Promise<ResultadoDisparoFollowup> {
   const supabase = createAdminClient();
 
   const { data: conversa } = await supabase
     .from("conversas")
-    .select("pessoas(nome_razao_social, email)")
+    .select("pessoas(nome_razao_social, email, whatsapp)")
     .eq("id", conversaId)
     .single();
-  const pessoa = conversa?.pessoas as unknown as { nome_razao_social: string | null; email: string | null } | null;
+  const pessoa = conversa?.pessoas as unknown as {
+    nome_razao_social: string | null;
+    email: string | null;
+    whatsapp: string | null;
+  } | null;
   const conteudo = substituirVariaveisTexto(item.conteudo, { nome: pessoa?.nome_razao_social ?? "" }, {});
 
   if (item.canal === "whatsapp") {
-    const { error } = await supabase
+    const { data: ultimasMensagens, error: erroUltimas } = await supabase
       .from("mensagens")
-      .insert({ conversa_id: conversaId, remetente: "malala", conteudo });
+      .select("entregue_em")
+      .eq("conversa_id", conversaId)
+      .eq("origem_followup", true)
+      .order("enviado_em", { ascending: false })
+      .limit(LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA);
+    if (erroUltimas) throw new Error(`Falha ao checar entregas de follow-up anteriores: ${erroUltimas.message}`);
+
+    const bloqueado = leadProvavelmenteBloqueouWhatsapp(
+      (ultimasMensagens ?? []).map((m) => ({ entregueEm: m.entregue_em as string | null })),
+    );
+
+    if (bloqueado) {
+      const { error: erroOportunidade } = await supabase
+        .from("oportunidades")
+        .update({ etapa_kanban: "perdida", motivo_perda: MOTIVO_PERDA_BLOQUEIO_WHATSAPP })
+        .eq("id", oportunidadeId);
+      if (erroOportunidade) throw new Error(`Falha ao marcar oportunidade perdida por bloqueio: ${erroOportunidade.message}`);
+
+      const { error: erroConversa } = await supabase
+        .from("conversas")
+        .update({ followup_whatsapp_bloqueado: true })
+        .eq("id", conversaId);
+      if (erroConversa) throw new Error(`Falha ao marcar bloqueio de whatsapp na conversa: ${erroConversa.message}`);
+
+      return { disparado: false, motivo: "bloqueio_whatsapp_detectado" };
+    }
+
+    if (!pessoa?.whatsapp) throw new Error(`Conversa ${conversaId} não tem telefone de WhatsApp associado.`);
+    const { messageId } = await enviarMensagemTexto(pessoa.whatsapp, conteudo);
+
+    const { error } = await supabase.from("mensagens").insert({
+      conversa_id: conversaId,
+      remetente: "malala",
+      conteudo,
+      zapster_message_id: messageId || null,
+      origem_followup: true,
+    });
     if (error) throw new Error(`Falha ao registrar mensagem de follow-up: ${error.message}`);
   } else {
     const { error } = await supabase.from("followup_emails").insert({
@@ -406,7 +463,7 @@ export async function dispararItemFollowup(
     if (error) throw new Error(`Falha ao finalizar cadência de follow-up: ${error.message}`);
   }
 
-  return conteudo;
+  return { disparado: true, conteudo };
 }
 
 const PADRAO_CODIGO_RASTREIO = /\s*\(ref:\s*([a-f0-9]{8})\)\s*$/i;

@@ -70,8 +70,10 @@ export function calcularProximoDisparo(
   proximoItemAgenda: number,
   aguardandoDesde: Date,
   agora: Date,
+  pularCanalWhatsapp = false,
 ): ItemAgendaFollowupCarregado | null {
-  const proximoPendente = itens
+  const candidatos = pularCanalWhatsapp ? itens.filter((item) => item.canal !== "whatsapp") : itens;
+  const proximoPendente = candidatos
     .filter((item) => item.ordem > proximoItemAgenda)
     .sort((a, b) => a.ordem - b.ordem)[0];
 
@@ -111,3 +113,22 @@ export function ehUltimoItemDaAgenda(itens: ItemAgendaFollowupCarregado[], item:
 }
 
 export const MOTIVO_PERDA_SEM_RESPOSTA = "LEAD PAROU DE RESPONDER";
+
+export const MOTIVO_PERDA_BLOQUEIO_WHATSAPP = "LEAD PROVÁVEL BLOQUEOU ENVIO DE MENSAGENS";
+
+/** Quantas tentativas seguidas de follow-up por WhatsApp sem confirmação de entrega até concluir bloqueio (Luiz, 17/08/2026). */
+export const LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA = 3;
+
+/**
+ * Decide se o lead provavelmente bloqueou o número — sinal mais forte e mais rápido que o item 7
+ * da agenda (10 dias sem resposta, MOTIVO_PERDA_SEM_RESPOSTA): aqui a mensagem nem chega a ser
+ * entregue, não é só "o lead viu e não respondeu". `ultimosDisparos` deve vir com os disparos mais
+ * recentes primeiro (ordenados por enviado_em desc) — olha só os `LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA`
+ * mais recentes.
+ */
+export function leadProvavelmenteBloqueouWhatsapp(ultimosDisparos: { entregueEm: string | null }[]): boolean {
+  if (ultimosDisparos.length < LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA) return false;
+  return ultimosDisparos
+    .slice(0, LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA)
+    .every((disparo) => disparo.entregueEm === null);
+}
