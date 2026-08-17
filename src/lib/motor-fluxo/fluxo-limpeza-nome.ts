@@ -95,6 +95,11 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
       tipo_resposta: "texto_livre",
       proximo_codigo: "saudacao_personalizada",
       kanban_subetapa: KANBAN_TRIAGEM,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder de formas que a extração automática de nome não reconhece (ex.: nome com escrita incomum, ou frase mista tipo 'aqui é o zé, blz?'). Extraia só o primeiro nome da pessoa. Se a mensagem for só uma saudação sem nome nenhum (ex.: 'oi', 'bom dia'), marque como não interpretado.",
+      },
     },
   },
   {
@@ -142,6 +147,11 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
       tipo_resposta: "email",
       proximo_codigo: "triagem_menu",
       kanban_subetapa: KANBAN_TRIAGEM,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode escrever o e-mail com erros de digitação, espaços, ou por extenso (ex.: 'joao arroba gmail ponto com'). Extraia e normalize para o formato padrão nome@dominio.com. Se a mensagem claramente não contém um e-mail, marque como não interpretado.",
+      },
     },
   },
   {
@@ -218,6 +228,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "nao", rotulos: ["nao", "n"], proximo_codigo: "ln_aguardar_melhor_momento" },
       ],
       kanban_subetapa: KANBAN_QUALIFICACAO,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder de forma livre em vez de 'sim'/'não' (ex.: 'claro', 'pode perguntar', 'não quero agora', 'depois'). Escolha 'sim' ou 'nao' conforme a intenção.",
+      },
     },
   },
   {
@@ -273,6 +288,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         },
       ],
       kanban_subetapa: KANBAN_QUALIFICACAO,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em frase completa (ex.: 'só o CPF mesmo', 'preciso limpar os dois', 'é pessoa jurídica' → cnpj). Escolha a opção que corresponde ao que ele quis dizer.",
+      },
     },
   },
   {
@@ -308,6 +328,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "mais_100mil", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo6_refino_alto" },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre em vez do número (ex.: 'acho que uns 20 mil' → opção 2, 'mais de 100 mil com certeza' → opção 5). Escolha a faixa que melhor corresponde ao valor mencionado.",
+      },
     },
   },
   {
@@ -328,6 +353,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "3_10mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre em vez do número (ex.: 'acho que uns 2 mil' → opção 1, 'uns 8 mil' → opção 2). Escolha a faixa que melhor corresponde ao valor mencionado.",
+      },
     },
   },
   {
@@ -375,6 +405,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder de forma livre (ex.: 'vou negociar direto', 'prefiro não', 'sim, pode seguir'). Escolha 'sim' ou 'nao' com base na intenção clara dele — se a mensagem for ambígua sobre continuar ou desistir, não force uma escolha, já que 'nao' aqui encerra o atendimento.",
+      },
     },
   },
   {
@@ -478,6 +513,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "outro", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo12_explique" },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'preciso pra ontem' → urgente, 'só olhando por enquanto' → pesquisando, 'em uns 2 meses' → 3 a 6 meses). Se a resposta descrever uma situação que não se encaixa bem nas 4 primeiras opções, escolha 'outro'.",
+      },
     },
   },
   {
@@ -527,6 +567,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "nao", rotulos: ["2", "2️⃣", "nao"], proximo_codigo: "ln_passo15_router" },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'sim, quero começar agora', 'prefiro pensar mais'). Escolha 'sim' ou 'nao' conforme a intenção.",
+      },
     },
   },
   {
@@ -562,6 +607,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "parcelado", rotulos: ["parcelado", "parcela"], proximo_codigo: "ln_passo16_1" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'posso pagar tudo de uma vez' → à vista, 'prefiro dividir' → parcelado). Escolha a forma de pagamento correspondente.",
+      },
     },
   },
   {
@@ -578,6 +628,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "whatsapp", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo15_selfservice" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'prefiro que me liguem' → call, 'pode continuar por aqui mesmo' → whatsapp). Escolha a opção correspondente.",
+      },
     },
   },
   {
@@ -610,6 +665,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "parcelado", rotulos: ["parcelado", "parcela"], proximo_codigo: "ln_passo16_1" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'posso pagar tudo de uma vez' → à vista, 'prefiro dividir' → parcelado). Escolha a forma de pagamento correspondente.",
+      },
     },
   },
   {
