@@ -53,4 +53,34 @@ describe("criarAdaptadorWordPress", () => {
     const [, opcoes] = fetchFalso.mock.calls[0];
     expect(JSON.parse(opcoes.body).status).toBe("publish");
   });
+
+  it("verificarRascunho retorna { ok: true } quando o post tem conteúdo renderizado", async () => {
+    process.env.WORDPRESS_USUARIO = "claude-conteudo";
+    process.env.WORDPRESS_SENHA_APP = "senha-app-teste";
+    const fetchFalso = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "draft", content: { rendered: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>" } }),
+    });
+    vi.stubGlobal("fetch", fetchFalso);
+
+    const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com");
+    const resultado = await adaptador.verificarRascunho("123");
+
+    expect(resultado).toEqual({ ok: true });
+  });
+
+  it("verificarRascunho retorna { ok: false, detalhes: ... } quando o conteúdo vem vazio", async () => {
+    process.env.WORDPRESS_USUARIO = "claude-conteudo";
+    process.env.WORDPRESS_SENHA_APP = "senha-app-teste";
+    const fetchFalso = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "draft", content: { rendered: "" } }),
+    });
+    vi.stubGlobal("fetch", fetchFalso);
+
+    const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com");
+    const resultado = await adaptador.verificarRascunho("123");
+
+    expect(resultado).toEqual({ ok: false, detalhes: "Rascunho sem conteúdo renderizado." });
+  });
 });
