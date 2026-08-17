@@ -32,6 +32,13 @@ import {
 import { resetarConversaAction } from "../reset-conversa/actions";
 import { sair } from "../actions";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
+import type { EmojiData } from "emoji-picker-react/dist/types/exposedTypes";
+import emojisPtRaw from "emoji-picker-react/dist/data/emojis-pt.json";
+
+// O JSON importado tem `category` tipado como `string` genérico (widening do TS em literais de
+// JSON); a lib espera o enum `Categories` — os valores batem 1:1 em runtime, só o tipo estático
+// que não fecha sozinho, daí o cast.
+const emojisPt = emojisPtRaw as unknown as EmojiData;
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
 import { rotuloCurtoDaSubetapa, rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
 
@@ -1020,46 +1027,56 @@ export function AtendimentoClient({
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${tom.bg} ${tom.texto}`}>
-                    <span aria-hidden="true">👤</span>
-                    {rotuloAtendente}
+                <div className="flex items-center gap-1">
+                  <span
+                    title={`Atendimento atribuído a: ${rotuloAtendente}`}
+                    className={`inline-flex min-w-0 shrink items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium ${tom.bg} ${tom.texto}`}
+                  >
+                    <span aria-hidden="true" className="shrink-0">👤</span>
+                    <span className="truncate">{rotuloAtendente}</span>
                   </span>
                   {c.etapaKanban && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
-                      <span aria-hidden="true">📋</span>
-                      {rotuloCurtoDaSubetapa(c.etapaKanban)}
+                    <span
+                      title={`Etapa atual do fluxo: ${rotuloDaSubetapa(c.etapaKanban)}`}
+                      className="inline-flex min-w-0 shrink items-center gap-1 truncate rounded bg-[#c8a55d]/20 px-1.5 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]"
+                    >
+                      <span aria-hidden="true" className="shrink-0">📋</span>
+                      <span className="truncate">{rotuloCurtoDaSubetapa(c.etapaKanban)}</span>
                     </span>
                   )}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
                   {c.produtoNome && (
-                    <>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                        <span aria-hidden="true">🏷</span>
-                        {c.produtoNomeReduzido || c.produtoNome}
-                      </span>
-                      {c.valorEstimado != null && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
-                          <span aria-hidden="true">💲</span>
-                          R$ {c.valorEstimado.toLocaleString("pt-BR")}
-                        </span>
-                      )}
-                    </>
+                    <span
+                      title={`Serviço da Oportunidade: ${c.produtoNome}`}
+                      className="inline-flex min-w-0 shrink items-center gap-1 truncate rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                    >
+                      <span aria-hidden="true" className="shrink-0">🏷</span>
+                      <span className="truncate">{c.produtoNomeReduzido || c.produtoNome}</span>
+                    </span>
                   )}
-                  <DropdownAtribuir
-                    compacto
-                    atendentes={atendentesIniciais}
-                    usuarioAtualId={usuarioAtual.id}
-                    onEscolherMalala={() => atribuirMalala(c.conversaId)}
-                    onEscolherAtendente={(atendenteId) =>
-                      atendenteId === usuarioAtual.id
-                        ? assumir(c.conversaId)
-                        : atribuirAtendente(c.conversaId, atendenteId)
-                    }
-                    favorita={c.favorita}
-                    onAlternarFavorita={() => alternarFavorita(c.conversaId, c.favorita)}
-                  />
+                  {c.valorEstimado != null && (
+                    <span
+                      title={`Valor estimado da oportunidade: R$ ${c.valorEstimado.toLocaleString("pt-BR")}`}
+                      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-zinc-700 dark:text-zinc-300"
+                    >
+                      <span aria-hidden="true">💲</span>
+                      R$ {c.valorEstimado.toLocaleString("pt-BR")}
+                    </span>
+                  )}
+                  <div className="ml-auto shrink-0">
+                    <DropdownAtribuir
+                      compacto
+                      atendentes={atendentesIniciais}
+                      usuarioAtualId={usuarioAtual.id}
+                      onEscolherMalala={() => atribuirMalala(c.conversaId)}
+                      onEscolherAtendente={(atendenteId) =>
+                        atendenteId === usuarioAtual.id
+                          ? assumir(c.conversaId)
+                          : atribuirAtendente(c.conversaId, atendenteId)
+                      }
+                      favorita={c.favorita}
+                      onAlternarFavorita={() => alternarFavorita(c.conversaId, c.favorita)}
+                    />
+                  </div>
                 </div>
               </div>
             );
@@ -1423,6 +1440,9 @@ export function AtendimentoClient({
                           lazyLoadEmojis
                           width={320}
                           height={380}
+                          emojiData={emojisPt}
+                          searchPlaceholder="Pesquisar"
+                          searchClearButtonLabel="Limpar"
                           onEmojiClick={(dado: EmojiClickData) => {
                             inserirNoComposer(dado.emoji);
                             setEmojiAberto(false);
