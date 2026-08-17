@@ -270,29 +270,23 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
+    // Suporte a "pacote" (Bloco C, PLANO_MESTRE seção 11) — o lead pode pedir mais de um documento
+    // (ex.: 2 CPFs, ou CPF + CNPJ). `tipo_resposta: "lista_documentos"` cai sempre pro interpretador
+    // especializado (interpretar-lista-documentos.ts), nunca pro parser determinístico.
     codigo: "ln_passo4",
     ordem: 5,
-    campoSalvo: "tipo_documento",
+    campoSalvo: "documentos_tipos",
     conteudo: {
       codigo: "ln_passo4",
-      mensagens: [t("👉 Você precisa limpar o *CPF* ou *CNPJ*?")],
-      aguarda_resposta: true,
-      tipo_resposta: "menu",
-      opcoes: [
-        { valor: "cpf", rotulos: ["cpf", "pessoa fisica"], proximo_codigo: "ln_passo5" },
-        { valor: "cnpj", rotulos: ["cnpj", "empresa", "pessoa juridica"], proximo_codigo: "ln_passo5" },
-        {
-          valor: "cpf_e_cnpj",
-          rotulos: ["cpf e cnpj", "os dois", "ambos", "cnpj e cpf"],
-          proximo_codigo: "ln_passo5",
-        },
+      mensagens: [
+        t(
+          "👉 Você precisa limpar o *CPF*, o *CNPJ*, ou mais de um documento (ex.: 2 CPFs, ou CPF e CNPJ juntos)? Me conta quantos e quais.",
+        ),
       ],
+      aguarda_resposta: true,
+      tipo_resposta: "lista_documentos",
+      proximo_codigo: "ln_passo5",
       kanban_subetapa: KANBAN_QUALIFICACAO,
-      interpretacao_ia: {
-        habilitado: true,
-        instrucao:
-          "O lead pode responder em frase completa mencionando pessoa física/CPF de um lado, ou empresa/pessoa jurídica/CNPJ do outro (ex.: 'só o CPF mesmo', 'preciso limpar os dois', 'é pessoa jurídica' → cnpj, 'é da minha empresa' → cnpj, 'tenho uma empresa envolvida' → cnpj). Qualquer menção clara a empresa/negócio/jurídica deve ser tratada como CNPJ, mesmo sem a palavra 'CNPJ' aparecer — não seja excessivamente conservador nesse caso específico. Escolha a opção que corresponde ao que ele quis dizer.",
-      },
     },
   },
   {
@@ -308,74 +302,23 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
+    // Reformulado (17/08/2026, decisão de Luiz): uma pergunta só cobrindo TODOS os documentos de
+    // ln_passo4, em vez de repetir a mesma pergunta uma vez por documento (gerava fricção/evasão
+    // real num pacote de N documentos). "não sei" é resposta válida por documento — a Malala
+    // oferece a consulta oficial paga (mencionando a alternativa gratuita). `tipo_resposta:
+    // "faixas_documentos"` cai sempre pro interpretador especializado (interpretar-faixas-
+    // documentos.ts), que só dá checkpoint como reconhecido quando tiver valor (ou "não sei"
+    // explícito) pra CADA documento.
     codigo: "ln_passo6",
     ordem: 7,
-    campoSalvo: "faixa_valor",
+    campoSalvo: "documentos_valores",
     conteudo: {
       codigo: "ln_passo6",
-      mensagens: [t("(faixa de valor calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)")],
+      mensagens: [t("(pergunta de faixa por documento gerada dinamicamente conforme ln_passo4 — ver criarResolverMensagensDinamicas)")],
       aguarda_resposta: true,
-      tipo_resposta: "menu",
-      opcoes: [
-        { valor: "menos_10mil", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo6_refino_baixo" },
-        { valor: "10_30mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
-        { valor: "30_50mil", rotulos: ["3", "3️⃣"], proximo_codigo: "ln_passo8" },
-        { valor: "50_100mil", rotulos: ["4", "4️⃣"], proximo_codigo: "ln_passo8" },
-        { valor: "mais_100mil", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo6_refino_alto" },
-      ],
+      tipo_resposta: "faixas_documentos",
+      proximo_por_dado: { campo: "documentos_valor_baixo", se_igual: "sim", entao: "ln_passo7", senao: "ln_passo8" },
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
-      interpretacao_ia: {
-        habilitado: true,
-        instrucao:
-          "O lead pode responder em texto livre em vez do número (ex.: 'acho que uns 20 mil' → opção 2, 'mais de 100 mil com certeza' → opção 5). Escolha a faixa que melhor corresponde ao valor mencionado.",
-      },
-    },
-  },
-  {
-    codigo: "ln_passo6_refino_baixo",
-    ordem: 8,
-    campoSalvo: "faixa_valor_detalhe",
-    conteudo: {
-      codigo: "ln_passo6_refino_baixo",
-      mensagens: [
-        t(
-          "Entendo, para eu conseguir te orientar melhor me responda:\n\n1️⃣ Menos de 3 Mil\n2️⃣ Entre 3 e 10 Mil",
-        ),
-      ],
-      aguarda_resposta: true,
-      tipo_resposta: "menu",
-      opcoes: [
-        { valor: "menos_3mil", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo7" },
-        { valor: "3_10mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
-      ],
-      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
-      interpretacao_ia: {
-        habilitado: true,
-        instrucao:
-          "O lead pode responder em texto livre em vez do número (ex.: 'acho que uns 2 mil' → opção 1, 'uns 8 mil' → opção 2). Escolha a faixa que melhor corresponde ao valor mencionado.",
-      },
-    },
-  },
-  {
-    codigo: "ln_passo6_refino_alto",
-    ordem: 9,
-    campoSalvo: "valor_aproximado",
-    conteudo: {
-      codigo: "ln_passo6_refino_alto",
-      mensagens: [
-        t(
-          "Entendi que são mais de 100 mil reais, para eu conseguir te orientar melhor, preciso que me informe o valor aproximado das restrições - pode escrever... (tudo bem se não tiver certeza - depois faremos uma consulta)",
-        ),
-      ],
-      aguarda_resposta: true,
-      tipo_resposta: "numero_ou_nao_sei",
-      proximo_codigo: "ln_passo8",
-      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
-      interpretacao_ia: {
-        habilitado: true,
-        instrucao:
-          "O lead pode responder o valor aproximado da restrição de forma bem livre (por extenso, com gírias, faixa vaga tipo 'uns 200 e pouco'). Extraia um número em reais o mais próximo possível do que ele quis dizer.",
-      },
     },
   },
   {
@@ -824,18 +767,50 @@ export function criarExtratorAbertura() {
 // `resolverMensagensDinamicas` e `calcularDadosDerivados` (ver engine.ts / tipos.ts).
 // ---------------------------------------------------------------------------
 
+/**
+ * Valor usado quando o lead responde "não sei" pra um documento em ln_passo6, sem nenhum outro
+ * sinal de contexto — decisão interina (17/08/2026), nem o piso nem o teto, pra não sub nem
+ * sobre-precificar às cegas. Revisar com Luiz quando fizer sentido usar a consulta paga de verdade
+ * (R$39/documento nos 4 órgãos) em vez de só assumir um valor médio.
+ */
+export const VALOR_PADRAO_DOCUMENTO_NAO_SEI = 75_000;
+
+function resumoTipoDocumento(documentosTiposCsv: string): string {
+  const tipos = new Set(documentosTiposCsv.split(",").filter(Boolean));
+  if (tipos.size === 1) return tipos.has("cnpj") ? "cnpj" : "cpf";
+  return "cpf_e_cnpj";
+}
+
+/** Soma o valor de cada documento — decisão de Luiz (17/08/2026): preço do pacote é a soma das faixas de cada documento individual, não uma faixa única sobre o total combinado (ver montarPropostaPacote). */
+function somarValoresDocumentos(documentosValoresCsv: string): number {
+  return documentosValoresCsv
+    .split(",")
+    .filter(Boolean)
+    .reduce((soma, valorBruto) => {
+      if (valorBruto === "nao_sei") return soma + VALOR_PADRAO_DOCUMENTO_NAO_SEI;
+      const numero = Number(valorBruto);
+      return soma + (Number.isFinite(numero) ? numero : VALOR_PADRAO_DOCUMENTO_NAO_SEI);
+    }, 0);
+}
+
 export function criarCalculadoraDadosDerivados(
   config: Pick<ConfigPrecificacaoLimpaNome, "altoValorFixo" | "altoValorPercentual" | "corteAltoValor">,
 ) {
   return (dados: DadosConversa): DadosConversa => {
-    const valorRestricao = resolverValorRestricao(dados);
-    if (valorRestricao === null) return {};
+    const derivados: DadosConversa = {};
 
-    const altoValor = classificarAltoValor(valorRestricao, config.corteAltoValor);
-    return {
-      valor_restricao_estimado: String(valorRestricao),
-      alto_valor: altoValor ? "sim" : "nao",
-    };
+    if (dados.documentos_tipos) {
+      derivados.tipo_documento = resumoTipoDocumento(dados.documentos_tipos);
+    }
+
+    if (dados.documentos_valores) {
+      const total = somarValoresDocumentos(dados.documentos_valores);
+      derivados.valor_restricao_estimado = String(total);
+      derivados.alto_valor = classificarAltoValor(total, config.corteAltoValor) ? "sim" : "nao";
+      derivados.documentos_valor_baixo = total < 3000 ? "sim" : "nao";
+    }
+
+    return derivados;
   };
 }
 
@@ -882,9 +857,15 @@ export function criarResolverMensagensDinamicas(
 ) {
   return (codigo: string, dados: DadosConversa): MensagemEtapa[] | null => {
     if (codigo === "ln_passo6") {
+      const tiposLista = (dados.documentos_tipos ?? "").split(",").filter(Boolean);
+      const maisDeUm = tiposLista.length > 1;
+      const referenciaDocumentos = maisDeUm
+        ? "de cada documento:\n" + tiposLista.map((tipo, i) => `${i + 1}. ${tipo.toUpperCase()}`).join("\n")
+        : `${fraseNesteDocumento(dados)}`;
+
       return [
         t(
-          `👉 *Em qual das faixas abaixo melhor se enquadra o valor das restrições ${fraseNesteDocumento(dados)} atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n1️⃣ Menos de 10 mil\n2️⃣ Entre 10 e 30 mil\n3️⃣ Entre 30 e 50 mil\n4️⃣ Entre 50 e 100 mil\n5️⃣ Mais de 100 mil`,
+          `👉 Pra eu te passar o preço certo${maisDeUm ? " de cada documento" : ""}, preciso saber a faixa aproximada do valor das restrições ${referenciaDocumentos}\n\nPode ser um valor aproximado, ou "não sei" ${maisDeUm ? "pra qualquer um deles" : ""} — nesse caso, posso te oferecer uma consulta oficial nos 4 órgãos (Serasa, SPC Brasil, SCPC Boa Vista e CENPROT) por R$ 39,00 por documento. Se preferir, você também consegue consultar de graça baixando os apps oficiais de cada órgão. 😊`,
         ),
       ];
     }
@@ -906,10 +887,10 @@ export function criarResolverMensagensDinamicas(
     }
 
     if (codigo === "ln_passo15_normal") {
-      if (dados.faixa_valor_detalhe === "menos_3mil") {
+      const valorRestricao = obterValorRestricao(dados);
+      if (valorRestricao !== null && valorRestricao < 3000) {
         return montarPropostaBaixoValor(config).map(t);
       }
-      const valorRestricao = obterValorRestricao(dados);
       if (valorRestricao === null) return null;
       const faixa = buscarFaixaPreco(valorRestricao, faixasPrecos);
       if (!faixa) return null;

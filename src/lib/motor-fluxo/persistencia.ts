@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
 import { substituirVariaveisTexto } from "./engine";
 import { ehUltimoItemDaAgenda, MOTIVO_PERDA_SEM_RESPOSTA } from "./motor-followup";
+import { criarDocumentosOportunidadeSeNecessario } from "./oportunidade-documentos";
 import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
 import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
 
@@ -247,9 +248,11 @@ export async function registrarTurnoMalala(params: {
   oportunidadeId: string;
   pessoaId: string;
   dadosNovos: Record<string, string>;
+  /** `dados` completo (turnos anteriores + este) — só precisa quando algum efeito colateral precisa de um campo capturado num turno anterior (ex.: documentos_tipos, capturado em ln_passo4, quando a faixa de cada um é capturada só depois em ln_passo6). Opcional pra não obrigar quem só usa dadosNovos a montar isso à toa. */
+  dadosCompletos?: Record<string, string>;
   resultado: Pick<ResultadoAvanco, "mensagens" | "etapaFinal" | "efeitos">;
 }): Promise<void> {
-  const { conversaId, oportunidadeId, pessoaId, dadosNovos, resultado } = params;
+  const { conversaId, oportunidadeId, pessoaId, dadosNovos, dadosCompletos, resultado } = params;
   const supabase = createAdminClient();
 
   if (dadosNovos.nome) {
@@ -276,6 +279,16 @@ export async function registrarTurnoMalala(params: {
     const emailCapturado = dadosNovos.email;
     const nomeConhecido = pessoa?.nome_razao_social ?? "";
     after(() => enviarEmailBoasVindasSeNecessario(pessoaId, nomeConhecido, emailCapturado));
+  }
+
+  // Suporte a "pacote" (Bloco C, PLANO_MESTRE seção 11) — dadosNovos.documentos_valores só existe
+  // no turno em que a faixa de TODOS os documentos acabou de ser capturada (ln_passo6). O tipo de
+  // cada documento (documentos_tipos) foi capturado num turno anterior (ln_passo4) — por isso
+  // precisa do `dadosCompletos` acumulado, não só do que mudou agora.
+  if (dadosNovos.documentos_valores && dadosCompletos?.documentos_tipos) {
+    const documentosTipos = dadosCompletos.documentos_tipos;
+    const documentosValores = dadosNovos.documentos_valores;
+    after(() => criarDocumentosOportunidadeSeNecessario(oportunidadeId, documentosTipos, documentosValores));
   }
 
   if (resultado.mensagens.length > 0) {

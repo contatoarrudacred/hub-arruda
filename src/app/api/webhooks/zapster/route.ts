@@ -7,6 +7,8 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
+import { interpretarFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
+import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import {
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
@@ -123,6 +125,8 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
         resolverMensagensDinamicas,
         calcularDadosDerivados,
         interpretarComIA,
+        interpretarListaDocumentos,
+        interpretarFaixasDocumentos,
         variaveisGlobais: { saudacao: saudacaoPorHorario() },
       });
       dadosNovos = resultado.dadosNovos;
@@ -133,6 +137,7 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
       oportunidadeId: estado.oportunidadeId,
       pessoaId: estado.pessoaId,
       dadosNovos,
+      dadosCompletos: { ...estado.dados, ...dadosNovos },
       resultado,
     });
 

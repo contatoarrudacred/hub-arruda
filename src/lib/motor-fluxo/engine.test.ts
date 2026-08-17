@@ -351,8 +351,21 @@ describe("Limpeza de Nome — faixa intermediária (10-30 mil)", () => {
 
 describe("Limpeza de Nome — alto valor (>R$500 mil)", () => {
   it("classifica como alto valor e oferece a call em vez da proposta direto", async () => {
-    let dados: DadosConversa = { faixa_valor: "mais_100mil" };
-    let r = await responder("ln_passo6_refino_alto", dados, "800 mil");
+    const interpretarFaixasDocumentos = async () => ({
+      status: "completo" as const,
+      itens: [{ tipo: "cpf" as const, valorAproximado: 800_000 }],
+    });
+    let dados: DadosConversa = { documentos_tipos: "cpf" };
+    let r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo6"],
+      etapasPorCodigo,
+      dados,
+      respostaLead: "uns 800 mil",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarFaixasDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
     dados = { ...dados, ...r.dadosNovos };
     expect(dados.alto_valor).toBe("sim");
 
@@ -397,20 +410,45 @@ describe("regra de desvio (resposta não reconhecida)", () => {
     expect(txt(r.mensagens[0])).toContain("CPF");
   });
 
-  it("com IA habilitada, usa o valor que o interpretador retorna em vez de repetir a pergunta", async () => {
-    const interpretarComIA = async () => ({ valor: "250000" });
+  it("com o interpretador de faixas por documento, usa os valores que ele retorna em vez de repetir a pergunta", async () => {
+    const interpretarFaixasDocumentos = async () => ({
+      status: "completo" as const,
+      itens: [{ tipo: "cpf" as const, valorAproximado: 250_000 }],
+    });
     const r = await avancarConversa({
-      etapaAtual: etapasPorCodigo["ln_passo6_refino_alto"],
+      etapaAtual: etapasPorCodigo["ln_passo6"],
       etapasPorCodigo,
-      dados: {},
+      dados: { documentos_tipos: "cpf" },
       respostaLead: "umas duzentas e cinquenta mil, mais ou menos",
       resolverMensagensDinamicas,
       calcularDadosDerivados,
-      interpretarComIA,
+      interpretarFaixasDocumentos,
       variaveisGlobais: VARIAVEIS_GLOBAIS,
     });
     expect(r.naoReconhecido).toBe(false);
     expect(r.interpretadoPorIA).toBe(true);
-    expect(r.dadosNovos.valor_aproximado).toBe("250000");
+    expect(r.dadosNovos.documentos_valores).toBe("250000");
+  });
+
+  it("aceita 'não sei' pra um documento do pacote sem bloquear o checkpoint", async () => {
+    const interpretarFaixasDocumentos = async () => ({
+      status: "completo" as const,
+      itens: [
+        { tipo: "cpf" as const, valorAproximado: 15_000 },
+        { tipo: "cnpj" as const, valorAproximado: null },
+      ],
+    });
+    const r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo6"],
+      etapasPorCodigo,
+      dados: { documentos_tipos: "cpf,cnpj" },
+      respostaLead: "o CPF tem uns 15 mil, o CNPJ não sei",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarFaixasDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(r.naoReconhecido).toBe(false);
+    expect(r.dadosNovos.documentos_valores).toBe("15000,nao_sei");
   });
 });
