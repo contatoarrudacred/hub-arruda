@@ -100,6 +100,75 @@ function formatarHoraOuData(iso: string | null): string {
   return `${dataCurta} - ${hora}`;
 }
 
+/** "DD/MM/AA - HH:MM" — painel Oportunidade ("Conversa iniciada em", Bloco B2). */
+function formatarDataHoraCompleta(iso: string | null): string {
+  if (!iso) return "";
+  const data = new Date(iso);
+  const dataCurta = data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const hora = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${dataCurta} - ${hora}`;
+}
+
+/**
+ * Bolha de mídia na timeline (Bloco B2, 17/08/2026) — antes disso tudo tentava renderizar como
+ * `<img>` incondicionalmente, então áudio/vídeo/documento não apareciam. `midiaTipo` nulo (mensagens
+ * gravadas antes da migration 027) cai pra "imagem", único tipo que existia até então.
+ */
+function MidiaMensagem({
+  midiaUrl,
+  midiaTipo,
+  onAbrirTelaCheia,
+}: {
+  midiaUrl: string;
+  midiaTipo: string | null;
+  onAbrirTelaCheia: (midia: { url: string; tipo: "imagem" | "video" }) => void;
+}) {
+  const tipo = midiaTipo ?? "imagem";
+
+  if (tipo === "audio") {
+    return (
+      <audio controls src={midiaUrl} className="mb-1 max-w-full">
+        <track kind="captions" />
+      </audio>
+    );
+  }
+
+  if (tipo === "video") {
+    return (
+      <button
+        type="button"
+        onClick={() => onAbrirTelaCheia({ url: midiaUrl, tipo: "video" })}
+        className="relative mb-1 block max-w-full overflow-hidden rounded-lg"
+      >
+        <video src={midiaUrl} muted preload="metadata" className="max-w-full rounded-lg" />
+        <span className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-lg">▶</span>
+        </span>
+      </button>
+    );
+  }
+
+  if (tipo === "documento") {
+    return (
+      <a
+        href={midiaUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-1 flex items-center gap-2 rounded-lg bg-black/10 px-3 py-2 text-sm underline"
+      >
+        📄 Abrir documento
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" onClick={() => onAbrirTelaCheia({ url: midiaUrl, tipo: "imagem" })} className="mb-1 block">
+      {/* eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa */}
+      <img src={midiaUrl} alt="" className="max-w-full rounded-lg" />
+    </button>
+  );
+}
+
 function iniciais(nome: string): string {
   return nome.trim().charAt(0).toUpperCase() || "?";
 }
@@ -495,6 +564,7 @@ export function AtendimentoClient({
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [painelContatoAberto, setPainelContatoAberto] = useState(true);
   const [confirmandoReset, setConfirmandoReset] = useState(false);
+  const [midiaEmTelaCheia, setMidiaEmTelaCheia] = useState<{ url: string; tipo: "imagem" | "video" } | null>(null);
   const [resetando, setResetando] = useState(false);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
@@ -1219,8 +1289,7 @@ export function AtendimentoClient({
                       }`}
                     >
                       {m.midiaUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa
-                        <img src={m.midiaUrl} alt="" className="mb-1 max-w-full rounded-lg" />
+                        <MidiaMensagem midiaUrl={m.midiaUrl} midiaTipo={m.midiaTipo} onAbrirTelaCheia={setMidiaEmTelaCheia} />
                       )}
                       {m.conteudo && <p className="whitespace-pre-wrap">{m.conteudo}</p>}
                       <p className="mt-0.5 text-right text-[10px] opacity-60">{formatarHora(m.enviadoEm)}</p>
@@ -1519,15 +1588,27 @@ export function AtendimentoClient({
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Oportunidade</p>
-            {detalhe.produtoNome && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{detalhe.produtoNome}</p>}
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Conversa iniciada em: {formatarDataHoraCompleta(detalhe.iniciadaEm)}
+            </p>
             {detalhe.etapaKanban && (
               <span className="mt-1 inline-block rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
                 {rotuloDaSubetapa(detalhe.etapaKanban)}
               </span>
             )}
+            {detalhe.produtoNome && (
+              <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
+                Serviço: {detalhe.produtoNomeReduzido || detalhe.produtoNome}
+              </p>
+            )}
+            {detalhe.tipoDocumento && (
+              <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
+                {detalhe.tipoDocumento.toUpperCase()}
+              </p>
+            )}
             {detalhe.valorEstimado != null && (
               <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
-                R$ {detalhe.valorEstimado.toLocaleString("pt-BR")}
+                Valor da oportunidade: R$ {detalhe.valorEstimado.toLocaleString("pt-BR")}
               </p>
             )}
           </div>
@@ -1547,6 +1628,38 @@ export function AtendimentoClient({
     </div>
     </div>
     </div>
+
+    {midiaEmTelaCheia && (
+      <div
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4"
+        onClick={() => setMidiaEmTelaCheia(null)}
+      >
+        <button
+          type="button"
+          onClick={() => setMidiaEmTelaCheia(null)}
+          className="absolute right-4 top-4 text-2xl text-white/80 hover:text-white"
+        >
+          ✕
+        </button>
+        {midiaEmTelaCheia.tipo === "imagem" ? (
+          // eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa
+          <img
+            src={midiaEmTelaCheia.url}
+            alt=""
+            className="max-h-full max-w-full rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <video
+            src={midiaEmTelaCheia.url}
+            controls
+            autoPlay
+            className="max-h-full max-w-full rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+      </div>
+    )}
 
     {confirmandoReset && detalhe && (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">

@@ -18,15 +18,15 @@ import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, Men
 
 const NOME_PRODUTO_LIMPEZA_NOME = "Limpeza de Nome (CPF/CNPJ) — Serasa/SPC";
 
-function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; midiaUrl: string | null } {
+function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; midiaUrl: string | null; midiaTipo: string | null } {
   switch (msg.tipo) {
     case "texto":
-      return { conteudo: msg.texto, midiaUrl: null };
+      return { conteudo: msg.texto, midiaUrl: null, midiaTipo: null };
     case "imagem":
     case "audio":
     case "video":
     case "documento":
-      return { conteudo: msg.legenda ?? null, midiaUrl: msg.midia_url };
+      return { conteudo: msg.legenda ?? null, midiaUrl: msg.midia_url, midiaTipo: msg.tipo };
     case "localizacao":
       return {
         conteudo: JSON.stringify({
@@ -36,9 +36,10 @@ function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; mid
           endereco: msg.endereco,
         }),
         midiaUrl: null,
+        midiaTipo: null,
       };
     case "contato":
-      return { conteudo: JSON.stringify({ nome: msg.nome, telefone: msg.telefone }), midiaUrl: null };
+      return { conteudo: JSON.stringify({ nome: msg.nome, telefone: msg.telefone }), midiaUrl: null, midiaTipo: null };
     case "pix":
       return {
         conteudo: JSON.stringify({
@@ -47,6 +48,7 @@ function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; mid
           nome_beneficiario: msg.nome_beneficiario,
         }),
         midiaUrl: null,
+        midiaTipo: null,
       };
   }
 }
@@ -278,13 +280,14 @@ export async function registrarTurnoMalala(params: {
 
   if (resultado.mensagens.length > 0) {
     const linhas = resultado.mensagens.map((item: MensagemEnviada) => {
-      const { conteudo, midiaUrl } = paraColunasMensagem(item.mensagem);
+      const { conteudo, midiaUrl, midiaTipo } = paraColunasMensagem(item.mensagem);
       return {
         conversa_id: conversaId,
         etapa_fluxo_id: resultado.etapaFinal?.id ?? null,
         remetente: "malala",
         conteudo,
         midia_url: midiaUrl,
+        midia_tipo: midiaTipo,
       };
     });
     const { error } = await supabase.from("mensagens").insert(linhas);

@@ -127,17 +127,27 @@ export async function enviarMensagemAction(
  * (`uploadMidiaAction`, bucket `midia-fluxo`) — não existe endpoint de upload próprio da Zapster,
  * a mídia precisa estar numa URL pública antes de ser enviada.
  */
+/** Deriva imagem/audio/video/documento a partir do mimetype do arquivo escolhido — mesmo vocabulário de `MensagemEtapa` (tipos.ts), pra a timeline saber como renderizar. */
+function midiaTipoDoMimetype(mimetype: string): string {
+  if (mimetype.startsWith("image/")) return "imagem";
+  if (mimetype.startsWith("audio/")) return "audio";
+  if (mimetype.startsWith("video/")) return "video";
+  return "documento";
+}
+
 export async function enviarMidiaAction(
   conversaId: string,
   telefone: string,
   formData: FormData,
   legenda: string,
 ): Promise<ResultadoEnviarMensagem> {
+  const arquivo = formData.get("arquivo");
+  const midiaTipo = arquivo instanceof File ? midiaTipoDoMimetype(arquivo.type) : "documento";
   const upload = await uploadMidiaAction(formData);
   if (!upload.sucesso) return { sucesso: false, erro: upload.erro };
   try {
     const { messageId } = await enviarMensagemMidia(telefone, upload.url, legenda || undefined);
-    await registrarMensagemHumana(conversaId, legenda, messageId || null, upload.url);
+    await registrarMensagemHumana(conversaId, legenda, messageId || null, upload.url, midiaTipo);
     revalidatePath("/admin/atendimento");
     return { sucesso: true };
   } catch (e) {
