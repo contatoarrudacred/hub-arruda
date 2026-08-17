@@ -58,15 +58,17 @@ Sistema único de gestão para a ArrudaCred, cobrindo **Marketing, Comercial, Ju
 - Módulo específico PaySmart: monitoramento de split payment (EC 132/2023, LC 214/2025) como gatilho de oportunidade comercial
 
 ### 1.4 Módulo Marketing
-> 📄 Detalhamento técnico (pipeline de conteúdo, absorvendo o escopo da QMARKA): `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md`
+> 📄 Estratégia de conteúdo/negócio (pipeline multi-site, catálogos generalizados, divisão por persona): `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md`
+> 📄 Arquitetura de engenharia do pipeline (Workflow SDK, adaptadores de canal, modelo de dados): `superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md`
 > 📄 Parceiros (revenda) e Afiliados/Influencers (comissão por indicação): `PARCEIROS_AFILIADOS_ARRUDACRED.md`
 - Calendário de conteúdo (cadência diária: história → emoção → conteúdo → CTA, adaptado do modelo já usado na Aetria)
 - Painel de SEO/AEO — acompanhar posicionamento em buscadores tradicionais e em IA (ChatGPT, Gemini, Claude, Perplexity)
 - Gestão de campanhas e captação de leads (landing pages, hotsites como o do PaySmart)
 - Integração com WhatsApp/redes sociais para nutrição de leads
 - **Gestão de tráfego pago** — via integração MCP com Meta Ads, Google Ads, Taboola e outras plataformas de mídia paga; objetivo é permitir gestão/otimização de campanha assistida por IA dentro do próprio sistema, sem trocar de ferramenta
-- **Geração de conteúdo para o blog da ArrudaCred** — cadência constante, voltado para SEO tradicional e AEO/GEO (posicionamento em mecanismos de IA generativa), sempre com revisão antes de publicar
-- **Rede de sites satélite (novo, 11/08/2026):** Luiz pretende montar outros sites de conteúdo gerado por IA, bem posicionados organicamente, mas usados como **mídia própria para divulgar os produtos da ArrudaCred** — em vez do modelo tradicional de vender espaço publicitário nesses sites, eles funcionam como funil de geração de leads. Cada site pode virar uma "propriedade" dentro do módulo Marketing, com métricas de tráfego/conversão próprias.
+- **Geração de conteúdo para o blog e páginas do site** — pipeline de 4 estágios (geração → revisão → publicação → distribuição/aprovação), **sem humano no loop** (decisão de Luiz, 17/08/2026) — nada fica público sem passar pelos dois gates de qualidade automatizados; ver spec de engenharia acima
+- **Rede de sites satélite (11/08/2026, resolvido em 17/08/2026):** cada site tem persona própria pra evitar risco de doorway pages/scaled content abuse do Google — arrudacred.com.br (Limpa Nome), vozdocredito.com.br (consórcio/consumidor), autoridadefinanceira.com.br (consórcio/investidor). Cada site funciona como funil de geração de leads pra ArrudaCred, com métricas de tráfego/conversão próprias. Detalhamento completo em `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md`.
+- ⬜ **Pendente de ação manual de Luiz:** trocar a senha do usuário `claude-auditoria` do WordPress (exposta em PDF fornecido em 17/08/2026, ver aviso de segurança no `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md`); criar Pixel Meta + propriedade GA4 + container GTM próprios para vozdocredito.com.br e autoridadefinanceira.com.br antes do pipeline poder rastrear/distribuir de verdade.
 
 ### 1.5 Módulo Operacional (novo, 12/08/2026)
 > Mencionado anteriormente (seção de RBAC) como módulo futuro, ainda sem detalhamento próprio — registrado aqui para não se perder, escopo a definir.
@@ -595,7 +597,15 @@ Requisitos que Luiz descreveu explicitamente:
 - **Alerta destacado (cor + ícone)** especificamente para as integrações em risco de parar de funcionar (perto do limite do plano, ou saldo pré-pago acabando) — não pode ser um alerta igual pra tudo, só quem está em risco de verdade precisa se destacar.
 - Começa pela **Resend** (primeira conectada); pensado pra crescer — Zapster/WhatsApp (Fase 7), Supabase, Vercel, e qualquer outra API de terceiro que o sistema passar a depender.
 
-Perguntas em aberto pra quando for desenhar de verdade: cada provedor tem API própria de uso/billing (a Resend tem endpoint de uso, por exemplo) — precisa investigar o que cada uma expõe; decidir se o painel consulta ao vivo ou guarda um snapshot periódico (cron); decidir onde no admin isso mora (tela própria, ou widget no topo de `/admin`).
+Perguntas em aberto pra quando for desenhar de verdade: cada provedor tem API própria de uso/billing (a Resend tem endpoint de uso, por exemplo) — precisa investigar o que cada uma expõe; decidir se o painel consulta ao vivo ou guarda um snapshot periódico (cron).
+
+**Onde mora, resposta parcial (17/08/2026):** ver requisito de Dashboards por seção logo abaixo — este painel provavelmente vive dentro do Dashboard de Configurações, não como tela solta.
+
+### Dashboards por seção + Dashboard Geral — requisito registrado, ainda não desenhado (17/08/2026)
+
+Luiz pediu: cada seção do sistema (**CRM, Vendas, Marketing, Configurações**) ter seu próprio Dashboard com KPIs/indicadores principais, mais um **Dashboard Geral do Sistema** que resume os dashboards de seção. Ainda não desenhado em detalhe — registrado aqui pra não esquecer, e pra dar uma casa futura ao "Painel de status de integrações externas" (acima), que naturalmente cabe dentro do Dashboard de Configurações.
+
+Perguntas em aberto pra quando for desenhar de verdade: quais KPIs entram em cada seção (Marketing já tem um começo — "Painel de Custo" em `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md` seção 7 — mas os outros três dashboards ainda não têm nada definido); onde exatamente ficam as fronteiras entre "CRM" e "Vendas" na navegação (hoje só existe "Atendimento" como item de topo — ver `sidebar.tsx`); o que exatamente o Dashboard Geral resume (todos os KPIs de seção, ou só os mais críticos de cada um).
 
 ### Decisões/correções registradas durante a construção (14/08/2026)
 - A saudação personalizada ("Oi [Nome], bom dia!") vive uma vez na abertura, não repetida por produto — corrigido no script, ver `SCRIPT_LIMPANOME_SERASA_SPC.md`
