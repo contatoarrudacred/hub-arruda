@@ -297,29 +297,33 @@
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--texto-fraco);
-    margin-top: 6px;
+    margin: 0 0 7px;
     display: block;
   }
   .inicio b { color: var(--texto-suave); font-weight: 600; }
 
   /* bloco "Já entregou" fechado por padrão, dentro do card do agente */
-  .bloco details > summary {
-    cursor: pointer;
-    list-style: none;
-    display: flex;
+  /* o histórico é um botão de verdade, não um rótulo discreto */
+  .bloco details > summary { cursor: pointer; list-style: none; }
+  .bloco details > summary::-webkit-details-marker { display: none; }
+  .bloco details > summary .botao-hist {
+    display: inline-flex;
     align-items: center;
     gap: 7px;
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--texto-fraco);
+    font-size: 11.5px;
+    letter-spacing: .02em;
+    padding: 5px 11px;
+    color: var(--texto);
+    background: var(--surface-2);
+    border: 1px solid var(--linha-forte);
+    line-height: 1.5;
   }
-  .bloco details > summary::-webkit-details-marker { display: none; }
-  .bloco details > summary::before { content: "▸"; letter-spacing: 0; }
-  .bloco details[open] > summary::before { content: "▾"; }
-  .bloco details > summary:hover { color: var(--ouro); }
-  .bloco details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .bloco details > summary .botao-hist::after { content: "▸"; color: var(--texto-fraco); }
+  .bloco details[open] > summary .botao-hist::after { content: "▾"; }
+  .bloco details > summary:hover .botao-hist { border-color: var(--ouro); color: var(--ouro); }
+  .bloco details > summary:focus-visible { outline: none; }
+  .bloco details > summary:focus-visible .botao-hist { outline: 2px solid var(--ouro); outline-offset: 2px; }
   .bloco details > ul { margin-top: 7px; }
   .bloco details .qdo {
     font-family: var(--mono);
@@ -635,8 +639,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h25",
- "commit": "98b9804",
+ "atualizado": "18/08/2026 · 15h40",
+ "commit": "96b678b",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -660,8 +664,8 @@
   },
   {
    "rot": "Migrations",
-   "val": "🚨 1 colisão",
-   "bom": false
+   "val": "✅ sem colisão",
+   "bom": true
   },
   {
    "rot": "Agentes ativos",
@@ -760,10 +764,10 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "agora",
-   "prazoRot": "❌ Agora",
-   "titulo": "Registrar a chave de criptografia — 3 lugares",
-   "corpo": "Você já gerou. Confirmei no código o nome exato: <code>MARKETING_CREDENCIAIS_CHAVE</code>. Precisa entrar em <b>três lugares</b> — os dois primeiros são obrigatórios, o terceiro é o que faz o Marketing conseguir testar. Passo a passo na minha resposta abaixo.",
+   "prazo": "feito",
+   "prazoRot": "✅ Pronta",
+   "titulo": "Chave de criptografia — registrada nos 3 lugares",
+   "corpo": "<b>Fechado.</b> Você fez 1 e 2; o 3 <b>eu fiz por você</b> — copiei a linha do seu <code>.env.local</code> direto pro do worktree do Marketing, sem nunca exibir o valor. Conferido: os dois arquivos têm exatamente a mesma chave, e o git ignora ambos. Marketing avisado.",
    "acoes": [],
    "respostas": [
     {
@@ -784,9 +788,14 @@
      "autor": "coordenador",
      "quando": "18/08 · 15h25",
      "texto": "Nome exato da variável (conferi no código, não é chute): MARKETING_CREDENCIAIS_CHAVE\n\n1) NA SUA MÁQUINA — arquivo .env.local na raiz do projeto. Abra e acrescente uma linha no fim:\nMARKETING_CREDENCIAIS_CHAVE=cole_aqui_a_chave\nSem aspas, sem espaço antes ou depois do =. Esse arquivo está no .gitignore, então não vai pro GitHub — conferi.\n\n2) NA VERCEL — painel do projeto hub-arruda > Settings > Environment Variables > Add New. Nome: MARKETING_CREDENCIAIS_CHAVE, valor: a chave. Marque os três ambientes (Production, Preview, Development). Importante: variável nova só passa a valer no PRÓXIMO deploy — depois de salvar, faça um redeploy, senão em produção ela não existe.\n\n3) NO WORKTREE DO MARKETING — ele tem um .env.local próprio, separado do seu, em .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local. Sem a chave lá, ele não consegue testar a cifra na branch dele. Mesma linha do passo 1.\n\nNÃO me mande o valor — nem aqui, nem pela torre, nem pelo chat. Só me diga 'pronto' e eu aviso o Marketing que pode usar.\n\nSe perder a chave depois de já ter senha cifrada salva: não dá pra recuperar. Você recadastra as senhas dos sites e segue. Guarde num gerenciador de senhas, não num arquivo de texto solto."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h40",
+     "texto": "Não precisou editar nada: copiei a linha de um arquivo pro outro com um comando que nunca imprime o valor na tela.\n\nO que confirmei, sem ver a chave:\n- a variável MARKETING_CREDENCIAIS_CHAVE existe agora no .env.local do worktree do Marketing\n- comparei o hash das duas linhas: são idênticas, então ele vai cifrar/decifrar com a mesma chave que a Vercel\n- o .gitignore do worktree cobre .env* — conferido, não vai pro GitHub por acidente\n\nAvisei o Marketing que pode testar a cifra. Se um dia você trocar a chave, é só me falar que eu replico do mesmo jeito.\n\nCaminho do arquivo, caso queira conferir: .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local"
     }
    ],
-   "concluida": false
+   "concluida": true
   },
   {
    "id": "spf-resend",
@@ -854,10 +863,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Passei a você onde registrar a chave de criptografia (3 lugares — o worktree do Marketing tem .env.local próprio, é o que costuma passar batido).",
-    "Aguardando os dois recados urgentes serem lidos: o rename da migration do Vendas e a restauração da criptografia no Marketing."
+    "Chave de criptografia registrada nos três lugares — o terceiro eu copiei direto pro worktree do Marketing, sem expor o valor. Ele já foi avisado.",
+    "Sem pendência entre agentes: nenhuma colisão, ninguém esperando ninguém."
    ],
-   "proxima": "➡️ Confirmar o rename do Vendas, a restauração do Marketing, e avisar o Marketing quando a chave estiver nos três lugares.",
+   "proxima": "➡️ Seguir varrendo. A única coisa aberta com você é o teste das telas de Vendas.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -907,6 +916,14 @@
     {
      "t": "✅ Script passou a detectar colisão sozinho e a medir atividade por arquivo tocado, não por commit",
      "q": "18/08 15h12"
+    },
+    {
+     "t": "✅ Colisão e retrabalho resolvidos com os agentes, sem nada perdido",
+     "q": "18/08 15h05"
+    },
+    {
+     "t": "✅ Replicou a chave de cifra pro worktree do Marketing sem expor o valor, com verificação por hash",
+     "q": "18/08 15h40"
     }
    ],
    "dims": null,
@@ -972,14 +989,15 @@
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "cuidado",
-    "texto": "⚠️ retrabalho por minha culpa"
+    "tipo": "rodando",
+    "texto": "✅ rodando"
    },
    "agora": [
-    "<b>Trabalhando agora</b> — 12 commits próprios, 11 arquivos tocados nos últimos 30 min. Fase 2: configuração admin, cota diária, janela de publicação, log de execução."
+    "<b>Trabalhando na Fase 2</b>: configuração admin, cota diária, janela de publicação, log de execução do pipeline.",
+    "Desfez a reversão da criptografia em 2 minutos — o módulo voltou e a senha volta a ser cifrada."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
-   "proximaExtra": "Criptografia <b>mantida</b> — pode retomar. A migration da Fase 2 ele escreve, mas <b>não roda</b>: vem pra mim e eu levo a você.",
+   "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
    "entregue": [
     {
      "t": "✅ Núcleo do pipeline: Estrategista, Escritor, Revisor e Agente de Links",
@@ -1004,6 +1022,10 @@
     {
      "t": "✅ Cota diária, janela de publicação e log de execução do pipeline",
      "q": "18/08 14h03-14h36"
+    },
+    {
+     "t": "✅ Restaurou a criptografia depois que a decisão mudou, sem reclamar do retrabalho",
+     "q": "18/08 15h00"
     }
    ],
    "dims": {
@@ -1014,29 +1036,20 @@
     "iso": "2026-08-18T13:08:00-03:00",
     "rotulo": "18/08 13h08",
     "nota": "1º commit da Fase 2"
-   },
-   "alerta": {
-    "nivel": "leve",
-    "sinal": "↩️",
-    "texto": "Reverteu a criptografia às 14h49 seguindo minha instrução das 13h50 — <b>3 minutos depois de você decidir manter</b>, e eu só comuniquei às 15h00. Pedi que desfaça a reversão. <b>O retrabalho foi causado pelo meu atraso</b>, não por erro dele."
    }
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "travado",
-    "texto": "🚨 colisão de migration"
-   },
-   "alerta": {
-    "nivel": "grave",
-    "sinal": "🚨",
-    "texto": "Escreveu <code>20260818090000_vendas_contrato_nucleo.sql</code> — <b>mesmo timestamp que o Marketing</b>. Nenhuma foi aplicada no banco (ele respeitou a regra dura), então custa um <code>git mv</code>. Pedi que renomeie pra <code>090001</code> antes de mais commits. Está <b>24 commits atrás da main</b> — foi por isso que não viu a reserva."
+    "tipo": "rodando",
+    "texto": "✅ rodando"
    },
    "agora": [
-    "<b>Trabalhando a todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy. 5 commits próprios, o último às 14h53."
+    "<b>A todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy.",
+    "Resolveu a colisão de migration em 2 minutos assim que você avisou — e conferiu o rótulo interno do arquivo, não só renomeou."
    ],
-   "proxima": "➡️ Renomear a migration (colisão) e seguir com a tela de Fechamento de Venda.",
+   "proxima": "➡️ Seguir com a tela de Fechamento de Venda, agora sabendo que ela não é mais provisória.",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
    "entregue": [
     {
@@ -1054,6 +1067,10 @@
     {
      "t": "✅ Cálculo de parcelas, valor por extenso e repositório de templates de contrato",
      "q": "18/08 14h52-14h53"
+    },
+    {
+     "t": "✅ Resolveu a colisão de migration renomeando para 090001, sem deixar referência antiga",
+     "q": "18/08 14h59"
     }
    ],
    "dims": {
@@ -1068,22 +1085,15 @@
   }
  ],
  "dependencia": {
-  "rota": "🚨 2 recados urgentes · Coordenador → Vendas e Marketing",
-  "titulo": "Duas coisas para consertar hoje",
+  "rota": "✅ nada aberto entre agentes",
+  "titulo": "Os dois incidentes foram resolvidos em 2 minutos",
   "paragrafos": [
-   "<b>Colisão de migration.</b> Vendas e Marketing escreveram <code>20260818090000</code> com conteúdos diferentes. Terceira vez no projeto — e a primeira detectada <b>antes</b> de qualquer uma chegar ao banco, porque os dois respeitaram a regra de não rodar migration. Custa um rename.",
-   "<b>Retrabalho no Marketing, causado por mim.</b> Ele reverteu a criptografia às 14h49 obedecendo o que eu tinha dito às 13h50; você já tinha decidido manter às 14h46. Pedi que desfaça.",
-   "<b>O que os dois casos têm em comum:</b> agente trabalhando em base velha. O Vendas está 24 commits atrás, o Marketing estava 7 quando construiu a criptografia. O hook resolve quem <i>abre</i> sessão; não resolve quem já está com ela aberta há horas. É a próxima coisa a atacar."
+   "<b>Colisão de migration:</b> o Vendas renomeou para <code>090001</code> e conferiu o rótulo interno do arquivo — não sobrou referência ao número antigo. <b>Custou zero</b> porque nenhuma das duas tinha ido ao banco: a regra de não rodar migration provou o valor dela hoje.",
+   "<b>Reversão da criptografia:</b> o Marketing desfez e o módulo voltou. O retrabalho foi causado pelo meu atraso em comunicar sua decisão, e ele resolveu sem reclamar.",
+   "<b>O que ainda não está resolvido:</b> os dois só souberam porque <b>você avisou em cada conversa</b>. O hook não alcança sessão que já está aberta — e é justamente o agente produtivo que fica horas com ela aberta. Enquanto isso não mudar, você continua sendo o carteiro dos casos urgentes. É a próxima coisa a atacar."
   ]
  },
- "esperas": [
-  {
-   "tempo": "🚨",
-   "frio": true,
-   "texto": "<b>Colisão de migration</b> entre Vendas e Marketing (mesmo <code>20260818090000</code>) e a <b>reversão da criptografia</b> que o Marketing precisa desfazer. Os dois estão com sessão aberta, então o hook não dispara — <b>um toque em cada conversa resolve</b>. Nenhuma das duas migrations foi ao banco, então nada está perdido.",
-   "acao": "avisar Vendas e Marketing"
-  }
- ]
+ "esperas": []
 }
 </script>
 
@@ -1143,13 +1153,15 @@
     h += '<div class="corpo-agente">';
 
     h += '<div class="bloco"><div class="rot">🔄 Fazendo agora</div>';
-    a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
+    // o "desde quando" vem logo abaixo do título: é a primeira coisa que
+    // situa o leitor antes de ele ler o que o agente está fazendo.
     if (a.inicio) {
       var dec = a.inicio.iso ? decorrido(a.inicio.iso) : "";
       h += '<span class="inicio">Início em: <b>' + esc(a.inicio.rotulo) + "</b>" +
            (dec ? " (" + dec + ")" : "") +
            (a.inicio.nota ? " · " + esc(a.inicio.nota) : "") + "</span>";
     }
+    a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
     h += "</div>";
 
     h += '<div class="bloco"><div class="rot">Próxima tarefa</div>' +
@@ -1158,7 +1170,8 @@
     h += "</div>";
 
     // fechado por padrão: o card mostra o presente, o histórico fica a um clique
-    h += '<div class="bloco"><details><summary>Já entregou · ' + a.entregue.length + "</summary><ul>";
+    h += '<div class="bloco"><details><summary><span class="botao-hist">✅ Já entregou · ' +
+         a.entregue.length + "</span></summary><ul>";
     a.entregue.forEach(function (i) {
       var texto = typeof i === "string" ? i : i.t;
       var quando = typeof i === "string" ? "" : i.q;
