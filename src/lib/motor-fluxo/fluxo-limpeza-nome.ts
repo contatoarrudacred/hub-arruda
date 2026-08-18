@@ -19,9 +19,9 @@ import { tipoEtapaDb } from "./db";
 import { extrairDadosAbertura } from "./extracao";
 import type { ConteudoEtapa, DadosConversa, EtapaCarregada, MensagemEtapa } from "./tipos";
 import {
-  buscarFaixaPreco,
   calcularFormulaAltoValor,
   classificarAltoValor,
+  combinarFaixasPacote,
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
   montarPropostaAltoValorSelfService,
@@ -792,16 +792,34 @@ function resumoTipoDocumento(documentosTiposCsv: string): string {
   return "cpf_e_cnpj";
 }
 
-/** Soma o valor de cada documento — decisão de Luiz (17/08/2026): preço do pacote é a soma das faixas de cada documento individual, não uma faixa única sobre o total combinado (ver montarPropostaPacote). */
-function somarValoresDocumentos(documentosValoresCsv: string): number {
+/** Cada valor bruto capturado em ln_passo6 (`documentos_valores`) já normalizado — "não sei" cai no valor padrão conservador (`VALOR_PADRAO_DOCUMENTO_NAO_SEI`), mesma regra pra todo mundo que usa este CSV. */
+function parseValoresDocumentos(documentosValoresCsv: string): number[] {
   return documentosValoresCsv
     .split(",")
     .filter(Boolean)
-    .reduce((soma, valorBruto) => {
-      if (valorBruto === "nao_sei") return soma + VALOR_PADRAO_DOCUMENTO_NAO_SEI;
+    .map((valorBruto) => {
+      if (valorBruto === "nao_sei") return VALOR_PADRAO_DOCUMENTO_NAO_SEI;
       const numero = Number(valorBruto);
-      return soma + (Number.isFinite(numero) ? numero : VALOR_PADRAO_DOCUMENTO_NAO_SEI);
-    }, 0);
+      return Number.isFinite(numero) ? numero : VALOR_PADRAO_DOCUMENTO_NAO_SEI;
+    });
+}
+
+/** Soma o valor de cada documento — usado pra classificar alto valor/baixo valor do pacote inteiro (`criarCalculadoraDadosDerivados`), não pra precificar (isso usa a faixa de cada documento, ver `valoresPorDocumento` + `combinarFaixasPacote`, pacote Fase 4, 17/08/2026). */
+function somarValoresDocumentos(documentosValoresCsv: string): number {
+  return parseValoresDocumentos(documentosValoresCsv).reduce((soma, valor) => soma + valor, 0);
+}
+
+/**
+ * Valor de CADA documento do pacote, um item por documento — pacote Fase 4 (17/08/2026): antes, o
+ * preço vinha de uma faixa única sobre a soma de todos os documentos; agora cada documento é
+ * precificado pela sua própria faixa (`combinarFaixasPacote`, regras-limpeza-nome.ts), somadas.
+ * Sem `documentos_valores` (fluxo antigo/single-valor, `resolverValorRestricao`), cai num array de
+ * um item só — comportamento idêntico ao de antes desta mudança.
+ */
+function valoresPorDocumento(dados: DadosConversa): number[] {
+  if (dados.documentos_valores) return parseValoresDocumentos(dados.documentos_valores);
+  const valor = resolverValorRestricao(dados);
+  return valor === null ? [] : [valor];
 }
 
 export function criarCalculadoraDadosDerivados(
@@ -903,9 +921,11 @@ export function criarResolverMensagensDinamicas(
         return montarPropostaBaixoValor(config).map(t);
       }
       if (valorRestricao === null) return null;
-      const faixa = buscarFaixaPreco(valorRestricao, faixasPrecos);
-      if (!faixa) return null;
-      return montarPropostaPorFaixa(faixa, dados.prioridade_fechar_hoje === "sim").map(t);
+      // Pacote Fase 4 (17/08/2026): preço pela faixa de CADA documento, somadas — não mais uma
+      // faixa única sobre o valor total combinado (ver combinarFaixasPacote).
+      const faixaCombinada = combinarFaixasPacote(valoresPorDocumento(dados), faixasPrecos);
+      if (!faixaCombinada) return null;
+      return montarPropostaPorFaixa(faixaCombinada, dados.prioridade_fechar_hoje === "sim").map(t);
     }
 
     if (codigo === "ln_passo15_alto_valor") {
