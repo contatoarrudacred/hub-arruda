@@ -4,15 +4,15 @@
 
 **Goal:** Construir o núcleo do pipeline de conteúdo (geração → revisão → publicação no WordPress), rodando sem aprovação humana, com circuit breaker de tentativas.
 
-**Architecture:** Vercel Workflow SDK orquestrando 3 steps determinísticos/com IA (Estrategista, Escritor, Revisor) + 1 adaptador de canal (WordPress), disparado por rota de cron protegida por `CRON_SECRET`, com lock por matriz reaproveitando `cron_locks` já existente.
+**Architecture (revisado 17/08/2026):** função comum `processarProximaPauta` orquestrando Estrategista, Escritor, Revisor e o adaptador de canal (WordPress) — sem SDK de orquestração externo, reaproveitando o padrão status+tentativas já usado pelo cron de follow-up do WhatsApp. Disparada por rota de cron protegida por `CRON_SECRET`, com lock por matriz reaproveitando `cron_locks` já existente. Cada tick processa uma tentativa completa; reprovação devolve a pauta pro status `pendente` e o próximo tick tenta de novo. (Versão original usava Vercel Workflow SDK — abandonado por incompatibilidade com Node 24, ver spec seção 3.1.)
 
-**Tech Stack:** Next.js 16 / TypeScript, Supabase (Postgres), `@anthropic-ai/sdk` (já instalado, modelo `claude-sonnet-5`), `workflow` (Vercel Workflow SDK, novo), Vitest.
+**Tech Stack:** Next.js 16 / TypeScript, Supabase (Postgres), `@anthropic-ai/sdk` (já instalado, modelo `claude-sonnet-5`), Vitest — sem dependência de orquestração nova.
 
 **Spec:** `docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md` e `docs/MODULO_MARKETING_CONTEUDO_ARRUDACRED.md`
 
 ## Global Constraints
 
-- Nada fica público sem passar pelo estágio de Revisão antes de Publicação — a ordem dos steps no workflow nunca inverte isso.
+- Nada fica público sem passar pelo estágio de Revisão antes de Publicação — a ordem das etapas em `processarProximaPauta` nunca inverte isso.
 - Nenhuma credencial em texto no repositório — `ANTHROPIC_API_KEY`, credenciais do WordPress e `CRON_SECRET` só via `process.env`.
 - Limite de tentativas por pauta é configurável por propriedade (`propriedades_digitais.config_pipeline.max_tentativas`), padrão 3 — nunca hardcoded no código do workflow.
 - Nomenclatura em português, seguindo o padrão já usado em `src/lib/motor-fluxo/` (funções, tipos, comentários).
@@ -1153,66 +1153,91 @@ git commit -m "feat(marketing): adaptador de canal WordPress"
 
 ---
 
-### Task 8: Workflow de orquestração
+### Task 8: Processador de pauta — geração até publicação (revisado 17/08/2026, sem Workflow SDK)
+
+> **Substitui a versão anterior desta task**, que usava o Vercel Workflow SDK. Na implementação real, o empacotamento de steps do SDK esbarrou numa incompatibilidade entre Node 24 e uma dependência transitiva (`builtin-modules`, `ERR_IMPORT_ATTRIBUTE_MISSING`) sem correção viável sem mudar a versão de Node do projeto/Vercel — mudança que afetaria todos os módulos já em produção, não só este. Decisão de Luiz (17/08/2026): migrar pra uma função comum, sem dependência nova, reaproveitando o mesmo padrão status+tentativas que os repositórios da Task 3 já implementavam desde o início (nenhum deles era específico do SDK) — mesmo espírito do cron de follow-up do WhatsApp (`src/lib/motor-fluxo/motor-followup.ts`), já validado em produção. Ver `docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md` seção 3.1 pro raciocínio completo.
 
 **Files:**
-- Create: `src/lib/marketing/workflows/gerar-publicar-conteudo.ts`
-- Test: `src/lib/marketing/workflows/gerar-publicar-conteudo.integration.test.ts`
-- Modify: `package.json` (adicionar dependência `workflow`)
-- Modify: `next.config.ts` (envolver com `withWorkflow`)
-- Create: `vitest.integration.config.ts`
+- Modify: `src/lib/marketing/repositorio.ts` (adicionar `marcarPautaPublicada`)
+- Modify: `src/lib/marketing/repositorio.test.ts` (teste da função nova)
+- Create: `src/lib/marketing/processar-pauta.ts`
+- Test: `src/lib/marketing/processar-pauta.test.ts`
 
 **Interfaces:**
-- Consumes: `selecionarPauta` (Task 4), `gerarConteudo` (Task 5), `revisarConteudo` (Task 6), `criarAdaptadorWordPress` (Task 7), `carregarPropriedade`/`carregarChecklistAtivo`/`criarPost`/`atualizarStatusPost`/`registrarReprovacaoPauta`/`marcarPautaBloqueada` (Task 3)
-- Produces: `gerarPublicarConteudoWorkflow(matrizConteudoId: string, propriedadeId: string)` — usado pela rota de cron (Task 9)
+- Consumes: `selecionarPauta` (Task 4), `gerarConteudo` (Task 5), `revisarConteudo` (Task 6), `criarAdaptadorWordPress` (Task 7), `carregarPropriedade`/`carregarChecklistAtivo`/`criarPost`/`atualizarStatusPost`/`registrarReprovacaoPauta`/`marcarPautaBloqueada`/`marcarPautaPublicada` (Task 3 + esta task)
+- Produces: `processarProximaPauta(matrizConteudoId: string, propriedadeId: string)` — usado pela rota de cron (Task 9). Retorna `{ status: "sem_pauta" | "bloqueada" | "reprovado" | "publicado", ... }`.
 
-- [ ] **Step 1: Instalar o Workflow SDK**
-
-Run: `pnpm add workflow @workflow/next`
-Expected: adicionado em `dependencies` no `package.json`.
-
-- [ ] **Step 2: Ligar o Workflow SDK ao Next.js**
+- [ ] **Step 1: Escrever o teste de `marcarPautaPublicada`**
 
 ```typescript
-// next.config.ts — localizar o export existente e envolver com withWorkflow
-import { withWorkflow } from "workflow/next";
-// ... resto do next.config.ts existente, sem alterar o que já está lá ...
+// src/lib/marketing/repositorio.test.ts — acrescentar ao arquivo já existente
+describe("marcarPautaPublicada", () => {
+  it("marca a pauta como publicada", async () => {
+    const { matrizId } = await criarPropriedadeDeTeste();
+    const supabase = createAdminClient();
+    const { data: pauta } = await supabase
+      .from("pautas")
+      .insert({
+        matriz_conteudo_id: matrizId,
+        palavra_chave_principal: "teste publicacao",
+        angulo: "informacional_direto",
+        funil: "topo",
+        status: "em_producao",
+      })
+      .select("id")
+      .single();
 
-export default withWorkflow(nextConfig);
-```
+    await marcarPautaPublicada(pauta!.id);
 
-- [ ] **Step 3: Criar a config de teste de integração**
-
-```typescript
-// vitest.integration.config.ts
-import { defineConfig } from "vitest/config";
-import { workflow } from "@workflow/vitest";
-
-export default defineConfig({
-  plugins: [workflow()],
-  test: {
-    include: ["src/**/*.integration.test.ts"],
-    testTimeout: 60_000,
-  },
+    const { data: atualizada } = await supabase.from("pautas").select("status").eq("id", pauta!.id).single();
+    expect(atualizada?.status).toBe("publicado");
+  });
 });
 ```
 
-Run: `pnpm add -D @workflow/vitest`
+(Acrescentar `marcarPautaPublicada` ao import de `./repositorio` no topo do arquivo de teste.)
 
-- [ ] **Step 4: Escrever o teste de integração do workflow**
+- [ ] **Step 2: Rodar o teste e confirmar que falha**
+
+Run: `pnpm test repositorio`
+Expected: FAIL — `marcarPautaPublicada` não existe em `./repositorio`.
+
+- [ ] **Step 3: Implementar `marcarPautaPublicada`**
 
 ```typescript
-// src/lib/marketing/workflows/gerar-publicar-conteudo.integration.test.ts
-import { describe, expect, it, vi } from "vitest";
-import { start } from "workflow/api";
-import { gerarPublicarConteudoWorkflow } from "./gerar-publicar-conteudo";
-import * as estrategista from "../estrategista";
-import * as escritor from "../escritor";
-import * as revisor from "../revisor";
-import * as repositorio from "../repositorio";
-import { criarAdaptadorWordPress } from "../canais/wordpress";
+// src/lib/marketing/repositorio.ts — acrescentar ao arquivo já existente, junto das outras funções de marcação de status
+export async function marcarPautaPublicada(pautaId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("pautas").update({ status: "publicado" }).eq("id", pautaId);
+  if (error) throw new Error(`Falha ao marcar pauta ${pautaId} como publicada: ${error.message}`);
+}
+```
 
-vi.mock("../canais/wordpress");
+- [ ] **Step 4: Rodar o teste e confirmar que passa**
+
+Run: `pnpm test repositorio`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/lib/marketing/repositorio.ts src/lib/marketing/repositorio.test.ts
+git commit -m "feat(marketing): adiciona marcarPautaPublicada ao repositório"
+```
+
+- [ ] **Step 6: Escrever o teste de `processarProximaPauta`**
+
+```typescript
+// src/lib/marketing/processar-pauta.test.ts
+import { describe, expect, it, vi } from "vitest";
+import { processarProximaPauta } from "./processar-pauta";
+import * as estrategista from "./estrategista";
+import * as escritor from "./escritor";
+import * as revisor from "./revisor";
+import * as repositorio from "./repositorio";
+import { criarAdaptadorWordPress } from "./canais/wordpress";
+
+vi.mock("./canais/wordpress");
 
 const pautaFalsa = {
   id: "pauta-1",
@@ -1228,16 +1253,18 @@ const pautaFalsa = {
   motivoUltimaReprovacao: null,
 };
 
-describe("gerarPublicarConteudoWorkflow", () => {
+const propriedadeFalsa = {
+  id: "prop-1",
+  nome: "Site Teste",
+  urlBase: "https://teste.exemplo.com",
+  tipoCms: "wordpress" as const,
+  maxTentativas: 3,
+};
+
+describe("processarProximaPauta", () => {
   it("publica quando a revisão aprova de primeira", async () => {
     vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
-    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue({
-      id: "prop-1",
-      nome: "Site Teste",
-      urlBase: "https://teste.exemplo.com",
-      tipoCms: "wordpress",
-      maxTentativas: 3,
-    });
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
       titulo: "Como Limpar o Nome no Serasa",
@@ -1249,6 +1276,7 @@ describe("gerarPublicarConteudoWorkflow", () => {
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
     vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -1257,22 +1285,15 @@ describe("gerarPublicarConteudoWorkflow", () => {
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
-    const run = await start(gerarPublicarConteudoWorkflow, ["matriz-1", "prop-1"]);
-    const resultado = await run.returnValue;
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
     expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
     expect(adaptadorFalso.aprovarPublicar).toHaveBeenCalledWith("123");
   });
 
-  it("regenera quando a revisão reprova, sem publicar", async () => {
+  it("reprova sem publicar quando o score da revisão é baixo", async () => {
     vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
-    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue({
-      id: "prop-1",
-      nome: "Site Teste",
-      urlBase: "https://teste.exemplo.com",
-      tipoCms: "wordpress",
-      maxTentativas: 1, // força esgotar na primeira reprovação, pra teste ficar rápido
-    });
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
       titulo: "Rascunho fraco",
@@ -1282,67 +1303,84 @@ describe("gerarPublicarConteudoWorkflow", () => {
       slug: "rascunho-fraco",
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: false, score: 40, motivo: "Muito curto." });
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
+    expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
+  });
+
+  it("bloqueia sem gerar quando o limite de tentativas já foi esgotado", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue({
+      ...pautaFalsa,
+      tentativas: 3,
+      motivoUltimaReprovacao: "Muito curto.",
+    });
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     const bloquearSpy = vi.spyOn(repositorio, "marcarPautaBloqueada").mockResolvedValue(undefined);
-    vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    const gerarSpy = vi.spyOn(escritor, "gerarConteudo");
 
-    const run = await start(gerarPublicarConteudoWorkflow, ["matriz-1", "prop-1"]);
-    const resultado = await run.returnValue;
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
-    expect(resultado.status).toBe("bloqueada");
+    expect(resultado).toEqual({ status: "bloqueada", pautaId: "pauta-1" });
     expect(bloquearSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
+    expect(gerarSpy).not.toHaveBeenCalled();
   });
 });
 ```
 
-- [ ] **Step 5: Rodar o teste e confirmar que falha**
+- [ ] **Step 7: Rodar o teste e confirmar que falha**
 
-Run: `pnpm exec vitest run --config vitest.integration.config.ts`
-Expected: FAIL — `./gerar-publicar-conteudo` não existe.
+Run: `pnpm test processar-pauta`
+Expected: FAIL — `./processar-pauta` não existe.
 
-- [ ] **Step 6: Implementar o workflow**
+- [ ] **Step 8: Implementar `processarProximaPauta`**
 
 ```typescript
-// src/lib/marketing/workflows/gerar-publicar-conteudo.ts
-// Orquestração dos 4 estágios via Vercel Workflow SDK — ver
-// docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md seção 3.1.
-// Nada fica público até o estágio de publicação; reprovação em qualquer revisão volta pro início
-// do loop (regenera), nunca "despublica" — porque nada externo ficou visível antes da aprovação.
+// src/lib/marketing/processar-pauta.ts
+// Processa uma tentativa completa (gerar → revisar → publicar) de uma pauta por matriz — ver
+// docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md seção 3.1. Chamado uma
+// vez por tick do cron (Task 9). Nada fica público até a publicação de verdade; reprovação em
+// qualquer etapa volta a pauta pro status "pendente" (registrarReprovacaoPauta) — o próximo tick
+// do cron re-seleciona a mesma pauta e tenta de novo, sem precisar de máquina de estados própria
+// além do que já está no banco (status + tentativas).
 
-import { selecionarPauta as selecionarPautaOriginal } from "../estrategista";
-import { gerarConteudo as gerarConteudoOriginal } from "../escritor";
-import { revisarConteudo as revisarConteudoOriginal } from "../revisor";
-import { criarAdaptadorWordPress } from "../canais/wordpress";
+import { selecionarPauta } from "./estrategista";
+import { gerarConteudo } from "./escritor";
+import { revisarConteudo } from "./revisor";
+import { criarAdaptadorWordPress } from "./canais/wordpress";
 import {
   atualizarStatusPost,
   carregarChecklistAtivo,
   carregarPropriedade,
   criarPost,
   marcarPautaBloqueada,
+  marcarPautaPublicada,
   registrarReprovacaoPauta,
-} from "../repositorio";
-import type { ConteudoGerado, PautaCarregada } from "../tipos";
+} from "./repositorio";
 
-async function selecionarPautaStep(matrizConteudoId: string): Promise<PautaCarregada | null> {
-  "use step";
-  return selecionarPautaOriginal(matrizConteudoId);
-}
+export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
+  const propriedade = await carregarPropriedade(propriedadeId);
+  const pauta = await selecionarPauta(matrizConteudoId);
+  if (!pauta) return { status: "sem_pauta" as const };
 
-async function gerarConteudoStep(pauta: PautaCarregada, propriedadeId: string): Promise<ConteudoGerado> {
-  "use step";
+  if (pauta.tentativas >= propriedade.maxTentativas) {
+    await marcarPautaBloqueada(pauta.id, pauta.motivoUltimaReprovacao ?? "Limite de tentativas esgotado.");
+    return { status: "bloqueada" as const, pautaId: pauta.id };
+  }
+
   const checklist = await carregarChecklistAtivo(propriedadeId);
-  return gerarConteudoOriginal(pauta, checklist);
-}
+  const conteudo = await gerarConteudo(pauta, checklist);
+  const revisao = await revisarConteudo(conteudo, checklist);
 
-async function revisarConteudoStep(conteudo: ConteudoGerado, propriedadeId: string) {
-  "use step";
-  const checklist = await carregarChecklistAtivo(propriedadeId);
-  return revisarConteudoOriginal(conteudo, checklist);
-}
+  if (!revisao.aprovado) {
+    await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+    return { status: "reprovado" as const, pautaId: pauta.id };
+  }
 
-async function publicarWordPressStep(conteudo: ConteudoGerado, pautaId: string, propriedadeId: string, urlBase: string) {
-  "use step";
-  const post = await criarPost({ pautaId, propriedadeId, conteudo, scoreQa: 0 });
-  const adaptador = criarAdaptadorWordPress(urlBase);
+  const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
+  const adaptador = criarAdaptadorWordPress(propriedade.urlBase);
   const rascunho = await adaptador.criarRascunho({
     titulo: conteudo.titulo,
     corpoHtml: conteudo.conteudoHtml,
@@ -1350,94 +1388,47 @@ async function publicarWordPressStep(conteudo: ConteudoGerado, pautaId: string, 
     metaTitle: conteudo.metaTitle,
     metaDescription: conteudo.metaDescription,
   });
+
   const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
   if (!verificacao.ok) {
     await atualizarStatusPost(post.id, "falhou");
-    return { aprovado: false, motivo: verificacao.detalhes ?? "Rascunho não conforme no WordPress." };
+    await registrarReprovacaoPauta(pauta.id, verificacao.detalhes ?? "Rascunho não conforme no WordPress.");
+    return { status: "reprovado" as const, pautaId: pauta.id };
   }
+
   const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
   await atualizarStatusPost(post.id, "publicado", {
     canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
     publicadoEm: new Date().toISOString(),
   });
-  return { aprovado: true, url: publicado.urlPublicada };
-}
+  await marcarPautaPublicada(pauta.id);
 
-async function registrarReprovacaoStep(pautaId: string, motivo: string): Promise<void> {
-  "use step";
-  await registrarReprovacaoPauta(pautaId, motivo);
-}
-
-async function marcarBloqueadaStep(pautaId: string, motivo: string): Promise<void> {
-  "use step";
-  await marcarPautaBloqueada(pautaId, motivo);
-}
-
-async function carregarPropriedadeStep(propriedadeId: string) {
-  "use step";
-  return carregarPropriedade(propriedadeId);
-}
-
-export async function gerarPublicarConteudoWorkflow(matrizConteudoId: string, propriedadeId: string) {
-  "use workflow";
-
-  const pauta = await selecionarPautaStep(matrizConteudoId);
-  if (!pauta) return { status: "sem_pauta" as const };
-
-  const propriedade = await carregarPropriedadeStep(propriedadeId);
-
-  let tentativas = 0;
-  let motivoUltimaReprovacao = "";
-
-  while (tentativas < propriedade.maxTentativas) {
-    const conteudo = await gerarConteudoStep(pauta, propriedadeId);
-    const revisao = await revisarConteudoStep(conteudo, propriedadeId);
-
-    if (!revisao.aprovado) {
-      tentativas++;
-      motivoUltimaReprovacao = revisao.motivo ?? "Reprovado sem motivo detalhado.";
-      await registrarReprovacaoStep(pauta.id, motivoUltimaReprovacao);
-      continue;
-    }
-
-    const publicacao = await publicarWordPressStep(conteudo, pauta.id, propriedadeId, propriedade.urlBase);
-    if (!publicacao.aprovado) {
-      tentativas++;
-      motivoUltimaReprovacao = publicacao.motivo ?? "Falha ao publicar no WordPress.";
-      await registrarReprovacaoStep(pauta.id, motivoUltimaReprovacao);
-      continue;
-    }
-
-    return { status: "publicado" as const, url: publicacao.url! };
-  }
-
-  await marcarBloqueadaStep(pauta.id, motivoUltimaReprovacao);
-  return { status: "bloqueada" as const, pautaId: pauta.id };
+  return { status: "publicado" as const, url: publicado.urlPublicada };
 }
 ```
 
-- [ ] **Step 7: Rodar o teste e confirmar que passa**
+- [ ] **Step 9: Rodar o teste e confirmar que passa**
 
-Run: `pnpm exec vitest run --config vitest.integration.config.ts`
-Expected: PASS — os 2 cenários (publicado, bloqueada).
+Run: `pnpm test processar-pauta`
+Expected: PASS — os 3 cenários (publicado, reprovado, bloqueada).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add src/lib/marketing/workflows/ next.config.ts vitest.integration.config.ts package.json pnpm-lock.yaml
-git commit -m "feat(marketing): workflow de orquestração dos 4 estágios via Vercel Workflow SDK"
+git add src/lib/marketing/processar-pauta.ts src/lib/marketing/processar-pauta.test.ts
+git commit -m "feat(marketing): processarProximaPauta orquestra geração até publicação sem SDK externo"
 ```
 
 ---
 
-### Task 9: Rota de cron
+### Task 9: Rota de cron (revisado 17/08/2026 — chama `processarProximaPauta` direto, sem SDK)
 
 **Files:**
 - Create: `src/app/api/cron/marketing-pipeline/route.ts`
 - Test: `src/app/api/cron/marketing-pipeline/route.test.ts`
 
 **Interfaces:**
-- Consumes: `gerarPublicarConteudoWorkflow` de `../../../../lib/marketing/workflows/gerar-publicar-conteudo` (Task 8), `start` de `workflow/api`, `createAdminClient` de `@/lib/supabase/admin`, `fn_tentar_lock_cron`/`fn_liberar_lock_cron` (RPCs já existentes)
+- Consumes: `processarProximaPauta` de `@/lib/marketing/processar-pauta` (Task 8), `createAdminClient` de `@/lib/supabase/admin`, `fn_tentar_lock_cron`/`fn_liberar_lock_cron` (RPCs já existentes)
 
 - [ ] **Step 1: Escrever o teste**
 
@@ -1446,10 +1437,9 @@ git commit -m "feat(marketing): workflow de orquestração dos 4 estágios via V
 import { describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { start } from "workflow/api";
+import * as processarPauta from "@/lib/marketing/processar-pauta";
 
 vi.mock("@/lib/supabase/admin");
-vi.mock("workflow/api");
 
 function criarSupabaseFalso(matrizes: { id: string; propriedade_id: string }[]) {
   return {
@@ -1474,14 +1464,17 @@ describe("GET /api/cron/marketing-pipeline", () => {
     expect(resposta.status).toBe(401);
   });
 
-  it("dispara o workflow para cada matriz ativa, com lock por matriz", async () => {
+  it("processa uma tentativa por matriz ativa, com lock por matriz", async () => {
     process.env.CRON_SECRET = "segredo-certo";
     const supabaseFalso = criarSupabaseFalso([
       { id: "matriz-1", propriedade_id: "prop-1" },
       { id: "matriz-2", propriedade_id: "prop-2" },
     ]);
     vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
-    vi.mocked(start).mockResolvedValue({ runId: "run-1" } as never);
+    vi.spyOn(processarPauta, "processarProximaPauta").mockResolvedValue({
+      status: "publicado",
+      url: "https://x.com/post",
+    });
 
     const request = new Request("https://x.com/api/cron/marketing-pipeline", {
       headers: { authorization: "Bearer segredo-certo" },
@@ -1490,19 +1483,20 @@ describe("GET /api/cron/marketing-pipeline", () => {
     const resposta = await GET(request);
     const corpo = await resposta.json();
 
-    expect(corpo.disparados).toEqual(["matriz-1", "matriz-2"]);
-    expect(start).toHaveBeenCalledTimes(2);
+    expect(corpo.resultados).toEqual({ "matriz-1": "publicado", "matriz-2": "publicado" });
+    expect(processarPauta.processarProximaPauta).toHaveBeenCalledTimes(2);
     expect(supabaseFalso.rpc).toHaveBeenCalledWith("fn_tentar_lock_cron", {
       p_id: "marketing-pipeline-matriz-1",
-      p_duracao_segundos: 1800,
+      p_duracao_segundos: 240,
     });
   });
 
-  it("não dispara matriz cujo lock já está em uso", async () => {
+  it("não processa matriz cujo lock já está em uso", async () => {
     process.env.CRON_SECRET = "segredo-certo";
     const supabaseFalso = criarSupabaseFalso([{ id: "matriz-1", propriedade_id: "prop-1" }]);
     supabaseFalso.rpc = vi.fn().mockResolvedValue({ data: false });
     vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+    const processarSpy = vi.spyOn(processarPauta, "processarProximaPauta");
 
     const request = new Request("https://x.com/api/cron/marketing-pipeline", {
       headers: { authorization: "Bearer segredo-certo" },
@@ -1511,8 +1505,8 @@ describe("GET /api/cron/marketing-pipeline", () => {
     const resposta = await GET(request);
     const corpo = await resposta.json();
 
-    expect(corpo.disparados).toEqual([]);
-    expect(start).not.toHaveBeenCalled();
+    expect(corpo.resultados).toEqual({});
+    expect(processarSpy).not.toHaveBeenCalled();
   });
 });
 ```
@@ -1528,13 +1522,14 @@ Expected: FAIL — `./route` não existe.
 // src/app/api/cron/marketing-pipeline/route.ts
 // Gatilho do pipeline de conteúdo, via cron-job.org (Vercel Hobby não libera cron nativo com
 // frequência > 1x/dia) — mesmo padrão de src/app/api/cron/followups/route.ts, mas com lock POR
-// MATRIZ em vez de lock global: cada matriz roda em paralelo sem travar as outras.
+// MATRIZ em vez de lock global: cada matriz roda em paralelo sem travar as outras. Cada tick
+// processa uma tentativa completa (gerar→revisar→publicar) de uma pauta por matriz — ver
+// docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md seção 3.1.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { start } from "workflow/api";
-import { gerarPublicarConteudoWorkflow } from "@/lib/marketing/workflows/gerar-publicar-conteudo";
+import { processarProximaPauta } from "@/lib/marketing/processar-pauta";
 
-const DURACAO_LOCK_SEGUNDOS = 1800; // gerar+revisar+publicar pode levar minutos
+const DURACAO_LOCK_SEGUNDOS = 240; // uma tentativa completa — bem mais curto que o loop inteiro de retries
 
 export async function GET(request: Request) {
   const segredo = process.env.CRON_SECRET;
@@ -1545,7 +1540,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const { data: matrizes } = await supabase.from("matrizes_conteudo").select("id, propriedade_id").eq("ativo", true);
 
-  const disparados: string[] = [];
+  const resultados: Record<string, string> = {};
   for (const matriz of matrizes ?? []) {
     const idLock = `marketing-pipeline-${matriz.id}`;
     const { data: obtido } = await supabase.rpc("fn_tentar_lock_cron", {
@@ -1555,14 +1550,14 @@ export async function GET(request: Request) {
     if (!obtido) continue;
 
     try {
-      await start(gerarPublicarConteudoWorkflow, [matriz.id, matriz.propriedade_id]);
-      disparados.push(matriz.id);
+      const resultado = await processarProximaPauta(matriz.id, matriz.propriedade_id);
+      resultados[matriz.id] = resultado.status;
     } finally {
       await supabase.rpc("fn_liberar_lock_cron", { p_id: idLock });
     }
   }
 
-  return Response.json({ disparados });
+  return Response.json({ resultados });
 }
 ```
 
@@ -1575,7 +1570,7 @@ Expected: PASS — os 3 cenários.
 
 ```bash
 git add src/app/api/cron/marketing-pipeline/
-git commit -m "feat(marketing): rota de cron dispara o pipeline por matriz de conteúdo"
+git commit -m "feat(marketing): rota de cron processa uma tentativa por matriz de conteúdo"
 ```
 
 ---
