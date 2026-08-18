@@ -29,6 +29,7 @@ Sistema único de gestão para a ArrudaCred, cobrindo **Marketing, Comercial, Ju
 > - Os agentes de conteúdo da QMARKA (A1-A9b — Estrategista, Escritor, Imagem, Links, QA, Postador, Distribuidor, Backlinks, Retrofit, Atualização Semestral) **ainda não têm equivalente no nosso levantamento** — viram o núcleo da especificação do módulo Marketing, próxima frente de trabalho.
 
 ### 1.1 Módulo Comercial (CRM + Vendas)
+> 📄 Design do módulo Vendas (cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda, handoff pra Operação): `superpowers/specs/2026-08-17-modulo-vendas-design.md` — spec validada com Luiz em 17/08/2026, ainda não implementada.
 > ⚠️ Princípio de design que atravessa este módulo inteiro: **o sistema é multi-produto desde o início** (limpa nome é o principal hoje, mas não é o único — ver seção 8.8). Nada aqui deve ser modelado como se "limpa nome" fosse o único produto possível.
 > ✅ **Reconciliação com o planejamento da QMARKA (12/08/2026):** os agentes A10 (Resgate de Legado), A11 (Gestão de Funil WhatsApp) e A12 (Cobrança Financeira) descritos no plano de crescimento orgânico já estão majoritariamente cobertos pelo que desenhamos:
 > - **A11 ≈ nosso motor de follow-up + Kanban** — régua de follow-up, etiquetas de funil e encerramento automático em D+10 já batem com o que fechamos (`SCRIPT_LIMPANOME_SERASA_SPC.md`, premissas gerais)
