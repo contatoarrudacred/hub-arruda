@@ -51,7 +51,12 @@ const MODULOS: Modulo[] = [
     chave: "marketing",
     rotulo: "Marketing",
     icone: "📣",
-    itens: [{ tipo: "em_breve", rotulo: "Dashboard", icone: "📊" }],
+    itens: [
+      { tipo: "link", rotulo: "Visão Geral", href: "/admin/marketing", icone: "📊" },
+      { tipo: "link", rotulo: "Monitor", href: "/admin/marketing/monitor", icone: "🛰️" },
+      { tipo: "link", rotulo: "Fila de Pautas", href: "/admin/marketing/pautas", icone: "🗂️" },
+      { tipo: "link", rotulo: "Posts Publicados", href: "/admin/marketing/posts", icone: "📰" },
+    ],
   },
   {
     chave: "configuracoes",
@@ -78,6 +83,16 @@ const MODULOS: Modulo[] = [
           { tipo: "link", rotulo: "Agendas de Follow-up", href: "/admin/agendas", icone: "⏰" },
           { tipo: "link", rotulo: "Respostas prontas", href: "/admin/respostas-prontas", icone: "⚡" },
           { tipo: "link", rotulo: "Roteamento de lead novo", href: "/admin/roteamento", icone: "🧭" },
+        ],
+      },
+      {
+        tipo: "grupo",
+        rotulo: "Marketing",
+        itens: [
+          { tipo: "link", rotulo: "Propriedades Digitais", href: "/admin/configuracoes/marketing/propriedades", icone: "🌐" },
+          { tipo: "link", rotulo: "Matrizes de Conteúdo", href: "/admin/configuracoes/marketing/matrizes", icone: "🧩" },
+          { tipo: "link", rotulo: "Personas", href: "/admin/configuracoes/marketing/personas", icone: "🎭" },
+          { tipo: "link", rotulo: "Checklist de QA", href: "/admin/configuracoes/marketing/checklist", icone: "✅" },
         ],
       },
     ],
