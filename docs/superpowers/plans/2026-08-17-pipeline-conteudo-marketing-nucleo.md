@@ -1581,3 +1581,20 @@ git commit -m "feat(marketing): rota de cron processa uma tentativa por matriz d
 - **Construtor de Matriz de Conteúdo** — quem popula `matrizes_conteudo.eixos` e gera `pautas` novas; até lá, pautas são inseridas manualmente no banco para testar o pipeline de ponta a ponta.
 - **Navegação/telas de admin** (Marketing → Produção de Conteúdo, Configurações → Marketing → Geração de Conteúdo) — plan de UI separada, consome as tabelas desta plan.
 - **`CRON_SECRET` no cron-job.org** — configuração manual de Luiz (fora do código), mesmo processo já usado pro cron de follow-up.
+
+---
+
+## Task 10: Correções da revisão final de branch + Agente de Links (17/08/2026)
+
+A revisão final (whole-branch) achou 1 Critical e 6 Important. Luiz decidiu resolver tudo nesta leva, sem deixar nada pra "antes de ligar o cron". Registrado aqui como task única, sem quebra em steps TDD formais (é uma correção multi-arquivo, não uma feature nova isolada) — o controller despachou com instruções detalhadas diretamente.
+
+**Achados endereçados:**
+1. **Critical:** `pnpm test` escrevia no banco de produção real (sem Docker local, os testes de integração da Task 3 batiam direto no Supabase remoto). 168 linhas de teste já identificadas e apagadas do banco real antes desta correção. Fix: isolar testes que batem em banco real do `pnpm test` padrão (script `test:integration` separado) + teardown.
+2. **Important:** janela de publicação duplicada — se o registro pós-publicação falhar depois do WordPress já ter aceitado o post, o `catch` reprovava e gerava conteúdo duplicado no próximo ciclo. Fix: estreitar o que entra no `try`/gera reprovação.
+3. **Important:** rota de cron sem `maxDuration` — timeout mata a função no meio, pauta fica presa em `em_producao` pra sempre, sem reaproveitamento. Fix: `maxDuration` + reclaim de pautas `em_producao` antigas (nova coluna `atualizado_em` em `pautas`).
+4. **Important:** credencial única de WordPress global — quebraria com o segundo site. Fix: credenciais por propriedade (injetadas no adaptador, não lidas globalmente).
+5. **Important:** HTML gerado por IA publicado sem sanitização. Fix: `sanitize-html` com allowlist, preservando o `<script type="application/ld+json">` do Schema FAQPage.
+6. **Important:** `max_tokens` do Escritor pode truncar um artigo de 1800+ palavras sem detecção. Fix: aumentar limite + checar `stop_reason` + validar campos obrigatórios antes de `criarPost`.
+7. **Important (expandido por decisão de Luiz):** checklist pede itens que o Escritor não entrega (imagem, links internos). Imagem continua fase 2. Links internos: construir agora um Agente de Links determinístico (sem IA) — v1 simplificada (lista de "posts relacionados" ao final do artigo, não inserção contextual no meio do texto, que exigiria NLP mais sofisticado) — e ajustar o texto do item 7 do checklist (seção 5.2 do `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md`) pra descrever o que é de fato entregue.
+
+---
