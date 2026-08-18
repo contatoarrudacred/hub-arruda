@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { normalizarDocumento, tipoPessoaPorDocumento, validarDocumento } from "./documento";
+import { paraCaixaAlta } from "./mascaras";
 
 export type PessoaEncontrada = {
   id: string;
@@ -57,7 +58,7 @@ export async function criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: st
     .from("pessoas")
     .insert({
       tipo_pessoa: tipoPessoa,
-      nome_razao_social: entrada.nome,
+      nome_razao_social: paraCaixaAlta(entrada.nome),
       documento: documentoNormalizado,
       email: entrada.email,
       whatsapp: entrada.whatsapp,
