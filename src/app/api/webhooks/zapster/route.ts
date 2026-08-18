@@ -20,9 +20,12 @@ import {
 } from "@/lib/motor-fluxo/persistencia";
 import {
   carregarConfigPrecificacao,
+  carregarConfigRoteamento,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
+  listarRegrasRoteamentoAtivas,
 } from "@/lib/motor-fluxo/repositorio";
+import { resolverEtapaInicialLeadNovo } from "@/lib/motor-fluxo/roteamento-lead-novo";
 import { transcreverAudio } from "@/lib/motor-fluxo/transcricao-audio";
 import { enviarSequenciaWhatsapp } from "@/lib/whatsapp/enviar";
 
@@ -140,21 +143,26 @@ async function processarMensagemRecebida(
     let resultado;
     let dadosNovos;
     if (estado.etapaAtualCodigo === null) {
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
+
+      // Roteamento de lead novo (Bloco D/Fase 4, TELA_ATENDIMENTO_ARRUDACRED.md seção 5-B) — decide
+      // em qual etapa iniciar, ou se não deve responder sozinho (modo "manual", ou "palavra_chave"
+      // sem nenhuma regra batendo). A mensagem já foi registrada acima em qualquer caso — o card
+      // "Novo Lead" existe mesmo sem resposta automática.
+      const { modo, etapaFixaCodigo } = await carregarConfigRoteamento();
+      const regras = modo === "palavra_chave" ? await listarRegrasRoteamentoAtivas() : [];
+      const etapaInicial = resolverEtapaInicialLeadNovo(texto, modo, etapaFixaCodigo, regras);
+      if (etapaInicial === null) return;
+
       const dadosIniciais = criarExtratorAbertura()(texto);
       // O canal já forneceu o telefone (é de onde a mensagem veio) — não faz sentido perguntar de
       // novo (regra de checkpoint já respondido, engine.ts). Só o canal WhatsApp faz isso; outros
       // canais (widget do site, por exemplo) continuam perguntando normalmente.
       dadosIniciais.telefone = telefone;
-      const resultadoPercurso = iniciarFluxo(
-        "saudacao_inicial",
-        etapasPorCodigo,
-        dadosIniciais,
-        resolverMensagensDinamicas,
-        { saudacao: saudacaoPorHorario() },
-      );
-      resultado = resultadoPercurso;
+      resultado = iniciarFluxo(etapaInicial, etapasPorCodigo, dadosIniciais, resolverMensagensDinamicas, {
+        saudacao: saudacaoPorHorario(),
+      });
       dadosNovos = dadosIniciais;
-      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
     } else {
       const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
       await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
