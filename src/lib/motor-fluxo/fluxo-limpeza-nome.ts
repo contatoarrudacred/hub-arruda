@@ -137,20 +137,31 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
     },
   },
   {
+    // Justificativa de valor + limite de tentativas — PLANO_MESTRE seção 8.12 (decisão de Luiz,
+    // 17/08/2026): pedir e-mail sem dizer pra quê gerava resistência, e o checkpoint não tinha
+    // saída quando o lead recusava/insistia que não tinha. Mensagem agora explica o motivo de
+    // antemão (proposta por escrito, dicas de nome limpo/score, cupons — e pode parar de receber
+    // quando quiser); `opcional_apos_tentativas: 2` garante que nunca trava o funil.
     codigo: "abertura_email",
     ordem: 5,
     campoSalvo: "email",
     conteudo: {
       codigo: "abertura_email",
-      mensagens: [t("Para te atender melhor, preciso que me informe o seu e-mail:")],
+      mensagens: [
+        t("Pra eu te atender melhor, me confirma também seu e-mail:"),
+        t(
+          "É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
+        ),
+      ],
       aguarda_resposta: true,
       tipo_resposta: "email",
       proximo_codigo: "triagem_menu",
       kanban_subetapa: KANBAN_TRIAGEM,
+      opcional_apos_tentativas: 2,
       interpretacao_ia: {
         habilitado: true,
         instrucao:
-          "O lead pode escrever o e-mail com erros de digitação, espaços, ou por extenso (ex.: 'joao arroba gmail ponto com'). Extraia e normalize para o formato padrão nome@dominio.com. Se a mensagem claramente não contém um e-mail, marque como não interpretado.",
+          "O lead pode escrever o e-mail com erros de digitação, espaços, ou por extenso (ex.: 'joao arroba gmail ponto com'). Extraia e normalize para o formato padrão nome@dominio.com. Se a mensagem claramente não contém um e-mail (ex.: pergunta 'pra quê', diz que não tem, ou ignora o pedido), marque como não interpretado — não insista nem invente um e-mail.",
       },
     },
   },

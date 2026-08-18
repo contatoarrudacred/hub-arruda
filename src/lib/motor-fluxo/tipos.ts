@@ -141,6 +141,15 @@ export type ConteudoEtapa = {
    */
   kanban_subetapa?: string;
   interpretacao_ia?: ConfigInterpretacaoIA;
+  /**
+   * Checkpoint "opcional": depois de N tentativas seguidas sem reconhecer a resposta do lead
+   * (recusa, ignora, insiste que não tem), a etapa desiste e segue em frente como se tivesse sido
+   * respondida com valor vazio — nunca fica travando o funil esperando indefinidamente. Genérico,
+   * reaproveitável por qualquer checkpoint que precise da mesma regra (não é exclusivo de nenhum
+   * campo específico) — primeiro uso: `abertura_email`, PLANO_MESTRE seção 8.12. Omitido = nunca
+   * desiste, comportamento de sempre (repete a pergunta indefinidamente).
+   */
+  opcional_apos_tentativas?: number;
 };
 
 export type DadosConversa = Record<string, string>;
