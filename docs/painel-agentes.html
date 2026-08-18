@@ -249,6 +249,37 @@
     font-weight: 500;
   }
 
+  /* itens concluídos vêm fechados — clicar abre. Ocupam uma linha só. */
+  .tarefas details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 1px 0;
+  }
+  .tarefas details > summary::-webkit-details-marker { display: none; }
+  .tarefas details > summary::before {
+    content: "▸";
+    font-size: 11px;
+    color: var(--texto-fraco);
+    flex: none;
+    transition: transform .12s ease;
+  }
+  .tarefas details[open] > summary::before { content: "▾"; }
+  .tarefas details > summary:hover .titulo { color: var(--texto-suave); }
+  .tarefas details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .tarefas details > summary .resumo {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--texto-fraco);
+    flex: none;
+  }
+  .tarefas details .detalhe { padding-top: 4px; }
+  @media (prefers-reduced-motion: reduce) {
+    .tarefas details > summary::before { transition: none; }
+  }
+
   .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; align-items: center; }
   a.botao, button.botao {
     display: inline-block;
@@ -903,10 +934,22 @@
   }
 
   function tarefaHTML(t) {
+    // Item concluído vem fechado (<details>): a lista fica curta e o histórico
+    // continua a um clique. Item aberto continua sempre visível.
+    var fechavel = !!t.concluida;
+    var nResp = (t.respostas || []).length;
+
     var h = '<li class="' + (t.concluida ? "concluida" : "") + '" data-tarefa="' + esc(t.id) + '">';
     h += '<span class="quando ' + t.prazo + '">' + esc(t.prazoRot) + "</span>";
-    h += "<div>";
-    h += '<div class="titulo">' + esc(t.titulo) + "</div>";
+
+    if (fechavel) {
+      h += "<details><summary><span class=\"titulo\">" + esc(t.titulo) + "</span>";
+      if (nResp) h += '<span class="resumo">' + nResp + (nResp === 1 ? " resposta" : " respostas") + "</span>";
+      h += '</summary><div class="detalhe">';
+    } else {
+      h += "<div>";
+      h += '<div class="titulo">' + esc(t.titulo) + "</div>";
+    }
     h += '<p class="corpo">' + rico(t.corpo) + "</p>";
 
     if (t.respostas && t.respostas.length) {
@@ -933,7 +976,7 @@
     h += '<p class="dica">Sua resposta fica registrada aqui no item e chega pro Coordenador com a referência da tarefa.</p>';
     h += "</div>";
 
-    h += "</div></li>";
+    h += fechavel ? "</div></details></li>" : "</div></li>";
     return h;
   }
 
