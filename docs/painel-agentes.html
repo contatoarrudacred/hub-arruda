@@ -599,7 +599,7 @@
 <script id="dados" type="application/json">
 {
  "atualizado": "18/08/2026 · 14h45",
- "commit": "15834aa",
+ "commit": "3188a11",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -889,15 +889,22 @@
   }
  ],
  "dependencia": {
-  "rota": "✅ nenhum pedido aberto entre agentes",
-  "titulo": "Ninguém está esperando por ninguém",
+  "rota": "⏸️ 1 pedido aberto · Coordenador → Marketing",
+  "titulo": "Uma pausa pedida, nenhum bloqueio",
   "paragrafos": [
-   "O pedido Vendas → CRM <b>foi respondido às 13h24</b> e fechado no inbox pelo próprio CRM, seguindo o protocolo. O que travou não foi a comunicação entre eles — foi eu, que só li a resposta uma hora depois e deixei esta página afirmando o contrário nesse meio-tempo.",
-   "<b>O que mudei por causa disso:</b> existe agora um comando que apura o estado real (pedidos abertos, último commit de cada agente, divergência dos worktrees) e <b>compara com o que esta torre afirma</b>, acusando incoerência. Não publico mais sem rodar.",
-   "<b>O que continua sendo verdade:</b> agente com a sessão fechada não lê nada. O Vendas está parado desde 12h38 e não sabe que o CRM respondeu — vai descobrir quando você abrir a conversa dele."
+   "<b>Coordenador → Marketing · pausa.</b> Pedi que ele congele a criptografia e a coluna de credenciais até você decidir. Não é bloqueio: o resto da Fase 2 (telas, cota diária, log de execução) não depende disso e ele segue trabalhando.",
+   "<b>Vendas → CRM · ✅ respondido às 13h24</b> e fechado no inbox pelo próprio CRM. O que travou não foi a comunicação entre eles — foi eu, que só li a resposta uma hora depois e deixei esta página afirmando o contrário nesse meio-tempo.",
+   "<b>O que mudei por causa disso:</b> existe um comando que apura o estado real e <b>compara com o que esta torre afirma</b>, acusando incoerência. Não publico mais sem rodar — ele já me pegou duas vezes hoje, inclusive agora."
   ]
  },
- "esperas": []
+ "esperas": [
+  {
+   "tempo": "novo",
+   "frio": false,
+   "texto": "Pedi ao <b>Marketing</b> que pause a parte de credenciais da Fase 2 até você decidir se mantém a criptografia que ele já construiu. <b>Ele está com a sessão aberta agora</b> (commit às 14h40), então o hook não vai disparar — se quiser garantir que ele veja antes de mexer mais nisso, mande uma linha na conversa dele. O resto da Fase 2 segue normal.",
+   "acao": "opcional: avisar o Marketing"
+  }
+ ]
 }
 </script>
 
