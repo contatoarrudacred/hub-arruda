@@ -99,6 +99,34 @@ describe("extração determinística da abertura", () => {
     const extrator = criarExtratorAbertura();
     expect(extrator("oi, sou luiz e quero limpar meu nome").nome).toBe("Luiz");
   });
+
+  it("reconhece valor de dívida mencionado de cara, sem repetir a pergunta de faixa depois (achado real, 17/08/2026)", () => {
+    // Antes desta correção, "sou joao, devo 10 mil e quero limpar meu nome" ignorava o "devo 10
+    // mil" — a Malala perguntava a faixa de novo em ln_passo6, repetindo o que o lead já tinha dito.
+    const extrator = criarExtratorAbertura();
+    const dados = extrator("sou joao, devo 10 mil e quero limpar meu nome");
+    expect(dados.faixa_valor).toBe("10_30mil");
+  });
+
+  it("não deixa a vírgula da frase virar o valor por engano", () => {
+    // Bug real encontrado ao corrigir o achado acima: "sou pedro, devo 10 mil..." — o regex
+    // [\d.,]+ casava a vírgula depois de "pedro" antes de chegar no "10" de verdade, resultando em
+    // NaN e nenhum valor extraído.
+    const extrator = criarExtratorAbertura();
+    const dados = extrator("sou pedro, devo 10 mil e quero limpar meu nome");
+    expect(dados.faixa_valor).toBe("10_30mil");
+  });
+
+  it("exige sinal de valor (mil/R$/reais) antes de tentar extrair um número — não confunde outro número da frase", () => {
+    const extrator = criarExtratorAbertura();
+    expect(extrator("preciso limpar meu nome, moro há 10 anos aqui").faixa_valor).toBeUndefined();
+  });
+
+  it("classifica corretamente as faixas baixa e alta com refinamento", () => {
+    const extrator = criarExtratorAbertura();
+    expect(extrator("quero limpar meu nome, devo uns 2 mil").faixa_valor_detalhe).toBe("menos_3mil");
+    expect(extrator("quero limpar meu nome, devo R$ 200.000").valor_aproximado).toBe("200000");
+  });
 });
 
 describe("extração de nome — resposta direta a 'Com quem eu falo?'", () => {
@@ -323,8 +351,21 @@ describe("Limpeza de Nome — faixa intermediária (10-30 mil)", () => {
 
 describe("Limpeza de Nome — alto valor (>R$500 mil)", () => {
   it("classifica como alto valor e oferece a call em vez da proposta direto", async () => {
-    let dados: DadosConversa = { faixa_valor: "mais_100mil" };
-    let r = await responder("ln_passo6_refino_alto", dados, "800 mil");
+    const interpretarFaixasDocumentos = async () => ({
+      status: "completo" as const,
+      itens: [{ tipo: "cpf" as const, valorAproximado: 800_000 }],
+    });
+    let dados: DadosConversa = { documentos_tipos: "cpf" };
+    let r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo6"],
+      etapasPorCodigo,
+      dados,
+      respostaLead: "uns 800 mil",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarFaixasDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
     dados = { ...dados, ...r.dadosNovos };
     expect(dados.alto_valor).toBe("sim");
 
@@ -369,20 +410,67 @@ describe("regra de desvio (resposta não reconhecida)", () => {
     expect(txt(r.mensagens[0])).toContain("CPF");
   });
 
-  it("com IA habilitada, usa o valor que o interpretador retorna em vez de repetir a pergunta", async () => {
-    const interpretarComIA = async () => ({ valor: "250000" });
+  it("com o interpretador de faixas por documento, usa os valores que ele retorna em vez de repetir a pergunta", async () => {
+    const interpretarFaixasDocumentos = async () => ({
+      status: "completo" as const,
+      itens: [{ tipo: "cpf" as const, valorAproximado: 250_000 }],
+    });
     const r = await avancarConversa({
-      etapaAtual: etapasPorCodigo["ln_passo6_refino_alto"],
+      etapaAtual: etapasPorCodigo["ln_passo6"],
       etapasPorCodigo,
-      dados: {},
+      dados: { documentos_tipos: "cpf" },
       respostaLead: "umas duzentas e cinquenta mil, mais ou menos",
       resolverMensagensDinamicas,
       calcularDadosDerivados,
-      interpretarComIA,
+      interpretarFaixasDocumentos,
       variaveisGlobais: VARIAVEIS_GLOBAIS,
     });
     expect(r.naoReconhecido).toBe(false);
     expect(r.interpretadoPorIA).toBe(true);
-    expect(r.dadosNovos.valor_aproximado).toBe("250000");
+    expect(r.dadosNovos.documentos_valores).toBe("250000");
+  });
+
+  it("aceita 'não sei' pra um documento do pacote sem bloquear o checkpoint", async () => {
+    const interpretarFaixasDocumentos = async () => ({
+      status: "completo" as const,
+      itens: [
+        { tipo: "cpf" as const, valorAproximado: 15_000 },
+        { tipo: "cnpj" as const, valorAproximado: null },
+      ],
+    });
+    const r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo6"],
+      etapasPorCodigo,
+      dados: { documentos_tipos: "cpf,cnpj" },
+      respostaLead: "o CPF tem uns 15 mil, o CNPJ não sei",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarFaixasDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(r.naoReconhecido).toBe(false);
+    expect(r.dadosNovos.documentos_valores).toBe("15000,nao_sei");
+  });
+});
+
+describe("checkpoint opcional (opcional_apos_tentativas, PLANO_MESTRE seção 8.12)", () => {
+  it("abertura_email: 1ª tentativa não reconhecida repete a pergunta e conta a tentativa em dados", async () => {
+    const r = await responder("abertura_email", {}, "pra que vocês querem meu e-mail?");
+    expect(r.naoReconhecido).toBe(true);
+    expect(r.etapaFinal?.conteudo.codigo).toBe("abertura_email");
+    expect(r.dadosNovos["_tentativas:abertura_email"]).toBe("1");
+  });
+
+  it("abertura_email: desiste na 2ª tentativa e segue em frente com e-mail vazio, sem travar o funil", async () => {
+    const r = await responder("abertura_email", { "_tentativas:abertura_email": "1" }, "não tenho e-mail não");
+    expect(r.naoReconhecido).toBe(false);
+    expect(r.dadosNovos.email).toBe("");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("triagem_menu");
+  });
+
+  it("checkpoint sem opcional_apos_tentativas nunca desiste, mesmo depois de muitas tentativas", async () => {
+    const r = await responder("ln_passo4", { "_tentativas:ln_passo4": "99" }, "sei lá");
+    expect(r.naoReconhecido).toBe(true);
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo4");
   });
 });

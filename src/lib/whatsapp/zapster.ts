@@ -65,6 +65,25 @@ export async function definirDigitando(telefone: string): Promise<void> {
   }
 }
 
+/** Atualiza configurações de comportamento da instância (PATCH /wa/instances/{id}/settings) — envia só o que quer mudar, o resto continua como está. Usado pra ligar confirmação de leitura, ajustar rejeição de chamada, etc. (Bloco D, 17/08/2026). Lança erro em caso de falha. */
+export async function atualizarConfiguracoesInstancia(settings: Record<string, unknown>): Promise<void> {
+  const { baseUrl, token, instanceId } = obterConfig();
+
+  const resposta = await fetch(`${baseUrl}/wa/instances/${instanceId}/settings`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ settings }),
+  });
+
+  const corpo = await resposta.json().catch(() => null);
+  if (!resposta.ok) {
+    throw new Error(`Falha ao atualizar configurações da instância Zapster (HTTP ${resposta.status}): ${JSON.stringify(corpo)}`);
+  }
+}
+
 /** Envia uma mídia (imagem/áudio/vídeo/documento) por URL — a mesma URL do Supabase Storage já usada no editor de fluxo/simulador. Lança erro em caso de falha. */
 export async function enviarMensagemMidia(
   telefone: string,

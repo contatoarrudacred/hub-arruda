@@ -19,9 +19,9 @@ import { tipoEtapaDb } from "./db";
 import { extrairDadosAbertura } from "./extracao";
 import type { ConteudoEtapa, DadosConversa, EtapaCarregada, MensagemEtapa } from "./tipos";
 import {
-  buscarFaixaPreco,
   calcularFormulaAltoValor,
   classificarAltoValor,
+  combinarFaixasPacote,
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
   montarPropostaAltoValorSelfService,
@@ -95,6 +95,11 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
       tipo_resposta: "texto_livre",
       proximo_codigo: "saudacao_personalizada",
       kanban_subetapa: KANBAN_TRIAGEM,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder de formas que a extração automática de nome não reconhece (ex.: nome com escrita incomum, ou frase mista tipo 'aqui é o zé, blz?'). Extraia só o primeiro nome da pessoa. Se a mensagem for só uma saudação sem nome nenhum (ex.: 'oi', 'bom dia'), marque como não interpretado.",
+      },
     },
   },
   {
@@ -132,16 +137,32 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
     },
   },
   {
+    // Justificativa de valor + limite de tentativas — PLANO_MESTRE seção 8.12 (decisão de Luiz,
+    // 17/08/2026): pedir e-mail sem dizer pra quê gerava resistência, e o checkpoint não tinha
+    // saída quando o lead recusava/insistia que não tinha. Mensagem agora explica o motivo de
+    // antemão (proposta por escrito, dicas de nome limpo/score, cupons — e pode parar de receber
+    // quando quiser); `opcional_apos_tentativas: 2` garante que nunca trava o funil.
     codigo: "abertura_email",
     ordem: 5,
     campoSalvo: "email",
     conteudo: {
       codigo: "abertura_email",
-      mensagens: [t("Para te atender melhor, preciso que me informe o seu e-mail:")],
+      mensagens: [
+        t("Pra eu te atender melhor, me confirma também seu e-mail:"),
+        t(
+          "É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
+        ),
+      ],
       aguarda_resposta: true,
       tipo_resposta: "email",
       proximo_codigo: "triagem_menu",
       kanban_subetapa: KANBAN_TRIAGEM,
+      opcional_apos_tentativas: 2,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode escrever o e-mail com erros de digitação, espaços, ou por extenso (ex.: 'joao arroba gmail ponto com'). Extraia e normalize para o formato padrão nome@dominio.com. Se a mensagem claramente não contém um e-mail (ex.: pergunta 'pra quê', diz que não tem, ou ignora o pedido), marque como não interpretado — não insista nem invente um e-mail.",
+      },
     },
   },
   {
@@ -168,6 +189,11 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
         { valor: "outro_assunto", rotulos: ["8", "8️⃣"], proximo_codigo: "handoff_humano" },
       ],
       kanban_subetapa: KANBAN_TRIAGEM,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre em vez do número da opção (ex.: 'preciso limpar meu nome' em vez de '1', 'quero saber sobre o score' em vez de '2'). Escolha a opção que melhor corresponde à intenção dele — se a mensagem não tiver relação clara com nenhuma das 8 opções, não force uma escolha.",
+      },
     },
   },
   {
@@ -213,6 +239,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "nao", rotulos: ["nao", "n"], proximo_codigo: "ln_aguardar_melhor_momento" },
       ],
       kanban_subetapa: KANBAN_QUALIFICACAO,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder de forma livre em vez de 'sim'/'não' (ex.: 'claro', 'pode perguntar', 'não quero agora', 'depois'). Escolha 'sim' ou 'nao' conforme a intenção.",
+      },
     },
   },
   {
@@ -250,23 +281,22 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
+    // Suporte a "pacote" (Bloco C, PLANO_MESTRE seção 11) — o lead pode pedir mais de um documento
+    // (ex.: 2 CPFs, ou CPF + CNPJ). `tipo_resposta: "lista_documentos"` cai sempre pro interpretador
+    // especializado (interpretar-lista-documentos.ts), nunca pro parser determinístico.
     codigo: "ln_passo4",
     ordem: 5,
-    campoSalvo: "tipo_documento",
+    campoSalvo: "documentos_tipos",
     conteudo: {
       codigo: "ln_passo4",
-      mensagens: [t("👉 Você precisa limpar o *CPF* ou *CNPJ*?")],
-      aguarda_resposta: true,
-      tipo_resposta: "menu",
-      opcoes: [
-        { valor: "cpf", rotulos: ["cpf"], proximo_codigo: "ln_passo5" },
-        { valor: "cnpj", rotulos: ["cnpj"], proximo_codigo: "ln_passo5" },
-        {
-          valor: "cpf_e_cnpj",
-          rotulos: ["cpf e cnpj", "os dois", "ambos", "cnpj e cpf"],
-          proximo_codigo: "ln_passo5",
-        },
+      mensagens: [
+        t(
+          "👉 Você precisa limpar o *CPF*, o *CNPJ*, ou mais de um documento (ex.: 2 CPFs, ou CPF e CNPJ juntos)? Me conta quantos e quais.",
+        ),
       ],
+      aguarda_resposta: true,
+      tipo_resposta: "lista_documentos",
+      proximo_codigo: "ln_passo5",
       kanban_subetapa: KANBAN_QUALIFICACAO,
     },
   },
@@ -283,68 +313,23 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
+    // Reformulado (17/08/2026, decisão de Luiz): uma pergunta só cobrindo TODOS os documentos de
+    // ln_passo4, em vez de repetir a mesma pergunta uma vez por documento (gerava fricção/evasão
+    // real num pacote de N documentos). "não sei" é resposta válida por documento — a Malala
+    // oferece a consulta oficial paga (mencionando a alternativa gratuita). `tipo_resposta:
+    // "faixas_documentos"` cai sempre pro interpretador especializado (interpretar-faixas-
+    // documentos.ts), que só dá checkpoint como reconhecido quando tiver valor (ou "não sei"
+    // explícito) pra CADA documento.
     codigo: "ln_passo6",
     ordem: 7,
-    campoSalvo: "faixa_valor",
+    campoSalvo: "documentos_valores",
     conteudo: {
       codigo: "ln_passo6",
-      mensagens: [
-        t(
-          "👉 *Em qual das faixas abaixo melhor se enquadra o valor das restrições neste CPF atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n1️⃣ Menos de 10 mil\n2️⃣ Entre 10 e 30 mil\n3️⃣ Entre 30 e 50 mil\n4️⃣ Entre 50 e 100 mil\n5️⃣ Mais de 100 mil",
-        ),
-      ],
+      mensagens: [t("(pergunta de faixa por documento gerada dinamicamente conforme ln_passo4 — ver criarResolverMensagensDinamicas)")],
       aguarda_resposta: true,
-      tipo_resposta: "menu",
-      opcoes: [
-        { valor: "menos_10mil", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo6_refino_baixo" },
-        { valor: "10_30mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
-        { valor: "30_50mil", rotulos: ["3", "3️⃣"], proximo_codigo: "ln_passo8" },
-        { valor: "50_100mil", rotulos: ["4", "4️⃣"], proximo_codigo: "ln_passo8" },
-        { valor: "mais_100mil", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo6_refino_alto" },
-      ],
+      tipo_resposta: "faixas_documentos",
+      proximo_por_dado: { campo: "documentos_valor_baixo", se_igual: "sim", entao: "ln_passo7", senao: "ln_passo8" },
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
-    },
-  },
-  {
-    codigo: "ln_passo6_refino_baixo",
-    ordem: 8,
-    campoSalvo: "faixa_valor_detalhe",
-    conteudo: {
-      codigo: "ln_passo6_refino_baixo",
-      mensagens: [
-        t(
-          "Entendo, para eu conseguir te orientar melhor me responda:\n\n1️⃣ Menos de 3 Mil\n2️⃣ Entre 3 e 10 Mil",
-        ),
-      ],
-      aguarda_resposta: true,
-      tipo_resposta: "menu",
-      opcoes: [
-        { valor: "menos_3mil", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_passo7" },
-        { valor: "3_10mil", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo8" },
-      ],
-      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
-    },
-  },
-  {
-    codigo: "ln_passo6_refino_alto",
-    ordem: 9,
-    campoSalvo: "valor_aproximado",
-    conteudo: {
-      codigo: "ln_passo6_refino_alto",
-      mensagens: [
-        t(
-          "Entendi que são mais de 100 mil reais, para eu conseguir te orientar melhor, preciso que me informe o valor aproximado das restrições - pode escrever... (tudo bem se não tiver certeza - depois faremos uma consulta)",
-        ),
-      ],
-      aguarda_resposta: true,
-      tipo_resposta: "numero_ou_nao_sei",
-      proximo_codigo: "ln_passo8",
-      kanban_subetapa: KANBAN_FAIXA_DIVIDA,
-      interpretacao_ia: {
-        habilitado: true,
-        instrucao:
-          "O lead pode responder o valor aproximado da restrição de forma bem livre (por extenso, com gírias, faixa vaga tipo 'uns 200 e pouco'). Extraia um número em reais o mais próximo possível do que ele quis dizer.",
-      },
     },
   },
   {
@@ -370,6 +355,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder de forma livre (ex.: 'vou negociar direto', 'prefiro não', 'sim, pode seguir'). Escolha 'sim' ou 'nao' com base na intenção clara dele — se a mensagem for ambígua sobre continuar ou desistir, não force uma escolha, já que 'nao' aqui encerra o atendimento.",
+      },
     },
   },
   {
@@ -458,11 +448,7 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     campoSalvo: "urgencia",
     conteudo: {
       codigo: "ln_passo12",
-      mensagens: [
-        t(
-          "📣 *Para eu conseguir te orientar melhor me diz: para quando você tem necessidade do CPF limpo?*\n\n1️⃣ Só está pesquisando\n2️⃣ Urgente\n3️⃣ Em 30-45 dias\n4️⃣ 3 a 6 meses\n5️⃣ Outro, me explique!",
-        ),
-      ],
+      mensagens: [t("(pergunta de urgência calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)")],
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
@@ -473,6 +459,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "outro", rotulos: ["5", "5️⃣"], proximo_codigo: "ln_passo12_explique" },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'preciso pra ontem' → urgente, 'só olhando por enquanto' → pesquisando, 'em uns 2 meses' → 3 a 6 meses). Se a resposta descrever uma situação que não se encaixa bem nas 4 primeiras opções, escolha 'outro'.",
+      },
     },
   },
   {
@@ -510,11 +501,7 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     campoSalvo: "prioridade_fechar_hoje",
     conteudo: {
       codigo: "ln_passo14",
-      mensagens: [
-        t(
-          "📌 Nós recebemos alguns vouchers da Associação que nos permitem oferecer uma condição especial muito expressiva. Como são limitados, para liberar a proposta com a melhor condição possível, precisamos saber:\n\n👉 *É prioridade para você já entrar com o CPF para ser limpo e começar a contar o prazo hoje?*\n1️⃣ Sim\n2️⃣ Não",
-        ),
-      ],
+      mensagens: [t("(pergunta de voucher calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)")],
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
@@ -522,6 +509,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "nao", rotulos: ["2", "2️⃣", "nao"], proximo_codigo: "ln_passo15_router" },
       ],
       kanban_subetapa: KANBAN_FAIXA_DIVIDA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'sim, quero começar agora', 'prefiro pensar mais'). Escolha 'sim' ou 'nao' conforme a intenção.",
+      },
     },
   },
   {
@@ -557,6 +549,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "parcelado", rotulos: ["parcelado", "parcela"], proximo_codigo: "ln_passo16_1" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'posso pagar tudo de uma vez' → à vista, 'prefiro dividir' → parcelado). Escolha a forma de pagamento correspondente.",
+      },
     },
   },
   {
@@ -573,6 +570,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "whatsapp", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo15_selfservice" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'prefiro que me liguem' → call, 'pode continuar por aqui mesmo' → whatsapp). Escolha a opção correspondente.",
+      },
     },
   },
   {
@@ -605,6 +607,11 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
         { valor: "parcelado", rotulos: ["parcelado", "parcela"], proximo_codigo: "ln_passo16_1" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder em texto livre (ex.: 'posso pagar tudo de uma vez' → à vista, 'prefiro dividir' → parcelado). Escolha a forma de pagamento correspondente.",
+      },
     },
   },
   {
@@ -721,12 +728,47 @@ function extrairProdutoInteresse(mensagem: string): string | null {
   return null;
 }
 
-/** Combina a extração genérica (nome, ver extracao.ts) com a específica deste menu (produto) — usado na primeira mensagem da conversa, antes do motor começar a perguntar. */
+/**
+ * Achado real (17/08/2026, lead "João"): "sou joao, devo 10 mil e quero limpar meu nome" ignorava
+ * completamente o "devo 10 mil" — a Malala perguntava a faixa de novo mais adiante (ln_passo6),
+ * repetindo informação que o lead já tinha dado de cara. Exige um sinal explícito de valor (R$/mil/
+ * reais) antes de tentar extrair um número — evita confundir outro número solto na frase (ex.: "há
+ * 10 anos moro aqui") com valor de dívida.
+ */
+function extrairValorMencionadoNaAbertura(mensagem: string): number | null {
+  const normalizado = mensagem.toLowerCase();
+  if (!/\br\$|\bmil\b|\breais?\b/.test(normalizado)) return null;
+
+  const semSimbolos = mensagem.replace(/[Rr]\$/g, "").trim();
+  // Precisa começar por um dígito — sem isso, "sou pedro, devo 10 mil..." casava a vírgula depois
+  // de "pedro" antes de chegar no "10" de verdade (achado real, 17/08/2026).
+  const numeroMatch = semSimbolos.match(/\d[\d.,]*/);
+  if (!numeroMatch) return null;
+
+  const numero = Number(numeroMatch[0].replace(/\./g, "").replace(",", "."));
+  if (Number.isNaN(numero)) return null;
+
+  return /\bmil\b/.test(normalizado) ? numero * 1000 : numero;
+}
+
+/** Classifica um valor bruto nos mesmos buckets das opções de ln_passo6/ln_passo6_refino_baixo — pra que a regra de "checkpoint já respondido" (engine.ts) pule essas perguntas sozinha quando os campos batem com uma opção conhecida. */
+function dadosDaFaixaPorValor(valor: number): DadosConversa {
+  if (valor < 3000) return { faixa_valor: "menos_10mil", faixa_valor_detalhe: "menos_3mil" };
+  if (valor < 10000) return { faixa_valor: "menos_10mil", faixa_valor_detalhe: "3_10mil" };
+  if (valor < 30000) return { faixa_valor: "10_30mil" };
+  if (valor < 50000) return { faixa_valor: "30_50mil" };
+  if (valor < 100000) return { faixa_valor: "50_100mil" };
+  return { faixa_valor: "mais_100mil", valor_aproximado: String(valor) };
+}
+
+/** Combina a extração genérica (nome, ver extracao.ts) com as específicas deste menu (produto, valor mencionado de cara) — usado na primeira mensagem da conversa, antes do motor começar a perguntar. */
 export function criarExtratorAbertura() {
   return (mensagem: string): DadosConversa => {
     const dados = extrairDadosAbertura(mensagem);
     const produto = extrairProdutoInteresse(mensagem);
     if (produto) dados.produto_interesse = produto;
+    const valor = extrairValorMencionadoNaAbertura(mensagem);
+    if (valor !== null) Object.assign(dados, dadosDaFaixaPorValor(valor));
     return dados;
   };
 }
@@ -736,18 +778,68 @@ export function criarExtratorAbertura() {
 // `resolverMensagensDinamicas` e `calcularDadosDerivados` (ver engine.ts / tipos.ts).
 // ---------------------------------------------------------------------------
 
+/**
+ * Valor usado quando o lead responde "não sei" pra um documento em ln_passo6, sem nenhum outro
+ * sinal de contexto — decisão interina (17/08/2026), nem o piso nem o teto, pra não sub nem
+ * sobre-precificar às cegas. Revisar com Luiz quando fizer sentido usar a consulta paga de verdade
+ * (R$39/documento nos 4 órgãos) em vez de só assumir um valor médio.
+ */
+export const VALOR_PADRAO_DOCUMENTO_NAO_SEI = 75_000;
+
+function resumoTipoDocumento(documentosTiposCsv: string): string {
+  const tipos = new Set(documentosTiposCsv.split(",").filter(Boolean));
+  if (tipos.size === 1) return tipos.has("cnpj") ? "cnpj" : "cpf";
+  return "cpf_e_cnpj";
+}
+
+/** Cada valor bruto capturado em ln_passo6 (`documentos_valores`) já normalizado — "não sei" cai no valor padrão conservador (`VALOR_PADRAO_DOCUMENTO_NAO_SEI`), mesma regra pra todo mundo que usa este CSV. */
+function parseValoresDocumentos(documentosValoresCsv: string): number[] {
+  return documentosValoresCsv
+    .split(",")
+    .filter(Boolean)
+    .map((valorBruto) => {
+      if (valorBruto === "nao_sei") return VALOR_PADRAO_DOCUMENTO_NAO_SEI;
+      const numero = Number(valorBruto);
+      return Number.isFinite(numero) ? numero : VALOR_PADRAO_DOCUMENTO_NAO_SEI;
+    });
+}
+
+/** Soma o valor de cada documento — usado pra classificar alto valor/baixo valor do pacote inteiro (`criarCalculadoraDadosDerivados`), não pra precificar (isso usa a faixa de cada documento, ver `valoresPorDocumento` + `combinarFaixasPacote`, pacote Fase 4, 17/08/2026). */
+function somarValoresDocumentos(documentosValoresCsv: string): number {
+  return parseValoresDocumentos(documentosValoresCsv).reduce((soma, valor) => soma + valor, 0);
+}
+
+/**
+ * Valor de CADA documento do pacote, um item por documento — pacote Fase 4 (17/08/2026): antes, o
+ * preço vinha de uma faixa única sobre a soma de todos os documentos; agora cada documento é
+ * precificado pela sua própria faixa (`combinarFaixasPacote`, regras-limpeza-nome.ts), somadas.
+ * Sem `documentos_valores` (fluxo antigo/single-valor, `resolverValorRestricao`), cai num array de
+ * um item só — comportamento idêntico ao de antes desta mudança.
+ */
+function valoresPorDocumento(dados: DadosConversa): number[] {
+  if (dados.documentos_valores) return parseValoresDocumentos(dados.documentos_valores);
+  const valor = resolverValorRestricao(dados);
+  return valor === null ? [] : [valor];
+}
+
 export function criarCalculadoraDadosDerivados(
   config: Pick<ConfigPrecificacaoLimpaNome, "altoValorFixo" | "altoValorPercentual" | "corteAltoValor">,
 ) {
   return (dados: DadosConversa): DadosConversa => {
-    const valorRestricao = resolverValorRestricao(dados);
-    if (valorRestricao === null) return {};
+    const derivados: DadosConversa = {};
 
-    const altoValor = classificarAltoValor(valorRestricao, config.corteAltoValor);
-    return {
-      valor_restricao_estimado: String(valorRestricao),
-      alto_valor: altoValor ? "sim" : "nao",
-    };
+    if (dados.documentos_tipos) {
+      derivados.tipo_documento = resumoTipoDocumento(dados.documentos_tipos);
+    }
+
+    if (dados.documentos_valores) {
+      const total = somarValoresDocumentos(dados.documentos_valores);
+      derivados.valor_restricao_estimado = String(total);
+      derivados.alto_valor = classificarAltoValor(total, config.corteAltoValor) ? "sim" : "nao";
+      derivados.documentos_valor_baixo = total < 3000 ? "sim" : "nao";
+    }
+
+    return derivados;
   };
 }
 
@@ -760,20 +852,80 @@ function obterValorRestricao(dados: DadosConversa): number | null {
   return resolverValorRestricao(dados);
 }
 
+// ---------------------------------------------------------------------------
+// Texto que muda conforme o lead respondeu CPF/CNPJ em ln_passo4 (`dados.tipo_documento`) — achado
+// real (17/08/2026, mesmo lead "João"): 3 mensagens adiante do script citavam "CPF" fixo mesmo
+// quando o lead tinha acabado de dizer que era CNPJ. O script original (SCRIPT_LIMPANOME_SERASA_SPC.md,
+// Passos 6/12) já previa isso como "pergunta dinâmica conforme tipo capturado" — nunca foi ligado.
+// ---------------------------------------------------------------------------
+
+/** "neste CPF" / "neste CNPJ" / "nestes documentos" — usado em ln_passo6. */
+function fraseNesteDocumento(dados: DadosConversa): string {
+  if (dados.tipo_documento === "cnpj") return "neste CNPJ";
+  if (dados.tipo_documento === "cpf_e_cnpj") return "nestes documentos";
+  return "neste CPF";
+}
+
+/** "do CPF limpo" / "do CNPJ limpo" / "dos documentos limpos" — usado em ln_passo12. */
+function fraseNecessidadeDocumentoLimpo(dados: DadosConversa): string {
+  if (dados.tipo_documento === "cnpj") return "do CNPJ limpo";
+  if (dados.tipo_documento === "cpf_e_cnpj") return "dos documentos limpos";
+  return "do CPF limpo";
+}
+
+/** "o CPF" / "o CNPJ" / "os documentos" — usado em ln_passo14. */
+function fraseEntrarComDocumento(dados: DadosConversa): string {
+  if (dados.tipo_documento === "cnpj") return "o CNPJ";
+  if (dados.tipo_documento === "cpf_e_cnpj") return "os documentos";
+  return "o CPF";
+}
+
 export function criarResolverMensagensDinamicas(
   faixasPrecos: FaixaPreco[],
   config: ConfigPrecificacaoLimpaNome,
 ) {
   return (codigo: string, dados: DadosConversa): MensagemEtapa[] | null => {
+    if (codigo === "ln_passo6") {
+      const tiposLista = (dados.documentos_tipos ?? "").split(",").filter(Boolean);
+      const maisDeUm = tiposLista.length > 1;
+      const referenciaDocumentos = maisDeUm
+        ? "de cada documento:\n" + tiposLista.map((tipo, i) => `${i + 1}. ${tipo.toUpperCase()}`).join("\n")
+        : `${fraseNesteDocumento(dados)}`;
+
+      return [
+        t(
+          `👉 Pra eu te passar o preço certo${maisDeUm ? " de cada documento" : ""}, preciso saber a faixa aproximada do valor das restrições ${referenciaDocumentos}\n\nPode ser um valor aproximado, ou "não sei" ${maisDeUm ? "pra qualquer um deles" : ""} — nesse caso, posso te oferecer uma consulta oficial nos 4 órgãos (Serasa, SPC Brasil, SCPC Boa Vista e CENPROT) por R$ 39,00 por documento. Se preferir, você também consegue consultar de graça baixando os apps oficiais de cada órgão. 😊`,
+        ),
+      ];
+    }
+
+    if (codigo === "ln_passo12") {
+      return [
+        t(
+          `📣 *Para eu conseguir te orientar melhor me diz: para quando você tem necessidade ${fraseNecessidadeDocumentoLimpo(dados)}?*\n\n1️⃣ Só está pesquisando\n2️⃣ Urgente\n3️⃣ Em 30-45 dias\n4️⃣ 3 a 6 meses\n5️⃣ Outro, me explique!`,
+        ),
+      ];
+    }
+
+    if (codigo === "ln_passo14") {
+      return [
+        t(
+          `📌 Nós recebemos alguns vouchers da Associação que nos permitem oferecer uma condição especial muito expressiva. Como são limitados, para liberar a proposta com a melhor condição possível, precisamos saber:\n\n👉 *É prioridade para você já entrar com ${fraseEntrarComDocumento(dados)} para ser limpo e começar a contar o prazo hoje?*\n1️⃣ Sim\n2️⃣ Não`,
+        ),
+      ];
+    }
+
     if (codigo === "ln_passo15_normal") {
-      if (dados.faixa_valor_detalhe === "menos_3mil") {
+      const valorRestricao = obterValorRestricao(dados);
+      if (valorRestricao !== null && valorRestricao < 3000) {
         return montarPropostaBaixoValor(config).map(t);
       }
-      const valorRestricao = obterValorRestricao(dados);
       if (valorRestricao === null) return null;
-      const faixa = buscarFaixaPreco(valorRestricao, faixasPrecos);
-      if (!faixa) return null;
-      return montarPropostaPorFaixa(faixa, dados.prioridade_fechar_hoje === "sim").map(t);
+      // Pacote Fase 4 (17/08/2026): preço pela faixa de CADA documento, somadas — não mais uma
+      // faixa única sobre o valor total combinado (ver combinarFaixasPacote).
+      const faixaCombinada = combinarFaixasPacote(valoresPorDocumento(dados), faixasPrecos);
+      if (!faixaCombinada) return null;
+      return montarPropostaPorFaixa(faixaCombinada, dados.prioridade_fechar_hoje === "sim").map(t);
     }
 
     if (codigo === "ln_passo15_alto_valor") {

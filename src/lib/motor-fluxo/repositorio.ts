@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ConfigPrecificacaoLimpaNome, FaixaPreco } from "./regras-limpeza-nome";
+import type { ModoRoteamentoLeadNovo, RegraRoteamento } from "./roteamento-lead-novo";
 import type { ConteudoEtapa, EtapaCarregada } from "./tipos";
 
 // Camada de I/O do motor de fluxo — único lugar que fala com o Supabase. O motor em si
@@ -151,4 +152,87 @@ export async function carregarConfigPrecificacao(): Promise<ConfigPrecificacaoLi
     altoValorPercentual: Number(formula?.percentual ?? 0),
     corteAltoValor: Number(porChave.limpanome_corte_alto_valor ?? 0),
   };
+}
+
+export type ConfigRoteamentoLeadNovo = { modo: ModoRoteamentoLeadNovo; etapaFixaCodigo: string };
+
+/** Lê o modo de roteamento de lead novo (Bloco D/Fase 4, `roteamento-lead-novo.ts`). Fallback preserva o comportamento fixo original se as chaves não existirem (banco antes da migration 032 rodar). */
+export async function carregarConfigRoteamento(): Promise<ConfigRoteamentoLeadNovo> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", ["roteamento_lead_novo_modo", "roteamento_lead_novo_etapa_fixa"]);
+
+  if (error) {
+    throw new Error(`Falha ao carregar configuração de roteamento: ${error.message}`);
+  }
+
+  const porChave = Object.fromEntries((data ?? []).map((linha) => [linha.chave, linha.valor])) as Record<
+    string,
+    unknown
+  >;
+
+  return {
+    modo: (porChave.roteamento_lead_novo_modo as ModoRoteamentoLeadNovo | undefined) ?? "fluxo_fixo",
+    etapaFixaCodigo: (porChave.roteamento_lead_novo_etapa_fixa as string | undefined) ?? "saudacao_inicial",
+  };
+}
+
+/** Regras ativas do modo "palavra_chave", em ordem — só carregada quando esse modo está ligado (ver route.ts). */
+export async function listarRegrasRoteamentoAtivas(): Promise<RegraRoteamento[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("regras_roteamento")
+    .select("termos, etapa_codigo")
+    .eq("ativo", true)
+    .order("ordem");
+
+  if (error) {
+    throw new Error(`Falha ao carregar regras de roteamento: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({ termos: linha.termos, etapaCodigo: linha.etapa_codigo }));
+}
+
+export type LimiaresSeloRisco = { horasAmarelo: number; horasVermelho: number };
+
+/** Limiares do sinal 1 do selo de risco de esfriar (Bloco D/Fase 5, `selo-risco.ts`) — configuráveis, decisão de Luiz (17/08/2026). Fallback preserva os valores iniciais da migration 033 se as chaves não existirem. */
+export async function carregarLimiaresSeloRisco(): Promise<LimiaresSeloRisco> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", ["selo_risco_esfriar_horas_amarelo", "selo_risco_esfriar_horas_vermelho"]);
+
+  if (error) {
+    throw new Error(`Falha ao carregar limiares do selo de risco: ${error.message}`);
+  }
+
+  const porChave = Object.fromEntries((data ?? []).map((linha) => [linha.chave, linha.valor])) as Record<
+    string,
+    unknown
+  >;
+
+  return {
+    horasAmarelo: Number(porChave.selo_risco_esfriar_horas_amarelo ?? 4),
+    horasVermelho: Number(porChave.selo_risco_esfriar_horas_vermelho ?? 24),
+  };
+}
+
+export type ObjecaoParaDetectorCarregada = { id: string; objecao: string; comoLidar: string };
+
+/** Variante service-role de `listarObjecoes` (repositorio-admin.ts) — usada pelo detector automático de objeção no webhook (Bloco D/Fase 5), que roda sem usuário Supabase autenticado por trás. */
+export async function listarObjecoesAtivas(): Promise<ObjecaoParaDetectorCarregada[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("objecoes")
+    .select("id, objecao, como_lidar")
+    .eq("ativo", true);
+
+  if (error) {
+    throw new Error(`Falha ao carregar objeções ativas: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({ id: linha.id, objecao: linha.objecao, comoLidar: linha.como_lidar }));
 }

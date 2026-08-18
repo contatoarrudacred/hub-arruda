@@ -6,9 +6,14 @@ import {
   criarExtratorAbertura,
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
+import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
+import { interpretarFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
+import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import {
+  capturarFotoPerfilSeNecessario,
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
+  detectarEMarcarObjecaoPendente,
   extrairCodigoRastreio,
   marcarStatusMensagem,
   registrarMensagemLead,
@@ -16,9 +21,13 @@ import {
 } from "@/lib/motor-fluxo/persistencia";
 import {
   carregarConfigPrecificacao,
+  carregarConfigRoteamento,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
+  listarRegrasRoteamentoAtivas,
 } from "@/lib/motor-fluxo/repositorio";
+import { resolverEtapaInicialLeadNovo } from "@/lib/motor-fluxo/roteamento-lead-novo";
+import { transcreverAudio } from "@/lib/motor-fluxo/transcricao-audio";
 import { enviarSequenciaWhatsapp } from "@/lib/whatsapp/enviar";
 
 // Delay/digitando entre mensagens (ver enviarSequenciaWhatsapp) pode somar alguns segundos por
@@ -59,7 +68,61 @@ async function montarDependencias() {
   };
 }
 
-async function processarMensagemRecebida(telefone: string, textoRecebido: string): Promise<void> {
+/**
+ * Mídia recebida do lead (foto/áudio/vídeo/figurinha) — Bloco B2, 17/08/2026. Diferente de texto:
+ * só registra na conversa (pro humano ver na Tela de Atendimento), nunca roda o motor de fluxo em
+ * cima — mesmo com a Malala no controle. A Malala só entende texto (parser determinístico); tratar
+ * a URL de uma mídia como se fosse a resposta do lead corromperia a posição da conversa.
+ */
+async function processarMidiaRecebida(
+  telefone: string,
+  midiaUrl: string,
+  midiaTipo: string,
+  legenda: string | null,
+  fotoPerfil: string | null = null,
+): Promise<void> {
+  try {
+    const { etapasPorCodigo } = await montarDependencias();
+    const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
+    await capturarFotoPerfilSeNecessario(estado.pessoaId, fotoPerfil);
+    await registrarMensagemLead(estado.conversaId, legenda, midiaUrl, midiaTipo);
+  } catch (e) {
+    console.error("[webhook zapster] erro ao processar mídia recebida:", e);
+  }
+}
+
+/**
+ * Áudio recebido do lead (Bloco C/Fase 5, 17/08/2026) — diferente dos outros tipos de mídia:
+ * transcreve primeiro (`transcricao-audio.ts`, OpenAI) e roda o texto transcrito no motor de fluxo
+ * normalmente, igual a uma mensagem digitada — a Malala passa a "entender" áudio. Se a transcrição
+ * falhar (sem API key, OpenAI fora do ar, etc.), cai pro comportamento antigo — só registra o
+ * áudio pro humano ouvir na Tela de Atendimento, sem rodar o motor em cima (não dá pra interpretar
+ * uma resposta que não conseguimos entender).
+ */
+async function processarAudioRecebido(telefone: string, audioUrl: string, fotoPerfil: string | null = null): Promise<void> {
+  const textoTranscrito = await transcreverAudio(audioUrl);
+
+  if (!textoTranscrito) {
+    await processarMidiaRecebida(telefone, audioUrl, "audio", null, fotoPerfil);
+    return;
+  }
+
+  await processarMensagemRecebida(telefone, textoTranscrito, audioUrl, "audio", fotoPerfil);
+}
+
+/**
+ * `midiaUrl`/`midiaTipo` são pra quando o texto veio de uma transcrição de áudio (ver
+ * `processarAudioRecebido` abaixo) — a mensagem do lead fica ligada ao áudio original na timeline
+ * (toca + mostra a transcrição como legenda), mas o texto transcrito é o que roda no motor,
+ * igualzinho a uma mensagem digitada.
+ */
+async function processarMensagemRecebida(
+  telefone: string,
+  textoRecebido: string,
+  midiaUrl: string | null = null,
+  midiaTipo: string | null = null,
+  fotoPerfil: string | null = null,
+): Promise<void> {
   // Código de rastreio (zap.arrudacred.com.br, ver docs/RASTREIO_CLIQUES_WHATSAPP.md) tirado antes
   // de qualquer outra coisa — a Malala/o motor nunca veem "(ref: a1b2c3d4)" como parte da conversa.
   const { texto, codigo: codigoRastreio } = extrairCodigoRastreio(textoRecebido);
@@ -67,37 +130,49 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
   try {
     const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } = await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
+    await capturarFotoPerfilSeNecessario(estado.pessoaId, fotoPerfil);
 
     if (codigoRastreio) {
       await correlacionarCliqueRastreio(codigoRastreio, estado.pessoaId);
     }
 
+    // Selo de risco de esfriar, sinal 3 (Bloco D/Fase 5) — detector automático de objeção rodando a
+    // cada mensagem de texto do lead, independente de quem está no controle (Malala ou humano): é um
+    // sinal complementar pro atendente, útil nos dois casos. Desacoplado da resposta (after()) — não
+    // pode atrasar nem travar o turno.
+    after(() => detectarEMarcarObjecaoPendente(estado.conversaId, texto));
+
     if (estado.sobSupervisor) {
-      await registrarMensagemLead(estado.conversaId, texto);
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
       return;
     }
 
     let resultado;
     let dadosNovos;
     if (estado.etapaAtualCodigo === null) {
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
+
+      // Roteamento de lead novo (Bloco D/Fase 4, TELA_ATENDIMENTO_ARRUDACRED.md seção 5-B) — decide
+      // em qual etapa iniciar, ou se não deve responder sozinho (modo "manual", ou "palavra_chave"
+      // sem nenhuma regra batendo). A mensagem já foi registrada acima em qualquer caso — o card
+      // "Novo Lead" existe mesmo sem resposta automática.
+      const { modo, etapaFixaCodigo } = await carregarConfigRoteamento();
+      const regras = modo === "palavra_chave" ? await listarRegrasRoteamentoAtivas() : [];
+      const etapaInicial = resolverEtapaInicialLeadNovo(texto, modo, etapaFixaCodigo, regras);
+      if (etapaInicial === null) return;
+
       const dadosIniciais = criarExtratorAbertura()(texto);
       // O canal já forneceu o telefone (é de onde a mensagem veio) — não faz sentido perguntar de
       // novo (regra de checkpoint já respondido, engine.ts). Só o canal WhatsApp faz isso; outros
       // canais (widget do site, por exemplo) continuam perguntando normalmente.
       dadosIniciais.telefone = telefone;
-      const resultadoPercurso = iniciarFluxo(
-        "saudacao_inicial",
-        etapasPorCodigo,
-        dadosIniciais,
-        resolverMensagensDinamicas,
-        { saudacao: saudacaoPorHorario() },
-      );
-      resultado = resultadoPercurso;
+      resultado = iniciarFluxo(etapaInicial, etapasPorCodigo, dadosIniciais, resolverMensagensDinamicas, {
+        saudacao: saudacaoPorHorario(),
+      });
       dadosNovos = dadosIniciais;
-      await registrarMensagemLead(estado.conversaId, texto);
     } else {
       const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
-      await registrarMensagemLead(estado.conversaId, texto);
+      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
       resultado = await avancarConversa({
         etapaAtual,
         etapasPorCodigo,
@@ -105,6 +180,9 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
         respostaLead: texto,
         resolverMensagensDinamicas,
         calcularDadosDerivados,
+        interpretarComIA,
+        interpretarListaDocumentos,
+        interpretarFaixasDocumentos,
         variaveisGlobais: { saudacao: saudacaoPorHorario() },
       });
       dadosNovos = resultado.dadosNovos;
@@ -115,6 +193,7 @@ async function processarMensagemRecebida(telefone: string, textoRecebido: string
       oportunidadeId: estado.oportunidadeId,
       pessoaId: estado.pessoaId,
       dadosNovos,
+      dadosCompletos: { ...estado.dados, ...dadosNovos },
       resultado,
     });
 
@@ -178,17 +257,41 @@ export async function POST(request: Request) {
   }
 
   const data = payload.data;
-  if (data?.type !== "text" || !data?.content?.text) {
-    return Response.json({ ignorado: true, motivo: `tipo de mensagem "${data?.type}" ainda não tratado` });
-  }
-
-  const telefone: string | undefined = data.sender?.phone_number ?? data.recipient?.phone_number;
-  const texto: string = data.content.text;
+  const telefone: string | undefined = data?.sender?.phone_number ?? data?.recipient?.phone_number;
   if (!telefone) {
     return Response.json({ ignorado: true, motivo: "sem phone_number no payload" });
   }
 
-  after(() => processarMensagemRecebida(telefone, texto));
+  // Foto de perfil do WhatsApp do lead (Bloco D, 17/08/2026) — vem em `sender.profile_picture` em
+  // TODO message.received (confirmado no schema real da Zapster), null quando o contato não tem
+  // foto pública. Repassada pra cada handler abaixo, que decide se muda em relação à última salva.
+  const fotoPerfil: string | null = data?.sender?.profile_picture ?? null;
 
-  return Response.json({ recebido: true });
+  if (data?.type === "text" && data?.content?.text) {
+    after(() => processarMensagemRecebida(telefone, data.content.text, null, null, fotoPerfil));
+    return Response.json({ recebido: true });
+  }
+
+  // Áudio (Bloco C/Fase 5, 17/08/2026) — tratado separado dos outros tipos de mídia: transcreve e
+  // roda o motor de fluxo em cima do texto, não só registra. Ver processarAudioRecebido.
+  const audioUrl: string | undefined = data?.content?.media?.url;
+  if (data?.type === "audio" && audioUrl) {
+    after(() => processarAudioRecebido(telefone, audioUrl, fotoPerfil));
+    return Response.json({ recebido: true });
+  }
+
+  // Mídia (foto/vídeo/figurinha) — payload confirmado na doc real da Zapster
+  // (developer.zapsterapi.com/pt-BR/v1/webhooks/event-schemas/message, 17/08/2026):
+  // data.content.media.url é a URL do arquivo, data.content.text é a legenda (opcional).
+  // "document" não aparece no enum de tipos deles — se aparecer no log acima, precisa mapear aqui.
+  const TIPOS_MIDIA_SUPORTADOS: Record<string, string> = { image: "imagem", sticker: "imagem", video: "video" };
+  const midiaTipo = data?.type ? TIPOS_MIDIA_SUPORTADOS[data.type] : undefined;
+  const midiaUrl: string | undefined = data?.content?.media?.url;
+  if (midiaTipo && midiaUrl) {
+    const legenda: string | null = data.content?.text || null;
+    after(() => processarMidiaRecebida(telefone, midiaUrl, midiaTipo, legenda, fotoPerfil));
+    return Response.json({ recebido: true });
+  }
+
+  return Response.json({ ignorado: true, motivo: `tipo de mensagem "${data?.type}" ainda não tratado` });
 }

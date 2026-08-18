@@ -3,6 +3,7 @@ import {
   calcularProximoDisparo,
   dentroJanelaComercial,
   ehUltimoItemDaAgenda,
+  leadProvavelmenteBloqueouWhatsapp,
   offsetEmMs,
   proximoDisparoPrevisto,
 } from "./motor-followup";
@@ -94,6 +95,49 @@ describe("calcularProximoDisparo", () => {
   it("nada mais pendente depois do último item disparado → null", () => {
     const agora = new Date(origem.getTime() + 60 * 86_400_000);
     expect(calcularProximoDisparo(itens, 8, origem, agora)).toBeNull();
+  });
+
+  it("com pularCanalWhatsapp, pula os itens de whatsapp e vai direto pro próximo item de e-mail", () => {
+    const agora = new Date(origem.getTime() + 31 * 86_400_000);
+    expect(calcularProximoDisparo(itens, 0, origem, agora, true)?.id).toBe("i8");
+  });
+
+  it("com pularCanalWhatsapp, null se só existir item de whatsapp pendente (nenhum de e-mail venceu ainda)", () => {
+    const agora = new Date(origem.getTime() + 11 * 60_000);
+    expect(calcularProximoDisparo(itens, 0, origem, agora, true)).toBeNull();
+  });
+});
+
+describe("leadProvavelmenteBloqueouWhatsapp", () => {
+  it("false quando ainda não há 3 disparos registrados", () => {
+    expect(leadProvavelmenteBloqueouWhatsapp([{ entregueEm: null }, { entregueEm: null }])).toBe(false);
+  });
+
+  it("false quando pelo menos um dos últimos 3 foi entregue", () => {
+    expect(
+      leadProvavelmenteBloqueouWhatsapp([
+        { entregueEm: null },
+        { entregueEm: "2026-08-17T12:00:00Z" },
+        { entregueEm: null },
+      ]),
+    ).toBe(false);
+  });
+
+  it("true quando os últimos 3 disparos não foram entregues", () => {
+    expect(
+      leadProvavelmenteBloqueouWhatsapp([{ entregueEm: null }, { entregueEm: null }, { entregueEm: null }]),
+    ).toBe(true);
+  });
+
+  it("olha só os 3 mais recentes — um 4º disparo entregue mais antigo não muda o resultado", () => {
+    expect(
+      leadProvavelmenteBloqueouWhatsapp([
+        { entregueEm: null },
+        { entregueEm: null },
+        { entregueEm: null },
+        { entregueEm: "2026-08-01T12:00:00Z" },
+      ]),
+    ).toBe(true);
   });
 });
 

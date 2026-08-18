@@ -143,6 +143,12 @@ export type ConversaResumo = {
   atendenteNome: string | null;
   atendenteCor: CorBadge | null;
   favorita: boolean;
+  /** Foto de perfil do WhatsApp mais recente (Bloco D) — null quando o contato não tem foto pública ou ainda não mandou mensagem nenhuma. */
+  fotoUrl: string | null;
+  /** Sinais brutos do selo de risco de esfriar (Bloco D/Fase 5) — combinados em `selo-risco.ts` (calcularSeloRisco), calculado no client pra reaproveitar exatamente a mesma lógica testada do cabeçalho da conversa. */
+  aguardandoRespostaDesde: string | null;
+  contadorNaoReconhecimento: number;
+  estagnadoDesde: string | null;
 };
 
 /** Placeholders gravados por `carregarOuCriarConversaWhatsapp`/repositorio-atendimento quando o lead ainda não disse o nome — string exata, não é o ideal (frágil a typo), mas evita uma coluna nova só pra isto agora. */
@@ -224,6 +230,10 @@ export async function listarConversasAtendimento(
       atendenteNome: linha.atendente_nome,
       atendenteCor: ehCorBadgeValida(linha.atendente_cor ?? "") ? (linha.atendente_cor as CorBadge) : null,
       favorita: linha.favorita ?? false,
+      fotoUrl: linha.pessoa_foto_url ?? null,
+      aguardandoRespostaDesde: linha.aguardando_resposta_desde ?? null,
+      contadorNaoReconhecimento: linha.contador_nao_reconhecimento ?? 0,
+      estagnadoDesde: linha.estagnado_desde ?? null,
     };
   });
 
@@ -234,11 +244,30 @@ export async function listarConversasAtendimento(
   });
 }
 
+/** Histórico completo de fotos de perfil de uma pessoa (Bloco D) — mais recente primeiro, pra modal de histórico da Tela de Atendimento. */
+export async function listarFotosPessoa(pessoaId: string): Promise<{ url: string; capturadaEm: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pessoa_fotos")
+    .select("url, capturada_em")
+    .eq("pessoa_id", pessoaId)
+    .order("capturada_em", { ascending: false });
+  if (error) throw new Error(`Falha ao carregar histórico de fotos: ${error.message}`);
+  return (data ?? []).map((f) => ({ url: f.url, capturadaEm: f.capturada_em }));
+}
+
 /** Liga/desliga o favorito da conversa (sobe pro topo da lista de contatos quando favoritada). */
 export async function alternarFavorita(conversaId: string, favorita: boolean): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("conversas").update({ favorita }).eq("id", conversaId);
   if (error) throw new Error(`Falha ao favoritar conversa: ${error.message}`);
+}
+
+/** Atendente marca a estagnação (selo de risco 🔴, sinal 3) como resolvida — objeção endereçada ou negociação retomada manualmente. Bloco D/Fase 5, `selo-risco.ts`. */
+export async function resolverEstagnacao(conversaId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("conversas").update({ estagnado_desde: null }).eq("id", conversaId);
+  if (error) throw new Error(`Falha ao resolver estagnação: ${error.message}`);
 }
 
 export type ContagemNaoLidas = {
@@ -282,6 +311,10 @@ export type MensagemConversa = {
   remetente: string;
   conteudo: string | null;
   midiaUrl: string | null;
+  /** imagem/audio/video/documento — null em mensagens antigas (anteriores à migration 027), o frontend cai pra "imagem" nesse caso. */
+  midiaTipo: string | null;
+  entregueEm: string | null;
+  lidoEm: string | null;
   enviadoEm: string;
 };
 
@@ -310,8 +343,11 @@ export type ConversaDetalhe = {
   pessoaNome: string;
   pessoaTelefone: string | null;
   pessoaEmail: string | null;
+  iniciadaEm: string;
   etapaKanban: string | null;
   produtoNome: string | null;
+  produtoNomeReduzido: string | null;
+  tipoDocumento: string | null;
   valorEstimado: number | null;
   sobSupervisor: boolean;
   atendenteId: string | null;
@@ -322,6 +358,12 @@ export type ConversaDetalhe = {
   followupProximoEm: string | null;
   notas: NotaInterna[];
   mensagens: MensagemConversa[];
+  /** Foto de perfil do WhatsApp mais recente (Bloco D) — null quando o contato não tem foto pública. */
+  fotoUrl: string | null;
+  /** Sinais brutos do selo de risco de esfriar (Bloco D/Fase 5) — combinados em `selo-risco.ts` (calcularSeloRisco). */
+  aguardandoRespostaDesde: string | null;
+  contadorNaoReconhecimento: number;
+  estagnadoDesde: string | null;
 };
 
 /** Conversa inteira (cabeçalho + timeline) — painel direito. */
@@ -331,7 +373,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select(
-      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
+      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, created_at, dados, contador_nao_reconhecimento, estagnado_desde, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome, nome_reduzido)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
     )
     .eq("id", conversaId)
     .single();
@@ -341,16 +383,17 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const oportunidade = conversa.oportunidades as unknown as {
     etapa_kanban: string;
     valor_estimado: number | null;
-    produtos: { nome: string } | null;
+    produtos: { nome: string; nome_reduzido: string | null } | null;
   } | null;
   const atendente = conversa.usuarios_sistema as unknown as {
     cor_badge: string;
     pessoas: { nome_razao_social: string } | null;
   } | null;
+  const dados = conversa.dados as unknown as { tipo_documento?: string } | null;
 
   const { data: mensagens, error: erroMensagens } = await supabase
     .from("mensagens")
-    .select("id, remetente, conteudo, midia_url, enviado_em")
+    .select("id, remetente, conteudo, midia_url, midia_tipo, entregue_em, lido_em, enviado_em")
     .eq("conversa_id", conversaId)
     .order("enviado_em", { ascending: true });
   if (erroMensagens) throw new Error(`Falha ao carregar mensagens: ${erroMensagens.message}`);
@@ -361,6 +404,14 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     .eq("conversa_id", conversaId)
     .order("created_at", { ascending: true });
   if (erroNotas) throw new Error(`Falha ao carregar notas internas: ${erroNotas.message}`);
+
+  const { data: ultimaFoto } = await supabase
+    .from("pessoa_fotos")
+    .select("url")
+    .eq("pessoa_id", conversa.pessoa_id)
+    .order("capturada_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const followupAtivo =
     Boolean(conversa.aguardando_resposta_desde) &&
@@ -380,8 +431,11 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     pessoaNome: pessoa?.nome_razao_social ?? "Novo Lead",
     pessoaTelefone: pessoa?.whatsapp ?? null,
     pessoaEmail: pessoa?.email ?? null,
+    iniciadaEm: conversa.created_at,
     etapaKanban: oportunidade?.etapa_kanban ?? null,
     produtoNome: oportunidade?.produtos?.nome ?? null,
+    produtoNomeReduzido: oportunidade?.produtos?.nome_reduzido ?? null,
+    tipoDocumento: dados?.tipo_documento ?? null,
     valorEstimado: oportunidade?.valor_estimado ?? null,
     sobSupervisor: conversa.sob_supervisor,
     atendenteId: conversa.atendente_id,
@@ -390,6 +444,10 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     etapaFluxoAtualId: conversa.etapa_fluxo_atual_id,
     followupAtivo,
     followupProximoEm,
+    fotoUrl: ultimaFoto?.url ?? null,
+    aguardandoRespostaDesde: conversa.aguardando_resposta_desde,
+    contadorNaoReconhecimento: conversa.contador_nao_reconhecimento ?? 0,
+    estagnadoDesde: conversa.estagnado_desde,
     notas: (notas ?? []).map((n) => {
       const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
       return {
@@ -406,6 +464,9 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
       remetente: m.remetente,
       conteudo: m.conteudo,
       midiaUrl: m.midia_url,
+      midiaTipo: m.midia_tipo,
+      entregueEm: m.entregue_em,
+      lidoEm: m.lido_em,
       enviadoEm: m.enviado_em,
     })),
   };
@@ -459,6 +520,7 @@ export async function registrarMensagemHumana(
   texto: string,
   zapsterMessageId: string | null,
   midiaUrl: string | null = null,
+  midiaTipo: string | null = null,
 ): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("mensagens").insert({
@@ -466,6 +528,7 @@ export async function registrarMensagemHumana(
     remetente: "supervisor",
     conteudo: texto || null,
     midia_url: midiaUrl,
+    midia_tipo: midiaTipo,
     zapster_message_id: zapsterMessageId,
   });
   if (error) throw new Error(`Falha ao registrar mensagem: ${error.message}`);

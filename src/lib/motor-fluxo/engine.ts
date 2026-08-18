@@ -40,8 +40,8 @@ const DELAY_AUTOMATICO_MIN_SEGUNDOS = 3.0;
 const DELAY_AUTOMATICO_MAX_SEGUNDOS = 6.0;
 const DELAY_AUTOMATICO_JITTER_SEGUNDOS = 0.5;
 
-/** Extrai um texto legível de qualquer tipo de mensagem — usado só pra retomar a pergunta quando a resposta não é reconhecida (não faz sentido re-perguntar "aqui está uma imagem", precisa de um resumo). */
-function textoDeMensagem(msg: MensagemEtapa): string {
+/** Extrai um texto legível de qualquer tipo de mensagem — usado tanto pra retomar a pergunta quando a resposta não é reconhecida quanto pra dar contexto do checkpoint pra interpretação por IA (interpretacao-ia.ts). */
+export function textoDeMensagem(msg: MensagemEtapa): string {
   switch (msg.tipo) {
     case "texto":
       return msg.texto;
@@ -59,8 +59,10 @@ function textoDeMensagem(msg: MensagemEtapa): string {
   }
 }
 
-function mensagemRetomada(conteudo: ConteudoEtapa): MensagemEtapa {
-  const ultima = conteudo.mensagens[conteudo.mensagens.length - 1];
+/** `mensagensResolvidas` (saída de resolverMensagensDinamicas) tem prioridade sobre o conteúdo estático da etapa — sem isso, o "não entendi" de um checkpoint com texto dinâmico (ln_passo6, ln_passo12, ln_passo14, ln_passo15_*) repetia o placeholder cru gravado no banco em vez da pergunta de verdade. */
+function mensagemRetomada(conteudo: ConteudoEtapa, mensagensResolvidas?: MensagemEtapa[]): MensagemEtapa {
+  const lista = mensagensResolvidas ?? conteudo.mensagens;
+  const ultima = lista[lista.length - 1];
   const pergunta = textoDeMensagem(ultima);
   return {
     tipo: "texto",
@@ -269,6 +271,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     resolverMensagensDinamicas,
     calcularDadosDerivados,
     interpretarComIA,
+    interpretarListaDocumentos,
     variaveisGlobais = {},
   } = contexto;
   const conteudo = etapaAtual.conteudo;
@@ -288,22 +291,93 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   }
 
   let interpretadoPorIA = false;
+
+  // "lista_documentos" tem 3 saídas (completo/incompleto/não-entendi), diferente do encaixe binário
+  // genérico logo abaixo — precisa de tratamento próprio, inclusive uma mensagem de retomada
+  // customizada (pergunta de esclarecimento da IA) quando "incompleto" (suporte a "pacote", Bloco C).
+  if (!reconhecido && conteudo.tipo_resposta === "lista_documentos" && interpretarListaDocumentos) {
+    const resultado = await interpretarListaDocumentos({ etapaAtual, respostaLead, dados });
+    interpretadoPorIA = true;
+
+    if (resultado.status === "completo") {
+      reconhecido = { valor: resultado.itens.map((item) => item.tipo).join(",") };
+    } else if (resultado.status === "incompleto") {
+      const retomada: MensagemEtapa = { tipo: "texto", texto: resultado.perguntaEsclarecimento };
+      return {
+        mensagens: [empacotar(substituirVariaveisMensagem(retomada, dados, variaveisGlobais), conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: {},
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA: true,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    }
+    // "nao_entendi" deixa `reconhecido` null — cai no bloco genérico abaixo (repete a pergunta original).
+  }
+
+  // "faixas_documentos" — mesma filosofia de 3 saídas, mas extrai a faixa de TODOS os documentos
+  // de uma resposta livre só (decisão de Luiz, 17/08/2026: uma pergunta só, não um checkpoint por
+  // documento, pra não gerar fricção/evasão). "não sei" por documento é uma resposta válida.
+  if (!reconhecido && conteudo.tipo_resposta === "faixas_documentos" && contexto.interpretarFaixasDocumentos) {
+    const resultado = await contexto.interpretarFaixasDocumentos({ etapaAtual, respostaLead, dados });
+    interpretadoPorIA = true;
+
+    if (resultado.status === "completo") {
+      reconhecido = {
+        valor: resultado.itens.map((item) => (item.valorAproximado === null ? "nao_sei" : String(item.valorAproximado))).join(","),
+      };
+    } else if (resultado.status === "incompleto") {
+      const retomada: MensagemEtapa = { tipo: "texto", texto: resultado.perguntaEsclarecimento };
+      return {
+        mensagens: [empacotar(substituirVariaveisMensagem(retomada, dados, variaveisGlobais), conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: {},
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA: true,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    }
+    // "nao_entendi" deixa `reconhecido` null — cai no bloco genérico abaixo (repete a pergunta original).
+  }
+
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarComIA) {
     reconhecido = await interpretarComIA({ etapaAtual, respostaLead, dados });
     interpretadoPorIA = reconhecido !== null;
   }
 
   if (!reconhecido) {
-    const retomada = substituirVariaveisMensagem(mensagemRetomada(conteudo), dados, variaveisGlobais);
-    return {
-      mensagens: [empacotar(retomada, conteudo)],
-      etapaFinal: etapaAtual,
-      dadosNovos: {},
-      efeitos: [],
-      naoReconhecido: true,
-      interpretadoPorIA: false,
-      kanbanSubetapa: conteudo.kanban_subetapa ?? null,
-    };
+    // Checkpoint "opcional" (opcional_apos_tentativas, PLANO_MESTRE seção 8.12) — depois de N
+    // tentativas seguidas sem reconhecer a resposta, desiste em vez de travar o funil indefinidamente.
+    // O contador vive em `dados` (chave reservada, prefixo "_" — não colide com campo de negócio
+    // nenhum), incrementado a cada tentativa e nunca lido de novo depois que a etapa avança.
+    const chaveTentativas = `_tentativas:${conteudo.codigo}`;
+    const tentativas = Number(dados[chaveTentativas] ?? "0") + 1;
+    const desiste = conteudo.opcional_apos_tentativas != null && tentativas >= conteudo.opcional_apos_tentativas;
+
+    if (!desiste) {
+      const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? undefined;
+      const retomada = substituirVariaveisMensagem(
+        mensagemRetomada(conteudo, dinamicas ?? undefined),
+        dados,
+        variaveisGlobais,
+      );
+      return {
+        mensagens: [empacotar(retomada, conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: { [chaveTentativas]: String(tentativas) },
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    }
+
+    // Desistiu — segue o resto do turno exatamente como se o lead tivesse respondido de verdade,
+    // só que com valor vazio (nenhuma opção escolhida, então nem `proximo_condicional` nem
+    // `opcoes` são afetados; checkpoints assim usam `proximo_codigo` linear).
+    reconhecido = { valor: "" };
   }
 
   const dadosNovosBrutos: DadosConversa = etapaAtual.campoSalvo

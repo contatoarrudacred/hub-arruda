@@ -8,8 +8,9 @@ import { carregarItensAgenda, type ItemAgendaFollowupCarregado } from "@/lib/mot
 // follow-up manual na Tela de Atendimento — followup_manual_ativo, Fase 8 do Bloco B) e dispara o
 // próximo item da agenda que já venceu, respeitando a janela comercial — considera a régua
 // inteira, incluindo os itens de e-mail depois da Perdida (Luiz, 15/08/2026). Disparo do WhatsApp
-// em si (dispararItemFollowup, persistencia.ts) só registra em `mensagens`/`followup_emails` —
-// entrega de verdade pelo adaptador de canal ainda não está plugada aqui.
+// (dispararItemFollowup, persistencia.ts) envia de verdade via Zapster (17/08/2026) e checa
+// confirmação de entrega das últimas tentativas — se detectar bloqueio, marca Perdida e passa a
+// pular os itens de canal whatsapp dessa conversa, mantendo a régua de e-mail.
 //
 // Protegido por CRON_SECRET: o Vercel manda esse header automaticamente quando a variável de
 // ambiente CRON_SECRET está configurada no projeto — ver aviso no PLANO_MESTRE sobre configurar
@@ -21,6 +22,7 @@ type ConversaElegivel = {
   agenda_followup_id: string | null;
   aguardando_resposta_desde: string;
   proximo_item_agenda: number;
+  followup_whatsapp_bloqueado: boolean;
 };
 
 const ID_LOCK_CRON = "followups";
@@ -55,7 +57,7 @@ export async function GET(request: Request) {
   try {
     const { data: conversas, error } = await supabase
       .from("conversas")
-      .select("id, oportunidade_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda")
+      .select("id, oportunidade_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_whatsapp_bloqueado")
       .eq("status", "ativa")
       // Malala no controle dispara sozinha (sob_supervisor=false); com um humano no controle, só
       // dispara se ele ativou manualmente (followup_manual_ativo — modal da Tela de Atendimento,
@@ -72,6 +74,7 @@ export async function GET(request: Request) {
     const itensPorAgenda = new Map<string, ItemAgendaFollowupCarregado[]>();
     let disparados = 0;
     let foraDaJanela = 0;
+    let bloqueiosDetectados = 0;
     const erros: string[] = [];
 
     for (const conversa of conversas ?? []) {
@@ -89,6 +92,7 @@ export async function GET(request: Request) {
           conversa.proximo_item_agenda,
           new Date(conversa.aguardando_resposta_desde),
           agora,
+          conversa.followup_whatsapp_bloqueado,
         );
         if (!proximoItem) continue;
 
@@ -97,8 +101,12 @@ export async function GET(request: Request) {
           continue; // fica pra uma próxima execução do cron, dentro da janela comercial
         }
 
-        await dispararItemFollowup(conversa.id, conversa.oportunidade_id, proximoItem, itens);
-        disparados += 1;
+        const resultado = await dispararItemFollowup(conversa.id, conversa.oportunidade_id, proximoItem, itens);
+        if (resultado.disparado) {
+          disparados += 1;
+        } else {
+          bloqueiosDetectados += 1;
+        }
       } catch (e) {
         erros.push(`conversa ${conversa.id}: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -108,6 +116,7 @@ export async function GET(request: Request) {
       verificadas: conversas?.length ?? 0,
       disparados,
       foraDaJanela,
+      bloqueiosDetectados,
       erros,
     });
   } finally {

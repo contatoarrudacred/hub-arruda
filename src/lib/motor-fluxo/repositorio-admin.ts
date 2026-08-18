@@ -371,6 +371,31 @@ export async function listarConfiguracoes(): Promise<ConfiguracaoAdmin[]> {
   }));
 }
 
+export type LimiaresSeloRisco = { horasAmarelo: number; horasVermelho: number };
+
+/** Variante autenticada de `carregarLimiaresSeloRisco` (repositorio.ts) — usada por `/admin/atendimento` (page.tsx) pra calcular o selo de risco de esfriar no client (`selo-risco.ts`). Fallback preserva os valores iniciais da migration 033. */
+export async function carregarLimiaresSeloRisco(): Promise<LimiaresSeloRisco> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", ["selo_risco_esfriar_horas_amarelo", "selo_risco_esfriar_horas_vermelho"]);
+
+  if (error) {
+    throw new Error(`Falha ao carregar limiares do selo de risco: ${error.message}`);
+  }
+
+  const porChave = Object.fromEntries((data ?? []).map((linha) => [linha.chave, linha.valor])) as Record<
+    string,
+    unknown
+  >;
+
+  return {
+    horasAmarelo: Number(porChave.selo_risco_esfriar_horas_amarelo ?? 4),
+    horasVermelho: Number(porChave.selo_risco_esfriar_horas_vermelho ?? 24),
+  };
+}
+
 export type EntradaSalvarConfiguracao = {
   id: string | null;
   chave: string;
@@ -573,4 +598,68 @@ export async function excluirRespostaPronta(id: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("respostas_prontas").delete().eq("id", id);
   if (error) throw new Error(`Falha ao excluir resposta pronta: ${error.message}`);
+}
+
+export type RegraRoteamentoAdmin = {
+  id: string;
+  nome: string;
+  termos: string[];
+  etapaCodigo: string;
+  ordem: number;
+  ativo: boolean;
+};
+
+/** CRUD de /admin/roteamento (Bloco D/Fase 4) — regras do modo "palavra_chave" (roteamento-lead-novo.ts). */
+export async function listarRegrasRoteamento(): Promise<RegraRoteamentoAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("regras_roteamento")
+    .select("id, nome, termos, etapa_codigo, ordem, ativo")
+    .order("ordem");
+
+  if (error) throw new Error(`Falha ao listar regras de roteamento: ${error.message}`);
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    nome: linha.nome,
+    termos: linha.termos,
+    etapaCodigo: linha.etapa_codigo,
+    ordem: linha.ordem,
+    ativo: linha.ativo,
+  }));
+}
+
+export type EntradaSalvarRegraRoteamento = {
+  id: string | null;
+  nome: string;
+  termos: string[];
+  etapaCodigo: string;
+  ordem: number;
+  ativo: boolean;
+};
+
+export async function salvarRegraRoteamento(entrada: EntradaSalvarRegraRoteamento): Promise<{ id: string }> {
+  const supabase = await createClient();
+  const linha = {
+    nome: entrada.nome,
+    termos: entrada.termos,
+    etapa_codigo: entrada.etapaCodigo,
+    ordem: entrada.ordem,
+    ativo: entrada.ativo,
+  };
+
+  if (entrada.id) {
+    const { error } = await supabase.from("regras_roteamento").update(linha).eq("id", entrada.id);
+    if (error) throw new Error(`Falha ao atualizar regra de roteamento: ${error.message}`);
+    return { id: entrada.id };
+  }
+
+  const { data, error } = await supabase.from("regras_roteamento").insert(linha).select("id").single();
+  if (error) throw new Error(`Falha ao criar regra de roteamento: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function excluirRegraRoteamento(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("regras_roteamento").delete().eq("id", id);
+  if (error) throw new Error(`Falha ao excluir regra de roteamento: ${error.message}`);
 }

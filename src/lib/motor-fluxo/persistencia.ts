@@ -2,9 +2,18 @@ import "server-only";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
+import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
 import { substituirVariaveisTexto } from "./engine";
-import { ehUltimoItemDaAgenda, MOTIVO_PERDA_SEM_RESPOSTA } from "./motor-followup";
-import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
+import {
+  ehUltimoItemDaAgenda,
+  leadProvavelmenteBloqueouWhatsapp,
+  LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA,
+  MOTIVO_PERDA_BLOQUEIO_WHATSAPP,
+  MOTIVO_PERDA_SEM_RESPOSTA,
+} from "./motor-followup";
+import { detectarObjecao } from "./detector-objecao";
+import { criarDocumentosOportunidadeSeNecessario } from "./oportunidade-documentos";
+import { carregarIdAgendaPadrao, listarObjecoesAtivas, type ItemAgendaFollowupCarregado } from "./repositorio";
 import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
 
 // Persistência de conversa "de verdade" — grava em pessoas/oportunidades/conversas/mensagens.
@@ -18,15 +27,15 @@ import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, Men
 
 const NOME_PRODUTO_LIMPEZA_NOME = "Limpeza de Nome (CPF/CNPJ) — Serasa/SPC";
 
-function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; midiaUrl: string | null } {
+function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; midiaUrl: string | null; midiaTipo: string | null } {
   switch (msg.tipo) {
     case "texto":
-      return { conteudo: msg.texto, midiaUrl: null };
+      return { conteudo: msg.texto, midiaUrl: null, midiaTipo: null };
     case "imagem":
     case "audio":
     case "video":
     case "documento":
-      return { conteudo: msg.legenda ?? null, midiaUrl: msg.midia_url };
+      return { conteudo: msg.legenda ?? null, midiaUrl: msg.midia_url, midiaTipo: msg.tipo };
     case "localizacao":
       return {
         conteudo: JSON.stringify({
@@ -36,9 +45,10 @@ function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; mid
           endereco: msg.endereco,
         }),
         midiaUrl: null,
+        midiaTipo: null,
       };
     case "contato":
-      return { conteudo: JSON.stringify({ nome: msg.nome, telefone: msg.telefone }), midiaUrl: null };
+      return { conteudo: JSON.stringify({ nome: msg.nome, telefone: msg.telefone }), midiaUrl: null, midiaTipo: null };
     case "pix":
       return {
         conteudo: JSON.stringify({
@@ -47,6 +57,7 @@ function paraColunasMensagem(msg: MensagemEtapa): { conteudo: string | null; mid
           nome_beneficiario: msg.nome_beneficiario,
         }),
         midiaUrl: null,
+        midiaTipo: null,
       };
   }
 }
@@ -167,13 +178,47 @@ export async function carregarOuCriarConversaWhatsapp(
   };
 }
 
-/** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. */
-export async function registrarMensagemLead(conversaId: string, texto: string): Promise<void> {
+/**
+ * Histórico de fotos do contato (Bloco D, 17/08/2026) — a Zapster manda `sender.profile_picture`
+ * em todo `message.received`, então isso roda a cada mensagem recebida do lead, não só na
+ * primeira. Nunca sobrescreve: só insere uma linha nova quando a URL muda em relação à mais
+ * recente já salva — mantém o histórico completo (TELA_ATENDIMENTO_ARRUDACRED.md seção 4).
+ * Silenciosa em qualquer falha — captura de foto é complementar, nunca pode travar o webhook.
+ */
+export async function capturarFotoPerfilSeNecessario(pessoaId: string, urlFoto: string | null | undefined): Promise<void> {
+  if (!urlFoto) return;
+
+  try {
+    const supabase = createAdminClient();
+    const { data: ultimaFoto } = await supabase
+      .from("pessoa_fotos")
+      .select("url")
+      .eq("pessoa_id", pessoaId)
+      .order("capturada_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (ultimaFoto?.url === urlFoto) return;
+
+    const { error } = await supabase.from("pessoa_fotos").insert({ pessoa_id: pessoaId, url: urlFoto });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error("[persistencia] erro ao capturar foto de perfil:", e);
+  }
+}
+
+/** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. `midiaUrl`/`midiaTipo` preenchidos quando o lead manda foto/áudio/vídeo (Bloco B2, ver processarMensagemRecebida). */
+export async function registrarMensagemLead(
+  conversaId: string,
+  texto: string | null,
+  midiaUrl: string | null = null,
+  midiaTipo: string | null = null,
+): Promise<void> {
   const supabase = createAdminClient();
 
   const { error: erroMensagem } = await supabase
     .from("mensagens")
-    .insert({ conversa_id: conversaId, remetente: "lead", conteudo: texto });
+    .insert({ conversa_id: conversaId, remetente: "lead", conteudo: texto, midia_url: midiaUrl, midia_tipo: midiaTipo });
   if (erroMensagem) {
     throw new Error(`Falha ao registrar mensagem do lead: ${erroMensagem.message}`);
   }
@@ -184,6 +229,37 @@ export async function registrarMensagemLead(conversaId: string, texto: string): 
     .eq("id", conversaId);
   if (erroConversa) {
     throw new Error(`Falha ao atualizar conversa após resposta do lead: ${erroConversa.message}`);
+  }
+}
+
+/** Marca `conversas.estagnado_desde` (selo de risco de esfriar, sinal 3) se ainda não estiver marcada — nunca sobrescreve uma pendência já aberta, a data precisa refletir quando ela começou de verdade. */
+async function marcarEstagnadaSeNecessario(conversaId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data } = await supabase.from("conversas").select("estagnado_desde").eq("id", conversaId).single();
+  if (data?.estagnado_desde) return;
+
+  const { error } = await supabase
+    .from("conversas")
+    .update({ estagnado_desde: new Date().toISOString() })
+    .eq("id", conversaId);
+  if (error) throw new Error(`Falha ao marcar conversa como estagnada: ${error.message}`);
+}
+
+/**
+ * Detector automático de objeção (Bloco D/Fase 5) — roda a cada mensagem de texto do lead (chamado
+ * via `after()` no webhook, route.ts) e marca a conversa como estagnada quando detecta uma. Reaproveita
+ * o mesmo `detectarObjecao` do botão manual do Bloco C (`detector-objecao.ts`), só que automático em
+ * vez de sob demanda. Silencioso em qualquer falha — é um sinal complementar pro selo de risco, nunca
+ * pode travar o atendimento nem atrasar a resposta da Malala.
+ */
+export async function detectarEMarcarObjecaoPendente(conversaId: string, textoLead: string): Promise<void> {
+  try {
+    const objecoesAtivas = await listarObjecoesAtivas();
+    const detectada = await detectarObjecao(textoLead, objecoesAtivas);
+    if (!detectada) return;
+    await marcarEstagnadaSeNecessario(conversaId);
+  } catch (e) {
+    console.error("[persistencia] erro ao detectar objeção automática:", e);
   }
 }
 
@@ -232,6 +308,13 @@ export async function aplicarEfeitoNegocio(
     const { error } = await supabase.from("conversas").update({ sob_supervisor: true }).eq("id", conversaId);
     if (error) throw new Error(`Falha ao escalar conversa pro supervisor: ${error.message}`);
   }
+
+  // Selo de risco de esfriar, sinal 3 (Bloco D/Fase 5) — o fluxo automatizado acabou sem chegar em
+  // "ganha" (decisão de Luiz, 17/08/2026: essa é a leitura escolhida pra "o lead não fechar", em vez
+  // de tentar marcar recusas pontuais no meio do script, que exigiria schema novo no editor de fluxo).
+  if (efeito.etapaKanban !== "ganha") {
+    await marcarEstagnadaSeNecessario(conversaId);
+  }
 }
 
 /** Grava as mensagens que a Malala mandou neste turno, aplica os efeitos de negócio que o motor decidiu, sincroniza o nome capturado com `pessoas` (pro follow-up conseguir montar `[Primeiro_Nome]` depois), e rearma (ou desarma) a cadência de follow-up conforme a etapa em que a conversa parou. */
@@ -240,9 +323,12 @@ export async function registrarTurnoMalala(params: {
   oportunidadeId: string;
   pessoaId: string;
   dadosNovos: Record<string, string>;
-  resultado: Pick<ResultadoAvanco, "mensagens" | "etapaFinal" | "efeitos">;
+  /** `dados` completo (turnos anteriores + este) — só precisa quando algum efeito colateral precisa de um campo capturado num turno anterior (ex.: documentos_tipos, capturado em ln_passo4, quando a faixa de cada um é capturada só depois em ln_passo6). Opcional pra não obrigar quem só usa dadosNovos a montar isso à toa. */
+  dadosCompletos?: Record<string, string>;
+  /** `naoReconhecido` só existe em turnos de `avancarConversa` (conversa já em andamento) — turnos de `iniciarFluxo` (primeira mensagem) não têm o conceito, tratam como `false` (selo de risco, sinal 2). */
+  resultado: Pick<ResultadoAvanco, "mensagens" | "etapaFinal" | "efeitos"> & { naoReconhecido?: boolean };
 }): Promise<void> {
-  const { conversaId, oportunidadeId, pessoaId, dadosNovos, resultado } = params;
+  const { conversaId, oportunidadeId, pessoaId, dadosNovos, dadosCompletos, resultado } = params;
   const supabase = createAdminClient();
 
   if (dadosNovos.nome) {
@@ -271,15 +357,26 @@ export async function registrarTurnoMalala(params: {
     after(() => enviarEmailBoasVindasSeNecessario(pessoaId, nomeConhecido, emailCapturado));
   }
 
+  // Suporte a "pacote" (Bloco C, PLANO_MESTRE seção 11) — dadosNovos.documentos_valores só existe
+  // no turno em que a faixa de TODOS os documentos acabou de ser capturada (ln_passo6). O tipo de
+  // cada documento (documentos_tipos) foi capturado num turno anterior (ln_passo4) — por isso
+  // precisa do `dadosCompletos` acumulado, não só do que mudou agora.
+  if (dadosNovos.documentos_valores && dadosCompletos?.documentos_tipos) {
+    const documentosTipos = dadosCompletos.documentos_tipos;
+    const documentosValores = dadosNovos.documentos_valores;
+    after(() => criarDocumentosOportunidadeSeNecessario(oportunidadeId, documentosTipos, documentosValores));
+  }
+
   if (resultado.mensagens.length > 0) {
     const linhas = resultado.mensagens.map((item: MensagemEnviada) => {
-      const { conteudo, midiaUrl } = paraColunasMensagem(item.mensagem);
+      const { conteudo, midiaUrl, midiaTipo } = paraColunasMensagem(item.mensagem);
       return {
         conversa_id: conversaId,
         etapa_fluxo_id: resultado.etapaFinal?.id ?? null,
         remetente: "malala",
         conteudo,
         midia_url: midiaUrl,
+        midia_tipo: midiaTipo,
       };
     });
     const { error } = await supabase.from("mensagens").insert(linhas);
@@ -291,13 +388,23 @@ export async function registrarTurnoMalala(params: {
   // mensagem e outra: cada chamada é uma invocação serverless nova, então precisa reconstruir de
   // onde a conversa parou a partir do banco. Gravar aqui sempre (não só quando vem do WhatsApp)
   // mantém as duas portas de entrada consistentes.
-  const { data: dadosAtuais } = await supabase.from("conversas").select("dados").eq("id", conversaId).single();
+  const { data: dadosAtuais } = await supabase
+    .from("conversas")
+    .select("dados, contador_nao_reconhecimento")
+    .eq("id", conversaId)
+    .single();
+  // Selo de risco de esfriar, sinal 2 (Bloco D/Fase 5) — zera assim que a Malala reconhece uma
+  // resposta de novo, só sobe enquanto o lead segue "confundindo" o mesmo checkpoint.
+  const contadorNaoReconhecimento = resultado.naoReconhecido
+    ? (dadosAtuais?.contador_nao_reconhecimento ?? 0) + 1
+    : 0;
   const { error: erroPosicao } = await supabase
     .from("conversas")
     .update({
       etapa_fluxo_atual_id: resultado.etapaFinal?.id ?? null,
       fluxo_id: resultado.etapaFinal?.fluxoId ?? null,
       dados: { ...(dadosAtuais?.dados ?? {}), ...dadosNovos },
+      contador_nao_reconhecimento: contadorNaoReconhecimento,
     })
     .eq("id", conversaId);
   if (erroPosicao) throw new Error(`Falha ao salvar posição da conversa: ${erroPosicao.message}`);
@@ -323,35 +430,85 @@ export async function registrarTurnoMalala(params: {
   }
 }
 
+export type ResultadoDisparoFollowup =
+  | { disparado: true; conteudo: string }
+  | { disparado: false; motivo: "bloqueio_whatsapp_detectado" };
+
 /**
- * Dispara um item da agenda de follow-up — usado tanto pelo cron (src/app/api/cron/followups)
- * quanto pelo botão de teste do simulador (avançar manualmente, sem esperar o tempo real passar).
- * WhatsApp grava em `mensagens` (mesmo histórico da conversa); e-mail grava em `followup_emails`
- * (canal separado, não é conversa — Luiz, 15/08/2026). Marca a oportunidade como Perdida no item
- * de encerramento (`encerraAtendimento`), e só finaliza a cadência de verdade (fecha a conversa,
- * para o relógio) no ÚLTIMO item da agenda inteira — a régua continua depois da Perdida, com os
- * itens de nutrição por e-mail, até realmente acabar.
+ * Dispara um item da agenda de follow-up — chamado pelo cron (src/app/api/cron/followups).
+ * WhatsApp envia de verdade (Zapster, `enviarMensagemTexto`) e grava em `mensagens` (mesmo
+ * histórico da conversa, `origem_followup=true`); e-mail grava em `followup_emails` (canal
+ * separado, não é conversa — Luiz, 15/08/2026). Marca a oportunidade como Perdida no item de
+ * encerramento (`encerraAtendimento`), e só finaliza a cadência de verdade (fecha a conversa, para
+ * o relógio) no ÚLTIMO item da agenda inteira — a régua continua depois da Perdida, com os itens
+ * de nutrição por e-mail, até realmente acabar.
+ *
+ * Antes de mandar um item de WhatsApp, checa se as últimas `LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA`
+ * mensagens de follow-up já disparadas pra esta conversa não foram entregues — sinal de bloqueio
+ * do número pelo lead (Luiz, 17/08/2026). Se detectar, marca Perdida com motivo específico, liga
+ * `conversas.followup_whatsapp_bloqueado` (o cron passa a pular os itens de canal whatsapp dessa
+ * conversa daí em diante, mas continua a régua de e-mail normalmente) e NÃO dispara este item.
  */
 export async function dispararItemFollowup(
   conversaId: string,
   oportunidadeId: string,
   item: ItemAgendaFollowupCarregado,
   todosItensDaAgenda: ItemAgendaFollowupCarregado[],
-): Promise<string> {
+): Promise<ResultadoDisparoFollowup> {
   const supabase = createAdminClient();
 
   const { data: conversa } = await supabase
     .from("conversas")
-    .select("pessoas(nome_razao_social, email)")
+    .select("pessoas(nome_razao_social, email, whatsapp)")
     .eq("id", conversaId)
     .single();
-  const pessoa = conversa?.pessoas as unknown as { nome_razao_social: string | null; email: string | null } | null;
+  const pessoa = conversa?.pessoas as unknown as {
+    nome_razao_social: string | null;
+    email: string | null;
+    whatsapp: string | null;
+  } | null;
   const conteudo = substituirVariaveisTexto(item.conteudo, { nome: pessoa?.nome_razao_social ?? "" }, {});
 
   if (item.canal === "whatsapp") {
-    const { error } = await supabase
+    const { data: ultimasMensagens, error: erroUltimas } = await supabase
       .from("mensagens")
-      .insert({ conversa_id: conversaId, remetente: "malala", conteudo });
+      .select("entregue_em")
+      .eq("conversa_id", conversaId)
+      .eq("origem_followup", true)
+      .order("enviado_em", { ascending: false })
+      .limit(LIMITE_FOLLOWUPS_WHATSAPP_SEM_ENTREGA);
+    if (erroUltimas) throw new Error(`Falha ao checar entregas de follow-up anteriores: ${erroUltimas.message}`);
+
+    const bloqueado = leadProvavelmenteBloqueouWhatsapp(
+      (ultimasMensagens ?? []).map((m) => ({ entregueEm: m.entregue_em as string | null })),
+    );
+
+    if (bloqueado) {
+      const { error: erroOportunidade } = await supabase
+        .from("oportunidades")
+        .update({ etapa_kanban: "perdida", motivo_perda: MOTIVO_PERDA_BLOQUEIO_WHATSAPP })
+        .eq("id", oportunidadeId);
+      if (erroOportunidade) throw new Error(`Falha ao marcar oportunidade perdida por bloqueio: ${erroOportunidade.message}`);
+
+      const { error: erroConversa } = await supabase
+        .from("conversas")
+        .update({ followup_whatsapp_bloqueado: true })
+        .eq("id", conversaId);
+      if (erroConversa) throw new Error(`Falha ao marcar bloqueio de whatsapp na conversa: ${erroConversa.message}`);
+
+      return { disparado: false, motivo: "bloqueio_whatsapp_detectado" };
+    }
+
+    if (!pessoa?.whatsapp) throw new Error(`Conversa ${conversaId} não tem telefone de WhatsApp associado.`);
+    const { messageId } = await enviarMensagemTexto(pessoa.whatsapp, conteudo);
+
+    const { error } = await supabase.from("mensagens").insert({
+      conversa_id: conversaId,
+      remetente: "malala",
+      conteudo,
+      zapster_message_id: messageId || null,
+      origem_followup: true,
+    });
     if (error) throw new Error(`Falha ao registrar mensagem de follow-up: ${error.message}`);
   } else {
     const { error } = await supabase.from("followup_emails").insert({
@@ -385,7 +542,7 @@ export async function dispararItemFollowup(
     if (error) throw new Error(`Falha ao finalizar cadência de follow-up: ${error.message}`);
   }
 
-  return conteudo;
+  return { disparado: true, conteudo };
 }
 
 const PADRAO_CODIGO_RASTREIO = /\s*\(ref:\s*([a-f0-9]{8})\)\s*$/i;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ObjecaoDetectada } from "@/lib/motor-fluxo/detector-objecao";
 import type {
   ContagemNaoLidas,
   ConversaDetalhe,
@@ -23,11 +24,16 @@ import {
   contarNaoLidasAction,
   contarNotificacoesNaoLidasAction,
   criarNotaAction,
+  detectarObjecaoAction,
   enviarMensagemAction,
   enviarMidiaAction,
+  gerarResumoConversaAction,
   listarConversasAction,
+  listarFotosPessoaAction,
   listarNotificacoesAction,
   marcarNotificacaoLidaAction,
+  resolverEstagnacaoAction,
+  sugerirRespostaAction,
 } from "./actions";
 import { resetarConversaAction } from "../reset-conversa/actions";
 import { sair } from "../actions";
@@ -41,6 +47,7 @@ import emojisPtRaw from "emoji-picker-react/dist/data/emojis-pt.json";
 const emojisPt = emojisPtRaw as unknown as EmojiData;
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
 import { rotuloCurtoDaSubetapa, rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
+import { calcularSeloRisco, type NivelRisco } from "@/lib/motor-fluxo/selo-risco";
 
 // Tela de Atendimento, Bloco A (fundação) — ver docs/TELA_ATENDIMENTO_ARRUDACRED.md. Simplificações
 // conscientes deste primeiro bloco, registradas lá: "não lida" é só "última mensagem é do lead" (sem
@@ -100,6 +107,75 @@ function formatarHoraOuData(iso: string | null): string {
   return `${dataCurta} - ${hora}`;
 }
 
+/** "DD/MM/AA - HH:MM" — painel Oportunidade ("Conversa iniciada em", Bloco B2). */
+function formatarDataHoraCompleta(iso: string | null): string {
+  if (!iso) return "";
+  const data = new Date(iso);
+  const dataCurta = data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const hora = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${dataCurta} - ${hora}`;
+}
+
+/**
+ * Bolha de mídia na timeline (Bloco B2, 17/08/2026) — antes disso tudo tentava renderizar como
+ * `<img>` incondicionalmente, então áudio/vídeo/documento não apareciam. `midiaTipo` nulo (mensagens
+ * gravadas antes da migration 027) cai pra "imagem", único tipo que existia até então.
+ */
+function MidiaMensagem({
+  midiaUrl,
+  midiaTipo,
+  onAbrirTelaCheia,
+}: {
+  midiaUrl: string;
+  midiaTipo: string | null;
+  onAbrirTelaCheia: (midia: { url: string; tipo: "imagem" | "video" }) => void;
+}) {
+  const tipo = midiaTipo ?? "imagem";
+
+  if (tipo === "audio") {
+    return (
+      <audio controls src={midiaUrl} className="mb-1 max-w-full">
+        <track kind="captions" />
+      </audio>
+    );
+  }
+
+  if (tipo === "video") {
+    return (
+      <button
+        type="button"
+        onClick={() => onAbrirTelaCheia({ url: midiaUrl, tipo: "video" })}
+        className="relative mb-1 block max-w-full overflow-hidden rounded-lg"
+      >
+        <video src={midiaUrl} muted preload="metadata" className="max-w-full rounded-lg" />
+        <span className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-lg">▶</span>
+        </span>
+      </button>
+    );
+  }
+
+  if (tipo === "documento") {
+    return (
+      <a
+        href={midiaUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-1 flex items-center gap-2 rounded-lg bg-black/10 px-3 py-2 text-sm underline"
+      >
+        📄 Abrir documento
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" onClick={() => onAbrirTelaCheia({ url: midiaUrl, tipo: "imagem" })} className="mb-1 block">
+      {/* eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa */}
+      <img src={midiaUrl} alt="" className="max-w-full rounded-lg" />
+    </button>
+  );
+}
+
 function iniciais(nome: string): string {
   return nome.trim().charAt(0).toUpperCase() || "?";
 }
@@ -109,6 +185,13 @@ function IconeStatusEntrega({ entregueEm, lidoEm }: { entregueEm: string | null;
   if (lidoEm) return <span className="text-[13px] text-blue-500" title="Lido">✓✓</span>;
   if (entregueEm) return <span className="text-[13px] text-zinc-400" title="Entregue">✓✓</span>;
   return <span className="text-[13px] text-zinc-400" title="Enviado">✓</span>;
+}
+
+/** Emoji do selo de risco de esfriar (Bloco D/Fase 5) — "baixo" não mostra nada (só quem está em risco de verdade precisa se destacar, mesmo critério já usado pro painel de status de integrações). */
+function emojiSeloRisco(nivel: NivelRisco): string | null {
+  if (nivel === "alto") return "🔴";
+  if (nivel === "medio") return "🟡";
+  return null;
 }
 
 /** Rótulo curto tipo "em ~10 min" / "em ~4h" / "amanhã" — usado no chip de follow-up ativo, não precisa de precisão de segundo (o polling de 4s já mantém isso razoavelmente fresco). */
@@ -333,6 +416,18 @@ function MenuAcoesCabecalho({ telefone, onResetar }: { telefone: string | null; 
             >
               📋 {copiado ? "Copiado!" : "Copiar telefone"}
             </button>
+            {telefone && (
+              <a
+                href={`https://wa.me/${telefone.replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setAberto(false)}
+                title="Abre o chat no WhatsApp de verdade — a chamada em si é feita de lá, o CRM não tem endpoint pra iniciar (ver Bloco D)"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                📞 Ligar pelo WhatsApp
+              </a>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -475,6 +570,7 @@ export function AtendimentoClient({
   atendentesIniciais,
   respostasProntasIniciais,
   agendasFollowupIniciais,
+  limiaresSeloRisco,
 }: {
   usuarioAtual: UsuarioSistema;
   conversasIniciais: ConversaResumo[];
@@ -482,6 +578,7 @@ export function AtendimentoClient({
   atendentesIniciais: UsuarioSistema[];
   respostasProntasIniciais: RespostaPronta[];
   agendasFollowupIniciais: AgendaAdmin[];
+  limiaresSeloRisco: { horasAmarelo: number; horasVermelho: number };
 }) {
   const [filtroChave, setFiltroChave] = useState<ChaveFiltro>("tudo");
   const [menuHumanoAberto, setMenuHumanoAberto] = useState(false);
@@ -490,11 +587,17 @@ export function AtendimentoClient({
   const [contagens, setContagens] = useState<ContagemNaoLidas>(contagensIniciais);
   const [conversaSelecionadaId, setConversaSelecionadaId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<ConversaDetalhe | null>(null);
+  // Resumo por IA ao assumir (Bloco C/Fase 5) — amarrado ao conversaId pra não vazar o resumo de
+  // uma conversa pra outra enquanto o de destino ainda está carregando.
+  const [resumoIA, setResumoIA] = useState<{ conversaId: string; texto: string | null; carregando: boolean } | null>(null);
   const [textoComposer, setTextoComposer] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [painelContatoAberto, setPainelContatoAberto] = useState(true);
   const [confirmandoReset, setConfirmandoReset] = useState(false);
+  const [historicoFotos, setHistoricoFotos] = useState<{ url: string; capturadaEm: string }[] | null>(null);
+  const [carregandoHistoricoFotos, setCarregandoHistoricoFotos] = useState(false);
+  const [midiaEmTelaCheia, setMidiaEmTelaCheia] = useState<{ url: string; tipo: "imagem" | "video" } | null>(null);
   const [resetando, setResetando] = useState(false);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
@@ -604,6 +707,9 @@ export function AtendimentoClient({
     if (conversaId === conversaSelecionadaId) await recarregarDetalhe(conversaId);
     await recarregarLista();
     await recarregarContagens();
+    setResumoIA({ conversaId, texto: null, carregando: true });
+    const texto = await gerarResumoConversaAction(conversaId);
+    setResumoIA((atual) => (atual?.conversaId === conversaId ? { conversaId, texto, carregando: false } : atual));
   }
 
   async function atribuirMalala(conversaId: string) {
@@ -636,6 +742,24 @@ export function AtendimentoClient({
     await recarregarContagens();
   }
 
+  /** Selo de risco de esfriar (Bloco D/Fase 5) — atendente marca a estagnação como resolvida (objeção endereçada, negociação retomada manualmente). */
+  async function resolverEstagnacao() {
+    if (!conversaSelecionadaId) return;
+    await resolverEstagnacaoAction(conversaSelecionadaId);
+    await recarregarDetalhe(conversaSelecionadaId);
+    await recarregarLista();
+  }
+
+  /** Histórico de fotos de perfil do contato (Bloco D) — busca sob demanda ao abrir a modal, não fica no estado da conversa. */
+  async function abrirHistoricoFotos() {
+    if (!detalhe) return;
+    setHistoricoFotos([]);
+    setCarregandoHistoricoFotos(true);
+    const fotos = await listarFotosPessoaAction(detalhe.pessoaId);
+    setHistoricoFotos(fotos);
+    setCarregandoHistoricoFotos(false);
+  }
+
   async function handleEnviar() {
     if (!conversaSelecionadaId || !detalhe?.pessoaTelefone || !textoComposer.trim()) return;
     setEnviando(true);
@@ -665,29 +789,73 @@ export function AtendimentoClient({
     input.click();
   }
 
-  async function enviarArquivo(arquivo: File) {
+  async function enviarArquivo(arquivo: File, legenda: string) {
     if (!conversaSelecionadaId || !detalhe?.pessoaTelefone) return;
     setEnviandoMidia(true);
     setErroEnvio(null);
     const formData = new FormData();
     formData.append("arquivo", arquivo);
-    const resultado = await enviarMidiaAction(conversaSelecionadaId, detalhe.pessoaTelefone, formData, textoComposer);
+    const resultado = await enviarMidiaAction(conversaSelecionadaId, detalhe.pessoaTelefone, formData, legenda);
     setEnviandoMidia(false);
     if (!resultado.sucesso) {
       setErroEnvio(resultado.erro);
       return;
     }
-    setTextoComposer("");
     await recarregarDetalhe(conversaSelecionadaId);
     await recarregarLista();
     await recarregarContagens();
   }
 
+  /** Preview + legenda antes de enviar (Bloco B2, WhatsApp-like) — em vez de subir na hora, guarda o arquivo escolhido e só chama `enviarArquivo` quando o usuário confirma no modal. */
+  const [previewMidia, setPreviewMidia] = useState<{ arquivo: File; url: string; tipo: string } | null>(null);
+  const [legendaPreview, setLegendaPreview] = useState("");
+
+  function midiaTipoDoMimetypeCliente(mimetype: string): string {
+    if (mimetype.startsWith("image/")) return "imagem";
+    if (mimetype.startsWith("audio/")) return "audio";
+    if (mimetype.startsWith("video/")) return "video";
+    return "documento";
+  }
+
+  function abrirPreviewMidia(arquivo: File) {
+    setLegendaPreview("");
+    setPreviewMidia({ arquivo, url: URL.createObjectURL(arquivo), tipo: midiaTipoDoMimetypeCliente(arquivo.type) });
+  }
+
+  function fecharPreviewMidia() {
+    setPreviewMidia((atual) => {
+      if (atual) URL.revokeObjectURL(atual.url);
+      return null;
+    });
+    setLegendaPreview("");
+  }
+
+  async function confirmarEnvioMidia() {
+    if (!previewMidia) return;
+    const { arquivo, url } = previewMidia;
+    const legenda = legendaPreview;
+    URL.revokeObjectURL(url);
+    setPreviewMidia(null);
+    setLegendaPreview("");
+    await enviarArquivo(arquivo, legenda);
+  }
+
+  // Segurança: nunca deixar um object URL de preview vazando — revoga se o usuário trocar de
+  // conversa ou sair da tela com um preview de mídia ainda aberto.
+  useEffect(() => {
+    return () => {
+      setPreviewMidia((atual) => {
+        if (atual) URL.revokeObjectURL(atual.url);
+        return null;
+      });
+    };
+  }, [conversaSelecionadaId]);
+
   async function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
     e.target.value = "";
     if (!arquivo) return;
-    await enviarArquivo(arquivo);
+    abrirPreviewMidia(arquivo);
   }
 
   const [menuAudioAberto, setMenuAudioAberto] = useState(false);
@@ -744,7 +912,7 @@ export function AtendimentoClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversaSelecionadaId]);
 
-  async function pararEEnviarGravacao() {
+  async function pararGravacaoEAbrirPreview() {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
     const aoParar = new Promise<void>((resolve) => {
@@ -758,7 +926,7 @@ export function AtendimentoClient({
     if (blob.size === 0) return;
     const extensao = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
     const arquivo = new File([blob], `audio-${Date.now()}.${extensao}`, { type: blob.type });
-    await enviarArquivo(arquivo);
+    abrirPreviewMidia(arquivo);
   }
 
   function formatarTempoGravacao(segundos: number): string {
@@ -797,6 +965,36 @@ export function AtendimentoClient({
     setCarregandoProximaEtapa(false);
     if (texto) setTextoComposer(texto);
     else setAvisoProximaEtapa("Esta etapa do script não tem mensagem de texto pra reaproveitar.");
+  }
+
+  // Detector de objeção (Bloco C/Fase 5) — acionado sob demanda pelo atendente, não a cada poll.
+  const [objecaoDetectada, setObjecaoDetectada] = useState<{
+    conversaId: string;
+    carregando: boolean;
+    resultado: ObjecaoDetectada | null;
+  } | null>(null);
+
+  async function handleDetectarObjecao() {
+    if (!conversaSelecionadaId) return;
+    setMenuAcoesAberto(false);
+    setObjecaoDetectada({ conversaId: conversaSelecionadaId, carregando: true, resultado: null });
+    const resultado = await detectarObjecaoAction(conversaSelecionadaId);
+    setObjecaoDetectada({ conversaId: conversaSelecionadaId, carregando: false, resultado });
+  }
+
+  // Assist do composer (Sonnet, Bloco C/Fase 5) — sugere um rascunho na voz da Malala.
+  const [gerandoSugestao, setGerandoSugestao] = useState(false);
+  const [avisoSugestao, setAvisoSugestao] = useState<string | null>(null);
+
+  async function handleSugerirResposta() {
+    if (!conversaSelecionadaId) return;
+    setMenuAcoesAberto(false);
+    setAvisoSugestao(null);
+    setGerandoSugestao(true);
+    const texto = await sugerirRespostaAction(conversaSelecionadaId);
+    setGerandoSugestao(false);
+    if (texto) setTextoComposer(texto);
+    else setAvisoSugestao("Não foi possível gerar uma sugestão desta vez.");
   }
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -967,6 +1165,13 @@ export function AtendimentoClient({
             const naoLida = c.naoLidasContagem > 0;
             const nomeOuTelefone = c.nomeConhecido ? c.pessoaNome : formatarTelefone(c.pessoaTelefone) || c.pessoaNome;
             const nossaMensagem = c.ultimaMensagemRemetente !== null && c.ultimaMensagemRemetente !== "lead";
+            const nivelRisco = calcularSeloRisco({
+              aguardandoRespostaDesde: c.aguardandoRespostaDesde,
+              contadorNaoReconhecimento: c.contadorNaoReconhecimento,
+              estagnadoDesde: c.estagnadoDesde,
+              ...limiaresSeloRisco,
+            });
+            const seloRisco = emojiSeloRisco(nivelRisco);
             return (
               <div
                 key={c.conversaId}
@@ -984,14 +1189,31 @@ export function AtendimentoClient({
               >
                 <div className="flex gap-2.5">
                   <div className="relative shrink-0">
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium ${tom.bg} ${tom.texto}`}
-                    >
-                      {c.nomeConhecido ? iniciais(c.pessoaNome) : "☎"}
-                    </div>
+                    {c.fotoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL externa (foto de perfil do WhatsApp via Zapster)
+                      <img src={c.fotoUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+                    ) : (
+                      <div
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium ${tom.bg} ${tom.texto}`}
+                      >
+                        {c.nomeConhecido ? iniciais(c.pessoaNome) : "☎"}
+                      </div>
+                    )}
                     {c.favorita && (
                       <span className="absolute -left-1 -top-1 text-[11px]" title="Favorita">
                         ⭐
+                      </span>
+                    )}
+                    {seloRisco && (
+                      <span
+                        className="absolute -right-0.5 -top-0.5 text-[11px] leading-none"
+                        title={
+                          nivelRisco === "alto"
+                            ? "Risco de esfriar: alto"
+                            : "Risco de esfriar: médio"
+                        }
+                      >
+                        {seloRisco}
                       </span>
                     )}
                   </div>
@@ -1094,13 +1316,56 @@ export function AtendimentoClient({
         ) : (
           <>
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <div>
-                <p className="font-semibold text-zinc-900 dark:text-zinc-50">{detalhe.pessoaNome}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {formatarTelefone(detalhe.pessoaTelefone)}
-                  {detalhe.produtoNome && ` · ${detalhe.produtoNome}`}
-                  {detalhe.valorEstimado && ` · R$ ${detalhe.valorEstimado.toLocaleString("pt-BR")}`}
-                </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={abrirHistoricoFotos}
+                  title="Ver histórico de fotos de perfil"
+                  className="shrink-0 rounded-full"
+                >
+                  {detalhe.fotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- URL externa (foto de perfil do WhatsApp via Zapster)
+                    <img src={detalhe.fotoUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 text-sm font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                      {iniciais(detalhe.pessoaNome)}
+                    </div>
+                  )}
+                </button>
+                <div>
+                  <p className="flex items-center gap-1.5 font-semibold text-zinc-900 dark:text-zinc-50">
+                    {detalhe.pessoaNome}
+                    {(() => {
+                      const nivel = calcularSeloRisco({
+                        aguardandoRespostaDesde: detalhe.aguardandoRespostaDesde,
+                        contadorNaoReconhecimento: detalhe.contadorNaoReconhecimento,
+                        estagnadoDesde: detalhe.estagnadoDesde,
+                        ...limiaresSeloRisco,
+                      });
+                      const emoji = emojiSeloRisco(nivel);
+                      if (!emoji) return null;
+                      return (
+                        <span title={nivel === "alto" ? "Risco de esfriar: alto" : "Risco de esfriar: médio"}>
+                          {emoji}
+                        </span>
+                      );
+                    })()}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {formatarTelefone(detalhe.pessoaTelefone)}
+                    {detalhe.produtoNome && ` · ${detalhe.produtoNome}`}
+                    {detalhe.valorEstimado && ` · R$ ${detalhe.valorEstimado.toLocaleString("pt-BR")}`}
+                  </p>
+                  {detalhe.estagnadoDesde && (
+                    <button
+                      type="button"
+                      onClick={resolverEstagnacao}
+                      className="mt-0.5 text-[11px] text-emerald-600 hover:underline dark:text-emerald-400"
+                    >
+                      ✅ Marcar negociação como retomada
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
@@ -1184,6 +1449,48 @@ export function AtendimentoClient({
               </div>
             )}
 
+            {resumoIA?.conversaId === conversaSelecionadaId && (
+              <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-sm dark:border-indigo-900 dark:bg-indigo-950/30">
+                <span className="font-semibold text-indigo-700 dark:text-indigo-300">🤖 Resumo da IA ao assumir</span>
+                {resumoIA.carregando ? (
+                  <p className="mt-0.5 text-indigo-600/70 dark:text-indigo-400/70">Gerando resumo...</p>
+                ) : resumoIA.texto ? (
+                  <p className="mt-0.5 whitespace-pre-line text-indigo-900 dark:text-indigo-100">{resumoIA.texto}</p>
+                ) : (
+                  <p className="mt-0.5 text-indigo-600/70 dark:text-indigo-400/70">Não foi possível gerar o resumo desta vez.</p>
+                )}
+              </div>
+            )}
+
+            {objecaoDetectada?.conversaId === conversaSelecionadaId && (
+              <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-semibold text-amber-800 dark:text-amber-300">🚩 Objeção detectada</span>
+                  <button
+                    type="button"
+                    onClick={() => setObjecaoDetectada(null)}
+                    className="text-xs text-amber-700/70 hover:text-amber-900 dark:text-amber-400/70 dark:hover:text-amber-200"
+                  >
+                    Dispensar
+                  </button>
+                </div>
+                {objecaoDetectada.carregando ? (
+                  <p className="mt-0.5 text-amber-700/70 dark:text-amber-400/70">Analisando última mensagem do lead...</p>
+                ) : objecaoDetectada.resultado ? (
+                  <div className="mt-0.5 text-amber-900 dark:text-amber-100">
+                    <p className="font-medium">{objecaoDetectada.resultado.objecao}</p>
+                    <p className="mt-0.5 text-amber-800/90 dark:text-amber-200/80">
+                      <span className="font-medium">Como lidar:</span> {objecaoDetectada.resultado.comoLidar}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-0.5 text-amber-700/70 dark:text-amber-400/70">
+                    Nenhuma objeção cadastrada corresponde à última mensagem do lead.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div ref={timelineRef} className={`flex-1 space-y-2 overflow-y-auto p-4 ${tomConversa?.bg ?? ""}`}>
               {itensTimeline.map((item) => {
                 if (item.tipo === "nota") {
@@ -1219,8 +1526,7 @@ export function AtendimentoClient({
                       }`}
                     >
                       {m.midiaUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa
-                        <img src={m.midiaUrl} alt="" className="mb-1 max-w-full rounded-lg" />
+                        <MidiaMensagem midiaUrl={m.midiaUrl} midiaTipo={m.midiaTipo} onAbrirTelaCheia={setMidiaEmTelaCheia} />
                       )}
                       {m.conteudo && <p className="whitespace-pre-wrap">{m.conteudo}</p>}
                       <p className="mt-0.5 text-right text-[10px] opacity-60">{formatarHora(m.enviadoEm)}</p>
@@ -1293,6 +1599,24 @@ export function AtendimentoClient({
                           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                         >
                           💬 Respostas prontas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDetectarObjecao}
+                          disabled={!composerHabilitado || objecaoDetectada?.carregando}
+                          title="Cruza a última mensagem do lead com o banco de objeções cadastradas"
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          🚩 {objecaoDetectada?.carregando ? "Detectando..." : "Detectar objeção"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSugerirResposta}
+                          disabled={!composerHabilitado || gerandoSugestao}
+                          title="Gera um rascunho de resposta na voz da Malala, pra você revisar antes de enviar"
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          ✨ {gerandoSugestao ? "Gerando..." : "Sugerir resposta"}
                         </button>
                         <button
                           type="button"
@@ -1395,6 +1719,7 @@ export function AtendimentoClient({
                 </div>
               </div>
               {avisoProximaEtapa && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoProximaEtapa}</p>}
+              {avisoSugestao && <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{avisoSugestao}</p>}
               {erroGravacao && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroGravacao}</p>}
               {erroEnvio && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
               {gravando && (
@@ -1411,7 +1736,7 @@ export function AtendimentoClient({
                   </button>
                   <button
                     type="button"
-                    onClick={pararEEnviarGravacao}
+                    onClick={pararGravacaoEAbrirPreview}
                     disabled={enviandoMidia}
                     title="Parar e enviar"
                     className="flex h-7 w-7 items-center justify-center rounded-full bg-[#141e33] text-white disabled:opacity-40"
@@ -1519,15 +1844,27 @@ export function AtendimentoClient({
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Oportunidade</p>
-            {detalhe.produtoNome && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{detalhe.produtoNome}</p>}
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Conversa iniciada em: {formatarDataHoraCompleta(detalhe.iniciadaEm)}
+            </p>
             {detalhe.etapaKanban && (
               <span className="mt-1 inline-block rounded-full bg-[#c8a55d]/20 px-2 py-0.5 text-[10px] text-[#8a6d34] dark:text-[#e0c07f]">
                 {rotuloDaSubetapa(detalhe.etapaKanban)}
               </span>
             )}
+            {detalhe.produtoNome && (
+              <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
+                Serviço: {detalhe.produtoNomeReduzido || detalhe.produtoNome}
+              </p>
+            )}
+            {detalhe.tipoDocumento && (
+              <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
+                {detalhe.tipoDocumento.toUpperCase()}
+              </p>
+            )}
             {detalhe.valorEstimado != null && (
               <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
-                R$ {detalhe.valorEstimado.toLocaleString("pt-BR")}
+                Valor da oportunidade: R$ {detalhe.valorEstimado.toLocaleString("pt-BR")}
               </p>
             )}
           </div>
@@ -1547,6 +1884,85 @@ export function AtendimentoClient({
     </div>
     </div>
     </div>
+
+    {midiaEmTelaCheia && (
+      <div
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4"
+        onClick={() => setMidiaEmTelaCheia(null)}
+      >
+        <button
+          type="button"
+          onClick={() => setMidiaEmTelaCheia(null)}
+          className="absolute right-4 top-4 text-2xl text-white/80 hover:text-white"
+        >
+          ✕
+        </button>
+        {midiaEmTelaCheia.tipo === "imagem" ? (
+          // eslint-disable-next-line @next/next/no-img-element -- URL arbitrária de mídia trocada na conversa
+          <img
+            src={midiaEmTelaCheia.url}
+            alt=""
+            className="max-h-full max-w-full rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <video
+            src={midiaEmTelaCheia.url}
+            controls
+            autoPlay
+            className="max-h-full max-w-full rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+      </div>
+    )}
+
+    {previewMidia && (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+        <div className="flex w-full max-w-sm flex-col rounded-xl bg-white shadow-xl dark:bg-zinc-900">
+          <div className="flex items-center justify-center rounded-t-xl bg-zinc-100 p-4 dark:bg-zinc-800">
+            {previewMidia.tipo === "imagem" && (
+              // eslint-disable-next-line @next/next/no-img-element -- preview local (object URL) do arquivo escolhido, antes de enviar
+              <img src={previewMidia.url} alt="" className="max-h-72 max-w-full rounded-lg object-contain" />
+            )}
+            {previewMidia.tipo === "video" && (
+              <video src={previewMidia.url} controls className="max-h-72 max-w-full rounded-lg" />
+            )}
+            {previewMidia.tipo === "audio" && <audio src={previewMidia.url} controls className="w-full" />}
+            {previewMidia.tipo === "documento" && (
+              <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm text-zinc-700 shadow dark:bg-zinc-900 dark:text-zinc-300">
+                📄 {previewMidia.arquivo.name}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-3 p-4">
+            <input
+              value={legendaPreview}
+              onChange={(e) => setLegendaPreview(e.target.value)}
+              placeholder="Adicionar legenda..."
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-[#c8a55d] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            />
+            {erroEnvio && <p className="text-xs text-red-600 dark:text-red-400">{erroEnvio}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={fecharPreviewMidia}
+                disabled={enviandoMidia}
+                className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEnvioMidia}
+                disabled={enviandoMidia}
+                className="rounded-full bg-[#141e33] px-4 py-1.5 text-sm text-white disabled:opacity-40"
+              >
+                {enviandoMidia ? "..." : "Enviar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
 
     {confirmandoReset && detalhe && (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
@@ -1573,6 +1989,41 @@ export function AtendimentoClient({
               {resetando ? "Resetando..." : "Resetar"}
             </button>
           </div>
+        </div>
+      </div>
+    )}
+
+    {historicoFotos !== null && detalhe && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              Histórico de fotos — {detalhe.pessoaNome}
+            </p>
+            <button
+              onClick={() => setHistoricoFotos(null)}
+              className="rounded-full px-2 py-0.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              ✕
+            </button>
+          </div>
+          {carregandoHistoricoFotos ? (
+            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Carregando...</p>
+          ) : historicoFotos.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Nenhuma foto capturada ainda.</p>
+          ) : (
+            <div className="mt-3 grid max-h-80 grid-cols-3 gap-2 overflow-y-auto">
+              {historicoFotos.map((f) => (
+                <div key={f.capturadaEm} className="flex flex-col items-center gap-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- URL externa (foto de perfil do WhatsApp via Zapster) */}
+                  <img src={f.url} alt="" className="h-20 w-20 rounded-lg object-cover" />
+                  <span className="text-center text-[10px] text-zinc-500 dark:text-zinc-400">
+                    {formatarTempoRelativo(f.capturadaEm)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )}

@@ -10,7 +10,26 @@ export type TipoResposta =
   | "sim_nao"
   | "texto_livre"
   | "email"
-  | "numero_ou_nao_sei"; // valor livre (ex.: "10 mil") ou "não sei"
+  | "numero_ou_nao_sei" // valor livre (ex.: "10 mil") ou "não sei"
+  /**
+   * Resposta livre descrevendo quantos documentos (CPF/CNPJ) o lead quer limpar — suporte a
+   * "pacote" (Bloco C, PLANO_MESTRE seção 11). O parser determinístico nunca reconhece isto (não
+   * dá pra regex "2 CPF e 1 CNPJ da empresa" com confiança) — cai sempre pro interpretador
+   * especializado (`interpretarListaDocumentos` em ContextoAvanco), que é diferente do
+   * `interpretarComIA` genérico porque tem uma 3ª saída: "entendi parte, falta isto aqui" (pede
+   * esclarecimento específico em vez de só repetir a pergunta original).
+   */
+  | "lista_documentos"
+  /**
+   * Resposta livre com a faixa de restrição de CADA documento já sabido (`dados.documentos_tipos`)
+   * de uma vez só — decisão de Luiz (17/08/2026): perguntar tudo numa mensagem só (explicando o
+   * porquê) em vez de repetir a mesma pergunta uma vez por documento, pra não gerar fricção/evasão.
+   * Aceita "não sei" por documento (a Malala pode oferecer consulta paga nos 4 órgãos, R$39/doc,
+   * mencionando a alternativa gratuita pelos apps oficiais). Só dá checkpoint como reconhecido
+   * quando tiver uma faixa (ou "não sei") pra TODOS os documentos da lista — mesma filosofia de
+   * "lista_documentos" (3 saídas, nunca reconhecido pelo parser determinístico).
+   */
+  | "faixas_documentos";
 
 export type Opcao = {
   /** valor persistido em `dados[campo_salvo]` quando esta opção é escolhida */
@@ -122,6 +141,15 @@ export type ConteudoEtapa = {
    */
   kanban_subetapa?: string;
   interpretacao_ia?: ConfigInterpretacaoIA;
+  /**
+   * Checkpoint "opcional": depois de N tentativas seguidas sem reconhecer a resposta do lead
+   * (recusa, ignora, insiste que não tem), a etapa desiste e segue em frente como se tivesse sido
+   * respondida com valor vazio — nunca fica travando o funil esperando indefinidamente. Genérico,
+   * reaproveitável por qualquer checkpoint que precise da mesma regra (não é exclusivo de nenhum
+   * campo específico) — primeiro uso: `abertura_email`, PLANO_MESTRE seção 8.12. Omitido = nunca
+   * desiste, comportamento de sempre (repete a pergunta indefinidamente).
+   */
+  opcional_apos_tentativas?: number;
 };
 
 export type DadosConversa = Record<string, string>;
@@ -167,6 +195,49 @@ export type InterpretadorIA = (params: {
   dados: DadosConversa;
 }) => Promise<{ valor: string; opcaoEscolhida?: Opcao } | null>;
 
+/** Um documento (CPF ou CNPJ) que o lead quer limpar, dentro de um pacote com mais de um item. */
+export type ItemDocumentoPendente = { tipo: "cpf" | "cnpj" };
+
+/**
+ * Resultado do interpretador especializado de `tipo_resposta: "lista_documentos"` — 3 saídas, ao
+ * contrário do `InterpretadorIA` genérico (que só tem reconhecido/não-reconhecido):
+ * - `completo`: a IA entendeu exatamente quantos documentos de cada tipo — motor segue em frente.
+ * - `incompleto`: entendeu parte, mas falta informação (ex.: lead disse "quero limpar uns
+ *   documentos" sem dizer quantos/quais) — a IA gera a pergunta de esclarecimento específica
+ *   (`perguntaEsclarecimento`), que o motor manda no lugar do texto de retomada padrão.
+ * - `nao_entendi`: resposta sem relação nenhuma com a pergunta — motor repete a pergunta original.
+ */
+export type ResultadoInterpretacaoListaDocumentos =
+  | { status: "completo"; itens: ItemDocumentoPendente[] }
+  | { status: "incompleto"; perguntaEsclarecimento: string }
+  | { status: "nao_entendi" };
+
+export type InterpretadorListaDocumentos = (params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  dados: DadosConversa;
+}) => Promise<ResultadoInterpretacaoListaDocumentos>;
+
+/** Faixa de restrição de um documento específico, já resolvida num valor aproximado em reais — ou `null` quando o lead respondeu "não sei" (a Malala pode oferecer consulta paga nos 4 órgãos, ver regras-limpeza-nome.ts pro valor padrão conservador usado nesse caso). */
+export type FaixaDocumentoCapturada = { tipo: "cpf" | "cnpj"; valorAproximado: number | null };
+
+/**
+ * Resultado do interpretador especializado de `tipo_resposta: "faixas_documentos"` — mesma
+ * filosofia de 3 saídas de `ResultadoInterpretacaoListaDocumentos`, mas aqui `itens` precisa ter
+ * exatamente uma entrada pra CADA documento de `dados.documentos_tipos`, na mesma ordem — decisão
+ * de Luiz (17/08/2026): uma pergunta só pra todos os documentos, não um checkpoint por documento.
+ */
+export type ResultadoInterpretacaoFaixasDocumentos =
+  | { status: "completo"; itens: FaixaDocumentoCapturada[] }
+  | { status: "incompleto"; perguntaEsclarecimento: string }
+  | { status: "nao_entendi" };
+
+export type InterpretadorFaixasDocumentos = (params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  dados: DadosConversa;
+}) => Promise<ResultadoInterpretacaoFaixasDocumentos>;
+
 /** O que o motor precisa pra decidir o próximo passo — tudo isolado do Supabase, testável puro (exceto o hook de IA, que é assíncrono por natureza). */
 export type ContextoAvanco = {
   etapaAtual: EtapaCarregada;
@@ -177,6 +248,8 @@ export type ContextoAvanco = {
   resolverMensagensDinamicas?: ResolverMensagensDinamicas;
   calcularDadosDerivados?: CalcularDadosDerivados;
   interpretarComIA?: InterpretadorIA;
+  interpretarListaDocumentos?: InterpretadorListaDocumentos;
+  interpretarFaixasDocumentos?: InterpretadorFaixasDocumentos;
   /** placeholders tipo `[saudacao]` que não vêm de `dados` (ex.: hora do dia) — computados por quem chama o motor, pra manter o motor determinístico/testável */
   variaveisGlobais?: Record<string, string>;
 };

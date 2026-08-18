@@ -57,7 +57,10 @@ function parseNumeroOuNaoSei(resposta: string): ResultadoParse {
 
   const semSimbolos = resposta.replace(/[Rr]\$/g, "").trim();
   const temMil = /mil/i.test(semSimbolos);
-  const numeroMatch = semSimbolos.match(/[\d.,]+/);
+  // Precisa começar por um dígito — sem isso, uma resposta tipo "bom, uns 10 mil" casava a vírgula
+  // antes de chegar no número de verdade (mesmo achado real de extrairValorMencionadoNaAbertura,
+  // fluxo-limpeza-nome.ts, 17/08/2026).
+  const numeroMatch = semSimbolos.match(/\d[\d.,]*/);
   if (!numeroMatch) return { reconhecido: false };
 
   let numero = Number(numeroMatch[0].replace(/\./g, "").replace(",", "."));
@@ -87,6 +90,12 @@ export function parseResposta(conteudo: ConteudoEtapa, respostaLead: string): Re
       return parseEmail(respostaLead);
     case "numero_ou_nao_sei":
       return parseNumeroOuNaoSei(respostaLead);
+    case "lista_documentos":
+    case "faixas_documentos":
+      // Nunca reconhecido pelo parser determinístico — não dá pra regex "2 CPF e 1 CNPJ da
+      // empresa" ou "o CPF tem uns 15 mil e o CNPJ uns 40" com confiança. Sempre cai pro
+      // interpretador especializado (engine.ts).
+      return { reconhecido: false };
     case "texto_livre":
     default:
       return parseTextoLivre(respostaLead);
