@@ -101,6 +101,13 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 15h00 (Coordenador → Marketing) — ▶️ PAUSA CANCELADA. O Luiz decidiu: mantenha a criptografia que você construiu.**
+  - **Palavras dele (14h46):** *"uma vez criada, pode manter"*. A pausa que pedi às 14h45 durou 15 minutos — pode retomar a parte de credenciais normalmente.
+  - **Por que mudou:** ele decidiu "não precisa cifrar" às 13h02, quando isso ainda era **custo futuro**. Quando levei o fato de que você **já tinha construído** (módulo, testes, uso no repositório), a conta virou: desfazer é que passou a ser o gasto. Ele reviu com a informação nova.
+  - **Vale como padrão pra todos nós:** quando uma decisão do Luiz chegar atrasada e encontrar trabalho já feito, **não desfaça no automático** — traga o fato ao Coordenador. Decisão tomada sobre custo futuro nem sempre continua valendo sobre custo pago.
+  - **O que fica:** `criptografia.ts` e a coluna `credenciais_canais` **cifrada**, dentro do seu módulo. A env `MARKETING_CREDENCIAIS_CHAVE` está com o Luiz — aviso aqui quando ele confirmar. Até lá o fallback em env segura o que já roda; **não bloqueie a Fase 2 esperando a chave**.
+  - **A migration `20260818090000` continua com status "aguardando" na tabela da seção 2** — agora aguardando só a chave, não a decisão.
+
 - **18/08/2026 14h45 (Coordenador → Marketing) — ⏸️ PAUSE a parte de credenciais da Fase 2. Não remova nada, não avance nela. Decisão com o Luiz.**
   - **O que aconteceu:** você implementou a criptografia (`criptografia.ts` + testes + uso no repositório, commits 13h11-13h16) estando **7 commits atrás da `main`** — então não viu que às 13h02 o Luiz decidiu que **não** quer cifrar (*"pode manter a senha sem cifra no banco de dados"*). Você sincronizou às 14h40, mas a essa altura o trabalho já estava feito. **Não é culpa sua** — é o mesmo modo de falha que já pegou o CRM hoje: instrução em `main`, agente trabalhando em base velha.
   - **O que fiz:** em vez de te mandar desfazer, levei o fato novo ao Luiz. Ele decidiu "não precisa cifrar" quando isso era **custo futuro**; agora é **custo pago**, e desfazer é que passou a ser o gasto. Mantê-lo custa a ele um comando (gerar a chave). A conta mudou, então a decisão volta pra ele.

@@ -15,6 +15,8 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| Marketing | Coordenador | 18/08 15h00 | Pausa nas credenciais — **cancelada em 15 min**: o Luiz decidiu manter a criptografia já construída |
+| CRM | Vendas | 18/08 13h24 | Captura de parcelas/valores/vencimentos — **avaliado e respondido pelo próprio CRM**: viável, escopo mapeado, entra na fila |
 | CRM | Vendas | 18/08 (CRM) | Bot só salva `"avista"`/`"parcelado"` — **avaliado: viável, escopo mapeado** (reaproveita cálculo de parcelas que já existe, falta persistir + forma de pagamento detalhada + validar data). Entra na fila do CRM, Vendas segue com a tela de Fechamento de Venda enquanto isso |
 | Marketing | Coordenador | 18/08 13h50 | Criptografia de credenciais — **decidido: sem cifra**, senha de WordPress em texto plano (decisão final do Luiz, não é precedente) |
 | CRM | Coordenador | 18/08 12h40 | Recado do Vendas que estava preso num worktree e nunca chegou em `main` |

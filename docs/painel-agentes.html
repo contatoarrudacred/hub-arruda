@@ -291,6 +291,43 @@
     flex: none;
   }
   .tarefas details .detalhe { padding-top: 4px; }
+
+  /* "Início em" do bloco Fazendo agora */
+  .inicio {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--texto-fraco);
+    margin-top: 6px;
+    display: block;
+  }
+  .inicio b { color: var(--texto-suave); font-weight: 600; }
+
+  /* bloco "Já entregou" fechado por padrão, dentro do card do agente */
+  .bloco details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+  }
+  .bloco details > summary::-webkit-details-marker { display: none; }
+  .bloco details > summary::before { content: "▸"; letter-spacing: 0; }
+  .bloco details[open] > summary::before { content: "▾"; }
+  .bloco details > summary:hover { color: var(--ouro); }
+  .bloco details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .bloco details > ul { margin-top: 7px; }
+  .bloco details .qdo {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--texto-fraco);
+    white-space: nowrap;
+    margin-left: 6px;
+  }
   @media (prefers-reduced-motion: reduce) {
     .tarefas details > summary::before { transition: none; }
   }
@@ -598,7 +635,7 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 14h45",
+ "atualizado": "18/08/2026 · 15h00",
  "commit": "3188a11",
  "instrumentos": [
   {
@@ -653,12 +690,23 @@
   },
   {
    "id": "cripto-ja-feita",
-   "prazo": "agora",
-   "prazoRot": "❌ Decisão",
-   "titulo": "A criptografia já foi construída — manter ou remover?",
-   "corpo": "Quando você decidiu que não precisava cifrar, era custo futuro. Só que o Marketing <b>já tinha implementado</b> — módulo, testes e uso no repositório — porque estava 7 commits atrás e não viu sua decisão. <b>Manter custa a você um comando</b> (<code>openssl rand -base64 32</code> e colar no .env.local + Vercel). <b>Remover custa retrabalho dele</b> e deixa a senha em texto plano. Como o trabalho já está pago, <b>recomendo manter</b> — mas é sua chamada. A migration dele <b>não foi rodada</b>, então nada está no banco ainda.",
+   "prazo": "feito",
+   "prazoRot": "✅ Mantida",
+   "titulo": "A criptografia já construída — mantida",
+   "corpo": "<b>Decidido: mantém.</b> O Marketing já pode retomar a parte de credenciais — cancelei a pausa que eu tinha pedido. Volta uma coisa pra sua lista logo abaixo: a chave de cifra.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 14h46",
+     "texto": "uma vez criada, pode manter"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h00",
+     "texto": "Fechado. Liberei o Marketing pra retomar — a pausa durou ~15 min e ele nem chegou a mexer. A senha vai cifrada no banco, como ele construiu.\n\nSó a chave volta pra você, porque sem ela o mecanismo não roda: openssl rand -base64 32, colar no .env.local e na Vercel como MARKETING_CREDENCIAIS_CHAVE. Não me mande o valor."
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "prioridade-crm",
@@ -700,10 +748,10 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "feito",
-   "prazoRot": "✅ Cancelada",
-   "titulo": "Gerar a chave de criptografia — não precisa mais",
-   "corpo": "<b>Saiu da sua lista.</b> Você decidiu manter a senha do WordPress sem cifra no banco, então não existe chave pra gerar nem pra guardar. Menos uma coisa pra você, e menos código pro Marketing.",
+   "prazo": "logo",
+   "prazoRot": "⚠️ Voltou pra fila",
+   "titulo": "Gerar a chave de criptografia",
+   "corpo": "Você decidiu manter a criptografia, então a chave voltou a ser necessária — é ela que cifra e decifra a senha do WordPress. Gere com <code>openssl rand -base64 32</code> (nunca frase digitada), ponha no <code>.env.local</code> e na Vercel como <code>MARKETING_CREDENCIAIS_CHAVE</code>, e guarde em lugar seguro: <b>perdeu a chave, perdeu as senhas salvas</b> — recadastra tudo. Me avise quando estiver feito, <b>sem mandar o valor</b>.",
    "acoes": [],
    "respostas": [
     {
@@ -714,9 +762,14 @@
      "autor": "coordenador",
      "quando": "18/08 · 13h50",
      "texto": "Ok, decisão final registrada e repassada ao Marketing — ele vai remover a criptografia do plano da Fase 2.\n\nUma linha só de risco, pra ficar no registro e não voltar como surpresa: em texto plano, quem tiver acesso ao banco ou a um backup lê a senha. Conferi um atenuante real: propriedades_digitais já tem RLS ligada com acesso só pra admin autenticado, então não fica exposta publicamente. E o pior caso é alguém publicar num blog satélite — não é dado de cliente, não é LGPD.\n\nDuas proteções que NÃO são cifra e vou manter, porque não custam nada e já estavam no plano dele: a senha nunca volta preenchida pro navegador (o campo aparece vazio e a tela só mostra 'configurada / não configurada'), e a tabela mantém RLS.\n\nGravei bem visível que isto vale só pra este caso e não vira precedente — API key de Asaas/Assinafy ou credencial de cliente seguem outro caminho."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h00",
+     "texto": "Este item foi cancelado às 13h50 e reaberto agora — sua decisão das 14h46 o trouxe de volta. Enquanto a chave não existir, o fallback em env segura o que já roda em produção, então nada quebra por esperar."
     }
    ],
-   "concluida": true
+   "concluida": false
   },
   {
    "id": "spf-resend",
@@ -780,29 +833,62 @@
    "eu": true,
    "branch": "main · integra, mescla e conversa com os outros — não escreve feature",
    "chip": {
-    "tipo": "cuidado",
-    "texto": "⚠️ falhei uma"
+    "tipo": "rodando",
+    "texto": "✅ rodando"
    },
    "agora": [
-    "Consertando uma falha própria: mantive esta torre dizendo <b>“aguardando CRM, há 1h32”</b> por mais de uma hora depois de ele ter respondido. Escrevi de cabeça em vez de apurar. Criei <code>scripts/estado-agentes.py</code>, que apura o estado real e acusa incoerência entre a torre e o inbox — foi ele que pegou este erro."
+    "Levando suas decisões aos agentes e mantendo esta torre coerente com o estado real — agora com apuração obrigatória antes de publicar, depois de eu tê-la deixado desatualizada por uma hora."
    ],
-   "proxima": "➡️ Sincronizar o Marketing com a main (7 commits atrás) e levar suas duas decisões acima aos agentes.",
+   "proxima": "➡️ Liberar o Marketing da pausa e esperar sua decisão sobre o que o CRM puxa.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
-    "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
-    "✅ Fechou o débito de test/lint varrerem os worktrees dos outros — e achou que o problema também existia no lint, com 99 falsos positivos",
-    "✅ Removeu o worktree órfão e enviou 119 commits que estavam parados na sua máquina",
-    "✅ Regenerou os tipos do banco depois das suas migrations",
-    "✅ Descobriu que o recado do Vendas nunca chegou ao CRM (estava preso num worktree) e trouxe pra main",
-    "✅ Consertou o worktree do Marketing, onde o next estava quebrado e o build nunca rodou",
-    "✅ Resolveu 2 conflitos no quadro-branco sem perder recado de ninguém",
-    "✅ Escreveu o protocolo de comunicação e a caixa de entrada de pedidos abertos",
-    "✅ Leu a spec da Fase 2 do Marketing por conta própria e achou um problema de arquitetura antes de virar código",
-    "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código",
-    "✅ Hook SessionStart + docs/INBOX_AGENTES.md: agente ativo passa a ver na hora que alguém espera por ele",
-    "⚠️ Falhou em varrer o estado por ~1h — corrigido com apuração automática antes de publicar a torre"
+    {
+     "t": "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
+     "q": "18/08 11h56"
+    },
+    {
+     "t": "✅ Fechou o débito de test/lint varrerem os worktrees — e achou o mesmo no lint, 99 falsos positivos",
+     "q": "18/08 12h05"
+    },
+    {
+     "t": "✅ Removeu o worktree órfão e enviou 119 commits parados na sua máquina",
+     "q": "18/08 12h10"
+    },
+    {
+     "t": "✅ Regenerou os tipos do banco depois das suas migrations",
+     "q": "18/08 12h20"
+    },
+    {
+     "t": "✅ Descobriu que o recado do Vendas nunca chegou ao CRM e trouxe pra main",
+     "q": "18/08 12h40"
+    },
+    {
+     "t": "✅ Consertou o worktree do Marketing, onde o next estava quebrado e o build nunca rodava",
+     "q": "18/08 12h42"
+    },
+    {
+     "t": "✅ Hook SessionStart + inbox: agente ativo vê na hora que alguém espera por ele",
+     "q": "18/08 13h07"
+    },
+    {
+     "t": "✅ Leu a spec da Fase 2 por conta própria e achou um problema de arquitetura antes de virar código",
+     "q": "18/08 12h50"
+    },
+    {
+     "t": "✅ Corrigiu a própria orientação depois do seu questionamento, antes de virar código",
+     "q": "18/08 13h20"
+    },
+    {
+     "t": "⚠️ Deixou esta torre desatualizada por ~1h — corrigido com apuração obrigatória antes de publicar",
+     "q": "18/08 14h45"
+    }
    ],
-   "dims": null
+   "dims": null,
+   "inicio": {
+    "iso": "2026-08-18T11:27:00-03:00",
+    "rotulo": "18/08 11h27",
+    "nota": "1º commit desta sessão"
+   }
   },
   {
    "nome": "CRM",
@@ -817,47 +903,92 @@
    "proxima": "➡️ Depende de você: a captura de pagamento que o Vendas pediu, ou o Kanban (ordem original).",
    "proximaExtra": "Ele estimou a captura de pagamento como uma frente do porte da Fase 4 de precificação — não é ajuste pontual.",
    "entregue": [
-    "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
-    "✅ WhatsApp real via Zapster, funcionando de verdade",
-    "✅ Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints",
-    "✅ Follow-up automático com cron e e-mail via Resend",
-    "✅ Hoje: resgatou o fix do extrator de nome que estava perdido num worktree órfão",
-    "✅ Hoje: cobrou um recado que não tinha chegado, em vez de ficar parado sem dizer nada",
-    "✅ Hoje 13h24: avaliou o pedido do Vendas no código e respondeu seguindo o protocolo novo, sem ninguém cobrar"
+    {
+     "t": "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
+     "q": "13-14/08"
+    },
+    {
+     "t": "✅ Follow-up automático com cron e e-mail via Resend",
+     "q": "15/08"
+    },
+    {
+     "t": "✅ WhatsApp real via Zapster, funcionando de verdade",
+     "q": "16/08"
+    },
+    {
+     "t": "✅ Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints",
+     "q": "16-17/08"
+    },
+    {
+     "t": "✅ Resgatou o fix do extrator de nome perdido num worktree órfão",
+     "q": "18/08 11h54"
+    },
+    {
+     "t": "✅ Cobrou um recado que não tinha chegado, em vez de ficar parado",
+     "q": "18/08 12h34"
+    },
+    {
+     "t": "✅ Avaliou o pedido do Vendas no código e respondeu sozinho, pelo protocolo novo",
+     "q": "18/08 13h24"
+    }
    ],
    "dims": {
     "plan": 95,
     "prod": 70
+   },
+   "inicio": {
+    "iso": "2026-08-18T13:24:00-03:00",
+    "rotulo": "18/08 13h24",
+    "nota": "desde que respondeu ao Vendas, sem tarefa nova"
    }
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "cuidado",
-    "texto": "⚠️ 9 commits, base velha"
+    "tipo": "rodando",
+    "texto": "✅ liberado"
    },
    "agora": [
-    "Construindo a Fase 2: repositório de configuração admin, gating de cota diária e janela de publicação, e instrumentação do log de execução do pipeline.",
-    "9 commits desde 13h08, o último às 14h36 — <b>é o agente mais ativo agora</b>."
+    "Construindo a Fase 2: repositório de configuração admin, gating de cota diária e janela de publicação, instrumentação do log de execução do pipeline.",
+    "10 commits desde 13h08 — <b>é o agente mais ativo agora</b>. A pausa que pedi na parte de credenciais <b>foi cancelada</b>: você decidiu manter a criptografia."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
-   "proximaExtra": "Criptografia <b>liberada</b> pelo Luiz — fica dentro do módulo dele, cifrada. As migrations da Fase 2 ele escreve, mas <b>não roda</b>: vêm pra mim e eu te trago.",
+   "proximaExtra": "Criptografia <b>mantida</b> — pode retomar. A migration da Fase 2 ele escreve, mas <b>não roda</b>: vem pra mim e eu levo a você.",
    "entregue": [
-    "✅ Núcleo do pipeline de conteúdo: Estrategista, Escritor, Revisor e Agente de Links",
-    "✅ Publicação no WordPress com sanitização do HTML gerado pela IA",
-    "✅ Cron que processa a fila de pautas, com reclaim de pauta travada",
-    "✅ 145 testes próprios — mesclado na main hoje",
-    "✅ Hoje: fechou spec e plano da Fase 2 e avisou a intenção antes de mexer em tabela compartilhada"
+    {
+     "t": "✅ Núcleo do pipeline: Estrategista, Escritor, Revisor e Agente de Links",
+     "q": "17-18/08"
+    },
+    {
+     "t": "✅ Publicação no WordPress com sanitização do HTML gerado pela IA",
+     "q": "17/08"
+    },
+    {
+     "t": "✅ Cron que processa a fila de pautas, com reclaim de pauta travada",
+     "q": "18/08"
+    },
+    {
+     "t": "✅ 145 testes próprios — mesclado na main",
+     "q": "18/08 11h56"
+    },
+    {
+     "t": "✅ Spec e plano da Fase 2, avisando a intenção antes de mexer em tabela compartilhada",
+     "q": "18/08 12h26"
+    },
+    {
+     "t": "✅ Cota diária, janela de publicação e log de execução do pipeline",
+     "q": "18/08 14h03-14h36"
+    }
    ],
    "dims": {
     "plan": 95,
     "prod": 45
    },
-   "alerta": {
-    "nivel": "leve",
-    "sinal": "⚠️",
-    "texto": "Está <b>produzindo bem</b> (9 commits, o último 14h36: cota diária, janela de publicação, log de execução do pipeline) — mas <b>7 commits atrás da main</b>, então construiu a criptografia sem ter visto sua decisão de não cifrar. <b>Respeitou a regra dura:</b> escreveu a migration e não rodou no banco. Pedi que ele pause essa parte até você decidir acima."
+   "inicio": {
+    "iso": "2026-08-18T13:08:00-03:00",
+    "rotulo": "18/08 13h08",
+    "nota": "1º commit da Fase 2"
    }
   },
   {
@@ -878,33 +1009,40 @@
    "proxima": "➡️ Construir a tela de Fechamento de Venda — parcelas, valores e datas de vencimento.",
    "proximaExtra": "Depois: contrato, assinatura digital e financeiro da venda. As duas últimas dependem da sua decisão sobre Assinafy e Asaas.",
    "entregue": [
-    "✅ Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura de documento por IA",
-    "✅ Mesclada na main, revisada em três rodadas, com as migrations rodadas hoje",
-    "✅ Hoje: levantou e documentou a lacuna do fechamento da venda, com o código na mão"
+    {
+     "t": "✅ Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura por IA",
+     "q": "17-18/08"
+    },
+    {
+     "t": "✅ Mesclada na main, revisada em três rodadas",
+     "q": "18/08 11h20"
+    },
+    {
+     "t": "✅ Levantou e documentou a lacuna do fechamento da venda, com o código na mão",
+     "q": "18/08 12h18"
+    }
    ],
    "dims": {
     "plan": 80,
     "prod": 35
+   },
+   "inicio": {
+    "iso": "2026-08-18T12:38:00-03:00",
+    "rotulo": "18/08 12h38",
+    "nota": "último commit; sessão fechada desde então"
    }
   }
  ],
  "dependencia": {
-  "rota": "⏸️ 1 pedido aberto · Coordenador → Marketing",
-  "titulo": "Uma pausa pedida, nenhum bloqueio",
+  "rota": "✅ nenhum pedido aberto entre agentes",
+  "titulo": "Ninguém está esperando por ninguém",
   "paragrafos": [
-   "<b>Coordenador → Marketing · pausa.</b> Pedi que ele congele a criptografia e a coluna de credenciais até você decidir. Não é bloqueio: o resto da Fase 2 (telas, cota diária, log de execução) não depende disso e ele segue trabalhando.",
-   "<b>Vendas → CRM · ✅ respondido às 13h24</b> e fechado no inbox pelo próprio CRM. O que travou não foi a comunicação entre eles — foi eu, que só li a resposta uma hora depois e deixei esta página afirmando o contrário nesse meio-tempo.",
-   "<b>O que mudei por causa disso:</b> existe um comando que apura o estado real e <b>compara com o que esta torre afirma</b>, acusando incoerência. Não publico mais sem rodar — ele já me pegou duas vezes hoje, inclusive agora."
+   "<b>Coordenador → Marketing · resolvido em 15 min.</b> Pedi pausa na parte de credenciais e você decidiu manter a criptografia — ele nem chegou a mexer. Liberado.",
+   "<b>Vendas → CRM · respondido às 13h24</b> pelo próprio CRM, que foi ao código, confirmou viabilidade e fechou o item no inbox sem ninguém cobrar.",
+   "<b>O único vazio de hoje foi meu:</b> li a resposta do CRM uma hora depois e mantive esta página afirmando o contrário. Agora existe um comando que apura o estado real e acusa incoerência com o que a torre diz — rodo antes de cada publicação."
   ]
  },
- "esperas": [
-  {
-   "tempo": "novo",
-   "frio": false,
-   "texto": "Pedi ao <b>Marketing</b> que pause a parte de credenciais da Fase 2 até você decidir se mantém a criptografia que ele já construiu. <b>Ele está com a sessão aberta agora</b> (commit às 14h40), então o hook não vai disparar — se quiser garantir que ele veja antes de mexer mais nisso, mande uma linha na conversa dele. O resto da Fase 2 segue normal.",
-   "acao": "opcional: avisar o Marketing"
-  }
- ]
+ "esperas": []
 }
 </script>
 
@@ -927,6 +1065,19 @@
   // Eles vêm dos dados que eu (Coordenador) escrevo, nunca de digitação do Luiz —
   // o que ele digita passa sempre por esc().
   function rico(s) { return String(s); }
+
+  // "há 1h40" a partir de um ISO — calculado no navegador, então continua certo
+  // sem eu republicar. Omite se der resultado impossível (relógio fora de hora).
+  function decorrido(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) return "";
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 0 || min > 60 * 24 * 60) return "";
+    if (min < 60) return "há " + min + " min";
+    var h = Math.floor(min / 60);
+    if (h < 48) return "há " + h + "h" + (min % 60 ? String(min % 60).padStart(2, "0") : "");
+    return "há " + Math.floor(h / 24) + " dias";
+  }
 
   function barras(dims) {
     if (!dims) return "";
@@ -952,6 +1103,12 @@
 
     h += '<div class="bloco"><div class="rot">🔄 Fazendo agora</div>';
     a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
+    if (a.inicio) {
+      var dec = a.inicio.iso ? decorrido(a.inicio.iso) : "";
+      h += '<span class="inicio">Início em: <b>' + esc(a.inicio.rotulo) + "</b>" +
+           (dec ? " (" + dec + ")" : "") +
+           (a.inicio.nota ? " · " + esc(a.inicio.nota) : "") + "</span>";
+    }
     h += "</div>";
 
     h += '<div class="bloco"><div class="rot">Próxima tarefa</div>' +
@@ -959,9 +1116,14 @@
     if (a.proximaExtra) h += "<p>" + rico(a.proximaExtra) + "</p>";
     h += "</div>";
 
-    h += '<div class="bloco"><div class="rot">Já entregou</div><ul>';
-    a.entregue.forEach(function (i) { h += "<li>" + rico(i) + "</li>"; });
-    h += "</ul></div>";
+    // fechado por padrão: o card mostra o presente, o histórico fica a um clique
+    h += '<div class="bloco"><details><summary>Já entregou · ' + a.entregue.length + "</summary><ul>";
+    a.entregue.forEach(function (i) {
+      var texto = typeof i === "string" ? i : i.t;
+      var quando = typeof i === "string" ? "" : i.q;
+      h += "<li>" + rico(texto) + (quando ? '<span class="qdo">' + esc(quando) + "</span>" : "") + "</li>";
+    });
+    h += "</ul></details></div>";
 
     h += barras(a.dims);
     h += "</div></article>";
