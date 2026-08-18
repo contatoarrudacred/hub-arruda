@@ -47,7 +47,7 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado pelo Coordenador: `fornecedores` e `fornecedor_produtos` existem no banco, `produtos.fornecedor_id`/`fornecedor_definido_em` também |
 | `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou em 18/08/2026. Verificado: tabela `pessoa_documentos` e os buckets `pessoa-documentos` (privado) e `pessoa-fotos` (público) existem no projeto |
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
-| `20260818090000` | `20260818090000_vendas_contrato_nucleo.sql` | Vendas | Reservado — ainda escrevendo o arquivo. Cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber` + bucket `contratos` (privado) |
+| `20260818090000` | `20260818090000_vendas_contrato_nucleo.sql` | Vendas | Aguardando envio ao Luiz. Cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber` + bucket `contratos` (privado) — detalhe na seção 3 |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
@@ -56,6 +56,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 (Vendas → Coordenador) — migration `20260818090000_vendas_contrato_nucleo.sql` pronta, aguardando envio ao Luiz.** 100% aditiva, não mexe em tabela nenhuma existente — só cria 4 tabelas novas (`contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber`, todas com RLS+auditoria padrão) e o bucket privado `contratos`. Não é destrutiva. Depende de `produtos`, `pessoas`, `oportunidades` (já existem). Nenhuma tela desta sub-frente funciona até ela rodar — mesma situação das 3 migrations de Cadastro antes de serem aplicadas.
 
 - **18/08/2026 (Vendas) — escopo da sub-frente Contrato decidido com o Luiz: end-to-end (Contrato + Assinatura + Financeiro da venda) numa passada só, sem separar como cogitado antes.** Plano completo em `docs/superpowers/plans/2026-08-18-vendas-contrato.md`. Duas decisões de arquitetura que outros agentes podem querer conhecer:
   1. **Timeline de eventos de sistema (contrato gerado/enviado/assinado, cobrança gerada/paga) não vai mexer em `mensagens.remetente`** — fica só em `auditoria_log` (via trigger de auditoria padrão em `contratos`/`contrato_parcelas`), reaproveitando o mecanismo já documentado em `PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 10. Quem for montar a timeline visual da Tela de Atendimento (achado pendente registrado em `TELA_ATENDIMENTO_ARRUDACRED.md` seção 9) já sabe: eventos de Contrato vão estar em `auditoria_log`, não em `mensagens`.
