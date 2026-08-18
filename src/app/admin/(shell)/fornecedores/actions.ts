@@ -27,12 +27,12 @@ export async function salvarFornecedorAction(
     endereco: Omit<EntradaSalvarEndereco, "pessoaId" | "tipo"> | null;
   },
 ): Promise<ResultadoSalvarFornecedor> {
-  const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId || null, pessoaNova: entrada.pessoaNova });
-  if (!pessoa.sucesso) {
-    return { sucesso: false, erro: pessoa.erro };
-  }
-
   try {
+    const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId || null, pessoaNova: entrada.pessoaNova });
+    if (!pessoa.sucesso) {
+      return { sucesso: false, erro: pessoa.erro };
+    }
+
     const resultado = await salvarFornecedorRepo({ ...entrada, pessoaId: pessoa.pessoaId });
 
     if (entrada.endereco && entrada.endereco.cep) {

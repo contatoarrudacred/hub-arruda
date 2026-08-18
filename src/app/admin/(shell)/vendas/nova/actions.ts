@@ -25,15 +25,15 @@ export type EntradaCriarVenda = {
 export type ResultadoCriarVenda = { sucesso: true; oportunidadeId: string; pessoaId: string } | { sucesso: false; erro: string };
 
 export async function criarVendaSemFunilPrevioAction(entrada: EntradaCriarVenda): Promise<ResultadoCriarVenda> {
-  const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId, pessoaNova: entrada.pessoaNova });
-  if (!pessoa.sucesso) {
-    return { sucesso: false, erro: pessoa.erro };
-  }
-  if (!entrada.produtoId) {
-    return { sucesso: false, erro: "Selecione um Serviço." };
-  }
-
   try {
+    const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId, pessoaNova: entrada.pessoaNova });
+    if (!pessoa.sucesso) {
+      return { sucesso: false, erro: pessoa.erro };
+    }
+    if (!entrada.produtoId) {
+      return { sucesso: false, erro: "Selecione um Serviço." };
+    }
+
     if (entrada.endereco && entrada.endereco.cep) {
       await salvarEndereco({ ...entrada.endereco, pessoaId: pessoa.pessoaId, tipo: "residencial" });
     }

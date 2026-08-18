@@ -71,18 +71,20 @@ export async function excluirDocumentoPessoa(id: string): Promise<{ sucesso: tru
     const { data, error: erroBusca } = await supabase.from("pessoa_documentos").select("url").eq("id", id).single();
     if (erroBusca) throw new Error(`Falha ao buscar documento: ${erroBusca.message}`);
 
-    const { error: erroDelete } = await supabase.from("pessoa_documentos").delete().eq("id", id);
-    if (erroDelete) throw new Error(`Falha ao excluir documento: ${erroDelete.message}`);
-
-    // Remove o arquivo do Storage também — documento de identificação é dado sensível (LGPD),
-    // "Excluir" precisa apagar o arquivo de verdade, não só a linha de metadados.
+    // Remove o arquivo do Storage ANTES de apagar a linha do banco — documento de identificação é
+    // dado sensível (LGPD). Se a remoção do Storage falhar, a linha do banco permanece intacta
+    // (nada de arquivo órfão e sem como localizá-lo depois) e a exclusão pode ser tentada de novo.
     if (data?.url) {
       const { error: erroStorage } = await supabase.storage.from(BUCKET).remove([data.url]);
       if (erroStorage) throw new Error(`Falha ao remover arquivo do storage: ${erroStorage.message}`);
     }
 
+    const { error: erroDelete } = await supabase.from("pessoa_documentos").delete().eq("id", id);
+    if (erroDelete) throw new Error(`Falha ao excluir documento: ${erroDelete.message}`);
+
     return { sucesso: true };
   } catch (e) {
-    return { sucesso: false, erro: e instanceof Error ? e.message : "Falha ao excluir documento." };
+    console.error("Falha ao excluir documento da pessoa:", e);
+    return { sucesso: false, erro: "Falha ao excluir documento. Tente novamente." };
   }
 }
