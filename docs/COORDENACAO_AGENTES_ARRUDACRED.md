@@ -12,7 +12,7 @@
 | Agente | Worktree/branch | Escopo | Status |
 |---|---|---|---|
 | CRM | `main` (raiz do repo, sem worktree próprio) | Atendimento, motor de fluxo, Kanban (futuro), IA de atendimento | Ativo |
-| Marketing | `worktree-pipeline-conteudo-marketing-nucleo` | Pipeline de conteúdo/blog, sites satélite, tráfego pago | Ativo |
+| Marketing | `worktree-pipeline-conteudo-marketing-nucleo` | Pipeline de conteúdo/blog, sites satélite, tráfego pago | Ativo — núcleo do pipeline concluído/testado/revisado (Tasks 1-10, `superpowers/plans/2026-08-17-pipeline-conteudo-marketing-nucleo.md`), branch ainda não mesclada em `main` (pendência #1). Fase 2 (telas de admin) escopada e documentada, spec técnica/plan ainda não escritas. |
 | Vendas | `worktree-vendas-cadastro` (removido — mesclado e apagado em 18/08/2026) | Cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda | Concluído (Fase Cadastro) — abre worktree novo se retomar com Contrato/Assinatura/Financeiro |
 | Coordenador de Agentes | `main` (raiz do repo, sessão dedicada — não escreve feature) | Integração entre agentes, merges, detecção de colisão antes de virar problema | Ativo |
 | *(sem dono identificado)* | `claude/clever-davinci-f426d7` (worktree `.claude/worktrees/clever-davinci-f426d7`) | Aparenta ser uma sessão antiga do CRM (motor de fluxo/extração) | **Órfão** — HEAD (`a07f125`, 17/08) já está inteiro em `main`, 0 commit à frente / 56 atrás. Tem trabalho **não commitado** — ver aviso de 18/08 e pendência #2 |
