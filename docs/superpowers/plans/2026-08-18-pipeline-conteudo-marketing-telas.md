@@ -145,6 +145,7 @@ describe("criptografia", () => {
 ```
 
 - [ ] **Step 2: Implementar** (ver spec seção 4 pro código completo de referência — `aes-256-gcm`, `scryptSync` pra derivar chave de 32 bytes, IV de 12 bytes + authTag de 16 bytes concatenados antes do texto cifrado, tudo em base64)
+- [ ] **Step 3: Comentário de segurança obrigatório** (pedido do Coordenador, `COORDENACAO_AGENTES_ARRUDACRED.md` seção 3, 18/08/2026) — `scryptSync` com salt fixo é aceitável **só porque** `MARKETING_CREDENCIAIS_CHAVE` já é, ela mesma, uma env secreta de alta entropia (o Luiz gera com `openssl rand -base64 32`, não digita uma frase). Deixar isso explícito num comentário acima de `obterChave()` — se um dia essa env virar algo digitado à mão, o salt fixo deixa de ser seguro, e quem for mexer precisa saber disso antes de "simplificar".
 
 ---
 
