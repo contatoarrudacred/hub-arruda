@@ -85,21 +85,46 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
 
     const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
 
-    // A partir daqui o post JÁ ESTÁ no ar no WordPress — se o registro local (atualizarStatusPost/
-    // marcarPautaPublicada) falhar, NÃO podemos cair no catch/registrarReprovacaoPauta: isso
-    // devolveria a pauta pra fila e geraria um segundo artigo publicado no próximo ciclo
-    // (duplicidade real, ruim pra SEO). Um registro local desatualizado é um problema bem menor
-    // do que conteúdo duplicado — por isso só logamos, sem reprovar.
+    // A partir daqui o post JÁ ESTÁ no ar no WordPress — nada aqui pode cair no catch externo/
+    // registrarReprovacaoPauta: isso devolveria a pauta pra fila e geraria um segundo artigo
+    // publicado no próximo ciclo (duplicidade real, ruim pra SEO).
+    //
+    // marcarPautaPublicada roda sozinha e primeiro porque é o que efetivamente tira a pauta do
+    // pool de reclaim (reclaim só seleciona status em_producao, ver repositorio.ts) — se ela
+    // falhar e a pauta ficar em em_producao, o próprio reclaim (item 3) a re-selecionaria e
+    // republicaria dali a 10 minutos, recriando exatamente a duplicidade que este bloco existe
+    // pra evitar. Por isso, se falhar, forçamos "bloqueada" (exige revisão humana) em vez de
+    // deixar a pauta recuperável via reclaim.
+    try {
+      await marcarPautaPublicada(pauta.id);
+    } catch (erroMarcarPublicada) {
+      console.error(
+        `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao marcar como publicada localmente — bloqueando para revisão manual:`,
+        erroMarcarPublicada,
+      );
+      try {
+        await marcarPautaBloqueada(
+          pauta.id,
+          `Publicado em ${publicado.urlPublicada} mas falhou ao registrar localmente — verificar manualmente.`,
+        );
+      } catch (erroBloqueio) {
+        console.error(`Pauta ${pauta.id}: falha adicional ao tentar bloquear para revisão manual:`, erroBloqueio);
+      }
+      return { status: "publicado" as const, url: publicado.urlPublicada };
+    }
+
+    // Metadados do post local (canais/publicado_em/HTML final) são secundários — a pauta já está
+    // marcada como publicada acima, então uma falha aqui não reabre risco de duplicidade. Só logamos.
     try {
       await atualizarStatusPost(post.id, "publicado", {
         canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
         publicadoEm: new Date().toISOString(),
+        conteudoHtml: corpoHtmlSanitizado,
       });
-      await marcarPautaPublicada(pauta.id);
-    } catch (erroPosPublicacao) {
+    } catch (erroAtualizarPost) {
       console.error(
-        `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao registrar localmente:`,
-        erroPosPublicacao,
+        `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao atualizar o post local:`,
+        erroAtualizarPost,
       );
     }
 

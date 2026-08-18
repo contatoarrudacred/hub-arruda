@@ -225,7 +225,7 @@ export async function carregarPostsPublicadosDaPropriedade(
 export async function atualizarStatusPost(
   postId: string,
   status: StatusPost,
-  extra?: { canais?: Record<string, unknown>; publicadoEm?: string },
+  extra?: { canais?: Record<string, unknown>; publicadoEm?: string; conteudoHtml?: string },
 ): Promise<void> {
   const supabase = createAdminClient();
   const { error } = await supabase
@@ -234,6 +234,10 @@ export async function atualizarStatusPost(
       status,
       ...(extra?.canais ? { canais: extra.canais } : {}),
       ...(extra?.publicadoEm ? { publicado_em: extra.publicadoEm } : {}),
+      // Grava o HTML final de verdade publicado (com links internos + sanitização já aplicados) —
+      // sem isto, posts.conteudo_html ficava com a saída crua do Escritor, diferente do que
+      // realmente está no ar no WordPress (auditoria/republicação futura leriam um documento errado).
+      ...(extra?.conteudoHtml ? { conteudo_html: extra.conteudoHtml } : {}),
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", postId);

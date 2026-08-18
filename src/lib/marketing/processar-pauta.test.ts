@@ -69,10 +69,12 @@ describe("processarProximaPauta", () => {
     expect(inserirLinksInternos).toHaveBeenCalledWith("<h1>...</h1>", "prop-1", "post-1");
   });
 
-  it("mantém o resultado publicado sem reprovar quando o registro pós-publicação falha", async () => {
+  it("mantém o resultado publicado sem reprovar quando só o registro de metadados do post falha", async () => {
     // Regressão do bug de janela de publicação duplicada: se aprovarPublicar já teve sucesso
     // (post no ar) mas atualizarStatusPost falhar depois, NÃO pode cair em registrarReprovacaoPauta
     // — isso devolveria a pauta pra fila e geraria um segundo artigo publicado no próximo ciclo.
+    // marcarPautaPublicada roda ANTES e com sucesso aqui (é o que tira a pauta do pool de reclaim),
+    // então uma falha isolada em atualizarStatusPost (metadados secundários) não deve bloquear nada.
     vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
@@ -85,8 +87,9 @@ describe("processarProximaPauta", () => {
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
-    vi.spyOn(repositorio, "atualizarStatusPost").mockRejectedValue(new Error("Falha ao gravar no banco"));
+    const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockRejectedValue(new Error("Falha ao gravar no banco"));
     const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    const bloquearSpy = vi.spyOn(repositorio, "marcarPautaBloqueada").mockResolvedValue(undefined);
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
@@ -102,7 +105,59 @@ describe("processarProximaPauta", () => {
 
     expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
     expect(reprovarSpy).not.toHaveBeenCalled();
-    expect(marcarPublicadaSpy).not.toHaveBeenCalled();
+    expect(marcarPublicadaSpy).toHaveBeenCalledWith("pauta-1");
+    expect(bloquearSpy).not.toHaveBeenCalled();
+    expect(atualizarStatusPostSpy).toHaveBeenCalledWith(
+      "post-1",
+      "publicado",
+      expect.objectContaining({ conteudoHtml: expect.any(String) }),
+    );
+    expect(erroSpy).toHaveBeenCalled();
+
+    erroSpy.mockRestore();
+  });
+
+  it("bloqueia a pauta pra revisão manual quando marcarPautaPublicada falha (não deixa recuperável via reclaim)", async () => {
+    // Se marcarPautaPublicada falhar, a pauta ficaria em em_producao e o reclaim (item 3) a
+    // re-selecionaria e republicaria dali a 10 minutos — a mesma duplicidade que este bloco existe
+    // pra evitar. Por isso o fallback força "bloqueada" em vez de deixar recuperável via reclaim.
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      titulo: "Como Limpar o Nome no Serasa",
+      conteudoHtml: "<h1>...</h1>",
+      metaTitle: "Como Limpar Nome no Serasa",
+      metaDescription: "Guia completo.",
+      slug: "como-limpar-nome-serasa",
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockRejectedValue(new Error("Falha ao gravar no banco"));
+    const bloquearSpy = vi.spyOn(repositorio, "marcarPautaBloqueada").mockResolvedValue(undefined);
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+    expect(reprovarSpy).not.toHaveBeenCalled();
+    expect(marcarPublicadaSpy).toHaveBeenCalledWith("pauta-1");
+    expect(bloquearSpy).toHaveBeenCalledWith(
+      "pauta-1",
+      expect.stringContaining("https://teste.exemplo.com/como-limpar-nome-serasa/"),
+    );
+    // atualizarStatusPost não deve rodar: a pauta já foi resolvida (bloqueada) nesse ramo.
+    expect(atualizarStatusPostSpy).not.toHaveBeenCalled();
     expect(erroSpy).toHaveBeenCalled();
 
     erroSpy.mockRestore();
