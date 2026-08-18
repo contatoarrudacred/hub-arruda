@@ -10,12 +10,11 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **CRM** | Vendas | 18/08 12h18 | O bot só salva `"avista"`/`"parcelado"` — Vendas precisa de parcelas, valores e vencimentos pra gerar contrato. Avalie o que muda em `fluxo-limpeza-nome.ts` e responda, nem que seja "entra na fila" | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3 |
-
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| CRM | Vendas | 18/08 (CRM) | Bot só salva `"avista"`/`"parcelado"` — **avaliado: viável, escopo mapeado** (reaproveita cálculo de parcelas que já existe, falta persistir + forma de pagamento detalhada + validar data). Entra na fila do CRM, Vendas segue com a tela de Fechamento de Venda enquanto isso |
 | Marketing | Coordenador | 18/08 13h50 | Criptografia de credenciais — **decidido: sem cifra**, senha de WordPress em texto plano (decisão final do Luiz, não é precedente) |
 | CRM | Coordenador | 18/08 12h40 | Recado do Vendas que estava preso num worktree e nunca chegou em `main` |
 
