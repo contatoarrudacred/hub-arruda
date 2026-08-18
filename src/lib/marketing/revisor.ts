@@ -4,7 +4,7 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ConteudoGerado, ItemChecklistCarregado, ResultadoRevisao } from "./tipos";
+import type { ConteudoGerado, ItemChecklistCarregado, ResultadoRevisao, UsageTokens } from "./tipos";
 
 const MODELO_REVISOR = "claude-sonnet-5";
 const SCORE_MINIMO_APROVACAO = 80;
@@ -53,7 +53,10 @@ function montarPrompt(conteudo: ConteudoGerado, checklist: ItemChecklistCarregad
   ].join("\n");
 }
 
-export async function revisarConteudo(conteudo: ConteudoGerado, checklist: ItemChecklistCarregado[]): Promise<ResultadoRevisao> {
+export async function revisarConteudo(
+  conteudo: ConteudoGerado,
+  checklist: ItemChecklistCarregado[],
+): Promise<{ resultado: ResultadoRevisao; usage: UsageTokens }> {
   const cliente = obterCliente();
   const prompt = montarPrompt(conteudo, checklist);
 
@@ -73,5 +76,11 @@ export async function revisarConteudo(conteudo: ConteudoGerado, checklist: ItemC
   const bruta = blocoFerramenta.input as { score: number; motivo?: string | null };
   const aprovado = bruta.score >= SCORE_MINIMO_APROVACAO;
 
-  return { aprovado, score: bruta.score, motivo: aprovado ? null : (bruta.motivo ?? "Score abaixo do mínimo, sem motivo detalhado.") };
+  return {
+    resultado: { aprovado, score: bruta.score, motivo: aprovado ? null : (bruta.motivo ?? "Score abaixo do mínimo, sem motivo detalhado.") },
+    usage: {
+      inputTokens: resposta.usage?.input_tokens ?? 0,
+      outputTokens: resposta.usage?.output_tokens ?? 0,
+    },
+  };
 }

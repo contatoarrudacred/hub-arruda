@@ -638,8 +638,18 @@ export async function listarPostsPublicados(propriedadeId?: string): Promise<Pos
  * observabilidade, não pode virar um novo ponto de falha do pipeline de publicação (isso é
  * especialmente relevante agora: a tabela pautas_execucao_log ainda não existe em produção,
  * migration pendente de aplicação — ver Task 1). O erro de `fn()`, esse sim, sempre repropaga.
+ *
+ * `extrairTokens` (opcional, Task 5): permite ao chamador extrair tokens_entrada/tokens_saida do
+ * resultado de `fn()` pra persistir na mesma linha de conclusão — usado pelas etapas
+ * gerar_conteudo/revisar, cujo retorno agora carrega `usage` (ver escritor.ts/revisor.ts). Parâmetro
+ * opcional pra não quebrar chamadores que não precisam de tokens (ex.: buscar_checklist, sanitizar).
  */
-export async function registrarEtapa<T>(pautaId: string, etapa: EtapaLog, fn: () => Promise<T>): Promise<T> {
+export async function registrarEtapa<T>(
+  pautaId: string,
+  etapa: EtapaLog,
+  fn: () => Promise<T>,
+  extrairTokens?: (resultado: T) => { tokensEntrada: number; tokensSaida: number } | undefined,
+): Promise<T> {
   const supabase = createAdminClient();
   const { data: log, error: erroInsercao } = await supabase
     .from("pautas_execucao_log")
@@ -653,9 +663,14 @@ export async function registrarEtapa<T>(pautaId: string, etapa: EtapaLog, fn: ()
   try {
     const resultado = await fn();
     if (log) {
+      const tokens = extrairTokens?.(resultado);
       const { error } = await supabase
         .from("pautas_execucao_log")
-        .update({ concluido_em: new Date().toISOString(), sucesso: true })
+        .update({
+          concluido_em: new Date().toISOString(),
+          sucesso: true,
+          ...(tokens ? { tokens_entrada: tokens.tokensEntrada, tokens_saida: tokens.tokensSaida } : {}),
+        })
         .eq("id", log.id);
       if (error) console.error(`Falha ao registrar conclusão da etapa ${etapa} da pauta ${pautaId}: ${error.message}`);
     }

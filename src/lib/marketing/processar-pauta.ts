@@ -20,6 +20,7 @@ import {
   criarPost,
   marcarPautaBloqueada,
   marcarPautaPublicada,
+  registrarEtapa,
   registrarReprovacaoPauta,
 } from "./repositorio";
 import type { JanelaPublicacao } from "./tipos";
@@ -110,9 +111,25 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
   }
 
   try {
-    const checklist = await carregarChecklistAtivo(propriedadeId);
-    const conteudo = await gerarConteudo(pauta, checklist);
-    const revisao = await revisarConteudo(conteudo, checklist);
+    // Cada etapa é envolvida por registrarEtapa (Task 3) — grava início/fim/sucesso em
+    // pautas_execucao_log, alimentando o Monitor de execução e o Painel de Custo (spec seção 6).
+    // Etapas gerar_conteudo/revisar passam um extrator de tokens porque Escritor/Revisor retornam
+    // `usage` junto do resultado de negócio (mudança desta mesma task).
+    const checklist = await registrarEtapa(pauta.id, "buscar_checklist", () => carregarChecklistAtivo(propriedadeId));
+
+    const { resultado: conteudo } = await registrarEtapa(
+      pauta.id,
+      "gerar_conteudo",
+      () => gerarConteudo(pauta, checklist),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+    );
+
+    const { resultado: revisao } = await registrarEtapa(
+      pauta.id,
+      "revisar",
+      () => revisarConteudo(conteudo, checklist),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+    );
 
     if (!revisao.aprovado) {
       await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
@@ -123,68 +140,87 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
     // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
     // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
-    const conteudoComLinks = await inserirLinksInternos(conteudo.conteudoHtml, propriedadeId, post.id);
-    const corpoHtmlSanitizado = sanitizarConteudoHtml(conteudoComLinks);
-    const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
-    const rascunho = await adaptador.criarRascunho({
-      titulo: conteudo.titulo,
-      corpoHtml: corpoHtmlSanitizado,
-      slug: conteudo.slug,
-      metaTitle: conteudo.metaTitle,
-      metaDescription: conteudo.metaDescription,
+    const conteudoComLinks = await registrarEtapa(pauta.id, "inserir_links", () =>
+      inserirLinksInternos(conteudo.conteudoHtml, propriedadeId, post.id),
+    );
+    const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
+
+    // Etapa "publicar" envolve criar rascunho + verificar + aprovar/publicar como uma unidade só.
+    // Igual à etapa "revisar", uma rejeição de negócio (verificacao.ok === false) não é uma exceção
+    // técnica — não lança, só retorna um resultado discriminado; sucesso/detalhes do log reflete
+    // exceções de verdade (erro de rede/API do WordPress), não a decisão de aprovar/reprovar.
+    const resultadoPublicacao = await registrarEtapa(pauta.id, "publicar", async () => {
+      const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
+      const rascunho = await adaptador.criarRascunho({
+        titulo: conteudo.titulo,
+        corpoHtml: corpoHtmlSanitizado,
+        slug: conteudo.slug,
+        metaTitle: conteudo.metaTitle,
+        metaDescription: conteudo.metaDescription,
+      });
+
+      const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
+      if (!verificacao.ok) {
+        return { sucesso: false as const, detalhes: verificacao.detalhes ?? "Rascunho não conforme no WordPress." };
+      }
+
+      const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+      return { sucesso: true as const, rascunho, publicado };
     });
 
-    const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
-    if (!verificacao.ok) {
+    if (!resultadoPublicacao.sucesso) {
       await atualizarStatusPost(post.id, "falhou");
-      await registrarReprovacaoPauta(pauta.id, verificacao.detalhes ?? "Rascunho não conforme no WordPress.");
+      await registrarReprovacaoPauta(pauta.id, resultadoPublicacao.detalhes);
       return { status: "reprovado" as const, pautaId: pauta.id };
     }
 
-    const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+    const { rascunho, publicado } = resultadoPublicacao;
 
     // A partir daqui o post JÁ ESTÁ no ar no WordPress — nada aqui pode cair no catch externo/
     // registrarReprovacaoPauta: isso devolveria a pauta pra fila e geraria um segundo artigo
-    // publicado no próximo ciclo (duplicidade real, ruim pra SEO).
-    //
-    // marcarPautaPublicada roda sozinha e primeiro porque é o que efetivamente tira a pauta do
-    // pool de reclaim (reclaim só seleciona status em_producao, ver repositorio.ts) — se ela
-    // falhar e a pauta ficar em em_producao, o próprio reclaim (item 3) a re-selecionaria e
-    // republicaria dali a 10 minutos, recriando exatamente a duplicidade que este bloco existe
-    // pra evitar. Por isso, se falhar, forçamos "bloqueada" (exige revisão humana) em vez de
-    // deixar a pauta recuperável via reclaim.
-    try {
-      await marcarPautaPublicada(pauta.id);
-    } catch (erroMarcarPublicada) {
-      console.error(
-        `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao marcar como publicada localmente — bloqueando para revisão manual:`,
-        erroMarcarPublicada,
-      );
+    // publicado no próximo ciclo (duplicidade real, ruim pra SEO). Por isso os dois passos abaixo
+    // (marcarPautaPublicada/atualizarStatusPost) engolem suas próprias exceções por dentro do
+    // fn() de registrarEtapa — nenhuma delas pode repropagar e ser tratada como reprovação.
+    await registrarEtapa(pauta.id, "registrar_resultado", async () => {
+      // marcarPautaPublicada roda sozinha e primeiro porque é o que efetivamente tira a pauta do
+      // pool de reclaim (reclaim só seleciona status em_producao, ver repositorio.ts) — se ela
+      // falhar e a pauta ficar em em_producao, o próprio reclaim (item 3) a re-selecionaria e
+      // republicaria dali a 10 minutos, recriando exatamente a duplicidade que este bloco existe
+      // pra evitar. Por isso, se falhar, forçamos "bloqueada" (exige revisão humana) em vez de
+      // deixar a pauta recuperável via reclaim.
       try {
-        await marcarPautaBloqueada(
-          pauta.id,
-          `Publicado em ${publicado.urlPublicada} mas falhou ao registrar localmente — verificar manualmente.`,
+        await marcarPautaPublicada(pauta.id);
+      } catch (erroMarcarPublicada) {
+        console.error(
+          `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao marcar como publicada localmente — bloqueando para revisão manual:`,
+          erroMarcarPublicada,
         );
-      } catch (erroBloqueio) {
-        console.error(`Pauta ${pauta.id}: falha adicional ao tentar bloquear para revisão manual:`, erroBloqueio);
+        try {
+          await marcarPautaBloqueada(
+            pauta.id,
+            `Publicado em ${publicado.urlPublicada} mas falhou ao registrar localmente — verificar manualmente.`,
+          );
+        } catch (erroBloqueio) {
+          console.error(`Pauta ${pauta.id}: falha adicional ao tentar bloquear para revisão manual:`, erroBloqueio);
+        }
+        return;
       }
-      return { status: "publicado" as const, url: publicado.urlPublicada };
-    }
 
-    // Metadados do post local (canais/publicado_em/HTML final) são secundários — a pauta já está
-    // marcada como publicada acima, então uma falha aqui não reabre risco de duplicidade. Só logamos.
-    try {
-      await atualizarStatusPost(post.id, "publicado", {
-        canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
-        publicadoEm: new Date().toISOString(),
-        conteudoHtml: corpoHtmlSanitizado,
-      });
-    } catch (erroAtualizarPost) {
-      console.error(
-        `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao atualizar o post local:`,
-        erroAtualizarPost,
-      );
-    }
+      // Metadados do post local (canais/publicado_em/HTML final) são secundários — a pauta já está
+      // marcada como publicada acima, então uma falha aqui não reabre risco de duplicidade. Só logamos.
+      try {
+        await atualizarStatusPost(post.id, "publicado", {
+          canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
+          publicadoEm: new Date().toISOString(),
+          conteudoHtml: corpoHtmlSanitizado,
+        });
+      } catch (erroAtualizarPost) {
+        console.error(
+          `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao atualizar o post local:`,
+          erroAtualizarPost,
+        );
+      }
+    });
 
     return { status: "publicado" as const, url: publicado.urlPublicada };
   } catch (erro) {

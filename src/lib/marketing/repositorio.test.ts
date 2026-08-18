@@ -867,6 +867,39 @@ describe("registrarEtapa", () => {
     expect(erroSpy).toHaveBeenCalled();
     erroSpy.mockRestore();
   });
+
+  // Task 5: gerarConteudo/revisarConteudo passam a retornar usage junto do resultado de negócio —
+  // registrarEtapa precisa aceitar um extrator opcional pra persistir tokens_entrada/tokens_saida
+  // na mesma linha de conclusão, sem quebrar chamadores que não passam esse 4º argumento.
+  it("persiste tokens_entrada/tokens_saida na conclusão quando um extrator de tokens é passado", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    const resultado = await registrarEtapa(
+      "pauta-1",
+      "gerar_conteudo",
+      async () => ({ resultado: "conteudo-gerado", usage: { inputTokens: 100, outputTokens: 50 } }),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+    );
+
+    expect(resultado.resultado).toBe("conteudo-gerado");
+    expect(builderUpdate.update).toHaveBeenCalledWith(
+      expect.objectContaining({ sucesso: true, tokens_entrada: 100, tokens_saida: 50 }),
+    );
+  });
+
+  it("continua funcionando sem o extrator de tokens (retrocompatível com chamadores que não o passam)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    await registrarEtapa("pauta-1", "buscar_checklist", async () => []);
+
+    const payload = (builderUpdate.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("tokens_entrada");
+    expect(payload).not.toHaveProperty("tokens_saida");
+  });
 });
 
 describe("carregarResumoVisaoGeral", () => {

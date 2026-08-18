@@ -50,9 +50,10 @@ describe("gerarConteudo", () => {
           },
         },
       ],
+      usage: { input_tokens: 1234, output_tokens: 5678 },
     });
 
-    const resultado = await gerarConteudo(pauta, checklist);
+    const { resultado, usage } = await gerarConteudo(pauta, checklist);
 
     expect(resultado.titulo).toContain("Serasa");
     expect(resultado.slug).toBe("como-limpar-nome-serasa");
@@ -60,6 +61,8 @@ describe("gerarConteudo", () => {
     expect(argumentosChamada.messages[0].content).toContain("limpar nome serasa");
     expect(argumentosChamada.messages[0].content).toContain("H1 com a palavra-chave principal");
     expect(argumentosChamada.max_tokens).toBe(16000);
+    expect(usage.inputTokens).toBe(1234);
+    expect(usage.outputTokens).toBe(5678);
   });
 
   it("lança erro claro quando a resposta é truncada por limite de tokens", async () => {

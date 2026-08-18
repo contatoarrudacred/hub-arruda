@@ -33,6 +33,21 @@ const propriedadeFalsa = {
   maxTentativas: 3,
 };
 
+/**
+ * Espiona registrarEtapa (Task 3, extraído em Task 5 pra também aceitar tokens — ver
+ * repositorio.ts) sem bater no banco: repassa direto pra fn() e grava a ordem das etapas
+ * chamadas, pra asserts de "etapa X foi registrada, na ordem certa" nos testes de
+ * processarProximaPauta abaixo.
+ */
+function espiarRegistrarEtapa() {
+  const etapasChamadas: string[] = [];
+  const spy = vi.spyOn(repositorio, "registrarEtapa").mockImplementation(async (_pautaId, etapa, fn) => {
+    etapasChamadas.push(etapa);
+    return fn();
+  });
+  return { spy, etapasChamadas };
+}
+
 describe("dentroDaJanela", () => {
   it("retorna true quando nenhuma janela está configurada", () => {
     expect(dentroDaJanela(undefined)).toBe(true);
@@ -156,17 +171,24 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
-      titulo: "Como Limpar o Nome no Serasa",
-      conteudoHtml: "<h1>...</h1>",
-      metaTitle: "Como Limpar Nome no Serasa",
-      metaDescription: "Guia completo.",
-      slug: "como-limpar-nome-serasa",
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
     });
-    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: true, score: 92, motivo: null },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
     vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
     vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
     vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    const { etapasChamadas } = espiarRegistrarEtapa();
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -180,6 +202,15 @@ describe("processarProximaPauta", () => {
     expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
     expect(adaptadorFalso.aprovarPublicar).toHaveBeenCalledWith("123");
     expect(inserirLinksInternos).toHaveBeenCalledWith("<h1>...</h1>", "prop-1", "post-1");
+    expect(etapasChamadas).toEqual([
+      "buscar_checklist",
+      "gerar_conteudo",
+      "revisar",
+      "inserir_links",
+      "sanitizar",
+      "publicar",
+      "registrar_resultado",
+    ]);
   });
 
   it("mantém o resultado publicado sem reprovar quando só o registro de metadados do post falha", async () => {
@@ -192,13 +223,19 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
-      titulo: "Como Limpar o Nome no Serasa",
-      conteudoHtml: "<h1>...</h1>",
-      metaTitle: "Como Limpar Nome no Serasa",
-      metaDescription: "Guia completo.",
-      slug: "como-limpar-nome-serasa",
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
     });
-    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: true, score: 92, motivo: null },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
     const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockRejectedValue(new Error("Falha ao gravar no banco"));
     const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
@@ -206,6 +243,7 @@ describe("processarProximaPauta", () => {
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    const { etapasChamadas } = espiarRegistrarEtapa();
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -226,6 +264,15 @@ describe("processarProximaPauta", () => {
       expect.objectContaining({ conteudoHtml: expect.any(String) }),
     );
     expect(erroSpy).toHaveBeenCalled();
+    expect(etapasChamadas).toEqual([
+      "buscar_checklist",
+      "gerar_conteudo",
+      "revisar",
+      "inserir_links",
+      "sanitizar",
+      "publicar",
+      "registrar_resultado",
+    ]);
 
     erroSpy.mockRestore();
   });
@@ -238,13 +285,19 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
-      titulo: "Como Limpar o Nome no Serasa",
-      conteudoHtml: "<h1>...</h1>",
-      metaTitle: "Como Limpar Nome no Serasa",
-      metaDescription: "Guia completo.",
-      slug: "como-limpar-nome-serasa",
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
     });
-    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: true, score: 92, motivo: null },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
     const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
     const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockRejectedValue(new Error("Falha ao gravar no banco"));
@@ -252,6 +305,7 @@ describe("processarProximaPauta", () => {
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    const { etapasChamadas } = espiarRegistrarEtapa();
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -272,8 +326,63 @@ describe("processarProximaPauta", () => {
     // atualizarStatusPost não deve rodar: a pauta já foi resolvida (bloqueada) nesse ramo.
     expect(atualizarStatusPostSpy).not.toHaveBeenCalled();
     expect(erroSpy).toHaveBeenCalled();
+    expect(etapasChamadas).toEqual([
+      "buscar_checklist",
+      "gerar_conteudo",
+      "revisar",
+      "inserir_links",
+      "sanitizar",
+      "publicar",
+      "registrar_resultado",
+    ]);
 
     erroSpy.mockRestore();
+  });
+
+  it("reprova sem publicar quando o WordPress rejeita o rascunho na verificação", async () => {
+    // Cenário de "publicar falhou" que já existia na lógica de negócio (verificacao.ok === false),
+    // mas ganhou uma forma nova de fluir pela etapa "publicar" (Task 5): não lança exceção — a
+    // etapa "publicar" é registrada como concluída (sucesso: true, é a decisão de negócio de
+    // reprovar, não uma exceção técnica), igual ao padrão já usado por "revisar".
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: true, score: 92, motivo: null },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    const { etapasChamadas } = espiarRegistrarEtapa();
+
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: false, detalhes: "Rascunho sem conteúdo renderizado." }),
+      aprovarPublicar: vi.fn(),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
+    expect(adaptadorFalso.aprovarPublicar).not.toHaveBeenCalled();
+    expect(atualizarStatusPostSpy).toHaveBeenCalledWith("post-1", "falhou");
+    expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Rascunho sem conteúdo renderizado.");
+    expect(marcarPublicadaSpy).not.toHaveBeenCalled();
+    expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar", "inserir_links", "sanitizar", "publicar"]);
   });
 
   it("reprova sem publicar quando o score da revisão é baixo", async () => {
@@ -281,19 +390,27 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
-      titulo: "Rascunho fraco",
-      conteudoHtml: "<p>curto</p>",
-      metaTitle: "x",
-      metaDescription: "y",
-      slug: "rascunho-fraco",
+      resultado: {
+        titulo: "Rascunho fraco",
+        conteudoHtml: "<p>curto</p>",
+        metaTitle: "x",
+        metaDescription: "y",
+        slug: "rascunho-fraco",
+      },
+      usage: { inputTokens: 300, outputTokens: 100 },
     });
-    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: false, score: 40, motivo: "Muito curto." });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: false, score: 40, motivo: "Muito curto." },
+      usage: { inputTokens: 200, outputTokens: 20 },
+    });
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    const { etapasChamadas } = espiarRegistrarEtapa();
 
     const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
     expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
     expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
+    expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar"]);
   });
 
   it("bloqueia sem gerar quando o limite de tentativas já foi esgotado", async () => {
@@ -319,10 +436,15 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
     vi.spyOn(escritor, "gerarConteudo").mockRejectedValue(new Error("Falha de rede"));
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    const { etapasChamadas } = espiarRegistrarEtapa();
 
     const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
     expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
     expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Falha de rede");
+    // A etapa gerar_conteudo é registrada (linha de log com iniciado_em) mesmo lançando exceção —
+    // registrarEtapa (real) marcaria sucesso: false; aqui só confirmamos que ela foi de fato
+    // invocada antes de propagar o erro pro catch externo.
+    expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo"]);
   });
 });

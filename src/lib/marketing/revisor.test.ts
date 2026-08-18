@@ -26,12 +26,15 @@ describe("revisarConteudo", () => {
     const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
     mockCreate.mockResolvedValue({
       content: [{ type: "tool_use", input: { score: 90, motivo: null } }],
+      usage: { input_tokens: 800, output_tokens: 40 },
     });
 
-    const resultado = await revisarConteudo(conteudo, checklist);
+    const { resultado, usage } = await revisarConteudo(conteudo, checklist);
 
     expect(resultado.aprovado).toBe(true);
     expect(resultado.score).toBe(90);
+    expect(usage.inputTokens).toBe(800);
+    expect(usage.outputTokens).toBe(40);
   });
 
   it("reprova quando o score é < 80 e exige motivo", async () => {
@@ -40,11 +43,14 @@ describe("revisarConteudo", () => {
     const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
     mockCreate.mockResolvedValue({
       content: [{ type: "tool_use", input: { score: 60, motivo: "Faltam links externos para fontes oficiais." } }],
+      usage: { input_tokens: 700, output_tokens: 30 },
     });
 
-    const resultado = await revisarConteudo(conteudo, checklist);
+    const { resultado, usage } = await revisarConteudo(conteudo, checklist);
 
     expect(resultado.aprovado).toBe(false);
     expect(resultado.motivo).toBe("Faltam links externos para fontes oficiais.");
+    expect(usage.inputTokens).toBe(700);
+    expect(usage.outputTokens).toBe(30);
   });
 });

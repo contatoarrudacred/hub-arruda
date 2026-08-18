@@ -59,6 +59,17 @@ export type ResultadoRevisao = {
   motivo: string | null;
 };
 
+/**
+ * Consumo de tokens de uma chamada à Anthropic — Task 5 (instrumentação do log de execução, ver
+ * spec seção 6). `gerarConteudo`/`revisarConteudo` passam a retornar isto junto do resultado de
+ * negócio pra `registrarEtapa` conseguir persistir tokens_entrada/tokens_saida na mesma linha de
+ * `pautas_execucao_log`.
+ */
+export type UsageTokens = {
+  inputTokens: number;
+  outputTokens: number;
+};
+
 export type PostCriado = {
   id: string;
   pautaId: string;

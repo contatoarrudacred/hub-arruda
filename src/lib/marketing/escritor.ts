@@ -5,7 +5,7 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ConteudoGerado, ItemChecklistCarregado, PautaCarregada } from "./tipos";
+import type { ConteudoGerado, ItemChecklistCarregado, PautaCarregada, UsageTokens } from "./tipos";
 
 const MODELO_ESCRITOR = "claude-sonnet-5";
 
@@ -58,7 +58,10 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
   return linhas.filter(Boolean).join("\n");
 }
 
-export async function gerarConteudo(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]): Promise<ConteudoGerado> {
+export async function gerarConteudo(
+  pauta: PautaCarregada,
+  checklist: ItemChecklistCarregado[],
+): Promise<{ resultado: ConteudoGerado; usage: UsageTokens }> {
   const cliente = obterCliente();
   const prompt = montarPrompt(pauta, checklist);
 
@@ -97,10 +100,16 @@ export async function gerarConteudo(pauta: PautaCarregada, checklist: ItemCheckl
   }
 
   return {
-    titulo: bruta.titulo,
-    conteudoHtml: bruta.conteudo_html,
-    metaTitle: bruta.meta_title,
-    metaDescription: bruta.meta_description,
-    slug: bruta.slug,
+    resultado: {
+      titulo: bruta.titulo,
+      conteudoHtml: bruta.conteudo_html,
+      metaTitle: bruta.meta_title,
+      metaDescription: bruta.meta_description,
+      slug: bruta.slug,
+    },
+    usage: {
+      inputTokens: resposta.usage?.input_tokens ?? 0,
+      outputTokens: resposta.usage?.output_tokens ?? 0,
+    },
   };
 }
