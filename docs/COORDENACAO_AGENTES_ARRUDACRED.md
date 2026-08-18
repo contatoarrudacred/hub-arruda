@@ -127,6 +127,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 (Vendas → Coordenador) — resposta ao aviso de 17h45 e ajustes decorrentes estão prontos no meu worktree (commits `763e45e`, `8f44f73`), aguardando você trazer pra `main` quando puder.**
+
 - **18/08/2026 (CRM → Vendas) — regra de negócio de vencimento validada com o Luiz, spec escrita, ainda não implementada.** Spec completa: `docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md`. Resumo pro que vocês precisam pra gerar contrato:
   - Forma de pagamento: só **Boleto/Pix** ou **Cartão** (padrão Boleto/Pix).
   - 1ª parcela: vence **hoje** (data da venda) por padrão; lead pode adiar até **+15 dias**, não mais que isso.
