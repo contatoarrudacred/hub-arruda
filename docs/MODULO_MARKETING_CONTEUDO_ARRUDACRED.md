@@ -161,13 +161,23 @@ Ampliado pra cobrir páginas de site, não só posts de blog:
 
 ## 6. Construtor de Matriz de Conteúdo — componente necessário, ainda não construído
 
-**O que é:** um agente conversacional que, ao invés de um formulário fixo, **elabora suas próprias perguntas** pra levantar de um negócio novo: os temas/serviços reais (produtos que a propriedade oferece — não generalizável, cada negócio tem os seus), se o eixo geografia faz sentido (nacional/multi-praça vs. local único), e a sazonalidade do nicho (janelas do ano × gatilho emocional × temas prioritários). Usa os catálogos generalizados da seção 5 (ângulos, checklist, formatos) como ponto de partida — não precisa reinventar isso a cada propriedade nova.
+**O que é:** um agente conversacional que, ao invés de um formulário fixo, **elabora suas próprias perguntas** pra levantar de um negócio novo: os temas/serviços reais (produtos que a propriedade oferece — não generalizável, cada negócio tem os seus), se o eixo geografia faz sentido (nacional/multi-praça vs. local único), a sazonalidade do nicho (janelas do ano × gatilho emocional × temas prioritários), e **a(s) persona(s) detalhada(s) daquela propriedade** (seção 6.1, adicionado 17/08/2026). Usa os catálogos generalizados da seção 5 (ângulos, checklist, formatos) como ponto de partida — não precisa reinventar isso a cada propriedade nova.
 
 **Quando roda:** uma vez por propriedade nova, ou quando uma matriz nova é criada dentro de uma propriedade existente. Semi-interativo com Luiz (só ele sabe os produtos/público de cada negócio) — não é parte do pipeline 100% automatizado dos 4 estágios.
 
 **Como constrói o levantamento de temas:** usando os skills de SEO já instalados no projeto (`create-topic`, `keyword-clustering` do plugin `searchfit-seo`) como ferramentas de apoio, não reescrevendo pesquisa de palavra-chave do zero.
 
 **Pendente:** ainda não construído. Primeiras propriedades que precisam dele: vozdocredito.com.br e autoridadefinanceira.com.br (matriz nova) e uma revisão da matriz de Limpa Nome já existente (13 temas × 15 ângulos × 27 geografias do plano original — precisa ser carregada no banco e revisada, não só copiada).
+
+### 6.1 Personas por propriedade — requisito adicionado 17/08/2026, ainda não detalhado
+
+**Gap identificado por Luiz:** o desenho original (seções 1-5) já usa persona como conceito de alto nível pra diferenciar propriedades inteiras entre si (ex.: vozdocredito = persona consumidor, autoridadefinanceira = persona investidor, seção 1). O que faltava: **persona detalhada por propriedade**, com profundidade suficiente pra influenciar *cada peça de conteúdo gerada* — não só a divisão entre sites, mas o tom, vocabulário, objeções, nível de conhecimento prévio assumido, etc. dentro de cada site.
+
+**Decisão de escopo:** as personas serão definidas junto com Luiz em sessão própria (ele vai trazer prompts/material pra isso) — não é algo que o sistema deva inventar sozinho, mesmo espírito da seção 1 ("pendência real, não posso resolver sozinho").
+
+**Onde a persona mora (arquitetura, sem mudar o que já foi construído):** `MATRIZES_CONTEUDO.eixos` (jsonb, seção 2) ganha uma chave nova `persona` — objeto livre com o que for definido na sessão com Luiz (perfil demográfico/comportamental, tom de voz, nível de conhecimento assumido, objeções típicas, vocabulário preferido/evitado, etc.). Não exige migração de schema — `eixos` já é jsonb sem estrutura fixa.
+
+**Impacto no pipeline de geração (Fase 2 de implementação, ainda não construída):** o Agente Escritor (`src/lib/marketing/escritor.ts`, já implementado no núcleo do pipeline) hoje monta o prompt a partir da pauta + checklist, sem persona. Quando as personas forem definidas, `montarPrompt` (e possivelmente o checklist do Agente Revisor) precisa passar a carregar `matrizes_conteudo.eixos.persona` e cruzar com a pauta/ângulo/checklist ao gerar — isso é uma extensão pontual do Escritor já existente, não uma reescrita. Fica registrado aqui como próximo passo depois que as personas forem definidas, para não esquecer de cruzar.
 
 ---
 
@@ -264,6 +274,7 @@ Existe um segundo script no PDF ("Script Oficial — Contato com Indicados Arrud
 ## Pendências deste documento
 
 - **Construtor de Matriz de Conteúdo** (seção 6) — ainda não construído; é pré-requisito pra popular matrizes de vozdocredito.com.br e autoridadefinanceira.com.br, e pra revisar a matriz de Limpa Nome já existente
+- **Personas detalhadas por propriedade** (seção 6.1, 17/08/2026) — Luiz vai trazer prompts/material pra definir junto; depois de definidas, precisa estender `montarPrompt` do Agente Escritor (`src/lib/marketing/escritor.ts`) pra cruzar persona com pauta/checklist ao gerar conteúdo — não fazer o sistema inventar persona sozinho
 - **Motor 3 / vídeo nativo pra redes sociais** (seção 4) — estratégia documentada, não faz parte do pipeline automatizado ainda
 - **Geração de criativos originais por IA** (imagem/vídeo específicos por plataforma, não só recorte) — fase 2, fora do escopo atual
 - Os demais motores de aquisição do plano original (Remarketing, Parcerias B2B, Influenciadores, Native Ads/Taboola) — **fora do escopo deste módulo de conteúdo inteiramente** (não geram post nem publicam conteúdo — são campanhas pagas/parcerias/afiliados, sistemas diferentes)
