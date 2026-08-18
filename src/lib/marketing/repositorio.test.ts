@@ -316,6 +316,37 @@ describe("salvarCredencialCanal", () => {
     expect(credenciais.wordpress.usuario).toBe("admin-novo");
   });
 
+  // Gêmeo do teste acima (não-regressão de senha), mas pro campo usuario: enviar usuario vazio
+  // não pode apagar o usuario já salvo — só sobrescreve quando vier preenchido.
+  it("com usuario vazio, mantém o usuario já salvo e só atualiza a senha se enviada", async () => {
+    let payloadGravado: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) {
+        return criarQueryFalsa({
+          data: { credenciais_canais: { wordpress: { usuario: "admin-antigo", senha_cifrada: "CIFRADO-ANTIGO" } } },
+          error: null,
+        });
+      }
+      const builder = criarQueryFalsa({ data: null, error: null });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        payloadGravado = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarCredencialCanal("prop-1", "wordpress", "", "senha-nova");
+
+    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha_cifrada: string }>;
+    expect(credenciais.wordpress.usuario).toBe("admin-antigo");
+    expect(decifrar(credenciais.wordpress.senha_cifrada)).toBe("senha-nova");
+  });
+
   it("preserva credenciais de outros canais ao salvar uma", async () => {
     let payloadGravado: Record<string, unknown> | undefined;
     const supabaseFalso = { from: vi.fn() };
@@ -629,7 +660,22 @@ describe("listarPautasPorStatus", () => {
 
     await listarPautasPorStatus(undefined, "prop-1");
 
+    // As duas asserções são inseparáveis: filtrar por uma coluna de recurso embutido
+    // (matrizes_conteudo.propriedade_id) só é válido no PostgREST se esse recurso também
+    // tiver sido selecionado como inner join (matrizes_conteudo!inner(...)) na mesma query —
+    // sem o embed no select, o filtro sozinho dá 400 em produção. Checar só o .eq() (como este
+    // teste fazia antes) não protegeria contra alguém remover o embed do `campos` por engano.
+    expect(builder.select).toHaveBeenCalledWith(expect.stringContaining("matrizes_conteudo!inner(propriedade_id)"));
     expect(builder.eq).toHaveBeenCalledWith("matrizes_conteudo.propriedade_id", "prop-1");
+  });
+
+  it("NÃO inclui o embed matrizes_conteudo no select quando propriedadeId não é informado", async () => {
+    const builder = criarQueryFalsa({ data: [pautaBruta], error: null });
+    mockarFrom(builder);
+
+    await listarPautasPorStatus("pendente");
+
+    expect(builder.select).not.toHaveBeenCalledWith(expect.stringContaining("matrizes_conteudo"));
   });
 
   it("lança erro claro quando a query falha", async () => {
