@@ -1,0 +1,67 @@
+// src/lib/marketing/processar-pauta.ts
+// Processa uma tentativa completa (gerar → revisar → publicar) de uma pauta por matriz — ver
+// docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md seção 3.1. Chamado uma
+// vez por tick do cron (Task 9). Nada fica público até a publicação de verdade; reprovação em
+// qualquer etapa volta a pauta pro status "pendente" (registrarReprovacaoPauta) — o próximo tick
+// do cron re-seleciona a mesma pauta e tenta de novo, sem precisar de máquina de estados própria
+// além do que já está no banco (status + tentativas).
+
+import { selecionarPauta } from "./estrategista";
+import { gerarConteudo } from "./escritor";
+import { revisarConteudo } from "./revisor";
+import { criarAdaptadorWordPress } from "./canais/wordpress";
+import {
+  atualizarStatusPost,
+  carregarChecklistAtivo,
+  carregarPropriedade,
+  criarPost,
+  marcarPautaBloqueada,
+  marcarPautaPublicada,
+  registrarReprovacaoPauta,
+} from "./repositorio";
+
+export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
+  const propriedade = await carregarPropriedade(propriedadeId);
+  const pauta = await selecionarPauta(matrizConteudoId);
+  if (!pauta) return { status: "sem_pauta" as const };
+
+  if (pauta.tentativas >= propriedade.maxTentativas) {
+    await marcarPautaBloqueada(pauta.id, pauta.motivoUltimaReprovacao ?? "Limite de tentativas esgotado.");
+    return { status: "bloqueada" as const, pautaId: pauta.id };
+  }
+
+  const checklist = await carregarChecklistAtivo(propriedadeId);
+  const conteudo = await gerarConteudo(pauta, checklist);
+  const revisao = await revisarConteudo(conteudo, checklist);
+
+  if (!revisao.aprovado) {
+    await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+    return { status: "reprovado" as const, pautaId: pauta.id };
+  }
+
+  const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
+  const adaptador = criarAdaptadorWordPress(propriedade.urlBase);
+  const rascunho = await adaptador.criarRascunho({
+    titulo: conteudo.titulo,
+    corpoHtml: conteudo.conteudoHtml,
+    slug: conteudo.slug,
+    metaTitle: conteudo.metaTitle,
+    metaDescription: conteudo.metaDescription,
+  });
+
+  const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
+  if (!verificacao.ok) {
+    await atualizarStatusPost(post.id, "falhou");
+    await registrarReprovacaoPauta(pauta.id, verificacao.detalhes ?? "Rascunho não conforme no WordPress.");
+    return { status: "reprovado" as const, pautaId: pauta.id };
+  }
+
+  const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+  await atualizarStatusPost(post.id, "publicado", {
+    canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
+    publicadoEm: new Date().toISOString(),
+  });
+  await marcarPautaPublicada(pauta.id);
+
+  return { status: "publicado" as const, url: publicado.urlPublicada };
+}
