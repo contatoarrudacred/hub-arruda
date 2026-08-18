@@ -59,5 +59,52 @@ describe("gerarConteudo", () => {
     const argumentosChamada = mockCreate.mock.calls[0][0];
     expect(argumentosChamada.messages[0].content).toContain("limpar nome serasa");
     expect(argumentosChamada.messages[0].content).toContain("H1 com a palavra-chave principal");
+    expect(argumentosChamada.max_tokens).toBe(16000);
+  });
+
+  it("lança erro claro quando a resposta é truncada por limite de tokens", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      stop_reason: "max_tokens",
+      content: [
+        {
+          type: "tool_use",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa",
+            conteudo_html: "<h1>...",
+            meta_title: "Como Limpar Nome no Serasa",
+            meta_description: "Guia incompleto",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+    });
+
+    await expect(gerarConteudo(pauta, checklist)).rejects.toThrow(/truncada por limite de tokens/);
+  });
+
+  it("lança erro claro quando um campo obrigatório vem ausente/vazio", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      stop_reason: "tool_use",
+      content: [
+        {
+          type: "tool_use",
+          input: {
+            titulo: "",
+            conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>",
+            meta_title: "Como Limpar Nome no Serasa",
+            meta_description: "Aprenda o passo a passo completo.",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+    });
+
+    await expect(gerarConteudo(pauta, checklist)).rejects.toThrow(/titulo/);
   });
 });

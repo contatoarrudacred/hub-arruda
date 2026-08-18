@@ -64,11 +64,17 @@ export async function gerarConteudo(pauta: PautaCarregada, checklist: ItemCheckl
 
   const resposta = await cliente.messages.create({
     model: MODELO_ESCRITOR,
-    max_tokens: 8000,
+    // Um artigo de 1800+ palavras em HTML com FAQ+JSON-LD pode facilmente passar de 8000 tokens;
+    // 16000 dá folga. Mesmo assim checamos stop_reason abaixo — nunca seguir com dado truncado.
+    max_tokens: 16000,
     tools: [FERRAMENTA_ESCRITOR],
     tool_choice: { type: "tool", name: "registrar_conteudo" },
     messages: [{ role: "user", content: prompt }],
   });
+
+  if (resposta.stop_reason === "max_tokens") {
+    throw new Error("Escritor: resposta truncada por limite de tokens.");
+  }
 
   const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
   if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") {
@@ -82,6 +88,13 @@ export async function gerarConteudo(pauta: PautaCarregada, checklist: ItemCheckl
     meta_description: string;
     slug: string;
   };
+
+  const camposObrigatorios: Array<keyof typeof bruta> = ["titulo", "conteudo_html", "meta_title", "meta_description", "slug"];
+  for (const campo of camposObrigatorios) {
+    if (typeof bruta[campo] !== "string" || bruta[campo].trim() === "") {
+      throw new Error(`Escritor: campo obrigatório "${campo}" ausente ou vazio na resposta.`);
+    }
+  }
 
   return {
     titulo: bruta.titulo,
