@@ -203,7 +203,7 @@ def main() -> int:
             # commit é proxy ruim pra "está trabalhando": o agente pode estar
             # editando há meia hora sem commitar. mtime dos fontes vê isso.
             recentes, mais_novo = 0, 0.0
-            for sub in ("src", "docs", "supabase"):
+            for sub in ("src", "supabase"):  # docs/ é mexido pelo Coordenador, mascararia
                 base = os.path.join(atual, sub) if atual else None
                 if not base or not os.path.isdir(base):
                     continue

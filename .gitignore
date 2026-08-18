@@ -51,3 +51,4 @@ next-env.d.ts
 # mockups do brainstorming visual (skill superpowers:brainstorming) — descartáveis, não são deliverable
 .superpowers/
 /.swc
+.claude/agentes-sessao.json

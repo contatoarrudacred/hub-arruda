@@ -51,14 +51,20 @@ def ler_status(caminho):
         if ":" in linha and not linha.startswith("#"):
             k, v = linha.split(":", 1)
             k = k.strip().lower()
-            if k in ("tarefa", "desde", "proxima", "bloqueio"):
+            if k in ("tarefa", "desde", "proxima", "bloqueio", "turno_fim"):
                 d[k] = v.strip()
     return d
 
 
-def mtime_mais_recente(base):
+def mtime_mais_recente(base, subpastas=("src", "supabase")):
+    """Mede atividade pelo CÓDIGO (src/, supabase/), não por docs/.
+
+    Motivo: o Coordenador mexe em docs/ o tempo todo — quadro-branco, inbox,
+    torre, status. Se docs/ contasse, a atividade dele mascararia a dos outros:
+    o CRM trabalha na mesma raiz, e sincronizar um worktree atualiza arquivos
+    lá dentro. Medindo só código, o sinal é do agente, não meu."""
     novo = 0.0
-    for sub in ("src", "docs", "supabase"):
+    for sub in subpastas:
         d = os.path.join(base, sub)
         if not os.path.isdir(d):
             continue
@@ -145,13 +151,81 @@ def main():
         else:
             agente["semDeclaracao"] = True
 
-        # último sinal de vida — sempre apurado
-        mt = mtime_mais_recente(base)
+        # Sinal de vida do AGENTE, não meu.
+        #
+        # mtime sozinho não serve: quando eu sincronizo o worktree de alguém
+        # (git merge main), arquivos src/ são reescritos e ele parece ativo.
+        # Foi o que aconteceu com o Marketing às 19h18 — eu mesclei, e a torre
+        # disse que ele estava trabalhando.
+        #
+        # O sinal honesto é: último commit DELE (ignorando merges, que costumam
+        # ser meus) e, se houver trabalho não commitado, o mtime — porque aí a
+        # alteração é dele de verdade.
+        br = git("rev-parse", "--abbrev-ref", "HEAD", cwd=base)
+        ult_commit = git("log", "-1", "--no-merges", "--format=%ct", br, cwd=base)
+        mt = float(ult_commit) if ult_commit.isdigit() else 0.0
+        if git("status", "--porcelain", cwd=base):     # trabalho em curso, não commitado
+            mt = max(mt, mtime_mais_recente(base))
+        if nome == "Coordenador":
+            # Eu não escrevo src/. O meu trabalho é docs/ e scripts/ — medir-me
+            # pelo mesmo sensor dos outros me faria aparecer parado o tempo todo.
+            mt = max(mt, mtime_mais_recente(base, ("docs", "scripts")))
         if mt:
+            parado_min = int((time.time() - mt) / 60)
             agente["ultimoSinal"] = {
                 "iso": datetime.fromtimestamp(mt).astimezone().isoformat(timespec="seconds"),
                 "rotulo": time.strftime("%d/%m %H:%M", time.localtime(mt)),
             }
+            # Sessão fechada não é o mesmo que trabalhando devagar. Depois de 45min
+            # sem tocar em arquivo nenhum, o honesto é dizer que ele parou — senão
+            # a torre mostra uma tarefa antiga como se estivesse em curso.
+            # Três estados, não dois. O erro antigo era tratar "não commitou"
+            # como "trabalhando devagar" — quando na verdade o agente tinha
+            # encerrado o turno e a bola já estava com o Luiz.
+            #
+            #  🟡 devolveu a bola  — hook Stop carimbou turno_fim depois do
+            #                        último sinal de código: ele respondeu e
+            #                        está esperando alguém falar com ele
+            #  ⏸ sem sinal        — nada há 45min e sem carimbo (sessão que
+            #                        morreu antes do hook existir)
+            #  🟢 trabalhando     — tocou código agora há pouco
+            fim = 0.0
+            if st.get("turno_fim"):
+                try:
+                    fim = datetime.fromisoformat(st["turno_fim"]).timestamp()
+                except ValueError:
+                    fim = 0.0
+            desde_fim = int((time.time() - fim) / 60) if fim else None
+
+            if fim and fim >= mt and desde_fim >= 2:
+                agente["chip"] = {"tipo": "aguardando", "texto": "🟡 aguardando você"}
+                agente["inativo"] = True
+                agente["aguardandoLuiz"] = True
+                agente["agora"] = [
+                    "<b>Terminou de responder às " + time.strftime("%Hh%M", time.localtime(fim)) +
+                    " e está esperando você.</b> Não é lentidão: ele fechou o turno e "
+                    "não volta a se mexer sozinho." +
+                    (" A última coisa que fez foi: <i>" + st["tarefa"] + "</i>." if st.get("tarefa") else "")
+                ]
+                if st.get("proxima"):
+                    agente["proxima"] = "➡️ " + st["proxima"] + " — <b>depende de você retomar a conversa</b>"
+            elif parado_min >= 45:
+                horas = parado_min // 60
+                quanto = (f"{horas}h{parado_min % 60:02d}" if horas else f"{parado_min} min")
+                agente["chip"] = {"tipo": "parado", "texto": f"⏸ sem sinal há {quanto}"}
+                agente["inativo"] = True
+                if st.get("tarefa"):
+                    agente["agora"] = [
+                        "<b>Sem sinal de vida há " + quanto + ".</b> A última coisa que ele "
+                        "declarou foi: <i>" + st["tarefa"] + "</i> — mas não tocou em código "
+                        "desde então e não registrou fim de turno. Provavelmente a sessão foi "
+                        "fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+                    ]
+            else:
+                agente.pop("inativo", None)
+                agente.pop("aguardandoLuiz", None)
+                if agente.get("chip", {}).get("tipo") in ("parado", "aguardando"):
+                    agente["chip"] = {"tipo": "rodando", "texto": "🟢 trabalhando"}
 
     # ---- instrumentos ----
     pend = migrations_pendentes()
@@ -232,6 +306,47 @@ def main():
                 "tempo": "🚨", "frio": True, "acao": "avisar " + agente["nome"],
                 "texto": "<b>" + agente["nome"] + " declarou bloqueio.</b> " + al.get("texto", ""),
             })
+
+    # "Parado" tem duas causas muito diferentes, e a diferença é o que o Luiz
+    # precisa saber: se a bola está com ele ou se a sessão simplesmente morreu.
+    aguardando = [a for a in d["agentes"] if a.get("aguardandoLuiz")]
+    sem_sinal = [a["nome"] for a in d["agentes"]
+                 if a.get("inativo") and not a.get("aguardandoLuiz")]
+    # O Coordenador não entra na conta: eu estou sempre rodando quando gero
+    # esta página, e não sou um agente que o Luiz precisa retomar.
+    locais_qtd = len([a for a in d["agentes"]
+                      if a["nome"] in locais and a["nome"] != "Coordenador"])
+
+    if aguardando:
+        itens = "".join(
+            "<li><b>" + a["nome"] + "</b> — " +
+            (a.get("proxima", "").replace("➡️ ", "").split(" — <b>")[0] or "sem próxima tarefa declarada") +
+            "</li>" for a in aguardando)
+        esperas.insert(0, {
+            "tempo": "🟡", "frio": False, "acao": "retomar a conversa",
+            "texto": ("<b>" + ("1 agente está parado esperando você" if len(aguardando) == 1
+                      else f"{len(aguardando)} agentes estão parados esperando você") +
+                      ".</b> Eles terminaram de responder e não voltam a se mexer sozinhos — "
+                      "um agente só trabalha enquanto tem uma conversa aberta com você. "
+                      "Para destravar, é só mandar uma mensagem na conversa de cada um:"
+                      "<ul>" + itens + "</ul>"),
+        })
+
+    if sem_sinal and len(sem_sinal) + len(aguardando) >= locais_qtd and not aguardando:
+        esperas.insert(0, {
+            "tempo": "⏸", "frio": False, "acao": "abrir as conversas",
+            "texto": ("<b>Nenhum agente está rodando.</b> Ninguém tocou em código há mais de "
+                      "45 minutos. Alguns podem estar esperando uma instrução sua e outros "
+                      "podem ter tido a sessão fechada — a partir de agora a torre passa a "
+                      "distinguir os dois casos sozinha, no primeiro turno que cada um rodar. "
+                      "Enquanto as conversas estiverem fechadas, nada avança e esta página não muda."),
+        })
+    elif sem_sinal:
+        esperas.append({
+            "tempo": "⏸", "frio": False, "acao": "retomar a conversa",
+            "texto": "<b>Sem sinal de vida:</b> " + ", ".join("<b>" + n + "</b>" for n in sem_sinal) +
+                     ". Não registraram fim de turno — provavelmente a sessão foi fechada.",
+        })
 
     d["esperas"] = esperas
 
