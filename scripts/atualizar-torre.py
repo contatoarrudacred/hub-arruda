@@ -119,6 +119,11 @@ def main():
     d["atualizado"] = agora.strftime("%d/%m/%Y · %Hh%M")
     d["commit"] = git("rev-parse", "--short", "HEAD")
 
+    # Se o Luiz clicou em "Atualizar", este apuramento e a resposta: limpa o
+    # pedido e registra que foi atendido.
+    if d.pop("pedidoAtualizacao", None):
+        d["atendidoEm"] = d["atualizado"]
+
     # ---- status declarado, por agente ----
     locais = {
         "CRM": (os.path.join(RAIZ, "docs", "status", "crm.md"), RAIZ),
@@ -195,7 +200,20 @@ def main():
             # A fonte é a transcrição da sessão, não commit nem arquivo alterado:
             # só ela distingue "terminou" de "está esperando".
             ses = sessoes.get(nome)
-            est = "TRABALHANDO" if nome == "Coordenador" else estado(ses)
+            # O carimbo de fim de turno cai sempre em docs/status/ da RAIZ,
+            # mesmo quando o agente roda num worktree (CLAUDE_PROJECT_DIR aponta
+            # pra raiz). Por isso olho os dois lugares e fico com o mais novo.
+            tf = None
+            for cand in (st.get("turno_fim"),
+                         ler_status(os.path.join(RAIZ, "docs", "status",
+                                    os.path.basename(caminho))).get("turno_fim")):
+                if cand:
+                    try:
+                        t = datetime.fromisoformat(cand).timestamp()
+                    except ValueError:
+                        continue
+                    tf = max(tf, t) if tf else t
+            est = "TRABALHANDO" if nome == "Coordenador" else estado(ses, turno_fim=tf)
             agente["estado"] = est
             agente.pop("inativo", None)
             agente.pop("aguardandoLuiz", None)

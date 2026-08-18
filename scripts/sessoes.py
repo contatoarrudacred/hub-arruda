@@ -135,25 +135,34 @@ def ler_sessoes(horas=36):
     return achados
 
 
-def estado(s, agora=None, minutos_parado=3):
+def estado(s, agora=None, turno_fim=None, minutos_parado=3):
     """Os quatro estados possiveis. Nao ha um quinto.
 
-    ERRO        — a ultima coisa na conversa foi uma falha (limite de uso,
-                  queda de API). Nao adianta esperar: precisa de acao.
-    AGUARDANDO  — a ultima palavra foi do agente. Ele respondeu e nao volta a
-                  se mexer ate alguem falar com ele.
-    TRABALHANDO — a ultima palavra foi do humano, ou a troca foi agora ha pouco.
-    PARADO      — nao ha conversa recente nenhuma. Sessao fechada.
+    ERRO        — a conversa terminou em falha (limite, queda de API)
+    AGUARDANDO  — o turno acabou: ele respondeu e nao volta a se mexer
+    TRABALHANDO — turno em andamento
+    PARADO      — nao ha conversa recente; sessao fechada
+
+    Cuidado que custou caro: texto do agente NAO significa fim de turno. Todo
+    agente escreve entre uma ferramenta e outra — a transcricao fica cheia de
+    fala dele no meio do trabalho. Quem sabe que o turno acabou e o hook Stop,
+    que carimba turno_fim no docs/status. Se esse carimbo for mais novo que a
+    ultima linha da conversa, acabou mesmo.
     """
     if not s:
         return "PARADO"
     if s.get("erro"):
         return "ERRO"
-    idade = ((agora or time.time()) - s["fim"]) / 60
-    if s["papel"] == "user" or idade < minutos_parado:
-        return "TRABALHANDO"
+    agora = agora or time.time()
+    idade = (agora - s["fim"]) / 60
     if idade > 60 * 18:
         return "PARADO"
+    if turno_fim and turno_fim >= s["fim"] - 30:
+        return "AGUARDANDO"          # o hook confirmou: turno encerrado
+    if s["papel"] == "user":
+        return "TRABALHANDO"         # a ultima palavra foi de um humano
+    if idade < minutos_parado:
+        return "TRABALHANDO"         # fala recente do agente: pode ser meio de turno
     return "AGUARDANDO"
 
 
