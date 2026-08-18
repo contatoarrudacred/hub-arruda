@@ -208,9 +208,15 @@ Todas nullable/aditivas — `pessoas` e `oportunidade_documentos` são núcleo c
 
 ## Task 6b: Tela de edição de `contrato_templates`
 
-**Files:** Create `src/app/admin/(shell)/vendas/produtos/[produtoId]/contrato-template/page.tsx` + `actions.ts` + `contrato-template-client.tsx`
+**Status: ✅ feito e testado de verdade no navegador (rota temporária isolada, sem Supabase — não tem `.env.local` neste worktree, então página admin real não roda localmente; achado registrado no quadro-branco).**
 
-Mesmo padrão `page.tsx`/`actions.ts`/`*-client.tsx`. Client usa `EditorHtmlContrato` (Task 6a) do lado esquerdo; do lado direito, lista os placeholders disponíveis (`{{dados_cliente}}`, `{{lista_documentos}}`, `{{valor_total}}`, `{{valor_total_extenso}}`, `{{tabela_vencimentos}}`, `{{forma_pagamento}}`) com descrição curta de cada um, clicáveis pra inserir no cursor do editor. Salvar grava `contrato_templates.conteudo_html` (cria nova linha se não existir template ativo pro Produto, ou atualiza + incrementa `versao` se já existir).
+**Files:** `src/app/admin/(shell)/vendas/produtos/[produtoId]/contrato-template/{page.tsx,actions.ts,contrato-template-client.tsx}`
+
+Mesmo padrão `page.tsx`/`actions.ts`/`*-client.tsx`. Client usa `EditorHtmlContrato` (Task 6a) do lado esquerdo; do lado direito, lista os 6 placeholders com descrição curta, clicáveis pra inserir no cursor (via `aoInicializar` expondo a instância do editor). Salvar chama `salvarTemplate` (Task 4) — cria ou atualiza + incrementa `versao`.
+
+**Sem tela de listagem de Produtos ainda** — acesso só por URL direta com `produtoId` conhecido, mesma decisão já aceita pra Fechamento de Venda (spec seção 7 item 4). Fora de escopo desta sub-frente construir essa listagem.
+
+**Achado real testando no navegador (fora do escopo desta task, mas descoberto aqui — ver Task 6a):** cliques nos botões da barra de ferramentas perdiam a seleção do editor antes do `onClick` rodar — corrigido com `onMouseDown` + `preventDefault()` em todo botão de comando (do editor e dos placeholders). Confirmado também que `onUpdate` → estado React sincroniza corretamente (só tem o delay normal de render assíncrono do React, não é bug).
 
 ## Task 7: Config `pessoa_arrudacred_signatario_id`
 
