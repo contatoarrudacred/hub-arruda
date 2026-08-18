@@ -1,0 +1,762 @@
+<title>Torre de Controle Arruda</title>
+
+<style>
+  /* ------------------------------------------------------------------
+     Paleta ancorada na identidade real do Hub Arruda: navy #141e33 e
+     dourado #c8a55d, as mesmas cores da sidebar do /admin. Neutros com
+     viés navy (não cinza puro). Semânticos separados do accent.
+     ------------------------------------------------------------------ */
+  :root {
+    --navy:        #141e33;
+    --ouro:        #c8a55d;
+    --ouro-fundo:  #f3ead6;
+
+    --ground:      #e9ecf2;
+    --surface:     #fbfcfe;
+    --surface-2:   #f2f4f8;
+    --linha:       #ccd2de;
+    --linha-forte: #aab3c4;
+
+    --texto:       #161d2e;
+    --texto-suave: #545d72;
+    --texto-fraco: #7c8496;
+
+    --trava:       #a8331f;
+    --trava-fundo: #fbe9e5;
+    --atencao:     #8a6209;
+    --atencao-fundo:#faf0d8;
+    --ok:          #2f5c42;
+    --ok-fundo:    #e4efe7;
+
+    --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+
+    --sombra: 0 1px 2px rgba(20, 30, 51, .06), 0 6px 16px -8px rgba(20, 30, 51, .14);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0e1626;
+      --surface:     #162033;
+      --surface-2:   #1d2840;
+      --linha:       #2c3956;
+      --linha-forte: #445271;
+
+      --texto:       #e8ecf5;
+      --texto-suave: #a2adc4;
+      --texto-fraco: #7d89a3;
+
+      --ouro:        #d9b872;
+      --ouro-fundo:  #3a2f18;
+
+      --trava:       #ff9b85;
+      --trava-fundo: #3d1a13;
+      --atencao:     #e8bd5c;
+      --atencao-fundo:#392d0e;
+      --ok:          #8ed6a8;
+      --ok-fundo:    #16321f;
+
+      --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px -10px rgba(0, 0, 0, .55);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0e1626;
+    --surface:     #162033;
+    --surface-2:   #1d2840;
+    --linha:       #2c3956;
+    --linha-forte: #445271;
+
+    --texto:       #e8ecf5;
+    --texto-suave: #a2adc4;
+    --texto-fraco: #7d89a3;
+
+    --ouro:        #d9b872;
+    --ouro-fundo:  #3a2f18;
+
+    --trava:       #ff9b85;
+    --trava-fundo: #3d1a13;
+    --atencao:     #e8bd5c;
+    --atencao-fundo:#392d0e;
+    --ok:          #8ed6a8;
+    --ok-fundo:    #16321f;
+
+    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px -10px rgba(0, 0, 0, .55);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--texto);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 22px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+
+  /* ---------- cabeçalho ---------- */
+
+  .topo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px 24px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--navy);
+  }
+  :root[data-theme="dark"] .topo,
+  :root:not([data-theme="light"]) .topo { border-bottom-color: var(--linha-forte); }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .topo { border-bottom-color: var(--navy); }
+  }
+
+  .topo h1 {
+    margin: 0;
+    font-size: 27px;
+    line-height: 1.15;
+    font-weight: 650;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+  }
+  .topo h1 .marca { color: var(--ouro); }
+
+  .topo .sub {
+    margin: 5px 0 0;
+    color: var(--texto-suave);
+    font-size: 13.5px;
+    max-width: 62ch;
+  }
+
+  .carimbo {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--texto-fraco);
+    text-align: right;
+    line-height: 1.7;
+    white-space: nowrap;
+  }
+  .carimbo b { color: var(--texto-suave); font-weight: 600; }
+
+  /* ---------- instrumentos ---------- */
+
+  .instrumentos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 1px;
+    background: var(--linha);
+    border: 1px solid var(--linha);
+    box-shadow: var(--sombra);
+  }
+  .instr {
+    background: var(--surface);
+    padding: 11px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .instr .rot {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+  }
+  .instr .val {
+    font-size: 15px;
+    font-weight: 640;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .instr .val.bom { color: var(--ok); }
+  .ponto {
+    width: 7px; height: 7px;
+    background: currentColor;
+    flex: none;
+  }
+
+  /* ---------- caixa do Luiz ---------- */
+
+  .luiz {
+    background: var(--surface);
+    border: 1px solid var(--linha);
+    border-left: 5px solid var(--ouro);
+    box-shadow: var(--sombra);
+  }
+  .luiz > header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--linha);
+    background: var(--ouro-fundo);
+  }
+  .luiz > header h2 {
+    margin: 0;
+    font-size: 16.5px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+  }
+  .luiz > header .nota {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--texto-suave);
+  }
+
+  .tarefas { list-style: none; margin: 0; padding: 0; }
+  .tarefas > li {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 4px 16px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--linha);
+  }
+  .tarefas > li:last-child { border-bottom: 0; }
+  .tarefas .quando {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    padding-top: 4px;
+  }
+  .tarefas .agora   { color: var(--trava); font-weight: 700; }
+  .tarefas .logo    { color: var(--atencao); font-weight: 700; }
+  .tarefas .depois  { color: var(--texto-fraco); }
+  .tarefas .feito   { color: var(--ok); font-weight: 700; }
+
+  .tarefas .titulo { font-weight: 600; }
+  .tarefas .corpo {
+    margin: 3px 0 0;
+    color: var(--texto-suave);
+    font-size: 13.5px;
+    max-width: 78ch;
+  }
+  .tarefas li.concluida .titulo {
+    color: var(--texto-fraco);
+    text-decoration: line-through;
+    text-decoration-color: var(--linha-forte);
+    font-weight: 500;
+  }
+
+  .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+  a.botao {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .02em;
+    padding: 5px 11px;
+    color: var(--texto);
+    background: var(--surface-2);
+    border: 1px solid var(--linha-forte);
+    text-decoration: none;
+  }
+  a.botao:hover { border-color: var(--ouro); color: var(--ouro); }
+  a.botao:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+
+  /* ---------- grade de agentes ---------- */
+
+  .secao-rot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+  }
+  .secao-rot::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--linha);
+  }
+
+  .grade {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+    gap: 18px;
+  }
+
+  .agente {
+    background: var(--surface);
+    border: 1px solid var(--linha);
+    box-shadow: var(--sombra);
+    display: flex;
+    flex-direction: column;
+  }
+  .agente > header {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--linha);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .agente .linha1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .agente h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+  }
+  .agente .branch {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--texto-fraco);
+    word-break: break-all;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 3px 8px;
+    border: 1px solid;
+    white-space: nowrap;
+    flex: none;
+  }
+  .chip.rodando  { color: var(--ok);      border-color: var(--ok);      background: var(--ok-fundo); }
+  .chip.parado   { color: var(--texto-suave); border-color: var(--linha-forte); background: var(--surface-2); }
+  .chip.travado  { color: var(--trava);   border-color: var(--trava);   background: var(--trava-fundo); }
+  .chip.cuidado  { color: var(--atencao); border-color: var(--atencao); background: var(--atencao-fundo); }
+
+  /* faixa de alerta — o sinal visual de "tem algo travando" */
+  .alerta {
+    display: flex;
+    gap: 10px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--linha);
+    background: var(--trava-fundo);
+    border-left: 4px solid var(--trava);
+  }
+  .alerta.leve {
+    background: var(--atencao-fundo);
+    border-left-color: var(--atencao);
+  }
+  .alerta .sinal {
+    font-family: var(--mono);
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--trava);
+    line-height: 1.35;
+    flex: none;
+  }
+  .alerta.leve .sinal { color: var(--atencao); }
+  .alerta .txt { font-size: 13px; line-height: 1.5; }
+  .alerta .txt b { font-weight: 700; }
+
+  .corpo-agente {
+    padding: 4px 16px 15px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .bloco { padding: 11px 0; border-bottom: 1px dashed var(--linha); }
+  .bloco:last-of-type { border-bottom: 0; }
+  .bloco .rot {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+    margin-bottom: 5px;
+  }
+  .bloco p { margin: 0; font-size: 13.5px; color: var(--texto-suave); }
+  .bloco p.destaque { color: var(--texto); font-weight: 560; }
+  .bloco ul { margin: 0; padding-left: 17px; font-size: 13.5px; color: var(--texto-suave); }
+  .bloco ul li { margin-bottom: 3px; }
+  .bloco ul li:last-child { margin-bottom: 0; }
+  code {
+    font-family: var(--mono);
+    font-size: .88em;
+    background: var(--surface-2);
+    border: 1px solid var(--linha);
+    padding: 0 4px;
+  }
+
+  /* barras das duas dimensões (convenção do plano mestre) */
+  .dims { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
+  .dim { display: grid; grid-template-columns: 84px 1fr 38px; align-items: center; gap: 10px; }
+  .dim .nome {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+  }
+  .trilho { height: 7px; background: var(--surface-2); border: 1px solid var(--linha); }
+  .barra { height: 100%; background: var(--linha-forte); }
+  .barra.plan { background: var(--navy); }
+  :root[data-theme="dark"] .barra.plan { background: var(--linha-forte); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .barra.plan { background: var(--linha-forte); }
+  }
+  .barra.prod { background: var(--ouro); }
+  .dim .pct {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--texto-suave);
+  }
+
+  /* ---------- dependência entre agentes ---------- */
+
+  .dependencia {
+    background: var(--surface);
+    border: 1px solid var(--linha);
+    border-left: 5px solid var(--atencao);
+    box-shadow: var(--sombra);
+    padding: 15px 18px;
+  }
+  .dependencia .rota {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--atencao);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .dependencia h3 { margin: 0 0 5px; font-size: 15px; font-weight: 640; }
+  .dependencia p { margin: 0 0 7px; font-size: 13.5px; color: var(--texto-suave); max-width: 88ch; }
+  .dependencia p:last-child { margin-bottom: 0; }
+
+  /* ---------- rodapé ---------- */
+
+  .rodape {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 16px;
+    border-top: 1px solid var(--linha);
+    font-size: 12.5px;
+    color: var(--texto-fraco);
+  }
+  .rodape .links { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  @media (max-width: 620px) {
+    .wrap { padding: 20px 14px 48px; }
+    .carimbo { text-align: left; }
+    .tarefas > li { grid-template-columns: 1fr; }
+    .dim { grid-template-columns: 74px 1fr 34px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="topo">
+    <div>
+      <h1>Torre de Controle <span class="marca">Arruda</span></h1>
+      <p class="sub">Quem está construindo o quê agora, o que já ficou pronto e onde alguém está esperando por alguém. Mantido pelo Coordenador de Agentes — não faz parte do sistema.</p>
+    </div>
+    <div class="carimbo">
+      <b>18/08/2026</b> · 12h30<br>
+      main em <b>97c612a</b><br>
+      agentes ativos: <b>4</b>
+    </div>
+  </header>
+
+  <section class="instrumentos" aria-label="Estado geral do projeto">
+    <div class="instr">
+      <span class="rot">Testes</span>
+      <span class="val bom"><i class="ponto"></i>168 verdes</span>
+    </div>
+    <div class="instr">
+      <span class="rot">Lint e build</span>
+      <span class="val bom"><i class="ponto"></i>limpos</span>
+    </div>
+    <div class="instr">
+      <span class="rot">Banco</span>
+      <span class="val bom"><i class="ponto"></i>em dia</span>
+    </div>
+    <div class="instr">
+      <span class="rot">GitHub</span>
+      <span class="val bom"><i class="ponto"></i>sincronizado</span>
+    </div>
+    <div class="instr">
+      <span class="rot">Migrations</span>
+      <span class="val">39 aplicadas</span>
+    </div>
+    <div class="instr">
+      <span class="rot">Worktrees</span>
+      <span class="val">2 abertos</span>
+    </div>
+  </section>
+
+  <section class="luiz" aria-labelledby="tit-luiz">
+    <header>
+      <h2 id="tit-luiz">Sua vez, Luiz</h2>
+      <span class="nota">o que só você pode fazer</span>
+    </header>
+    <ul class="tarefas">
+      <li>
+        <span class="quando agora">Agora</span>
+        <div>
+          <div class="titulo">Testar as duas telas de Vendas no navegador</div>
+          <p class="corpo">É o último passo pra considerar a sub-frente Cadastro em produção. Esse teste nunca foi feito de verdade — a construção rodou num worktree isolado, sem credencial real, e até hoje de manhã dependia das migrations. Cadastre um fornecedor e uma venda sem funil prévio, incluindo upload de documento, foto e a leitura por IA. O que aparecer de errado, me traz que eu levo pro agente certo.</p>
+          <div class="acoes">
+            <a class="botao" href="https://hub-arruda.vercel.app/admin/fornecedores" target="_blank" rel="noopener">/admin/fornecedores</a>
+            <a class="botao" href="https://hub-arruda.vercel.app/admin/vendas/nova" target="_blank" rel="noopener">/admin/vendas/nova</a>
+          </div>
+        </div>
+      </li>
+      <li>
+        <span class="quando logo">Quando der</span>
+        <div>
+          <div class="titulo">SPF do domínio não autoriza o Resend</div>
+          <p class="corpo">O <code>arrudacred.com.br</code> hoje autoriza só a Hostinger. É a causa provável dos primeiros e-mails de teste não chegarem — e afeta tanto o e-mail de boas-vindas quanto a nutrição de 30/60/90 dias. Ação no painel de DNS do registrador, fora do código.</p>
+        </div>
+      </li>
+      <li>
+        <span class="quando logo">Quando der</span>
+        <div>
+          <div class="titulo">Publicar o rastreio de cliques do WhatsApp</div>
+          <p class="corpo">Código pronto e parado: falta criar o subdomínio <code>zap.arrudacred.com.br</code> na Hostinger e subir o <code>hostinger-zap/index.php</code>. Sem isso, não dá pra saber de qual canal o lead veio. Não bloqueia ninguém — só continua não medindo.</p>
+        </div>
+      </li>
+      <li>
+        <span class="quando depois">Vai chegar</span>
+        <div>
+          <div class="titulo">Decidir Assinafy e Asaas</div>
+          <p class="corpo">O Vendas vai encostar em assinatura digital e financeiro em breve. São integrações pagas — instruí ele a desenhar e parar antes de contratar ou gastar crédito. Quando chegar lá, eu trago a pergunta pronta.</p>
+        </div>
+      </li>
+      <li class="concluida">
+        <span class="quando feito">Feito hoje</span>
+        <div>
+          <div class="titulo">Rodar as 3 migrations do módulo Vendas</div>
+          <p class="corpo">Conferido no banco: <code>fornecedores</code>, <code>fornecedor_produtos</code> e <code>pessoa_documentos</code> criadas, colunas novas em <code>produtos</code>, RLS em 12 tabelas do núcleo e os dois buckets de Storage com a visibilidade certa. Tipos regenerados e enviados.</p>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <div class="secao-rot">Agentes</div>
+
+  <div class="grade">
+
+    <!-- CRM -->
+    <article class="agente">
+      <header>
+        <div class="linha1">
+          <h3>CRM</h3>
+          <span class="chip parado">sem commit desde 11h54</span>
+        </div>
+        <span class="branch">main · trabalha direto na raiz, sem worktree</span>
+      </header>
+      <div class="corpo-agente">
+        <div class="bloco">
+          <div class="rot">Já entregou</div>
+          <ul>
+            <li>Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta</li>
+            <li>WhatsApp real via Zapster, funcionando de verdade</li>
+            <li>Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints</li>
+            <li>Follow-up automático com cron, e-mail via Resend</li>
+            <li>Hoje: resgatou o fix do extrator de nome que estava perdido num worktree órfão</li>
+          </ul>
+        </div>
+        <div class="bloco">
+          <div class="rot">Fazendo agora</div>
+          <p>Nada em curso desde as 11h54. A última coisa que fez foi justamente o resgate do fix, depois de ler o pedido no quadro-branco.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Próxima tarefa</div>
+          <p class="destaque">Responder ao pedido do Vendas sobre capturar o detalhe do fechamento da venda.</p>
+          <p>Depois disso, a ordem combinada com você em 16/08 segue: Kanban → Dashboard de KPIs.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Evolução do módulo</div>
+          <div class="dims">
+            <div class="dim">
+              <span class="nome">Planejam.</span>
+              <span class="trilho"><span class="barra plan" style="width:95%"></span></span>
+              <span class="pct">95%</span>
+            </div>
+            <div class="dim">
+              <span class="nome">Produção</span>
+              <span class="trilho"><span class="barra prod" style="width:70%"></span></span>
+              <span class="pct">70%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- MARKETING -->
+    <article class="agente">
+      <header>
+        <div class="linha1">
+          <h3>Marketing</h3>
+          <span class="chip cuidado">precisa sincronizar</span>
+        </div>
+        <span class="branch">worktree-pipeline-conteudo-marketing-nucleo</span>
+      </header>
+      <div class="alerta leve">
+        <span class="sinal">!</span>
+        <span class="txt">O worktree está <b>3 commits atrás da main</b> e ainda não rodou <code>pnpm install</code>. Se ele continuar escrevendo código sem sincronizar, vai construir sobre uma base velha e o próximo merge fica mais arriscado. <b>Já deixei a instrução no quadro-branco</b> — resolvo isso em seguida.</span>
+      </div>
+      <div class="corpo-agente">
+        <div class="bloco">
+          <div class="rot">Já entregou</div>
+          <ul>
+            <li>Núcleo do pipeline de conteúdo: Estrategista, Escritor, Revisor e Agente de Links</li>
+            <li>Publicação no WordPress com sanitização do HTML gerado pela IA</li>
+            <li>Cron que processa a fila de pautas, com reclaim de pauta travada</li>
+            <li>145 testes próprios — <b>mesclado na main hoje</b></li>
+          </ul>
+        </div>
+        <div class="bloco">
+          <div class="rot">Fazendo agora</div>
+          <p>Escrevendo a spec da Fase 2 — as telas de admin do módulo. O arquivo existe no worktree mas ainda não foi commitado.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Próxima tarefa</div>
+          <p class="destaque">Fechar spec e plano da Fase 2, e construir as telas de Produção de Conteúdo e Configurações do Marketing.</p>
+          <p>Pedi que ele registre no quadro-branco <em>antes</em> de criar tabela nova: a Fase 2 encosta em <code>configuracoes</code> e no Storage, que são compartilhados com os outros módulos.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Evolução do módulo</div>
+          <div class="dims">
+            <div class="dim">
+              <span class="nome">Planejam.</span>
+              <span class="trilho"><span class="barra plan" style="width:85%"></span></span>
+              <span class="pct">85%</span>
+            </div>
+            <div class="dim">
+              <span class="nome">Produção</span>
+              <span class="trilho"><span class="barra prod" style="width:45%"></span></span>
+              <span class="pct">45%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- VENDAS -->
+    <article class="agente">
+      <header>
+        <div class="linha1">
+          <h3>Vendas — Contrato</h3>
+          <span class="chip rodando">rodando</span>
+        </div>
+        <span class="branch">worktree-vendas-contrato · aberto hoje</span>
+      </header>
+      <div class="alerta">
+        <span class="sinal">■</span>
+        <span class="txt">Está <b>esperando o CRM</b> pra ter os dados completos do fechamento da venda. <b>Não está parado</b>: combinou com você construir uma tela de Fechamento de Venda como solução imediata. Vira travamento de verdade só se o CRM não responder e o paliativo não der conta.</span>
+      </div>
+      <div class="corpo-agente">
+        <div class="bloco">
+          <div class="rot">Já entregou</div>
+          <ul>
+            <li>Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura de documento por IA</li>
+            <li>Mesclada na main, revisada em três rodadas, e com as migrations rodadas hoje</li>
+            <li>Hoje: levantou e documentou a lacuna do fechamento da venda, com o código na mão</li>
+          </ul>
+        </div>
+        <div class="bloco">
+          <div class="rot">Fazendo agora</div>
+          <p>Abriu a sub-frente Contrato e mapeou o que falta pra gerar contrato: hoje o bot só salva <code>"avista"</code> ou <code>"parcelado"</code>, sem parcelas, valores nem vencimentos.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Próxima tarefa</div>
+          <p class="destaque">Construir a tela de Fechamento de Venda — parcelas, valores e datas de vencimento.</p>
+          <p>Depois: contrato, assinatura digital e financeiro da venda. As duas últimas dependem da sua decisão sobre Assinafy e Asaas.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Evolução do módulo</div>
+          <div class="dims">
+            <div class="dim">
+              <span class="nome">Planejam.</span>
+              <span class="trilho"><span class="barra plan" style="width:80%"></span></span>
+              <span class="pct">80%</span>
+            </div>
+            <div class="dim">
+              <span class="nome">Produção</span>
+              <span class="trilho"><span class="barra prod" style="width:35%"></span></span>
+              <span class="pct">35%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- COORDENADOR -->
+    <article class="agente">
+      <header>
+        <div class="linha1">
+          <h3>Coordenador</h3>
+          <span class="chip rodando">rodando</span>
+        </div>
+        <span class="branch">main · integra e conversa com os outros, não escreve feature</span>
+      </header>
+      <div class="corpo-agente">
+        <div class="bloco">
+          <div class="rot">Já entregou (hoje)</div>
+          <ul>
+            <li>Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward</li>
+            <li>Fechou o débito de <code>test</code>/<code>lint</code> varrerem os worktrees dos outros — e descobriu que o problema também existia no lint, com 99 falsos positivos</li>
+            <li>Removeu o worktree órfão e enviou 119 commits parados pro GitHub</li>
+            <li>Regenerou os tipos do banco depois das suas migrations</li>
+          </ul>
+        </div>
+        <div class="bloco">
+          <div class="rot">Fazendo agora</div>
+          <p>Repassando o pedido do Vendas ao CRM e mantendo o quadro-branco em dia — é por ele que os agentes se falam.</p>
+        </div>
+        <div class="bloco">
+          <div class="rot">Próxima tarefa</div>
+          <p class="destaque">Sincronizar o worktree do Marketing com a main antes que ele avance mais.</p>
+          <p>E manter esta página atualizada conforme as coisas andarem.</p>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <div class="secao-rot">Um esperando o outro</div>
+
+  <section class="dependencia">
+    <div class="rota">Vendas → CRM · aguardando resposta</div>
+    <h3>O bot precisa capturar o fechamento inteiro da venda</h3>
+    <p>Hoje o motor de fluxo salva a forma de pagamento como duas opções fechadas — <code>"avista"</code> ou <code>"parcelado"</code>. Não guarda quantas parcelas, valor de cada uma, datas de vencimento, nem a forma detalhada (boleto, cartão, voucher). O Vendas conferiu isso no código antes de pedir, não é suposição.</p>
+    <p>Sem esses dados não dá pra gerar contrato e tabela de vencimentos direto do que foi vendido. O pedido é claramente do território do CRM, por isso o Vendas registrou em vez de sair mexendo no fluxo dos outros — que é exatamente o comportamento que a gente quer.</p>
+    <p><b>Onde está:</b> pedido registrado no quadro-branco às 12h18, aguardando o CRM responder ali mesmo, nem que seja "visto, entra na fila". Enquanto isso o Vendas segue com a tela de Fechamento de Venda e migra pros dados do CRM quando existirem.</p>
+  </section>
+
+  <footer class="rodape">
+    <span>As barras de evolução são leitura minha, não medição automática — planejamento pelo que está documentado, produção pelo que roda de verdade.</span>
+    <span class="links">
+      <a class="botao" href="https://github.com/contatoarrudacred/hub-arruda" target="_blank" rel="noopener">repositório</a>
+      <a class="botao" href="https://supabase.com/dashboard/project/mzvaqjhalynaceecnayt/sql/new" target="_blank" rel="noopener">SQL Editor</a>
+      <a class="botao" href="https://hub-arruda.vercel.app" target="_blank" rel="noopener">app</a>
+    </span>
+  </footer>
+
+</div>

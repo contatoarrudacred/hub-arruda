@@ -289,12 +289,15 @@ export type Database = {
           aguardando_resposta_desde: string | null
           atendente_id: string | null
           canal: string
+          contador_nao_reconhecimento: number
           created_at: string
           dados: Json
+          estagnado_desde: string | null
           etapa_fluxo_atual_id: string | null
           favorita: boolean
           fluxo_id: string | null
           followup_manual_ativo: boolean
+          followup_whatsapp_bloqueado: boolean
           id: string
           oportunidade_id: string | null
           pessoa_id: string
@@ -308,12 +311,15 @@ export type Database = {
           aguardando_resposta_desde?: string | null
           atendente_id?: string | null
           canal: string
+          contador_nao_reconhecimento?: number
           created_at?: string
           dados?: Json
+          estagnado_desde?: string | null
           etapa_fluxo_atual_id?: string | null
           favorita?: boolean
           fluxo_id?: string | null
           followup_manual_ativo?: boolean
+          followup_whatsapp_bloqueado?: boolean
           id?: string
           oportunidade_id?: string | null
           pessoa_id: string
@@ -327,12 +333,15 @@ export type Database = {
           aguardando_resposta_desde?: string | null
           atendente_id?: string | null
           canal?: string
+          contador_nao_reconhecimento?: number
           created_at?: string
           dados?: Json
+          estagnado_desde?: string | null
           etapa_fluxo_atual_id?: string | null
           favorita?: boolean
           fluxo_id?: string | null
           followup_manual_ativo?: boolean
+          followup_whatsapp_bloqueado?: boolean
           id?: string
           oportunidade_id?: string | null
           pessoa_id?: string
@@ -651,6 +660,104 @@ export type Database = {
           },
         ]
       }
+      fornecedor_produtos: {
+        Row: {
+          ativo: boolean
+          comissao_dias_primeira_parcela: number
+          comissao_intervalo_dias_parcelas: number | null
+          comissao_parcelas_qtd: number | null
+          condicoes: Json | null
+          created_at: string
+          forma_comissao: string
+          fornecedor_id: string
+          id: string
+          percentual_comissao: number
+          produto_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          comissao_dias_primeira_parcela: number
+          comissao_intervalo_dias_parcelas?: number | null
+          comissao_parcelas_qtd?: number | null
+          condicoes?: Json | null
+          created_at?: string
+          forma_comissao: string
+          fornecedor_id: string
+          id?: string
+          percentual_comissao: number
+          produto_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          comissao_dias_primeira_parcela?: number
+          comissao_intervalo_dias_parcelas?: number | null
+          comissao_parcelas_qtd?: number | null
+          condicoes?: Json | null
+          created_at?: string
+          forma_comissao?: string
+          fornecedor_id?: string
+          id?: string
+          percentual_comissao?: number
+          produto_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fornecedor_produtos_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "fornecedores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fornecedor_produtos_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fornecedores: {
+        Row: {
+          ativo: boolean
+          categoria: string
+          created_at: string
+          dados_bancarios: Json | null
+          id: string
+          pessoa_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          categoria: string
+          created_at?: string
+          dados_bancarios?: Json | null
+          id?: string
+          pessoa_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          categoria?: string
+          created_at?: string
+          dados_bancarios?: Json | null
+          id?: string
+          pessoa_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fornecedores_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: true
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       identidades_canal: {
         Row: {
           canal: string
@@ -735,6 +842,7 @@ export type Database = {
           lido_em: string | null
           midia_tipo: string | null
           midia_url: string | null
+          origem_followup: boolean
           remetente: string
           zapster_message_id: string | null
         }
@@ -748,6 +856,7 @@ export type Database = {
           lido_em?: string | null
           midia_tipo?: string | null
           midia_url?: string | null
+          origem_followup?: boolean
           remetente: string
           zapster_message_id?: string | null
         }
@@ -761,6 +870,7 @@ export type Database = {
           lido_em?: string | null
           midia_tipo?: string | null
           midia_url?: string | null
+          origem_followup?: boolean
           remetente?: string
           zapster_message_id?: string | null
         }
@@ -1038,6 +1148,7 @@ export type Database = {
       pautas: {
         Row: {
           angulo: string
+          atualizado_em: string
           created_at: string
           funil: string
           geografia: string | null
@@ -1053,6 +1164,7 @@ export type Database = {
         }
         Insert: {
           angulo: string
+          atualizado_em?: string
           created_at?: string
           funil: string
           geografia?: string | null
@@ -1068,6 +1180,7 @@ export type Database = {
         }
         Update: {
           angulo?: string
+          atualizado_em?: string
           created_at?: string
           funil?: string
           geografia?: string | null
@@ -1087,6 +1200,76 @@ export type Database = {
             columns: ["matriz_conteudo_id"]
             isOneToOne: false
             referencedRelation: "matrizes_conteudo"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pessoa_documentos: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          enviado_em: string
+          id: string
+          nome_arquivo: string
+          pessoa_id: string
+          tipo_documento: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          enviado_em?: string
+          id?: string
+          nome_arquivo: string
+          pessoa_id: string
+          tipo_documento: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          enviado_em?: string
+          id?: string
+          nome_arquivo?: string
+          pessoa_id?: string
+          tipo_documento?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pessoa_documentos_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pessoa_fotos: {
+        Row: {
+          capturada_em: string
+          id: string
+          pessoa_id: string
+          url: string
+        }
+        Insert: {
+          capturada_em?: string
+          id?: string
+          pessoa_id: string
+          url: string
+        }
+        Update: {
+          capturada_em?: string
+          id?: string
+          pessoa_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pessoa_fotos_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
             referencedColumns: ["id"]
           },
         ]
@@ -1362,6 +1545,8 @@ export type Database = {
           ativo: boolean
           created_at: string
           fonte_receita: string
+          fornecedor_definido_em: string | null
+          fornecedor_id: string | null
           id: string
           nome: string
           nome_reduzido: string | null
@@ -1374,6 +1559,8 @@ export type Database = {
           ativo?: boolean
           created_at?: string
           fonte_receita: string
+          fornecedor_definido_em?: string | null
+          fornecedor_id?: string | null
           id?: string
           nome: string
           nome_reduzido?: string | null
@@ -1386,6 +1573,8 @@ export type Database = {
           ativo?: boolean
           created_at?: string
           fonte_receita?: string
+          fornecedor_definido_em?: string | null
+          fornecedor_id?: string | null
           id?: string
           nome?: string
           nome_reduzido?: string | null
@@ -1395,6 +1584,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "produtos_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "produtos_unidade_negocio_id_fkey"
             columns: ["unidade_negocio_id"]
@@ -1457,6 +1653,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      regras_roteamento: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          etapa_codigo: string
+          id: string
+          nome: string
+          ordem: number
+          termos: string[]
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          etapa_codigo: string
+          id?: string
+          nome: string
+          ordem?: number
+          termos: string[]
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          etapa_codigo?: string
+          id?: string
+          nome?: string
+          ordem?: number
+          termos?: string[]
+          updated_at?: string
+        }
+        Relationships: []
       }
       respostas_prontas: {
         Row: {
@@ -1571,16 +1800,20 @@ export type Database = {
     Views: {
       conversas_resumo: {
         Row: {
+          aguardando_resposta_desde: string | null
           atendente_cor: string | null
           atendente_id: string | null
           atendente_nome: string | null
           canal: string | null
+          contador_nao_reconhecimento: number | null
           conversa_id: string | null
           created_at: string | null
+          estagnado_desde: string | null
           etapa_kanban: string | null
           favorita: boolean | null
           nao_lidas_contagem: number | null
           oportunidade_id: string | null
+          pessoa_foto_url: string | null
           pessoa_id: string | null
           pessoa_nome: string | null
           pessoa_telefone: string | null
