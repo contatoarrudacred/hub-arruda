@@ -652,8 +652,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 19h29",
- "commit": "8c82b3e",
+ "atualizado": "18/08/2026 · 19h37",
+ "commit": "407db5c",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -667,12 +667,12 @@
   },
   {
    "rot": "GitHub",
-   "val": "⚠️ falta enviar",
-   "bom": false
+   "val": "✅ sincronizado",
+   "bom": true
   },
   {
    "rot": "Agentes ativos",
-   "val": "🟢 1 na última hora",
+   "val": "🟢 4 na última hora",
    "bom": true
   },
   {
@@ -987,19 +987,19 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T19:29:56-03:00",
-    "rotulo": "18/08 19:29"
+    "iso": "2026-08-18T19:37:15-03:00",
+    "rotulo": "18/08 19:37"
    }
   },
   {
    "nome": "CRM",
    "branch": "main · trabalha direto na raiz, sem worktree",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ sem sinal há 1h03"
+    "tipo": "aguardando",
+    "texto": "🟡 aguardando você"
    },
    "agora": [
-    "<b>Sem sinal de vida há 1h03.</b> A última coisa que ele declarou foi: <i>Desenhar e escrever a spec de captura de detalhe de pagamento no fechamento (forma, parcelas, vencimentos) — pedido do Vendas, prioridade 1 do CRM antes do Kanban</i> — mas não tocou em código desde então e não registrou fim de turno. Provavelmente a sessão foi fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+    "<b>Encerrou o turno às 18h11 e está esperando você.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. A última coisa que te disse: <i>“…gistrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i>"
    ],
    "proxima": "➡️ Revisão da spec com o Luiz, depois plano de implementação (motor de fluxo)",
    "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
@@ -1043,20 +1043,23 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T18:26:35-03:00",
-    "rotulo": "18/08 18:26"
+    "iso": "2026-08-18T19:30:36-03:00",
+    "rotulo": "18/08 19:30"
    },
-   "inativo": true
+   "inativo": true,
+   "aguardandoLuiz": true,
+   "esperaDesde": "18h11",
+   "ultimaFala": "specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md), já avisei o Vendas do formato de dados e da regra de vencimento no quadro de coordenação, e registrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.)."
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ sem sinal há 1h03"
+    "tipo": "aguardando",
+    "texto": "🟡 aguardando você"
    },
    "agora": [
-    "<b>Sem sinal de vida há 1h03.</b> A última coisa que ele declarou foi: <i>Fase 2 (telas de admin) concluída e mesclada — sincronizando com main, aguardando definição da próxima frente com o Luiz</i> — mas não tocou em código desde então e não registrou fim de turno. Provavelmente a sessão foi fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+    "<b>Encerrou o turno às 18h11 e está esperando você.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. A última coisa que te disse: <i>“… docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i>"
    ],
    "proxima": "➡️ A definir — candidatos: Construtor de Matriz de Conteúdo (personas via tela já resolvido, falta o agente de pesquisa de temas/ângulos), distribuição multi-canal (GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium), ou aplicar a migration pendente (20260818090000) e validar o Monitor ao vivo",
    "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
@@ -1104,20 +1107,23 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T18:26:35-03:00",
-    "rotulo": "18/08 18:26"
+    "iso": "2026-08-18T19:30:36-03:00",
+    "rotulo": "18/08 19:30"
    },
-   "inativo": true
+   "inativo": true,
+   "aguardandoLuiz": true,
+   "esperaDesde": "18h11",
+   "ultimaFala": "Status declarado em docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente."
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ sem sinal há 1h10"
+    "tipo": "aguardando",
+    "texto": "🟡 aguardando você"
    },
    "agora": [
-    "<b>Sem sinal de vida há 1h10.</b> A última coisa que ele declarou foi: <i>Sub-frente Contrato — geração de PDF do contrato (puppeteer-core + @sparticuz/chromium)</i> — mas não tocou em código desde então e não registrou fim de turno. Provavelmente a sessão foi fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+    "<b>Encerrou o turno às 18h23 e está esperando você.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. A última coisa que te disse: <i>“…dedicado, e o PDF é só a exportação desse HTML — nesse caso é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?”</i>"
    ],
    "proxima": "➡️ Config do signatário ArrudaCred, depois tela de Fechamento de Venda (paliativo de prazo curto — CRM já assumiu a captura como prioridade 1, antes do Kanban — não superdimensionar)",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
@@ -1153,27 +1159,31 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T18:19:55-03:00",
-    "rotulo": "18/08 18:19"
+    "iso": "2026-08-18T19:30:36-03:00",
+    "rotulo": "18/08 19:30"
    },
-   "inativo": true
+   "inativo": true,
+   "aguardandoLuiz": true,
+   "esperaDesde": "18h23",
+   "ultimaFala": "arkdown → HTML → PDF) — nesse caso, confere, sigo como está. 2. Você quer mudar o desenho: o admin edita HTML diretamente (não markdown) num editor de contrato dedicado, e o PDF é só a exportação desse HTML — nesse caso é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?"
   }
  ],
  "dependencia": {
-  "rota": "🟡 aguardando você  ·  ⏸ sem sinal  ·  🟢 trabalhando",
-  "titulo": "A torre passou a saber a diferença entre 'trabalhando devagar' e 'esperando você'",
+  "rota": "🟢 trabalhando  ·  🟡 aguardando você  ·  ⏸ sem sinal",
+  "titulo": "A torre passou a ler as conversas, e é assim que ela sabe quem está te esperando",
   "paragrafos": [
-   "<b>O buraco:</b> o arquivo de status de cada agente só é escrito <b>enquanto ele roda</b>. Quando ele termina de responder e devolve a bola pra você, ninguém apaga o 'fazendo agora' — e esta página ficava repetindo por horas uma frase que já não descrevia nada. Foi o que você viu: três agentes parados, dois esperando instrução sua, e a torre dizendo que os três executavam uma tarefa havia mais de uma hora.",
-   "<b>O conserto:</b> instalei um gancho que dispara <b>no fim de cada turno</b> de cada agente e carimba a hora no arquivo de status dele. Não depende de o agente lembrar de nada. A partir daí a torre separa três situações: <b>🟢 trabalhando</b> (tocou código agora há pouco), <b>🟡 aguardando você</b> (encerrou o turno — não volta a se mexer sozinho) e <b>⏸ sem sinal</b> (sumiu sem carimbar, sessão provavelmente fechada).",
-   "<b>O que muda pra você:</b> quando alguém estiver te esperando, aparece um item na sua caixa dizendo <i>quem</i> e <i>pra quê</i> — em vez de você descobrir abrindo as três conversas. O carimbo de cada agente só nasce no próximo turno que ele rodar; até lá eles aparecem como <b>sem sinal</b>, que é a leitura honesta."
+   "<b>O que estava errado:</b> eu media atividade por commit e por arquivo alterado. Os dois mentem. Um agente pode trabalhar uma hora sem commitar, e quando <i>eu</i> sincronizo o worktree dele os arquivos mudam sem ele ter feito nada. Pior: nenhum dos dois sabe dizer se ele parou porque terminou ou porque está esperando você.",
+   "<b>O que passou a valer:</b> o Claude Code grava a transcrição de cada sessão em disco. Ela responde as duas perguntas de uma vez — <b>quando</b> foi a última troca e <b>de quem</b> foi a última palavra. Se a última palavra foi do agente, ele encerrou o turno: respondeu e não volta a se mexer até você falar com ele. É isso que vira o 🟡.",
+   "<b>Por que isso importa:</b> um agente parado é o estado <i>normal</i> dele entre uma mensagem sua e a próxima, não uma exceção. A torre antes não sabia representar justamente o estado mais comum — e por isso repetia por horas um 'fazendo agora' que já não existia.",
+   "<b>O que muda pra você:</b> quando alguém te espera, aparece na sua caixa com a hora em que parou e <b>a última frase que ele te disse</b> — a pergunta que ficou sem resposta. Você decide quem retomar sem abrir as três conversas."
   ]
  },
  "esperas": [
   {
-   "tempo": "⏸",
+   "tempo": "🟡",
    "frio": false,
-   "acao": "abrir as conversas",
-   "texto": "<b>Nenhum agente está rodando.</b> Ninguém tocou em código há mais de 45 minutos. Alguns podem estar esperando uma instrução sua e outros podem ter tido a sessão fechada — a partir de agora a torre passa a distinguir os dois casos sozinha, no primeiro turno que cada um rodar. Enquanto as conversas estiverem fechadas, nada avança e esta página não muda."
+   "acao": "retomar a conversa",
+   "texto": "<b>3 agentes estão parados esperando você.</b> Cada um terminou de responder e não volta a se mexer sozinho — um agente só trabalha enquanto tem conversa aberta com você. O que cada um deixou na sua mão:<ul><li><b>CRM</b> — parado desde <b>18h11</b>: <i>“…pec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i></li><li><b>Marketing</b> — parado desde <b>18h11</b>: <i>“…do: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i></li><li><b>Vendas — Contrato</b> — parado desde <b>18h23</b>: <i>“…é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?”</i></li></ul>"
   }
  ]
 }

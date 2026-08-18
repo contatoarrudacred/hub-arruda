@@ -28,6 +28,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime
 
@@ -41,6 +42,10 @@ def git(*args, cwd=None):
         return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""
+
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sessoes import ler_sessoes  # noqa: E402
 
 
 def ler_status(caminho):
@@ -128,6 +133,7 @@ def main():
                 chave = "Marketing" if slug == "marketing" else "Vendas — Contrato"
                 locais[chave] = (os.path.join(base, "docs", "status", slug + ".md"), base)
 
+    sessoes = ler_sessoes()
     mudou = []
     for agente in d["agentes"]:
         nome = agente["nome"]
@@ -179,48 +185,40 @@ def main():
             # Sessão fechada não é o mesmo que trabalhando devagar. Depois de 45min
             # sem tocar em arquivo nenhum, o honesto é dizer que ele parou — senão
             # a torre mostra uma tarefa antiga como se estivesse em curso.
-            # Três estados, não dois. O erro antigo era tratar "não commitou"
-            # como "trabalhando devagar" — quando na verdade o agente tinha
-            # encerrado o turno e a bola já estava com o Luiz.
-            #
-            #  🟡 devolveu a bola  — hook Stop carimbou turno_fim depois do
-            #                        último sinal de código: ele respondeu e
-            #                        está esperando alguém falar com ele
-            #  ⏸ sem sinal        — nada há 45min e sem carimbo (sessão que
-            #                        morreu antes do hook existir)
-            #  🟢 trabalhando     — tocou código agora há pouco
-            fim = 0.0
-            if st.get("turno_fim"):
-                try:
-                    fim = datetime.fromisoformat(st["turno_fim"]).timestamp()
-                except ValueError:
-                    fim = 0.0
-            desde_fim = int((time.time() - fim) / 60) if fim else None
+            # A transcrição da sessão é a fonte primária: diz QUANDO foi a
+            # última troca e DE QUEM foi a última palavra. Se a última palavra
+            # foi do agente, ele encerrou o turno — e um agente não volta a se
+            # mexer sozinho. Os sinais de código ficam de reserva, pra quando
+            # não há transcrição.
+            ses = sessoes.get(nome)
+            idade = int((time.time() - ses["fim"]) / 60) if ses else None
 
-            if fim and fim >= mt and desde_fim >= 2:
+            if nome == "Coordenador":
+                agente["chip"] = {"tipo": "rodando", "texto": "🟢 trabalhando"}
+                agente.pop("inativo", None)
+                agente.pop("aguardandoLuiz", None)
+            elif ses and ses["papel"] == "assistant" and idade >= 3:
                 agente["chip"] = {"tipo": "aguardando", "texto": "🟡 aguardando você"}
                 agente["inativo"] = True
                 agente["aguardandoLuiz"] = True
+                agente["esperaDesde"] = time.strftime("%Hh%M", time.localtime(ses["fim"]))
+                agente["ultimaFala"] = ses["texto"]
                 agente["agora"] = [
-                    "<b>Terminou de responder às " + time.strftime("%Hh%M", time.localtime(fim)) +
-                    " e está esperando você.</b> Não é lentidão: ele fechou o turno e "
-                    "não volta a se mexer sozinho." +
-                    (" A última coisa que fez foi: <i>" + st["tarefa"] + "</i>." if st.get("tarefa") else "")
+                    "<b>Encerrou o turno às " + agente["esperaDesde"] + " e está esperando você.</b> "
+                    "Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele."
+                    + (" A última coisa que te disse: <i>“…" + ses["texto"][-260:] + "”</i>"
+                       if ses["texto"] else "")
                 ]
-                if st.get("proxima"):
-                    agente["proxima"] = "➡️ " + st["proxima"] + " — <b>depende de você retomar a conversa</b>"
+            elif ses and (ses["papel"] == "user" or idade < 3):
+                agente["chip"] = {"tipo": "rodando", "texto": "🟢 trabalhando"}
+                agente.pop("inativo", None)
+                agente.pop("aguardandoLuiz", None)
             elif parado_min >= 45:
                 horas = parado_min // 60
                 quanto = (f"{horas}h{parado_min % 60:02d}" if horas else f"{parado_min} min")
                 agente["chip"] = {"tipo": "parado", "texto": f"⏸ sem sinal há {quanto}"}
                 agente["inativo"] = True
-                if st.get("tarefa"):
-                    agente["agora"] = [
-                        "<b>Sem sinal de vida há " + quanto + ".</b> A última coisa que ele "
-                        "declarou foi: <i>" + st["tarefa"] + "</i> — mas não tocou em código "
-                        "desde então e não registrou fim de turno. Provavelmente a sessão foi "
-                        "fechada. Para retomar, é só mandar uma mensagem na conversa dele."
-                    ]
+                agente.pop("aguardandoLuiz", None)
             else:
                 agente.pop("inativo", None)
                 agente.pop("aguardandoLuiz", None)
@@ -319,17 +317,18 @@ def main():
 
     if aguardando:
         itens = "".join(
-            "<li><b>" + a["nome"] + "</b> — " +
-            (a.get("proxima", "").replace("➡️ ", "").split(" — <b>")[0] or "sem próxima tarefa declarada") +
+            "<li><b>" + a["nome"] + "</b> — parado desde <b>" + a.get("esperaDesde", "?") + "</b>: " +
+            (("<i>“…" + a["ultimaFala"][-200:] + "”</i>") if a.get("ultimaFala")
+             else a.get("proxima", "").replace("➡️ ", "").split(" — <b>")[0] or "sem detalhe declarado") +
             "</li>" for a in aguardando)
         esperas.insert(0, {
             "tempo": "🟡", "frio": False, "acao": "retomar a conversa",
-            "texto": ("<b>" + ("1 agente está parado esperando você" if len(aguardando) == 1
-                      else f"{len(aguardando)} agentes estão parados esperando você") +
-                      ".</b> Eles terminaram de responder e não voltam a se mexer sozinhos — "
-                      "um agente só trabalha enquanto tem uma conversa aberta com você. "
-                      "Para destravar, é só mandar uma mensagem na conversa de cada um:"
-                      "<ul>" + itens + "</ul>"),
+            "texto": ("<b>" + ("1 agente está parado esperando você"
+                      if len(aguardando) == 1
+                      else str(len(aguardando)) + " agentes estão parados esperando você") +
+                      ".</b> Cada um terminou de responder e não volta a se mexer sozinho — "
+                      "um agente só trabalha enquanto tem conversa aberta com você. "
+                      "O que cada um deixou na sua mão:<ul>" + itens + "</ul>"),
         })
 
     if sem_sinal and len(sem_sinal) + len(aguardando) >= locais_qtd and not aguardando:
