@@ -1,5 +1,5 @@
 # Módulo Marketing — Pipeline de Conteúdo Multi-Site
-**Status:** Segunda versão, 17/08/2026 — sessão de planejamento aprofundada com Luiz: generaliza os catálogos de conteúdo (ângulos/checklist/formatos) pra funcionar em qualquer propriedade, fecha a divisão de sites por persona (resolvendo risco de doorway/duplicidade), detalha canais de distribuição e a navegação do sistema. Primeira versão (12/08/2026) absorvia o escopo que estava sob responsabilidade da QMARKA (empresa que não vai conseguir entregar o projeto, conforme Luiz).
+**Status:** Terceira versão, 18/08/2026 — Fase 1 (núcleo do pipeline: 4 agentes + Agente de Links) construída, testada e revisada (ver `docs/superpowers/plans/2026-08-17-pipeline-conteudo-marketing-nucleo.md`). Sessão de 18/08/2026 fecha o escopo da Fase 2 (telas de admin): inventário de telas (seção 7), cadastro de personas via formulário em vez de esperar o Construtor de Matriz (seção 6.2), cota diária/janela de publicação (seção 7.1), monitor de execução ao vivo via Supabase Realtime (seção 7.2), e credenciais de canal cifradas no banco (seção 8). Segunda versão (17/08/2026): generaliza os catálogos de conteúdo (ângulos/checklist/formatos) pra funcionar em qualquer propriedade, fecha a divisão de sites por persona (resolvendo risco de doorway/duplicidade), detalha canais de distribuição. Primeira versão (12/08/2026) absorvia o escopo que estava sob responsabilidade da QMARKA (empresa que não vai conseguir entregar o projeto, conforme Luiz).
 **Fontes:** `ArrudaCred_Plano_Estrategico_2026-2031-Crescimento-Organico.pdf` e `Plano_Estrategico_Marketing_ArrudaCred.pdf` (ambos de Luiz, lidos por completo em 17/08/2026), adaptados e generalizados para caber neste sistema.
 
 > ⚠️ **Regra de precedência entre documentos:** onde este documento (ou qualquer outro já registrado) conflitar com os PDFs originais da QMARKA, **este documento prevalece** — os PDFs viraram material de referência histórica, não fonte de verdade viva. Exemplo já resolvido: tabela de preços do PDF está desatualizada, a válida é a de `SCRIPT_LIMPANOME_SERASA_SPC.md`.
@@ -179,30 +179,65 @@ Ampliado pra cobrir páginas de site, não só posts de blog:
 
 **Impacto no pipeline de geração (Fase 2 de implementação, ainda não construída):** o Agente Escritor (`src/lib/marketing/escritor.ts`, já implementado no núcleo do pipeline) hoje monta o prompt a partir da pauta + checklist, sem persona. Quando as personas forem definidas, `montarPrompt` (e possivelmente o checklist do Agente Revisor) precisa passar a carregar `matrizes_conteudo.eixos.persona` e cruzar com a pauta/ângulo/checklist ao gerar — isso é uma extensão pontual do Escritor já existente, não uma reescrita. Fica registrado aqui como próximo passo depois que as personas forem definidas, para não esquecer de cruzar.
 
+### 6.2 Cadastro de personas via tela — decidido 18/08/2026 (substitui a espera pelo Construtor de Matriz)
+
+**Mudança de plano:** em vez de esperar o Construtor de Matriz de Conteúdo (agente conversacional, seção 6, ainda não construído) para levantar a persona, Luiz vai cadastrar a persona diretamente por uma tela de formulário — uma das telas da Fase 2 (seção 7). Isso desbloqueia o cruzamento com o Escritor (seção 6.1) sem depender do Construtor de Matriz existir primeiro. O Construtor de Matriz continua no roadmap para o levantamento de temas/ângulos/geografias (que exige pesquisa, não é só preenchimento), mas persona deixa de ser bloqueador dele.
+
+**Campos do formulário** (grava em `matrizes_conteudo.eixos.persona`, jsonb já existente, sem migração de schema), uma persona por matriz de conteúdo — na prática, por site quando o site tem uma matriz só:
+- Nome da persona (livre, só identificação)
+- Perfil demográfico/comportamental (texto livre)
+- Tom de voz (texto livre)
+- Nível de conhecimento assumido (iniciante / intermediário / avançado)
+- Dores e necessidades principais (texto livre)
+- Objeções típicas (lista)
+- Vocabulário preferido (lista de termos)
+- Vocabulário a evitar (lista de termos)
+
 ---
 
-## 7. Navegação no sistema
+## 7. Navegação no sistema — telas Fase 2, fechado com Luiz em 18/08/2026
 
-Estrutura combinada com Luiz (17/08/2026), seguindo o padrão já existente em `src/app/admin/(shell)/sidebar.tsx` (hoje só "Atendimento" como item de topo solto e "Configurações" como cabeçalho com sub-grupos — "Marketing" precisa do mesmo tratamento de "Configurações", um nível a mais de nested que não existe ainda).
+Estrutura combinada com Luiz (17/08, refinada 18/08/2026), seguindo o padrão já existente em `src/app/admin/(shell)/sidebar.tsx` (hoje só "Atendimento" como item de topo solto e "Configurações" como cabeçalho com sub-grupos — "Marketing" precisa do mesmo tratamento, um nível a mais de nested que não existe ainda). Convenção de UX pedida por Luiz: telas intuitivas e produtivas, com tooltips/dicas contextuais em cada uma (o que cada status significa, o que fazer a seguir) — não só formulário cru.
 
 **Marketing → Produção de Conteúdo** (operação do dia a dia):
-- Propriedades/Sites — lista de `PROPRIEDADES_DIGITAIS`, status, canais ativos
-- Fila de Pautas — o que o Estrategista gerou, status (pendente/em produção/publicado/bloqueada)
-- Posts — publicados, por propriedade e canal, com link pra cada plataforma
-- Painel de Custo — este pipeline consome muito mais token que o atendimento comercial (nota de custo original), vale visibilidade desde o primeiro mês
+- **Visão Geral** — dashboard: pautas pendentes/em produção/bloqueadas por propriedade, publicados na semana, taxa de aprovação do Revisor, custo acumulado (tokens Anthropic).
+- **Monitor de execução** — tela viva (seção 7.2), o que está na fila e o que está em andamento agora, atualizando em tempo real conforme cada etapa do pipeline conclui.
+- **Fila de Pautas** — tabela filtrável por propriedade/status, tooltip explicando cada status, ação de reabrir pauta bloqueada.
+- **Posts Publicados** — por propriedade, com link pra cada plataforma, score de QA, histórico de tentativas/retrabalho e custo por post.
 
 **Configurações → Marketing → Geração de Conteúdo** (setup, mexe pouco):
-- Matrizes de Conteúdo por propriedade (temas/ângulos/geografias/sazonalidade)
-- Checklist de QA por propriedade
-- Canais de distribuição e credenciais por propriedade
+- **Propriedades Digitais** — CRUD de `PROPRIEDADES_DIGITAIS` (nome, URL, tipo de CMS, limite de tentativas, cota diária e janela de publicação — seção 7.1) + credenciais de canal (seção 8, armazenamento cifrado).
+- **Matrizes de Conteúdo** — temas/ângulos/geografias/sazonalidade por propriedade.
+- **Personas** — formulário por matriz/propriedade (seção 6.2).
+- **Checklist de QA** — itens e pesos por propriedade.
 
 **Regra herdada do restante do sistema:** item de menu só entra quando a tela existir de verdade — nada de "em breve" especulativo. Se aparecer necessidade de página nova durante a construção, adiciona-se então.
+
+### 7.1 Cota diária e janela de publicação por propriedade — decidido 18/08/2026
+
+**Gap identificado por Luiz:** o pipeline hoje (núcleo, Fase 1) não tem noção de "quantos posts por dia" nem de horário permitido — processa uma tentativa por matriz a cada disparo do cron, sem limite. Configurar isso só no cron-job.org (ex.: registrar múltiplos horários) não resolve: o serviço externo não sabe quantos posts já saíram hoje nem aplica a regra por propriedade, e não haveria o que configurar na tela do sistema.
+
+**Decisão:** a regra de negócio fica no backend, configurável por `PROPRIEDADES_DIGITAIS.config_pipeline` (jsonb já existente — sem tabela nova):
+- `posts_por_dia` (inteiro) — cota diária por propriedade.
+- `janela_publicacao` (ex.: `{ inicio: "08:00", fim: "20:00" }`) — horário permitido; fora da janela, o cron pula essa propriedade neste tick.
+
+O cron continua único e simples (mesmo padrão do cron de follow-up já em produção) — ele só dispara; quem decide se processa uma pauta agora é `processarProximaPauta`, checando a cota já usada hoje (contando publicados com `publicado_em` na data corrente) e a janela antes de prosseguir.
+
+### 7.2 Monitor de execução ao vivo — decidido 18/08/2026
+
+**Pedido de Luiz:** visibilidade total de operação (não decisão — a regra de "sem humano no meio" continua valendo pra execução) — o que está sendo feito agora, o que foi feito, quanto de retrabalho e quanto custou, pra poder melhorar o pipeline com o tempo.
+
+**Mecanismo:** nova tabela de log de execução (nome de trabalho `pautas_execucao_log`) — cada etapa do pipeline (`buscar checklist` → `gerar conteúdo` → `revisar` → `inserir links` → `sanitizar` → `publicar` → `registrar resultado`) grava uma linha com `pauta_id`, etapa, `iniciado_em`, `concluido_em`, sucesso/falha, e — nas etapas que chamam a Anthropic (Escritor/Revisor) — tokens de entrada/saída da resposta (`usage` já vem na resposta da API, só precisa persistir). Isso dá de graça: histórico de retrabalho (cada reprovação = nova passada visível), custo por pauta/post (alimenta o Painel de Custo da Visão Geral) e tempo por etapa.
+
+**Tela viva:** o front assina a tabela via **Supabase Realtime** (Postgres changes por websocket, já disponível no projeto) — cada linha nova/atualizada chega na tela sem polling. Três blocos: **Na fila** (pendentes, ordem de prioridade) → **Em andamento agora** (etapa atual da pauta ativa + tempo decorrido, atualizando a cada evolução) → **Concluídos recentes** (resultado, tentativas, custo, link). Progresso (%) e estimativa de tempo por etapa vêm da média histórica das últimas execuções daquela etapa — sem modelo novo, só agregação simples sobre o log.
 
 ---
 
 ## 8. Credenciais e acessos necessários por canal
 
-Checklist de provisionamento — o que falta em cada linha é o que fica registrado como pendência de ação manual de Luiz, não algo pra "lembrar depois". Nenhuma dessas credenciais deve trafegar por chat — só via `vercel env`.
+**Mudança de arquitetura — decidido 18/08/2026:** a Fase 1 (núcleo) lia credenciais do WordPress só de variável de ambiente por propriedade (`WORDPRESS_USUARIO_<id>`/`WORDPRESS_SENHA_APP_<id>`). A partir da Fase 2 (telas), a tela de Propriedades Digitais passa a permitir cadastrar essas credenciais direto pela UI — isso exige guardar a senha **cifrada no banco** (não em texto puro): uma chave de aplicação nova (`MARKETING_CREDENCIAIS_CHAVE`, só via `process.env`, nunca no banco) cifra/decifra; o campo na tela é só-escrita (nunca reexibe a senha salva, mostra apenas "configurada ✓"/"faltando"); só o server com `service_role` decifra, e só no momento de publicar. Variável de ambiente continua funcionando como fallback caso a propriedade não tenha credencial cadastrada no banco (não quebra o que já está em produção).
+
+Checklist de provisionamento — o que falta em cada linha é o que fica registrado como pendência de ação manual de Luiz, não algo pra "lembrar depois". Nenhuma dessas credenciais deve trafegar por chat — só via `vercel env` ou, a partir da Fase 2, direto na tela cifrada.
 
 | Canal | O que precisa existir | Status (17/08/2026) |
 |---|---|---|

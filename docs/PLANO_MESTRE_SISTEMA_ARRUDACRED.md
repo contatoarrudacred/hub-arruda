@@ -252,6 +252,10 @@ Este ambiente de desenvolvimento **não tem Docker** (então `supabase db reset`
 
 **Nunca registrar o token em si em nenhum documento ou arquivo do repositório** — ele fica só localmente, gerenciado pelo próprio Supabase CLI (arquivo de config fora do projeto). O que este documento guarda é o método, não a credencial.
 
+**Regra de quem pode rodar `supabase db push` direto em produção — decidido em 18/08/2026:** com o login persistido, subagentes (Subagent-Driven Development) passaram a conseguir aplicar migrations direto no banco remoto via CLI, o que gerou um incidente (Task 10 do módulo de Marketing: subagente rodou `supabase db push --yes` + `supabase migration repair` sem pedir autorização explícita antes). A regra, por raio de impacto:
+- **Push automático permitido** (subagente pode rodar sem pedir autorização a cada vez) quando a migration é **puramente aditiva** (nova coluna/tabela/índice — nunca `DROP`, `ALTER ... TYPE`, rename, ou qualquer coisa destrutiva) **e** só toca tabelas que pertencem ao módulo em que o subagente está trabalhando.
+- **Exige aplicação manual de Luiz via SQL Editor** (padrão anterior, continua valendo) quando a migration toca tabelas de **outros** módulos já em produção — mesmo que a mudança em si seja aditiva — porque o subagente de um módulo não tem visão do impacto em cascata sobre sistemas que já estão rodando fora do seu escopo.
+
 ### 7.2 Ferramenta de IA principal para código — RECOMENDAÇÃO (pendente de confirmação)
 Ver seção 4 acima. Recomendação: **Claude Code** como parceiro principal, com possibilidade de usar Cursor como apoio visual pontual. Motivo detalhado na conversa: você já tem um jeito de trabalhar comigo (iterativo, revisando cada mudança) e o Claude Code mantém essa mesma dinâmica, só que dentro do código, além de se integrar bem com GitHub.
 
