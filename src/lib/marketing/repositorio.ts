@@ -466,7 +466,7 @@ export async function salvarCredencialCanal(propriedadeId: string, canal: string
 }
 
 function mapearMatrizAdmin(data: { id: string; propriedade_id: string; nome: string; ativo: boolean; eixos: unknown }): MatrizAdmin {
-  const eixos = (data.eixos as { temas?: string[]; angulos?: string[]; geografias?: string[] | null }) ?? {};
+  const eixos = (data.eixos as { temas?: string[]; angulos?: string[]; geografias?: string[] | null; sazonalidade?: string[] }) ?? {};
   return {
     id: data.id,
     propriedadeId: data.propriedade_id,
@@ -475,6 +475,7 @@ function mapearMatrizAdmin(data: { id: string; propriedade_id: string; nome: str
     temas: eixos.temas ?? [],
     angulos: eixos.angulos ?? [],
     geografias: eixos.geografias ?? null,
+    sazonalidade: eixos.sazonalidade ?? [],
   };
 }
 

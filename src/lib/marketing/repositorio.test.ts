@@ -532,7 +532,7 @@ describe("listarMatrizes", () => {
             propriedade_id: "prop-1",
             nome: "Matriz Principal",
             ativo: true,
-            eixos: { temas: ["limpar nome"], angulos: ["urgencia"], geografias: ["SP"] },
+            eixos: { temas: ["limpar nome"], angulos: ["urgencia"], geografias: ["SP"], sazonalidade: ["dezembro"] },
           },
         ],
         error: null,
@@ -542,7 +542,16 @@ describe("listarMatrizes", () => {
     const matrizes = await listarMatrizes("prop-1");
 
     expect(matrizes).toEqual([
-      { id: "matriz-1", propriedadeId: "prop-1", nome: "Matriz Principal", ativo: true, temas: ["limpar nome"], angulos: ["urgencia"], geografias: ["SP"] },
+      {
+        id: "matriz-1",
+        propriedadeId: "prop-1",
+        nome: "Matriz Principal",
+        ativo: true,
+        temas: ["limpar nome"],
+        angulos: ["urgencia"],
+        geografias: ["SP"],
+        sazonalidade: ["dezembro"],
+      },
     ]);
   });
 
@@ -556,6 +565,7 @@ describe("listarMatrizes", () => {
     expect(matriz.temas).toEqual([]);
     expect(matriz.angulos).toEqual([]);
     expect(matriz.geografias).toBeNull();
+    expect(matriz.sazonalidade).toEqual([]);
   });
 
   it("lança erro claro quando a query falha", async () => {

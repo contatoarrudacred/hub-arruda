@@ -251,13 +251,14 @@ function SecaoEixos({ matriz }: { matriz: MatrizAdmin }) {
   return (
     <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
       <p className={rotulo}>
-        Temas, ângulos e geografias
+        Temas, ângulos, geografias e sazonalidade
         <Ajuda texto="Só leitura por enquanto: quem gera/edita estes eixos é o Construtor de Matriz de Conteúdo (agente conversacional de pesquisa de palavra-chave), uma ferramenta ainda não construída — ver seção 6 do MODULO_MARKETING_CONTEUDO_ARRUDACRED.md. Até lá, estes campos só são populados direto no banco. Editar aqui prometeria uma funcionalidade que esta tela não tem." />
       </p>
 
       <ListaSoLeitura titulo="Temas" itens={matriz.temas} />
       <ListaSoLeitura titulo="Ângulos" itens={matriz.angulos} />
       <ListaSoLeitura titulo="Geografias" itens={matriz.geografias} />
+      <ListaSoLeitura titulo="Sazonalidade" itens={matriz.sazonalidade} />
     </div>
   );
 }

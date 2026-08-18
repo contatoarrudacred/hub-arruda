@@ -133,6 +133,7 @@ export type MatrizAdmin = {
   temas: string[];
   angulos: string[];
   geografias: string[] | null;
+  sazonalidade: string[];
 };
 
 export type DadosMatriz = {
