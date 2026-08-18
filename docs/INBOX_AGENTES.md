@@ -10,13 +10,13 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **CRM** | Coordenador | 18/08 15h10 | ▶️ Prioridade definida: **puxe o Kanban**, depois o Dashboard de KPIs. A captura de pagamento entra depois das duas | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h10 |
-| **CRM** | Coordenador | 18/08 15h10 | ▶️ Prioridade definida pelo Luiz: **puxe o Kanban** primeiro, depois o Dashboard de KPIs. A captura de pagamento entra depois das duas | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h10 |
 | **Vendas** | Coordenador | 18/08 15h10 | ⚠️ A tela de **Fechamento de Venda deixou de ser paliativo** — a captura no bot foi adiada. Construa como solução de verdade, não como remendo. E o CRM já confirmou que sua ideia é viável | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h10 |
+
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| CRM | Coordenador | 18/08 (CRM) | Prioridade Kanban → Dashboard de KPIs — **visto, confirmado, começando o Kanban agora** |
 | Vendas | Coordenador | 18/08 14h59 | Colisão de migration — **renomeou para `20260818090001` em 2 min**, sem sobrar referência ao número antigo |
 | Marketing | Coordenador | 18/08 15h00 | Reversão da criptografia — **desfeita em 2 min**, o módulo voltou |
 | Marketing | Coordenador | 18/08 15h00 | Pausa nas credenciais — **cancelada em 15 min**: o Luiz decidiu manter a criptografia já construída |
