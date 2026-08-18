@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FornecedorAdmin } from "@/lib/vendas/fornecedores";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
@@ -30,10 +30,23 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
   const [endereco, setEndereco] = useState<ValorEndereco>(enderecoVazio);
   const [erro, setErro] = useState<string | null>(null);
   const [pessoaIdSalva, setPessoaIdSalva] = useState<string | null>(null);
+  const buscaIdRef = useRef(0);
+  const buscaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function buscarPessoa(documento: string) {
+    const idAtual = ++buscaIdRef.current;
     const resultado = await buscarPessoaPorDocumentoAction(documento);
+    if (idAtual !== buscaIdRef.current) return; // uma busca mais recente já foi disparada, descarta esta resposta
     setPessoaSelecionada(resultado.encontrada ? { id: resultado.id, nome: resultado.nome } : null);
+  }
+
+  function aoMudarDocumento(valor: string) {
+    const formatado = formatarCpfCnpj(valor);
+    setDocumentoBusca(formatado);
+    if (buscaTimeoutRef.current) clearTimeout(buscaTimeoutRef.current);
+    buscaTimeoutRef.current = setTimeout(() => {
+      buscarPessoa(formatado);
+    }, 300);
   }
 
   async function salvar() {
@@ -95,7 +108,7 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
         <div className="space-y-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
           <LeitorDocumentoIA
             onDadosExtraidos={(dados) => {
-              if (dados.documento) setDocumentoBusca(dados.documento);
+              if (dados.documento) setDocumentoBusca(formatarCpfCnpj(dados.documento));
               if (dados.nome) setNomeNovaPessoa(dados.nome);
               setEndereco((atual) => ({
                 ...atual,
@@ -115,11 +128,8 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
             </label>
             <input
               className={campo}
-              value={formatarCpfCnpj(documentoBusca)}
-              onChange={(e) => {
-                setDocumentoBusca(e.target.value);
-                buscarPessoa(e.target.value);
-              }}
+              value={documentoBusca}
+              onChange={(e) => aoMudarDocumento(e.target.value)}
               placeholder="000.000.000-00"
             />
           </div>
