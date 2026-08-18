@@ -77,4 +77,28 @@ describe("GET /api/cron/marketing-pipeline", () => {
     expect(corpo.resultados).toEqual({});
     expect(processarSpy).not.toHaveBeenCalled();
   });
+
+  it("retorna 500 se a query de matrizes falhar", async () => {
+    process.env.CRON_SECRET = "segredo-certo";
+    const supabaseFalso = {
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ data: null, error: { message: "erro de teste" } }),
+        }),
+      }),
+      rpc: vi.fn().mockResolvedValue({ data: true }),
+    };
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    const request = new Request("https://x.com/api/cron/marketing-pipeline", {
+      headers: { authorization: "Bearer segredo-certo" },
+    });
+
+    const resposta = await GET(request);
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(500);
+    expect(corpo.erro).toContain("Falha ao carregar matrizes de conteúdo");
+    expect(corpo.erro).toContain("erro de teste");
+  });
 });

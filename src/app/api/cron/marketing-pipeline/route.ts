@@ -16,7 +16,11 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const { data: matrizes } = await supabase.from("matrizes_conteudo").select("id, propriedade_id").eq("ativo", true);
+  const { data: matrizes, error: erroMatrizes } = await supabase.from("matrizes_conteudo").select("id, propriedade_id").eq("ativo", true);
+
+  if (erroMatrizes) {
+    return Response.json({ erro: `Falha ao carregar matrizes de conteúdo: ${erroMatrizes.message}` }, { status: 500 });
+  }
 
   const resultados: Record<string, string> = {};
   for (const matriz of matrizes ?? []) {
