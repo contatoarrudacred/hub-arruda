@@ -701,6 +701,59 @@ Perguntas em aberto pra quando for desenhar de verdade: quais KPIs entram em cad
 
 ---
 
+## 12. Módulo Vendas — Detalhamento (planejamento fechado da sub-frente Cadastro, construção em andamento)
+
+> 📄 Spec completa: `superpowers/specs/2026-08-17-modulo-vendas-design.md`. Plano de implementação da sub-frente Cadastro: `superpowers/plans/2026-08-17-vendas-cadastro.md`. Status de produção: seção 11 acima.
+> Esta seção é sobre **Planejamento** (ver convenção de duas dimensões, seção 0) — o que foi decidido e por quê. O que já foi de fato construído fica em seção 11.
+
+### 12.1 Fronteiras do módulo (por que Vendas é separado de CRM/Operação)
+
+Vendas cobre o processo comercial do **fechamento** (a partir de "Dados para Contrato" no Kanban do CRM, seção 8) até a **entrega pro módulo Operação** (execução do serviço vendido, seção 1.5 — ainda não desenhado). Não é um sistema paralelo ao CRM: reaproveita o núcleo Pessoa/Papel (`MODELAGEM_DADOS_ARRUDACRED.md`) e a entidade `oportunidades` já existentes — **sem entidade nova de "venda"**, a própria Oportunidade carrega o processo do início ao fim, virando handoff pra Operação no final.
+
+**Duas formas de uma venda começar:**
+1. Avançando pelo funil normal do CRM (lead → triagem → qualificação → negociação → fechamento).
+2. Direto no fechamento, sem funil prévio (venda fechada por telefone/presencial) — cria a Oportunidade já na subetapa `dados_contrato`, pulando as etapas que não existiram.
+
+### 12.2 Os 3 modelos de receita de um Serviço (Produto) — decidido 17/08/2026
+
+Descoberta durante o levantamento: "produto próprio vs. terceiro" (seção 8.8) não é granular o suficiente pro módulo Vendas — existem 3 modelos de negócio reais, cada um com fluxo de dinheiro e de handoff diferente. `produtos.tipo` passou a ter 3 valores:
+
+| Tipo | Quem fatura o cliente | Passa por Contrato/Assinatura/Pagamento? | Handoff pra Operação? | Financeiro |
+|---|---|---|---|---|
+| `proprio` | ArrudaCred | Sim, completo | Sim | Só receita |
+| `subcontratado` | ArrudaCred | Sim, completo | Sim | Receita agora; despesa ao fornecedor só quando a OS for enviada a ele (Operação, futuro) |
+| `comissionado` | Fornecedor/administradora (fora do sistema) | Não | Não | Comissão a receber do fornecedor, com agenda de vencimento configurável |
+
+Exemplos: Limpeza de Nome/Score/Bacen = `proprio`. Consórcio, crédito/empréstimo/financiamento = `comissionado`. Um serviço vendido pela ArrudaCred mas executado por terceiro = `subcontratado`.
+
+### 12.3 Sub-frentes planejadas (ordem de construção)
+
+1. **Cadastro** (Cliente/Fornecedor/Serviço, endereço, upload de documento, foto, leitura por IA) — ✅ construída, ver seção 11.
+2. **Contrato** (geração automática de PDF com template editável, valor por extenso, tabela de vencimentos, 2 assinantes via Assinafy) — planejada na spec, ainda não iniciada.
+3. **Assinatura digital** (integração real Assinafy, webhook) — planejada, ainda não iniciada.
+4. **Financeiro da venda** (cobrança real via Asaas, comissão a receber pro modelo `comissionado`, handoff pra Operação) — planejada, ainda não iniciada.
+
+### 12.4 Convenções de cadastro de Pessoa — decidido 17/08/2026 (vale pra qualquer tela que cadastra Pessoa, não só Vendas)
+
+- **Texto sempre em caixa alta, exceto e-mail** — nome/endereço salvos em maiúsculo; documento/whatsapp (só dígitos) e campos de `check constraint` (ex.: categoria de fornecedor) ficam de fora.
+- **Máscaras de input padrão** — CPF/CNPJ, CEP, telefone formatados na tela, dado salvo sempre normalizado.
+- **Endereço sempre CEP-primeiro** — autopreenche logradouro/bairro/cidade/UF via ViaCEP (API pública, sem custo); campos autopreenchidos continuam editáveis; UF é select fechado (27 estados + DF), não texto livre.
+- **CPF/CNPJ sempre validados** (dígito verificador) antes de aceitar o cadastro.
+- **Upload de documento com tipo identificado** — cliente/fornecedor podem anexar documentos (RG, CNH, comprovante de residência, contrato social, etc.), cada upload exige escolher o tipo. Bucket privado (`pessoa-documentos`, LGPD), URL assinada só na leitura.
+- **Leitura de documento por IA, sempre opcional e nunca automática** — upload/colagem de imagem(ns) ou PDF → Claude (visão, Haiku) extrai nome/documento/endereço → só pré-preenche o formulário, nunca salva sozinho (mesmo princípio do lema do projeto, seção 0).
+- **Foto da pessoa** — reaproveita `pessoa_fotos` (tabela já existente pra foto de perfil do WhatsApp na Tela de Atendimento, seção 8) — mesmo formato, bucket público (`pessoa-fotos`).
+
+### 12.5 O que fica fora desta sub-frente (registrado pra não esquecer)
+
+Módulo Operação inteiro (inclusive o schema de `ordens_servico`), contas a pagar a fornecedor, régua de cobrança de parcelas em atraso (`REGUA_COBRANCA_ARRUDACRED.md`, Financeiro), agenda de comunicação pós-venda (`AGENDA_POS_VENDA_ARRUDACRED.md`), portal do cliente, split payment de afiliado via Asaas — todos ficam pra frentes futuras, com o modelo de dados desta sub-frente já pensado pra não exigir redesenho quando chegar a vez (detalhe completo na spec, seção 7).
+
+### 12.6 Achados cruzados durante a construção (fora do escopo estrito de Vendas, registrados pra decisão futura)
+
+- **Migração de dado existente:** `produtos.tipo = 'terceiro'` foi migrado para `'comissionado'` por padrão (única correspondência conhecida até 17/08/2026 — Consórcio, Crédito). Se algum produto "terceiro" for na real `subcontratado`, precisa ser corrigido manualmente depois de rodar a migration.
+- **Lacuna de segurança fechada, não específica de Vendas:** `pessoa_papeis`, `pessoa_representantes`, `enderecos`, `entidades_legais`, `identidades_canal`, `unidades_negocio` nunca tinham RLS nem trigger de auditoria (`SEGURANCA_E_AUDITORIA_ARRUDACRED.md` seção 2.6, gap conhecido) — Vendas foi a primeira frente a escrever nessas tabelas via cliente autenticado, então a migration desta sub-frente fechou a lacuna. Reforço defensivo adicional (idempotente, não é um gap confirmado) também foi aplicado a `pessoas`/`oportunidades`/`conversas`/`usuarios_sistema`/`fluxos`/`etapas_fluxo`.
+
+---
+
 ## Próximos Passos
 
 > ⚠️ Este checklist é o histórico das decisões iniciais do projeto (parou na Fase 2) — **para o status atual e completo, ver a seção 11 "Progresso de Produção" acima**, que é atualizada a cada avanço. Próximo passo combinado com Luiz (16/08/2026): Tela de Atendimento + Fase 5 (IA) → Kanban → Dashboard de KPIs.
