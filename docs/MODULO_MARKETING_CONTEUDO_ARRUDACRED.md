@@ -139,7 +139,7 @@ Baseado no checklist original (10 itens, score mínimo 80/100), com 2 ajustes de
 4. Seção FAQ com 5 perguntas + Schema FAQPage
 5. CTA para o canal de contato antes do FAQ
 6. Imagem de destaque 1200×628px com ALT otimizado
-7. 3 a 6 links internos contextuais
+7. 3 a 6 links internos contextuais — **nota de 17/08/2026 (Task 10):** o que é de fato entregue hoje pelo Agente de Links é uma versão v1 simplificada — 3 a 6 links para posts relacionados da mesma propriedade, listados numa seção "Posts relacionados" ao final do artigo, não inserção contextual no meio do texto. Inserção contextual exigiria NLP mais sofisticado e fica pra uma versão futura. Ver `src/lib/marketing/links.ts`.
 8. 2 a 3 links externos para **fontes oficiais do nicho** (campo configurável por propriedade — BACEN/Serasa/Procon para financeiro, outro órgão para outro nicho)
 9. Meta title (50-60 chars) e meta description (130-155 chars) otimizados
 10. **Cobertura semântica de entidades relacionadas ao tema** (substitui "densidade de palavra-chave 1,5-2,5%" — métrica datada, pode soar artificial; buscadores e IAs avaliam relevância por cobertura semântica, não contagem de repetição)

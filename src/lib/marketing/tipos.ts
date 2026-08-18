@@ -57,3 +57,9 @@ export type PostCriado = {
   propriedadeId: string;
   status: StatusPost;
 };
+
+/** Post publicado da mesma propriedade, candidato a "post relacionado" no Agente de Links. */
+export type PostRelacionado = {
+  titulo: string;
+  url: string;
+};

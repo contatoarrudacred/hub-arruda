@@ -6,6 +6,7 @@ import type {
   ItemChecklistCarregado,
   PautaCarregada,
   PostCriado,
+  PostRelacionado,
   PropriedadeCarregada,
   StatusPost,
 } from "./tipos";
@@ -184,6 +185,41 @@ export async function criarPost(params: {
 
   if (error || !data) throw new Error(`Falha ao criar post para pauta ${params.pautaId}: ${error?.message}`);
   return { id: data.id, pautaId: data.pauta_id, propriedadeId: data.propriedade_id, status: data.status };
+}
+
+/**
+ * Até 6 posts publicados da mesma propriedade, mais recentes primeiro — usados pelo Agente de
+ * Links (src/lib/marketing/links.ts) pra montar a seção "Posts relacionados" ao final do artigo.
+ * A URL vem de canais.wordpress.url (jsonb), preenchido em atualizarStatusPost no momento da
+ * publicação; posts sem essa URL (não deveria acontecer pra status "publicado", mas por segurança)
+ * são descartados.
+ */
+export async function carregarPostsPublicadosDaPropriedade(
+  propriedadeId: string,
+  excluirPostId?: string,
+): Promise<PostRelacionado[]> {
+  const supabase = createAdminClient();
+  let query = supabase
+    .from("posts")
+    .select("titulo, canais, publicado_em")
+    .eq("propriedade_id", propriedadeId)
+    .eq("status", "publicado")
+    .order("publicado_em", { ascending: false })
+    .limit(6);
+
+  if (excluirPostId) {
+    query = query.neq("id", excluirPostId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao carregar posts publicados da propriedade ${propriedadeId}: ${error.message}`);
+
+  return (data ?? [])
+    .map((linha) => {
+      const canais = linha.canais as { wordpress?: { url?: string } } | null;
+      return { titulo: linha.titulo as string, url: canais?.wordpress?.url ?? "" };
+    })
+    .filter((post) => post.url !== "");
 }
 
 export async function atualizarStatusPost(

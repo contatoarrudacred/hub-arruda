@@ -10,6 +10,7 @@ import { selecionarPauta } from "./estrategista";
 import { gerarConteudo } from "./escritor";
 import { revisarConteudo } from "./revisor";
 import { criarAdaptadorWordPress, type CredenciaisWordPress } from "./canais/wordpress";
+import { inserirLinksInternos } from "./links";
 import { sanitizarConteudoHtml } from "./sanitizar-html";
 import {
   atualizarStatusPost,
@@ -61,7 +62,11 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     }
 
     const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
-    const corpoHtmlSanitizado = sanitizarConteudoHtml(conteudo.conteudoHtml);
+    // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
+    // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
+    // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
+    const conteudoComLinks = await inserirLinksInternos(conteudo.conteudoHtml, propriedadeId, post.id);
+    const corpoHtmlSanitizado = sanitizarConteudoHtml(conteudoComLinks);
     const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
     const rascunho = await adaptador.criarRascunho({
       titulo: conteudo.titulo,

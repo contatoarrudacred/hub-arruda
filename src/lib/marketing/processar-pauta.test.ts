@@ -6,8 +6,10 @@ import * as escritor from "./escritor";
 import * as revisor from "./revisor";
 import * as repositorio from "./repositorio";
 import { criarAdaptadorWordPress } from "./canais/wordpress";
+import { inserirLinksInternos } from "./links";
 
 vi.mock("./canais/wordpress");
+vi.mock("./links");
 
 const pautaFalsa = {
   id: "pauta-1",
@@ -51,6 +53,7 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
     vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
     vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -63,6 +66,7 @@ describe("processarProximaPauta", () => {
 
     expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
     expect(adaptadorFalso.aprovarPublicar).toHaveBeenCalledWith("123");
+    expect(inserirLinksInternos).toHaveBeenCalledWith("<h1>...</h1>", "prop-1", "post-1");
   });
 
   it("mantém o resultado publicado sem reprovar quando o registro pós-publicação falha", async () => {
@@ -85,6 +89,7 @@ describe("processarProximaPauta", () => {
     const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
