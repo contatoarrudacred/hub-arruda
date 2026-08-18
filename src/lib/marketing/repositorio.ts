@@ -359,6 +359,20 @@ function mapearPropriedadeAdmin(data: {
 
 const CAMPOS_PROPRIEDADE_ADMIN = "id, nome, url_base, tipo_cms, ativo, config_pipeline, credenciais_canais";
 
+/**
+ * Lista as unidades de negócio pro seletor de "dono" da propriedade na tela de Propriedades
+ * Digitais (Task 7) — a constraint `chk_propriedade_tem_dono` do banco exige `pessoa_id` OU
+ * `unidade_negocio_id` preenchido em `propriedades_digitais`; esta tela só oferece o segundo
+ * (decisão YAGNI registrada no brief da Task 7 — todas as propriedades de hoje são internas).
+ * Mesma tabela já usada por src/lib/vendas/fornecedores.ts.
+ */
+export async function listarUnidadesNegocio(): Promise<{ id: string; nome: string }[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("unidades_negocio").select("id, nome").order("nome", { ascending: true });
+  if (error) throw new Error(`Falha ao listar unidades de negócio: ${error.message}`);
+  return (data ?? []).map((linha) => ({ id: linha.id as string, nome: linha.nome as string }));
+}
+
 export async function listarPropriedades(): Promise<PropriedadeAdmin[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase.from("propriedades_digitais").select(CAMPOS_PROPRIEDADE_ADMIN).order("nome", { ascending: true });

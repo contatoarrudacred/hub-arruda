@@ -14,6 +14,7 @@ import {
   listarPautasPorStatus,
   listarPostsPublicados,
   listarPropriedades,
+  listarUnidadesNegocio,
   reabrirPauta,
   registrarEtapa,
   salvarCredencialCanal,
@@ -236,6 +237,49 @@ describe("listarPropriedades", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(listarPropriedades()).rejects.toThrow(/Falha ao listar propriedades.*erro de teste/);
+  });
+});
+
+describe("listarUnidadesNegocio", () => {
+  // Task 7: a tela de Propriedades Digitais precisa de um seletor de Unidade de Negócio (o "dono"
+  // da propriedade, exigido pela constraint chk_propriedade_tem_dono do banco) — mesma tabela já
+  // consultada por src/lib/vendas/fornecedores.ts, aqui só id+nome pro <select>.
+  it("lista id e nome das unidades de negócio, ordenadas por nome", async () => {
+    const builder = criarQueryFalsa({
+      data: [
+        { id: "un-2", nome: "Voz do Crédito" },
+        { id: "un-1", nome: "ArrudaCred" },
+      ],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const unidades = await listarUnidadesNegocio();
+
+    expect(unidades).toEqual([
+      { id: "un-2", nome: "Voz do Crédito" },
+      { id: "un-1", nome: "ArrudaCred" },
+    ]);
+    expect(builder.select).toHaveBeenCalledWith("id, nome");
+    expect(builder.order).toHaveBeenCalledWith("nome", { ascending: true });
+  });
+
+  it("retorna lista vazia quando não há unidades de negócio", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await listarUnidadesNegocio()).toEqual([]);
+  });
+
+  it("retorna lista vazia quando data vem null", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    expect(await listarUnidadesNegocio()).toEqual([]);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(listarUnidadesNegocio()).rejects.toThrow(/Falha ao listar unidades de negócio.*erro de teste/);
   });
 });
 
