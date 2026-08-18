@@ -7,6 +7,8 @@
 > **Como usar este documento:** este é o índice-mestre do projeto. Toda decisão relevante tomada em qualquer conversa sobre o sistema deve ser resumida e adicionada aqui (ou em um dos documentos filhos referenciados abaixo). Isso existe justamente para que o contexto do projeto não se perca quando a conversa/memória local ficar longa demais — comece qualquer nova sessão de trabalho no projeto lendo este arquivo primeiro.
 >
 > **Convenção de progresso (12/08/2026):** progresso de qualquer módulo/documento se mede em **duas dimensões separadas, nunca uma só** — **Planejamento** (o quanto já foi discutido/documentado) e **Produção** (o quanto já foi de fato construído em código/infraestrutura). Um módulo com planejamento em 90% ainda está em **0% de produção** se nenhuma linha de código foi escrita — nunca resumir as duas coisas num único "% concluído". Ver `mindmap_projeto_arrudacred.html` para o mapa visual com as duas barras por item.
+>
+> ⚠️ **Trabalho em múltiplos agentes/worktrees (18/08/2026):** o projeto passou a ser tocado por vários agentes de IA em paralelo, cada um numa branch/worktree própria (CRM, Marketing, Vendas — e outros a caminho, ex.: Financeiro, Operações). **Antes de começar qualquer sessão de trabalho, leia também `COORDENACAO_AGENTES_ARRUDACRED.md`** — é o quadro-branco compartilhado entre todos os agentes (registro de quem está fazendo o quê, reserva de timestamp de migration pra evitar colisão, avisos de sinergia entre módulos, decisões cross-cutting pendentes do Luiz). Nasceu depois de um incidente real: dois agentes diferentes criaram migrations com timestamp idêntico, sem nenhum canal pra se avisar.
 
 ---
 
@@ -205,6 +207,7 @@ AGENDA_POS_VENDA_ARRUDACRED.md            ← régua de relacionamento pós-cont
 MODULO_MARKETING_CONTEUDO_ARRUDACRED.md   ← pipeline de conteúdo/blog multi-site + campanha de indicação de clientes
 PARCEIROS_AFILIADOS_ARRUDACRED.md         ← parceiros (revenda) e afiliados (comissão)
 SEGURANCA_E_AUDITORIA_ARRUDACRED.md       ← segurança externa + trilha de auditoria interna
+COORDENACAO_AGENTES_ARRUDACRED.md         ← quadro-branco entre agentes/worktrees (CRM/Marketing/Vendas/...) — ler antes de qualquer sessão
 KICKOFF_CLAUDE_CODE.md                    ← notas históricas do kickoff do projeto (estável, raramente muda)
 ```
 
