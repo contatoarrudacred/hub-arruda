@@ -1,6 +1,23 @@
 import { createClient } from "@/lib/supabase/server";
 import { valorPorExtenso } from "./valor-por-extenso";
 
+const BUCKET_ASSETS = "contrato-template-assets";
+
+/**
+ * Upload de imagem inserida no editor rico do template (logo/timbrado) — bucket público (não é
+ * dado de cliente), URL pública direta, sem signed URL.
+ */
+export async function enviarImagemTemplate(arquivo: Blob, nomeArquivo: string): Promise<{ url: string }> {
+  const supabase = await createClient();
+  const caminho = `${Date.now()}-${nomeArquivo}`;
+
+  const { error } = await supabase.storage.from(BUCKET_ASSETS).upload(caminho, arquivo);
+  if (error) throw new Error(`Falha ao enviar imagem: ${error.message}`);
+
+  const { data } = supabase.storage.from(BUCKET_ASSETS).getPublicUrl(caminho);
+  return { url: data.publicUrl };
+}
+
 export type ContratoTemplate = {
   id: string;
   produtoId: string;

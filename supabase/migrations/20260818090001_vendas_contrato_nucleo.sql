@@ -148,6 +148,18 @@ create policy contratos_storage_acesso_total on storage.objects
   using (bucket_id = 'contratos')
   with check (bucket_id = 'contratos');
 
+-- contrato-template-assets: PÚBLICO — imagens que o admin insere no editor do template
+-- (logo/timbrado), não dado de cliente. Público evita lidar com expiração de signed URL dentro
+-- do editor rico e na hora de gerar o PDF (mesmo raciocínio de pessoa-fotos).
+insert into storage.buckets (id, name, public)
+values ('contrato-template-assets', 'contrato-template-assets', true)
+on conflict (id) do nothing;
+
+create policy contrato_template_assets_storage_acesso_total on storage.objects
+  for all to authenticated
+  using (bucket_id = 'contrato-template-assets')
+  with check (bucket_id = 'contrato-template-assets');
+
 -- ============================================================================
 -- Fim da migration 036.
 -- ============================================================================
