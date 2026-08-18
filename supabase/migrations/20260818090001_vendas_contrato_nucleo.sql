@@ -8,16 +8,16 @@
 create table contrato_templates (
   id uuid primary key default gen_random_uuid(),
   produto_id uuid not null references produtos(id),
-  conteudo_markdown text not null,
+  conteudo_html text not null,
   versao integer not null default 1,
   ativo boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 comment on table contrato_templates is
-  'Template de contrato por Produto (só faz sentido pra tipo proprio/subcontratado). Placeholders resolvidos na geração: {{nome_cliente}}, {{documento_cliente}}, {{valor_total}}, {{valor_total_extenso}}, {{tabela_vencimentos}}, {{forma_pagamento}}, {{lista_documentos}}. Editável pelo admin sem deploy.';
-comment on column contrato_templates.conteudo_markdown is
-  'Corpo do contrato em markdown com placeholders — convertido pra HTML e depois PDF na geração (src/lib/vendas/geracao-pdf.ts).';
+  'Template de contrato por Produto (só faz sentido pra tipo proprio/subcontratado). Placeholders resolvidos na geração: {{dados_cliente}}, {{valor_total}}, {{valor_total_extenso}}, {{tabela_vencimentos}}, {{forma_pagamento}}, {{lista_documentos}}. Editado num editor HTML rico (TipTap) pelo admin, sem deploy.';
+comment on column contrato_templates.conteudo_html is
+  'Corpo do contrato em HTML (produzido pelo editor rico, não markdown) com placeholders — vira PDF direto, sem conversão intermediária (src/lib/vendas/geracao-pdf.ts).';
 comment on column contrato_templates.versao is
   'Incrementada manualmente pelo admin ao editar um template já usado em contrato existente — contratos já gerados guardam o texto resolvido no PDF, não recalculam ao template mudar.';
 
