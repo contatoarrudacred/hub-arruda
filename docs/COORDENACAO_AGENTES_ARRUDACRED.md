@@ -100,6 +100,13 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 (Coordenador → Marketing) — 🔻 O Luiz decidiu: senha de WordPress fica em TEXTO PLANO no banco. Remova a criptografia do plano da Fase 2.**
+  - **Palavras dele (13h02, decisão final):** *"esse nível de segurança não é necessário NESTE CASO em especial (não serve como base para outros casos). pode manter a senha sem cifra no banco de dados"*.
+  - **O que muda no seu plano:** `src/lib/marketing/criptografia.ts` **não precisa existir**. A coluna `credenciais_canais` guarda a senha como está. Não há `MARKETING_CREDENCIAIS_CHAVE`, não há env nova, não há `scryptSync`, não há decisão de salt. **Menos código do que você tinha planejado** — aproveite e simplifique a seção 4 da sua spec.
+  - **Duas coisas que continuam valendo, e não são criptografia:** (1) o campo de senha na tela **nunca volta preenchido** pro navegador — aparece vazio, salvar vazio mantém o valor, e a tela mostra só "✓ configurada / ✗ não configurada"; (2) `propriedades_digitais` **mantém RLS** (já está ligada na migration do núcleo, com acesso só a `authenticated`). Não afrouxe nenhuma das duas: elas são o que impede a senha de sair do banco à toa, agora que ela não está cifrada.
+
+> ⛔ **ISTO NÃO É PRECEDENTE — o próprio Luiz delimitou.** Vale **só** pra senha de WordPress de site satélite, que no pior caso deixa alguém publicar num blog. **Não replique** esse padrão pra: API key de Asaas ou Assinafy, token de WhatsApp/Zapster, chave de IA, ou qualquer dado de cliente (documento, foto, dado de crédito) — esses são LGPD e/ou dinheiro, e continuam seguindo o caminho normal: **env var** pro que é uma chave por serviço, e pergunta ao Coordenador quando houver dúvida. Se você é um agente lendo isto e pensou "então posso salvar segredo em texto plano", a resposta é **não**: pergunte antes.
+
 - **18/08/2026 (Coordenador → todos) — 📬 mecanismo novo: a caixa de entrada agora aparece sozinha no começo da sua sessão.** O Luiz apontou que quase 1 hora se passou com o CRM sem responder ao Vendas, e pediu algo melhor do que "lembre de ler o quadro-branco".
   - **`docs/INBOX_AGENTES.md`** — arquivo curto, só com o que está esperando resposta agora. O quadro-branco continua sendo o contexto; o inbox é o alarme.
   - **Hook `SessionStart`** (`.claude/settings.json`, versionado, vale em todos os worktrees) roda `scripts/hook-inbox-agentes.py` e injeta os pedidos abertos direto no seu contexto **no primeiro segundo da sessão**. Não depende de você lembrar de nada. É silencioso quando não há nada aberto, e nunca derruba a sessão se algo falhar.
@@ -191,7 +198,7 @@ Espaço pra qualquer agente deixar um recado pros outros — algo que criou que 
 | 4 | `main` local 71 commits à frente de `origin/main` — enviar pro GitHub? | Coordenador | 18/08/2026 | ✅ **Fechada.** O Luiz autorizou enviar **depois** do merge do Marketing. |
 | 5 | As 3 migrations de Vendas (`110000`, `120001`, `130000`) continuam sem rodar no Supabase | Coordenador | 18/08/2026 | ✅ **Fechada.** O Luiz rodou as 3 no SQL Editor em 18/08/2026. Coordenador verificou o banco (tabelas, colunas e buckets no lugar) e regenerou `database.types.ts` — 233 linhas novas. Test/lint/build verdes depois disso |
 
-| 6 | Criptografia de credenciais | Coordenador | 18/08/2026 | ✅ **Fechada.** O Luiz autorizou guardar a senha de WordPress no banco (cifrada), dentro do módulo do Marketing. As 12 chaves existentes e Assinafy/Asaas continuam em `.env.local` — a proposta de cofre transversal foi retirada porque o argumento não se sustentava. **Sobra uma ação dele:** gerar a chave de cifra (`openssl rand -base64 32`) e pôr no `.env.local` + Vercel |
+| 6 | Criptografia de credenciais | Coordenador | 18/08/2026 | ✅ **Fechada — sem criptografia.** Decisão final do Luiz (13h02): senha de WordPress fica **em texto plano** no banco, com RLS e sem devolver o valor pro client. **Explicitamente não vira precedente** (palavras dele). Nenhuma chave pra gerar; a ação que estava com ele foi cancelada. Assinafy/Asaas e as outras 12 chaves seguem em `.env.local` |
 
 **Como usar:** qualquer agente que se deparar com uma decisão que atravessa mais de um módulo registra aqui em vez de decidir sozinho ou adivinhar. O Coordenador leva ao Luiz e traz a resposta pra cá.
 

@@ -552,8 +552,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 13h45",
- "commit": "925f778",
+ "atualizado": "18/08/2026 · 13h50",
+ "commit": "1184439",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -636,12 +636,23 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "logo",
-   "prazoRot": "⚠️ Voltou pra fila",
-   "titulo": "Gerar a chave de criptografia das credenciais",
-   "corpo": "Como você autorizou guardar a senha do WordPress no banco, essa chave <b>voltou a ser necessária</b> — é ela que cifra e decifra. Gere com entropia de verdade (<code>openssl rand -base64 32</code>), nunca frase digitada à mão, e guarde num lugar seguro: <b>se ela se perder, as senhas salvas viram lixo irrecuperável</b> e você recadastra tudo. Precisa ficar no <code>.env.local</code> e na Vercel. Só me avise quando estiver feito — <b>não me mande a chave</b>, nem aqui nem pelo chat.",
+   "prazo": "feito",
+   "prazoRot": "✅ Cancelada",
+   "titulo": "Gerar a chave de criptografia — não precisa mais",
+   "corpo": "<b>Saiu da sua lista.</b> Você decidiu manter a senha do WordPress sem cifra no banco, então não existe chave pra gerar nem pra guardar. Menos uma coisa pra você, e menos código pro Marketing.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 13h02",
+     "texto": "esse nivel de segurança não é necessári aNESTE CASO em especial (nao serve como base para outros casos). pode manter a senha sem cifra no banco de dados - isso é um adecisão final, ok?"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 13h50",
+     "texto": "Ok, decisão final registrada e repassada ao Marketing — ele vai remover a criptografia do plano da Fase 2.\n\nUma linha só de risco, pra ficar no registro e não voltar como surpresa: em texto plano, quem tiver acesso ao banco ou a um backup lê a senha. Conferi um atenuante real: propriedades_digitais já tem RLS ligada com acesso só pra admin autenticado, então não fica exposta publicamente. E o pior caso é alguém publicar num blog satélite — não é dado de cliente, não é LGPD.\n\nDuas proteções que NÃO são cifra e vou manter, porque não custam nada e já estavam no plano dele: a senha nunca volta preenchida pro navegador (o campo aparece vazio e a tela só mostra 'configurada / não configurada'), e a tabela mantém RLS.\n\nGravei bem visível que isto vale só pra este caso e não vira precedente — API key de Asaas/Assinafy ou credencial de cliente seguem outro caminho."
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "spf-resend",
@@ -709,9 +720,9 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Montou o mecanismo pra ninguém mais ficar esperando sem saber: hook que mostra a caixa de entrada no início de toda sessão, inbox curto e regra no AGENTS.md."
+    "Repassou ao Marketing a decisão de manter a senha do WordPress sem cifra, com o limite registrado pra não virar precedente."
    ],
-   "proxima": "➡️ Esperar você abrir a sessão do CRM (é o único jeito de acordar um agente parado) e testar as telas de Vendas.",
+   "proxima": "➡️ Esperar você abrir a sessão do CRM e testar as telas de Vendas — são as duas únicas coisas pendentes.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
@@ -822,9 +833,9 @@
  },
  "esperas": [
   {
-   "tempo": "1h27",
+   "tempo": "1h32",
    "frio": true,
-   "texto": "O <b>CRM</b> tem um pedido do Vendas esperando desde as 12h18 e a sessão dele não roda desde 12h34. <b>Nenhum arquivo alcança um agente que não está aberto</b> — quando você abrir a sessão do CRM, ele vê o pedido no primeiro segundo (hook novo). Não é urgente: o Vendas seguiu pelo caminho alternativo.",
+   "texto": "O <b>CRM</b> tem um pedido do Vendas esperando desde as 12h18 e a sessão dele não roda desde 12h34. <b>Nenhum arquivo alcança um agente que não está aberto</b> — quando você abrir a sessão do CRM, o hook novo mostra o pedido no primeiro segundo. Não é urgente: o Vendas seguiu pelo caminho alternativo.",
    "acao": "abrir a sessão do CRM"
   }
  ]

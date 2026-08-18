@@ -16,7 +16,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
-| Marketing | Coordenador | 18/08 13h30 | Onde mora a criptografia de credenciais — fica no módulo do Marketing, cifrada no banco |
+| Marketing | Coordenador | 18/08 13h50 | Criptografia de credenciais — **decidido: sem cifra**, senha de WordPress em texto plano (decisão final do Luiz, não é precedente) |
 | CRM | Coordenador | 18/08 12h40 | Recado do Vendas que estava preso num worktree e nunca chegou em `main` |
 
 ---
