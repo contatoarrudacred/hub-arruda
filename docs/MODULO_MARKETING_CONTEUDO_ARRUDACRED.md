@@ -57,26 +57,31 @@ Se no futuro duas propriedades passarem a competir pelo mesmo assunto/persona, r
 
 ---
 
-## 3. Pipeline de agentes — 4 estágios, sem humano no loop
+## 3. Pipeline de agentes — sem humano no loop
 
 **Decisão de Luiz (17/08/2026): o pipeline roda sem depender de aprovação humana.** Isso é possível porque nada fica público até passar por dois gates de qualidade — o segundo acontecendo só depois do conteúdo já estar em formato de rascunho em cada plataforma.
 
-### 3.1 Os 4 estágios
+> ✅ **Status (18/08/2026):** o núcleo (Geração → Revisão → Publicação no WordPress, abaixo) está **construído, testado e revisado** — ver `docs/superpowers/plans/2026-08-17-pipeline-conteudo-marketing-nucleo.md` (Tasks 1-10). A tabela abaixo foi corrigida pra descrever o que existe de fato; o desenho original (17/08) previa um 4º estágio de distribuição multi-canal completo, que **não faz parte do que foi construído** — fica registrado como escopo futuro (`Pendências deste documento`, abaixo).
+
+### 3.1 Estágios construídos
 
 | # | Estágio | O que faz | Papéis do plano original absorvidos |
 |---|---|---|---|
-| 1 | **Geração** | Escolhe a próxima pauta pendente da fila daquela matriz (ou gera uma nova a partir dos eixos configurados), escreve o conteúdo completo seguindo o checklist da propriedade (seção 5.2) e o formato indicado na pauta (seção 5.3), insere links internos para outros posts da mesma propriedade | Estrategista + Escritor + Links |
+| 1 | **Geração** | Escolhe a próxima pauta pendente da fila daquela matriz (seleção apenas — gerar pauta nova a partir dos eixos é escopo do Construtor de Matriz, seção 6, ainda não construído), escreve o conteúdo completo seguindo o checklist da propriedade (seção 5.2) e o formato indicado na pauta (seção 5.3) | Estrategista + Escritor |
 | 2 | **Revisão** | Valida o rascunho contra o checklist da propriedade + checagem de alucinação factual, dá um score. Reprovado → volta pro estágio 1 com o motivo, incrementa `tentativas`, tenta de novo (nada foi publicado ainda) | QA/Revisor |
-| 3 | **Publicação** | Publica de verdade no WordPress (post ou página, conforme o formato) — só neste estágio o conteúdo principal fica público e ganha URL final | Postador |
-| 4 | **Distribuição e aprovação** | Só roda depois do estágio 3 ter uma URL real. Gera o "resumo + curiosidade + CTA" adaptado ao tom/tamanho de cada canal e a imagem recortada no formato de cada plataforma (seção 3.3); cria os posts nos canais configurados da propriedade; confere se cada um está conforme antes de aprovar | Distribuidor (expandido) |
+| 3 | **Links + sanitização** | Insere seção "Posts relacionados" (3-6 links pra outros posts publicados da mesma propriedade, ao final do artigo — v1 determinística, sem IA) e sanitiza o HTML antes de publicar (preserva o `<script type="application/ld+json">` do Schema FAQPage) | Links + (novo, sanitização não estava no plano original) |
+| 4 | **Publicação** | Publica de verdade no WordPress — só neste estágio o conteúdo principal fica público e ganha URL final | Postador |
 
-**Freio de segurança (circuit breaker):** limite de tentativas por pauta — `config_pipeline.max_tentativas` da propriedade, padrão 3. Esgotado → a pauta fica marcada (`motivo_ultima_reprovacao` preenchido), o Estrategista segue pra próxima da fila no ciclo seguinte. Evita loop infinito de custo sem reintroduzir dependência de humano; fica registrado no painel (seção 7) para alguém olhar quando quiser, sem travar nada.
+**Ainda não construído (escopo futuro, fora da Fase 1):** o estágio de **Distribuição multi-canal** do desenho original (resumo/CTA adaptado por canal, imagem recortada por plataforma, posts em GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium) — ver `Pendências deste documento`.
 
-### 3.2 Orquestração e gatilho
+**Freio de segurança (circuit breaker):** limite de tentativas por pauta — `config_pipeline.max_tentativas` da propriedade, padrão 3. Esgotado → `marcarPautaBloqueada` (status `bloqueada`, `motivo_ultima_reprovacao` preenchido), o Estrategista segue pra próxima da fila no ciclo seguinte. Reclaim automático (18/08/2026, Task 10) também conta como tentativa — uma pauta presa em `em_producao` por timeout da função é reaproveitada depois de 10 minutos, e isso incrementa `tentativas` do mesmo jeito, então o freio vale mesmo nesse caminho. Evita loop infinito de custo sem reintroduzir dependência de humano; fica visível no Monitor de execução (seção 7.2).
 
-- **Motor:** Vercel Workflow SDK — step functions duráveis com retry/pausa/retomada nativos, dentro do próprio Next.js, sem infra nova.
+### 3.2 Orquestração e gatilho — corrigido 18/08/2026 (Vercel Workflow SDK abandonado)
+
+**Motor:** função simples (`processarProximaPauta`, `src/lib/marketing/processar-pauta.ts`) chamada diretamente pela rota de cron — **sem SDK de orquestração**. O desenho original (17/08) previa Vercel Workflow SDK (step functions duráveis); revertido no mesmo dia após incompatibilidade real do SDK com o ambiente (Node 24 / esbuild, `ERR_IMPORT_ATTRIBUTE_MISSING` dentro do bundler de steps, sem solução encontrada). Reaproveita o mesmo padrão de fila por status já provado pelo motor de follow-up (`src/lib/motor-fluxo/motor-followup.ts`) — sem infra nova, terreno já conhecido do sistema.
+
 - **Gatilho:** cron-job.org (não Vercel Cron — Hobby plan só libera 1x/dia) bate em `/api/cron/marketing-pipeline`, protegido por `CRON_SECRET` (mesmo padrão de `src/app/api/cron/followups/route.ts`). Lock **por `matriz_conteudo_id`** (não um lock global como o do followup) — cada matriz roda em paralelo sem travar as outras, reaproveitando `cron_locks`/`fn_tentar_lock_cron`/`fn_liberar_lock_cron`.
-- **Adaptadores de canal:** `src/lib/marketing/canais/`, um módulo por plataforma, mesmo padrão de `src/lib/whatsapp/enviar.ts` (camada fina que traduz um formato canal-agnóstico pra API de cada provedor). Chamadas diretas às APIs oficiais (WordPress REST API, Google Business Profile API, Meta Graph API, LinkedIn API, Pinterest API) — não MCP de terceiro (pensados pra uso interativo via chat, não pra rodar sozinho num cron desatendido).
+- **Adaptadores de canal:** `src/lib/marketing/canais/`, mesmo padrão de `src/lib/whatsapp/enviar.ts` (camada fina que traduz um formato canal-agnóstico pra API de cada provedor). **Só o adaptador WordPress existe hoje** (`canais/wordpress.ts`, REST API + Application Password). Google Business Profile API, Meta Graph API, LinkedIn API, Pinterest API — ainda não construídos, fazem parte do estágio de Distribuição multi-canal (não iniciado, ver acima).
 
 ### 3.3 Distribuição multi-canal — texto + imagem por formato
 
@@ -308,8 +313,10 @@ Existe um segundo script no PDF ("Script Oficial — Contato com Indicados Arrud
 
 ## Pendências deste documento
 
-- **Construtor de Matriz de Conteúdo** (seção 6) — ainda não construído; é pré-requisito pra popular matrizes de vozdocredito.com.br e autoridadefinanceira.com.br, e pra revisar a matriz de Limpa Nome já existente
-- **Personas detalhadas por propriedade** (seção 6.1, 17/08/2026) — Luiz vai trazer prompts/material pra definir junto; depois de definidas, precisa estender `montarPrompt` do Agente Escritor (`src/lib/marketing/escritor.ts`) pra cruzar persona com pauta/checklist ao gerar conteúdo — não fazer o sistema inventar persona sozinho
+- **Construtor de Matriz de Conteúdo** (seção 6) — ainda não construído; é pré-requisito pra popular matrizes de vozdocredito.com.br e autoridadefinanceira.com.br, e pra revisar a matriz de Limpa Nome já existente. Já não é mais pré-requisito de persona (seção 6.2, 18/08/2026 — persona virou tela de cadastro direto, não depende mais do Construtor de Matriz existir).
+- **Personas detalhadas por propriedade** (seção 6.2, atualizado 18/08/2026) — cadastro via tela (Fase 2, seção 7), não mais condicionado ao Construtor de Matriz; depois de cadastradas, precisa estender `montarPrompt` do Agente Escritor (`src/lib/marketing/escritor.ts`) pra cruzar persona com pauta/checklist ao gerar conteúdo — trabalho de código ainda não feito.
+- **Distribuição multi-canal** (seção 3.1, atualizado 18/08/2026) — estágio do desenho original que não faz parte da Fase 1 construída: resumo/CTA adaptado por canal, imagem recortada por plataforma, adaptadores de GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium (só WordPress existe hoje).
+- **Telas de admin (Fase 2)** (seção 7, fechado 18/08/2026) — escopo definido (8 telas), spec técnica e plan de implementação ainda não escritas.
 - **Motor 3 / vídeo nativo pra redes sociais** (seção 4) — estratégia documentada, não faz parte do pipeline automatizado ainda
 - **Geração de criativos originais por IA** (imagem/vídeo específicos por plataforma, não só recorte) — fase 2, fora do escopo atual
 - Os demais motores de aquisição do plano original (Remarketing, Parcerias B2B, Influenciadores, Native Ads/Taboola) — **fora do escopo deste módulo de conteúdo inteiramente** (não geram post nem publicam conteúdo — são campanhas pagas/parcerias/afiliados, sistemas diferentes)
