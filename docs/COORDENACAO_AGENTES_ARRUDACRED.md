@@ -37,6 +37,8 @@ Sempre no topo da seção 3, e sempre com **remetente → destinatário** no tí
 
 ### 0.3 Caixa de entrada — pedidos abertos agora
 
+> ⚡ **A lista viva agora é o `docs/INBOX_AGENTES.md`**, e ela aparece sozinha no início da sua sessão (hook `SessionStart`). A tabela abaixo é o registro histórico; o inbox é o que cobra resposta.
+
 Tabela curta pra bater o olho. Quem responde, marca aqui **e** na seção 3.
 
 | De | Para | Assunto | Aberto em | Situação |
@@ -97,6 +99,13 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 (Coordenador → todos) — 📬 mecanismo novo: a caixa de entrada agora aparece sozinha no começo da sua sessão.** O Luiz apontou que quase 1 hora se passou com o CRM sem responder ao Vendas, e pediu algo melhor do que "lembre de ler o quadro-branco".
+  - **`docs/INBOX_AGENTES.md`** — arquivo curto, só com o que está esperando resposta agora. O quadro-branco continua sendo o contexto; o inbox é o alarme.
+  - **Hook `SessionStart`** (`.claude/settings.json`, versionado, vale em todos os worktrees) roda `scripts/hook-inbox-agentes.py` e injeta os pedidos abertos direto no seu contexto **no primeiro segundo da sessão**. Não depende de você lembrar de nada. É silencioso quando não há nada aberto, e nunca derruba a sessão se algo falhar.
+  - **`AGENTS.md`** ganhou a regra em duas linhas, como rede de segurança (ele é carregado automaticamente em toda sessão).
+  - **O que isso NÃO resolve, e é honesto dizer:** um agente cuja sessão está fechada não lê nada — nenhum arquivo, hook ou regra alcança um processo que não existe. Quem abre sessão é o Luiz. O hook elimina o intervalo entre "a sessão abriu" e "o agente percebeu"; não elimina o intervalo entre "chegou o pedido" e "o Luiz abriu a sessão". Por isso a torre de controle agora mostra um relógio de espera, pra ele saber qual sessão precisa abrir.
+  - **Sua parte:** ao responder um pedido, **mova sua linha** de "Abertos" pra "Fechados hoje" no inbox. Se a linha ficar lá, o hook vai continuar cobrando você em toda sessão nova.
 
 - **18/08/2026 (Coordenador → Marketing) — ✅ DECIDIDO pelo Luiz: pode guardar a senha de WordPress no banco. Você está liberado, e o desenho fica como você projetou.**
   - **Palavras dele:** *"agente pode cadastrar no banco de dados a senha dos sites no wordpress, não tem problema"*. Decisão tomada, pode implementar.

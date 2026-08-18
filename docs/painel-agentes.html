@@ -315,6 +315,39 @@
   .respostas .fala { white-space: pre-wrap; }
   .respostas li.doCoord { background: var(--surface-2); border-left-color: var(--linha-forte); }
 
+  /* relógio de espera — quem está parado esperando, e há quanto tempo */
+  .espera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    background: var(--atencao-fundo);
+    border: 1px solid var(--atencao);
+    border-left: 5px solid var(--atencao);
+    box-shadow: var(--sombra);
+    padding: 12px 16px;
+  }
+  .espera.frio { background: var(--trava-fundo); border-color: var(--trava); border-left-color: var(--trava); }
+  .espera .relogio {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--atencao);
+    flex: none;
+  }
+  .espera.frio .relogio { color: var(--trava); }
+  .espera .quem { font-size: 13.5px; line-height: 1.5; flex: 1 1 320px; }
+  .espera .quem b { font-weight: 700; }
+  .espera .acao {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--texto-suave);
+    border: 1px dashed var(--linha-forte);
+    padding: 4px 9px;
+    flex: none;
+  }
+
   /* ---------- grade de agentes ---------- */
 
   .secao-rot {
@@ -519,7 +552,7 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 13h30",
+ "atualizado": "18/08/2026 · 13h45",
  "commit": "5c89dae",
  "instrumentos": [
   {
@@ -676,9 +709,9 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Fechou a decisão de criptografia com o Luiz e liberou o Marketing pra implementar. Chave de cifra voltou pra lista dele."
+    "Montou o mecanismo pra ninguém mais ficar esperando sem saber: hook que mostra a caixa de entrada no início de toda sessão, inbox curto e regra no AGENTS.md."
    ],
-   "proxima": "➡️ Esperar o teste das telas de Vendas e a chave de criptografia; cobrar a resposta do CRM ao Vendas.",
+   "proxima": "➡️ Esperar você abrir a sessão do CRM (é o único jeito de acordar um agente parado) e testar as telas de Vendas.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
@@ -690,7 +723,8 @@
     "✅ Resolveu 2 conflitos no quadro-branco sem perder recado de ninguém",
     "✅ Escreveu o protocolo de comunicação e a caixa de entrada de pedidos abertos",
     "✅ Leu a spec da Fase 2 do Marketing por conta própria e achou um problema de arquitetura antes de virar código",
-    "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código"
+    "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código",
+    "✅ Hook SessionStart + docs/INBOX_AGENTES.md: agente ativo passa a ver na hora que alguém espera por ele"
    ],
    "dims": null
   },
@@ -785,7 +819,15 @@
    "<b>Coordenador → Marketing · ✅ resolvido.</b> A criptografia fica no módulo do Marketing mesmo, cifrada no banco — o Luiz autorizou guardar a senha de WordPress lá. Meu argumento de cofre transversal estava exagerado e foi retirado: Assinafy, Asaas e as outras 12 chaves seguem em env.local.",
    "<b>A regra nova que fecha esse buraco:</b> recado só existe quando chega na main; ninguém para esperando resposta (registra, segue pelo caminho alternativo, migra depois); quem recebe responde na mesma sessão, nem que seja \"visto\"; e eu passo a varrer os worktrees em vez de esperar alguém reclamar."
   ]
- }
+ },
+ "esperas": [
+  {
+   "tempo": "1h27",
+   "frio": true,
+   "texto": "O <b>CRM</b> tem um pedido do Vendas esperando desde as 12h18 e a sessão dele não roda desde 12h34. <b>Nenhum arquivo alcança um agente que não está aberto</b> — quando você abrir a sessão do CRM, ele vê o pedido no primeiro segundo (hook novo). Não é urgente: o Vendas seguiu pelo caminho alternativo.",
+   "acao": "abrir a sessão do CRM"
+  }
+ ]
 }
 </script>
 
@@ -899,6 +941,13 @@
       h += '<div class="instr"><span class="rot">' + esc(i.rot) + '</span><span class="val' + (i.bom ? " bom" : "") + '">' + esc(i.val) + "</span></div>";
     });
     h += "</section>";
+
+    (dados.esperas || []).forEach(function (e) {
+      h += '<div class="espera' + (e.frio ? " frio" : "") + '">' +
+           '<span class="relogio">' + esc(e.tempo) + '</span>' +
+           '<span class="quem">' + rico(e.texto) + '</span>' +
+           '<span class="acao">' + esc(e.acao) + '</span></div>';
+    });
 
     h += '<div class="aviso-ro" id="aviso-ro" hidden>⚠️ Esta visualização está em modo leitura — dá pra acompanhar tudo, mas o botão de responder não vai gravar. Me responda pelo chat mesmo.</div>';
 
