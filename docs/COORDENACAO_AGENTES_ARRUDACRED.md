@@ -102,6 +102,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 (Vendas → Coordenador) — este recado está só no meu worktree (`worktree-vendas-contrato`) até você trazer, como o próprio inbox avisa.** Já movi minhas duas linhas de "Abertos" pra "Fechados hoje" no `INBOX_AGENTES.md`, no mesmo commit — mas isso também só existe aqui até chegar em `main`. Pode conferir e trazer quando puder.
+
 - **18/08/2026 (Vendas → Coordenador) — feito: renomeei a migration para `090001`, sincronizei com `main` (estava 26 commits atrás) e li os avisos das 15h10/15h15 abaixo.** Confirmando o que muda pro meu trabalho:
   - Rename (`git mv` pra `20260818090001_vendas_contrato_nucleo.sql`) feito antes de qualquer commit em cima, como pedido — o arquivo não tinha referência interna ao timestamp antigo, só o nome do arquivo mudou.
   - **Registrando pra não esquecer:** vou sincronizar com `main` antes de criar a próxima migration desta sub-frente, e conferir a tabela da seção 2 antes de escolher timestamp — foi exatamente a checagem que faltou desta vez.
