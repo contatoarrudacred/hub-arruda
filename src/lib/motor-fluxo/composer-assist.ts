@@ -2,7 +2,7 @@
 // TELA_ATENDIMENTO_ARRUDACRED.md ("assist do composer... precisa da voz/nuance da Malala").
 // Diferente dos outros módulos de IA deste diretório (classificação/extração via Haiku), aqui a
 // tarefa é GERAR texto com a voz da Malala — por isso usa Sonnet e a persona completa como system
-// prompt (ver migration 20260817070000_persona_malala_config.sql — o texto vem de `configuracoes`,
+// prompt (ver migration 20260817070001_persona_malala_config.sql — o texto vem de `configuracoes`,
 // não de fs.readFileSync em docs/, que quebraria no bundle serverless da Vercel).
 //
 // Só sugere um rascunho pro atendente revisar/editar antes de enviar (preenche o composer, não
