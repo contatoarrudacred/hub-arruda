@@ -231,14 +231,18 @@ describe("criptografia", () => {
 - Create: `src/app/admin/configuracoes/marketing/propriedades/page.tsx`
 - Create: `src/app/admin/configuracoes/marketing/propriedades/propriedades-client.tsx`
 - Create: `src/app/admin/configuracoes/marketing/propriedades/actions.ts`
+- Modify: `src/lib/marketing/repositorio.ts` (adicionar `listarUnidadesNegocio()`, pequena — ver Step 2)
 
 **Interfaces:**
 - Consumes: `listarPropriedades`, `salvarPropriedade`, `salvarCredencialCanal` (Task 3).
 
-- [ ] **Step 1:** `page.tsx` (Server Component) — `createClient()` de `@/lib/supabase/server`, chama `listarPropriedades()`, passa como prop inicial pro client.
-- [ ] **Step 2:** `propriedades-client.tsx` — mesmo padrão de `faqs-client.tsx` (cards expansíveis, `useState` local, "+ Nova Propriedade"). Campos: nome, URL base, tipo CMS (só `wordpress` por enquanto), max_tentativas, posts_por_dia, janela de publicação (início/fim), e uma seção "Credenciais" com usuário + senha (`type="password"`, sempre vazio ao carregar) + indicador "✓ configurada"/"✗ não configurada" por canal.
-- [ ] **Step 3:** `actions.ts` — `salvarPropriedadeAction` valida (nome/URL obrigatórios, `max_tentativas`/`posts_por_dia` inteiros positivos, `janela_publicacao.inicio < fim`), chama o repositório, `revalidatePath`. `salvarCredencialAction` separado (só roda quando o campo de senha não está vazio).
-- [ ] **Step 4:** `<Ajuda>` explicando o que é cada campo — em especial `posts_por_dia`/janela (que isso limita o quanto o cron publica, não afeta geração) e a seção de credenciais (nunca reexibe senha salva).
+**Ajuste registrado depois da Task 3 (gap descoberto pela própria implementadora, relatório da Task 3 item 4):** a constraint `chk_propriedade_tem_dono` do banco (`propriedades_digitais`, migration do núcleo) exige `pessoa_id` **ou** `unidade_negocio_id` preenchido — `salvarPropriedade` (Task 3) já aceita os dois como campos opcionais em `DadosPropriedade`, mas cabe a esta task de UI decidir de onde o valor vem. Todas as propriedades de hoje e as próximas conhecidas (arrudacred.com.br, vozdocredito.com.br, autoridadefinanceira.com.br, Aetria, decoração, odontológico) são internas — nenhuma é cliente externo ainda. **Decisão (YAGNI, revisitar se/quando surgir cliente externo de verdade):** a tela só oferece um seletor de **Unidade de Negócio** (obrigatório ao criar), não expõe seleção de "cliente externo" nesta fase.
+
+- [ ] **Step 1:** `page.tsx` (Server Component) — `createClient()` de `@/lib/supabase/server`, chama `listarPropriedades()` e `listarUnidadesNegocio()`, passa os dois como prop inicial pro client.
+- [ ] **Step 2:** Em `repositorio.ts`, `listarUnidadesNegocio(): Promise<{ id: string; nome: string }[]>` — query simples em `unidades_negocio` (mesma tabela já usada por `src/lib/vendas/fornecedores.ts`, seguir o mesmo padrão de acesso). TDD, mesmo padrão das demais funções da Task 3 (mock + teste de caminho feliz/erro).
+- [ ] **Step 3:** `propriedades-client.tsx` — mesmo padrão de `faqs-client.tsx` (cards expansíveis, `useState` local, "+ Nova Propriedade"). Campos: **Unidade de Negócio** (select, obrigatório só na criação — uma vez criada, o dono não muda pela tela), nome, URL base, tipo CMS (só `wordpress` por enquanto), max_tentativas, posts_por_dia, janela de publicação (início/fim), e uma seção "Credenciais" com usuário + senha (`type="password"`, sempre vazio ao carregar) + indicador "✓ configurada"/"✗ não configurada" por canal.
+- [ ] **Step 4:** `actions.ts` — `salvarPropriedadeAction` valida (nome/URL/unidade de negócio obrigatórios na criação, `max_tentativas`/`posts_por_dia` inteiros positivos, `janela_publicacao.inicio < fim`), chama o repositório, `revalidatePath`. `salvarCredencialAction` separado (só roda quando o campo de senha não está vazio).
+- [ ] **Step 5:** `<Ajuda>` explicando o que é cada campo — em especial `posts_por_dia`/janela (que isso limita o quanto o cron publica, não afeta geração), a seção de credenciais (nunca reexibe senha salva), e por que Unidade de Negócio é obrigatória (é o "dono" da propriedade no banco, não pode ficar sem).
 
 ---
 
