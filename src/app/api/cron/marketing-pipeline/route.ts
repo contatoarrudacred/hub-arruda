@@ -9,6 +9,12 @@ import { processarProximaPauta } from "@/lib/marketing/processar-pauta";
 
 const DURACAO_LOCK_SEGUNDOS = 240; // uma tentativa completa — bem mais curto que o loop inteiro de retries
 
+// Mesma duração do lock: se a função for morta por timeout, o lock já teria expirado de qualquer
+// forma. Sem isto, a duração máxima default da plataforma poderia matar a função no meio do
+// processamento — a pauta ficaria presa em "em_producao" (reclaim cobre isso, ver
+// selecionarProximaPautaPendente em repositorio.ts, mas evitar o timeout no primeiro lugar é melhor).
+export const maxDuration = 240;
+
 export async function GET(request: Request) {
   const segredo = process.env.CRON_SECRET;
   if (segredo && request.headers.get("authorization") !== `Bearer ${segredo}`) {

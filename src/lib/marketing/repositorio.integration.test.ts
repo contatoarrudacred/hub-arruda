@@ -81,6 +81,44 @@ describe("selecionarProximaPautaPendente", () => {
     const selecionada = await selecionarProximaPautaPendente(matrizId);
     expect(selecionada).toBeNull();
   });
+
+  it("faz reclaim de pauta em_producao travada (atualizado_em com mais de 10 minutos)", async () => {
+    const { matrizId } = await criarPropriedadeDeTeste();
+    const supabase = createAdminClient();
+    const maisDe10MinAtras = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+
+    await supabase.from("pautas").insert({
+      matriz_conteudo_id: matrizId,
+      palavra_chave_principal: "pauta travada",
+      angulo: "informacional_direto",
+      funil: "topo",
+      status: "em_producao",
+      atualizado_em: maisDe10MinAtras,
+    });
+
+    const selecionada = await selecionarProximaPautaPendente(matrizId);
+
+    expect(selecionada?.palavraChavePrincipal).toBe("pauta travada");
+    expect(selecionada?.status).toBe("em_producao");
+  });
+
+  it("não faz reclaim de pauta em_producao recente", async () => {
+    const { matrizId } = await criarPropriedadeDeTeste();
+    const supabase = createAdminClient();
+
+    await supabase.from("pautas").insert({
+      matriz_conteudo_id: matrizId,
+      palavra_chave_principal: "pauta em produção recente",
+      angulo: "informacional_direto",
+      funil: "topo",
+      status: "em_producao",
+      atualizado_em: new Date().toISOString(),
+    });
+
+    const selecionada = await selecionarProximaPautaPendente(matrizId);
+
+    expect(selecionada).toBeNull();
+  });
 });
 
 describe("marcarPautaPublicada", () => {

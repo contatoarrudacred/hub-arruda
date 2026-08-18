@@ -10,23 +10,24 @@ import type {
   StatusPost,
 } from "./tipos";
 
-export async function selecionarProximaPautaPendente(matrizConteudoId: string): Promise<PautaCarregada | null> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("pautas")
-    .select(
-      "id, matriz_conteudo_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao",
-    )
-    .eq("matriz_conteudo_id", matrizConteudoId)
-    .eq("status", "pendente")
-    .order("prioridade_score", { ascending: false })
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+const CAMPOS_PAUTA =
+  "id, matriz_conteudo_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao";
 
-  if (error) throw new Error(`Falha ao selecionar próxima pauta: ${error.message}`);
-  if (!data) return null;
+const RECLAIM_MINUTOS = 10; // pauta em_producao com atualizado_em mais antigo que isto é considerada travada
 
+function mapearPauta(data: {
+  id: string;
+  matriz_conteudo_id: string;
+  palavra_chave_principal: string;
+  palavras_secundarias: unknown;
+  angulo: string;
+  geografia: string | null;
+  tipo_conteudo: PautaCarregada["tipoConteudo"];
+  funil: PautaCarregada["funil"];
+  status: PautaCarregada["status"];
+  tentativas: number;
+  motivo_ultima_reprovacao: string | null;
+}): PautaCarregada {
   return {
     id: data.id,
     matrizConteudoId: data.matriz_conteudo_id,
@@ -40,6 +41,46 @@ export async function selecionarProximaPautaPendente(matrizConteudoId: string): 
     tentativas: data.tentativas,
     motivoUltimaReprovacao: data.motivo_ultima_reprovacao,
   };
+}
+
+/**
+ * Seleciona a próxima pauta a processar: pautas "pendente" normalmente, mas também faz reclaim de
+ * pautas "em_producao" cujo atualizado_em seja mais antigo que RECLAIM_MINUTOS — sinal de que a
+ * função de cron anterior morreu (timeout) no meio do processamento e deixou a pauta travada, sem
+ * nada que a re-selecionasse. Duas queries separadas (uma por status) em vez de `.or()` porque cada
+ * uma precisa da própria ordenação por prioridade_score/created_at; pendentes têm prioridade sobre
+ * reclaims quando ambas existem.
+ */
+export async function selecionarProximaPautaPendente(matrizConteudoId: string): Promise<PautaCarregada | null> {
+  const supabase = createAdminClient();
+
+  const { data: pendente, error: erroPendente } = await supabase
+    .from("pautas")
+    .select(CAMPOS_PAUTA)
+    .eq("matriz_conteudo_id", matrizConteudoId)
+    .eq("status", "pendente")
+    .order("prioridade_score", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (erroPendente) throw new Error(`Falha ao selecionar próxima pauta: ${erroPendente.message}`);
+  if (pendente) return mapearPauta(pendente);
+
+  const limiteReclaim = new Date(Date.now() - RECLAIM_MINUTOS * 60 * 1000).toISOString();
+  const { data: travada, error: erroTravada } = await supabase
+    .from("pautas")
+    .select(CAMPOS_PAUTA)
+    .eq("matriz_conteudo_id", matrizConteudoId)
+    .eq("status", "em_producao")
+    .lt("atualizado_em", limiteReclaim)
+    .order("prioridade_score", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (erroTravada) throw new Error(`Falha ao selecionar pauta travada para reclaim: ${erroTravada.message}`);
+  if (!travada) return null;
+
+  return mapearPauta(travada);
 }
 
 export async function carregarPropriedade(propriedadeId: string): Promise<PropriedadeCarregada> {
@@ -76,7 +117,10 @@ export async function carregarChecklistAtivo(propriedadeId: string): Promise<Ite
 
 export async function marcarPautaEmProducao(pautaId: string): Promise<void> {
   const supabase = createAdminClient();
-  const { error } = await supabase.from("pautas").update({ status: "em_producao" }).eq("id", pautaId);
+  const { error } = await supabase
+    .from("pautas")
+    .update({ status: "em_producao", atualizado_em: new Date().toISOString() })
+    .eq("id", pautaId);
   if (error) throw new Error(`Falha ao marcar pauta ${pautaId} em produção: ${error.message}`);
 }
 
@@ -87,7 +131,12 @@ export async function registrarReprovacaoPauta(pautaId: string, motivo: string):
 
   const { error } = await supabase
     .from("pautas")
-    .update({ status: "pendente", tentativas: data.tentativas + 1, motivo_ultima_reprovacao: motivo })
+    .update({
+      status: "pendente",
+      tentativas: data.tentativas + 1,
+      motivo_ultima_reprovacao: motivo,
+      atualizado_em: new Date().toISOString(),
+    })
     .eq("id", pautaId);
   if (error) throw new Error(`Falha ao registrar reprovação da pauta ${pautaId}: ${error.message}`);
 }
@@ -96,14 +145,17 @@ export async function marcarPautaBloqueada(pautaId: string, motivo: string): Pro
   const supabase = createAdminClient();
   const { error } = await supabase
     .from("pautas")
-    .update({ status: "bloqueada", motivo_ultima_reprovacao: motivo })
+    .update({ status: "bloqueada", motivo_ultima_reprovacao: motivo, atualizado_em: new Date().toISOString() })
     .eq("id", pautaId);
   if (error) throw new Error(`Falha ao bloquear pauta ${pautaId}: ${error.message}`);
 }
 
 export async function marcarPautaPublicada(pautaId: string): Promise<void> {
   const supabase = createAdminClient();
-  const { error } = await supabase.from("pautas").update({ status: "publicado" }).eq("id", pautaId);
+  const { error } = await supabase
+    .from("pautas")
+    .update({ status: "publicado", atualizado_em: new Date().toISOString() })
+    .eq("id", pautaId);
   if (error) throw new Error(`Falha ao marcar pauta ${pautaId} como publicada: ${error.message}`);
 }
 
