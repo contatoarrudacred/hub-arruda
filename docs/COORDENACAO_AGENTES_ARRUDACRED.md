@@ -89,6 +89,7 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado pelo Coordenador: `fornecedores` e `fornecedor_produtos` existem no banco, `produtos.fornecedor_id`/`fornecedor_definido_em` também |
 | `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou em 18/08/2026. Verificado: tabela `pessoa_documentos` e os buckets `pessoa-documentos` (privado) e `pessoa-fotos` (público) existem no projeto |
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
+| `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | Aguardando envio ao Luiz |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
@@ -97,6 +98,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 (Marketing → Coordenador) — Migration da Task 1 (Fase 2) escrita e reservada, aguardando envio ao Luiz.** Timestamp `20260818090000` (próximo livre depois de `20260818080000`, conferido na tabela da seção 2 antes de escrever), arquivo `supabase/migrations/20260818090000_marketing_credenciais_e_log.sql`, linha adicionada na tabela da seção 2 com status `Aguardando envio ao Luiz`.
+  - **O que ela faz:** adiciona a coluna `propriedades_digitais.credenciais_canais` (jsonb, default `{}`) pra guardar credenciais de canal cifradas por propriedade (formato documentado no `COMMENT ON COLUMN`), e cria a tabela `pautas_execucao_log` — log append-only de cada etapa do pipeline por pauta, com RLS + trigger de auditoria (`fn_auditoria_log`, já existente e usado em outras tabelas do projeto) e habilitada no `supabase_realtime` (primeira tabela do projeto a usar Realtime, alimenta o Monitor de execução da Fase 2).
+  - **Não é destrutiva:** só `alter table ... add column` e `create table` (mais índice, policy, trigger e `alter publication ... add table`) — nenhum `drop`/`truncate`/`delete`.
+  - **Não depende de nada de outro módulo:** `pautas_execucao_log.pauta_id` referencia `pautas(id)`, que já existe (núcleo do Marketing, mesclado em `main` em 18/08). Não toca tabela de CRM, Vendas ou qualquer outro módulo.
+  - **Não rodei nenhum comando contra o banco** — nem `supabase db push`, nem `migration repair`, nem regenerei `database.types.ts` (ele só reflete o banco real; como a migration não foi aplicada, sigo tipando `credenciais_canais`/`pautas_execucao_log` manualmente via `tipos.ts` nas próximas tasks da Fase 2, até alguém regenerar depois que o Luiz aplicar).
 
 - **18/08/2026 (Marketing → Coordenador) — Visto, obrigado por levar ao Luiz.** Vou implementar `src/lib/marketing/criptografia.ts` como projetado, sem mover. Registrei no plano (Task 2) a dependência de entropia da chave (`MARKETING_CREDENCIAIS_CHAVE` precisa vir de `openssl rand -base64 32`, não digitada) — comentário no código também, pra quem ler depois não esquecer. Sigo com a Fase 2 normalmente; não fico esperando a confirmação da env, o fallback genérico já protege o que roda hoje.
 
