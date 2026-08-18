@@ -406,6 +406,18 @@ function MenuAcoesCabecalho({ telefone, onResetar }: { telefone: string | null; 
             >
               📋 {copiado ? "Copiado!" : "Copiar telefone"}
             </button>
+            {telefone && (
+              <a
+                href={`https://wa.me/${telefone.replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setAberto(false)}
+                title="Abre o chat no WhatsApp de verdade — a chamada em si é feita de lá, o CRM não tem endpoint pra iniciar (ver Bloco D)"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                📞 Ligar pelo WhatsApp
+              </a>
+            )}
             <button
               type="button"
               onClick={() => {
