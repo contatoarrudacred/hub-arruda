@@ -635,8 +635,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h15",
- "commit": "58bd0ee",
+ "atualizado": "18/08/2026 · 15h25",
+ "commit": "98b9804",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -760,10 +760,10 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "logo",
-   "prazoRot": "⚠️ Voltou pra fila",
-   "titulo": "Gerar a chave de criptografia",
-   "corpo": "Você decidiu manter a criptografia, então a chave voltou a ser necessária — é ela que cifra e decifra a senha do WordPress. Gere com <code>openssl rand -base64 32</code> (nunca frase digitada), ponha no <code>.env.local</code> e na Vercel como <code>MARKETING_CREDENCIAIS_CHAVE</code>, e guarde em lugar seguro: <b>perdeu a chave, perdeu as senhas salvas</b> — recadastra tudo. Me avise quando estiver feito, <b>sem mandar o valor</b>.",
+   "prazo": "agora",
+   "prazoRot": "❌ Agora",
+   "titulo": "Registrar a chave de criptografia — 3 lugares",
+   "corpo": "Você já gerou. Confirmei no código o nome exato: <code>MARKETING_CREDENCIAIS_CHAVE</code>. Precisa entrar em <b>três lugares</b> — os dois primeiros são obrigatórios, o terceiro é o que faz o Marketing conseguir testar. Passo a passo na minha resposta abaixo.",
    "acoes": [],
    "respostas": [
     {
@@ -779,6 +779,11 @@
      "autor": "coordenador",
      "quando": "18/08 · 15h00",
      "texto": "Este item foi cancelado às 13h50 e reaberto agora — sua decisão das 14h46 o trouxe de volta. Enquanto a chave não existir, o fallback em env segura o que já roda em produção, então nada quebra por esperar."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h25",
+     "texto": "Nome exato da variável (conferi no código, não é chute): MARKETING_CREDENCIAIS_CHAVE\n\n1) NA SUA MÁQUINA — arquivo .env.local na raiz do projeto. Abra e acrescente uma linha no fim:\nMARKETING_CREDENCIAIS_CHAVE=cole_aqui_a_chave\nSem aspas, sem espaço antes ou depois do =. Esse arquivo está no .gitignore, então não vai pro GitHub — conferi.\n\n2) NA VERCEL — painel do projeto hub-arruda > Settings > Environment Variables > Add New. Nome: MARKETING_CREDENCIAIS_CHAVE, valor: a chave. Marque os três ambientes (Production, Preview, Development). Importante: variável nova só passa a valer no PRÓXIMO deploy — depois de salvar, faça um redeploy, senão em produção ela não existe.\n\n3) NO WORKTREE DO MARKETING — ele tem um .env.local próprio, separado do seu, em .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local. Sem a chave lá, ele não consegue testar a cifra na branch dele. Mesma linha do passo 1.\n\nNÃO me mande o valor — nem aqui, nem pela torre, nem pelo chat. Só me diga 'pronto' e eu aviso o Marketing que pode usar.\n\nSe perder a chave depois de já ter senha cifrada salva: não dá pra recuperar. Você recadastra as senhas dos sites e segue. Guarde num gerenciador de senhas, não num arquivo de texto solto."
     }
    ],
    "concluida": false
@@ -849,10 +854,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Apagando dois incêndios de uma vez: a <b>terceira colisão de migration</b> do projeto (Vendas × Marketing) e um retrabalho que eu causei no Marketing ao comunicar sua decisão com atraso.",
-    "Ensinei o <code>estado-agentes.py</code> a detectar colisão de timestamp sozinho e a medir atividade por <b>arquivo tocado</b>, não por commit — foi assim que descobri que os três estão trabalhando agora."
+    "Passei a você onde registrar a chave de criptografia (3 lugares — o worktree do Marketing tem .env.local próprio, é o que costuma passar batido).",
+    "Aguardando os dois recados urgentes serem lidos: o rename da migration do Vendas e a restauração da criptografia no Marketing."
    ],
-   "proxima": "➡️ Confirmar que o Vendas renomeou e que o Marketing restaurou a criptografia.",
+   "proxima": "➡️ Confirmar o rename do Vendas, a restauração do Marketing, e avisar o Marketing quando a chave estiver nos três lugares.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -1075,7 +1080,7 @@
   {
    "tempo": "🚨",
    "frio": true,
-   "texto": "<b>Colisão de migration entre Vendas e Marketing</b> — os dois escreveram <code>20260818090000</code>. Nenhuma foi aplicada no banco, então custa um rename. Pedi ao <b>Vendas</b> que renomeie pra <code>090001</code>. <b>Os dois estão com sessão aberta agora</b>, então o hook não dispara — vale um toque seu nas duas conversas.",
+   "texto": "<b>Colisão de migration</b> entre Vendas e Marketing (mesmo <code>20260818090000</code>) e a <b>reversão da criptografia</b> que o Marketing precisa desfazer. Os dois estão com sessão aberta, então o hook não dispara — <b>um toque em cada conversa resolve</b>. Nenhuma das duas migrations foi ao banco, então nada está perdido.",
    "acao": "avisar Vendas e Marketing"
   }
  ]
