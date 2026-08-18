@@ -97,55 +97,26 @@ O que a migration faz (2-3 linhas), que não é destrutiva (só `alter table add
 
 ---
 
-### Task 2: Criptografia de credenciais
+### Task 2: Criptografia de credenciais — ~~construída~~ REVERTIDA por decisão do Luiz (18/08/2026)
+
+**Status:** esta task foi implementada, revisada e aprovada (commits `d6c51b6..08f1a29` incluem o módulo) — mas o Luiz decidiu depois, em conversa com o Coordenador, que este nível de segurança não é necessário para a senha de WordPress especificamente (`COORDENACAO_AGENTES_ARRUDACRED.md` seção 3, 18/08/2026, 13h02: *"esse nível de segurança não é necessário NESTE CASO em especial... pode manter a senha sem cifra no banco de dados"*). **Isto não é precedente** — vale só pra esta credencial específica, nunca pra API keys de terceiro, tokens ou dado de cliente.
+
+**Task 2-R (reversão):**
 
 **Files:**
-- Create: `src/lib/marketing/criptografia.ts`
-- Create: `src/lib/marketing/criptografia.test.ts`
+- Delete: `src/lib/marketing/criptografia.ts`
+- Delete: `src/lib/marketing/criptografia.test.ts`
+- Modify: `src/lib/marketing/repositorio.ts` (`salvarCredencialCanal`/`mapearCredenciais`/tipo `CredencialCanalAdmin` em `tipos.ts` — trocar `senha_cifrada`/`cifrar`/`decifrar` por `senha` em texto plano)
+- Modify: `supabase/migrations/20260818090000_marketing_credenciais_e_log.sql` (ainda não enviada ao Luiz — `COMMENT ON COLUMN` atualizado pra refletir texto plano, sem custo trocar agora)
 
 **Interfaces:**
-- Produces: `cifrar(textoPlano: string): string`, `decifrar(valorCifrado: string): string` — consumidos pela Task 3 (repositório) e pela Task 7 (tela de Propriedades Digitais, via server action).
+- `salvarCredencialCanal(propriedadeId, canal, usuario, senhaPlana)` mantém a mesma assinatura pública — só para de chamar `cifrar`/`decifrar` internamente, grava `senha: senhaPlana` direto (mesma regra de não-regressão: `senhaPlana` vazia mantém a senha já salva).
 
-- [ ] **Step 1: Escrever o teste primeiro**
-
-```typescript
-// src/lib/marketing/criptografia.test.ts
-import { describe, expect, it, beforeAll } from "vitest";
-import { cifrar, decifrar } from "./criptografia";
-
-describe("criptografia", () => {
-  beforeAll(() => {
-    process.env.MARKETING_CREDENCIAIS_CHAVE = "chave-de-teste-nao-usar-em-producao";
-  });
-
-  it("cifra e decifra de volta pro texto original", () => {
-    const original = "senha-de-aplicativo-do-wordpress-123";
-    const cifrado = cifrar(original);
-    expect(cifrado).not.toBe(original);
-    expect(decifrar(cifrado)).toBe(original);
-  });
-
-  it("gera cifrados diferentes pro mesmo texto (IV aleatório)", () => {
-    expect(cifrar("mesma-senha")).not.toBe(cifrar("mesma-senha"));
-  });
-
-  it("lança erro se MARKETING_CREDENCIAIS_CHAVE não estiver configurada", () => {
-    const original = process.env.MARKETING_CREDENCIAIS_CHAVE;
-    delete process.env.MARKETING_CREDENCIAIS_CHAVE;
-    expect(() => cifrar("x")).toThrow();
-    process.env.MARKETING_CREDENCIAIS_CHAVE = original;
-  });
-
-  it("decifrar com valor corrompido lança erro (authTag do GCM detecta adulteração)", () => {
-    const cifrado = cifrar("senha-original");
-    const corrompido = cifrado.slice(0, -4) + "abcd";
-    expect(() => decifrar(corrompido)).toThrow();
-  });
-});
-```
-
-- [ ] **Step 2: Implementar** (ver spec seção 4 pro código completo de referência — `aes-256-gcm`, `scryptSync` pra derivar chave de 32 bytes, IV de 12 bytes + authTag de 16 bytes concatenados antes do texto cifrado, tudo em base64)
-- [ ] **Step 3: Comentário de segurança obrigatório** (pedido do Coordenador, `COORDENACAO_AGENTES_ARRUDACRED.md` seção 3, 18/08/2026) — `scryptSync` com salt fixo é aceitável **só porque** `MARKETING_CREDENCIAIS_CHAVE` já é, ela mesma, uma env secreta de alta entropia (o Luiz gera com `openssl rand -base64 32`, não digita uma frase). Deixar isso explícito num comentário acima de `obterChave()` — se um dia essa env virar algo digitado à mão, o salt fixo deixa de ser seguro, e quem for mexer precisa saber disso antes de "simplificar".
+- [ ] **Step 1:** Apagar `criptografia.ts`/`criptografia.test.ts`.
+- [ ] **Step 2:** Em `repositorio.ts`: `salvarCredencialCanal` para de importar `cifrar`; grava `{ usuario, senha }` no jsonb (era `{ usuario, senha_cifrada }`); `mapearCredenciais`/`listarPropriedades` continuam **nunca** retornando a senha pro caller (só `usuario` + booleano `senhaConfigurada`) — essa proteção não muda. Atualizar `CredencialCanalAdmin` em `tipos.ts` (`senhaCifrada` → remover, não existe mais nesse nível).
+- [ ] **Step 3:** Atualizar os testes de `salvarCredencialCanal`/merge de credenciais em `repositorio.test.ts` pro novo formato (sem mock de `cifrar`).
+- [ ] **Step 4:** Atualizar o `COMMENT ON COLUMN propriedades_digitais.credenciais_canais` na migration da Task 1 pra `'Credenciais de canal por propriedade, em texto plano (decisão do Luiz, 18/08/2026 — não é precedente pra outros segredos). Formato: {"wordpress": {"usuario": "...", "senha": "..."}}. Fallback: propriedade sem entrada aqui continua usando WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico).'` — a migration ainda não foi enviada ao Luiz, então não há custo de alterar o arquivo agora.
+- [ ] **Step 5:** Rodar `pnpm test` completo, confirmar suíte verde, commitar.
 
 ---
 

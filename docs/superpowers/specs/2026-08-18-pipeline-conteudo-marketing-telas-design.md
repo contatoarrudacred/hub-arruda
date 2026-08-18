@@ -105,42 +105,17 @@ alter publication supabase_realtime add table pautas_execucao_log;
 
 ---
 
-## 4. Criptografia de credenciais
+## 4. Credenciais de canal — decisão final: texto plano, sem criptografia (revisado 18/08/2026)
 
-Novo módulo `src/lib/marketing/criptografia.ts` — sem dependência nova, usa `node:crypto` (AES-256-GCM, já disponível no runtime Node/Vercel):
+**Mudança de decisão:** esta seção originalmente especificava um módulo de criptografia (AES-256-GCM via `node:crypto`, chave em `MARKETING_CREDENCIAIS_CHAVE`). O Luiz revisou e decidiu não exigir esse nível de segurança para este caso específico — palavras dele: *"esse nível de segurança não é necessário NESTE CASO em especial (não serve como base para outros casos). pode manter a senha sem cifra no banco de dados"*. **Isto não é precedente** — vale só para a senha de WordPress de site satélite (pior caso: alguém publica indevidamente num blog), nunca para API keys de terceiro (Asaas/Assinafy), tokens de WhatsApp, chave de IA ou dado de cliente, que continuam em variável de ambiente.
 
-```typescript
-// src/lib/marketing/criptografia.ts
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+`propriedades_digitais.credenciais_canais` guarda a senha em texto plano: `{"wordpress": {"usuario": "...", "senha": "..."}}`. Não existe `src/lib/marketing/criptografia.ts`, não existe `MARKETING_CREDENCIAIS_CHAVE`, não existe `scryptSync`.
 
-function obterChave(): Buffer {
-  const segredo = process.env.MARKETING_CREDENCIAIS_CHAVE;
-  if (!segredo) throw new Error("MARKETING_CREDENCIAIS_CHAVE não configurada.");
-  return scryptSync(segredo, "marketing-credenciais-salt", 32); // deriva 32 bytes fixos de um segredo de qualquer tamanho
-}
+**Duas proteções continuam valendo, e não são criptografia:**
+1. **Fluxo na tela de Propriedades Digitais:** o campo de senha é sempre um `<input type="password">` vazio (nunca pré-preenchido com o valor salvo). Salvar com o campo vazio mantém a credencial já existente inalterada; preencher substitui. A tela mostra só um indicador "✓ configurada" / "✗ não configurada" ao lado de cada canal, nunca o valor em si.
+2. **RLS em `propriedades_digitais`** — já ativa desde a migration do núcleo (`admin_acesso_total ... to authenticated`), é o que impede a senha de sair do banco à toa agora que não está cifrada.
 
-export function cifrar(textoPlano: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", obterChave(), iv);
-  const cifrado = Buffer.concat([cipher.update(textoPlano, "utf8"), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  return Buffer.concat([iv, authTag, cifrado]).toString("base64");
-}
-
-export function decifrar(valorCifrado: string): string {
-  const dados = Buffer.from(valorCifrado, "base64");
-  const iv = dados.subarray(0, 12);
-  const authTag = dados.subarray(12, 28);
-  const cifrado = dados.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", obterChave(), iv);
-  decipher.setAuthTag(authTag);
-  return Buffer.concat([decipher.update(cifrado), decipher.final()]).toString("utf8");
-}
-```
-
-**Fluxo na tela de Propriedades Digitais:** o campo de senha é sempre um `<input type="password">` vazio (nunca pré-preenchido com o valor salvo — nem decifrado nem cifrado trafega de volta pro client). Salvar com o campo vazio mantém a credencial já existente inalterada; preencher substitui. A tela mostra só um indicador "✓ configurada" / "✗ não configurada" ao lado de cada canal, nunca o valor.
-
-**No pipeline (`processar-pauta.ts`):** `credenciaisWordPressDaPropriedade` passa a, antes de cair no fallback de env genérico, checar `propriedade.credenciaisCanais?.wordpress` e chamar `decifrar(senha_cifrada)` — decisão de ordem: banco cifrado primeiro, env var genérico como fallback (mantém propriedades já configuradas por env funcionando sem migração de dado).
+**No pipeline (`processar-pauta.ts`):** `credenciaisWordPressDaPropriedade` passa a, antes de cair no fallback de env genérico, checar `propriedade.credenciaisCanais?.wordpress` e usar `usuario`/`senha` diretamente — decisão de ordem: banco primeiro, env var genérico como fallback (mantém propriedades já configuradas por env funcionando sem migração de dado).
 
 ---
 
