@@ -30,38 +30,44 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     return { status: "bloqueada" as const, pautaId: pauta.id };
   }
 
-  const checklist = await carregarChecklistAtivo(propriedadeId);
-  const conteudo = await gerarConteudo(pauta, checklist);
-  const revisao = await revisarConteudo(conteudo, checklist);
+  try {
+    const checklist = await carregarChecklistAtivo(propriedadeId);
+    const conteudo = await gerarConteudo(pauta, checklist);
+    const revisao = await revisarConteudo(conteudo, checklist);
 
-  if (!revisao.aprovado) {
-    await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+    if (!revisao.aprovado) {
+      await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+      return { status: "reprovado" as const, pautaId: pauta.id };
+    }
+
+    const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
+    const adaptador = criarAdaptadorWordPress(propriedade.urlBase);
+    const rascunho = await adaptador.criarRascunho({
+      titulo: conteudo.titulo,
+      corpoHtml: conteudo.conteudoHtml,
+      slug: conteudo.slug,
+      metaTitle: conteudo.metaTitle,
+      metaDescription: conteudo.metaDescription,
+    });
+
+    const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
+    if (!verificacao.ok) {
+      await atualizarStatusPost(post.id, "falhou");
+      await registrarReprovacaoPauta(pauta.id, verificacao.detalhes ?? "Rascunho não conforme no WordPress.");
+      return { status: "reprovado" as const, pautaId: pauta.id };
+    }
+
+    const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+    await atualizarStatusPost(post.id, "publicado", {
+      canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
+      publicadoEm: new Date().toISOString(),
+    });
+    await marcarPautaPublicada(pauta.id);
+
+    return { status: "publicado" as const, url: publicado.urlPublicada };
+  } catch (erro) {
+    const motivo = erro instanceof Error ? erro.message : "Erro inesperado ao processar a pauta.";
+    await registrarReprovacaoPauta(pauta.id, motivo);
     return { status: "reprovado" as const, pautaId: pauta.id };
   }
-
-  const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
-  const adaptador = criarAdaptadorWordPress(propriedade.urlBase);
-  const rascunho = await adaptador.criarRascunho({
-    titulo: conteudo.titulo,
-    corpoHtml: conteudo.conteudoHtml,
-    slug: conteudo.slug,
-    metaTitle: conteudo.metaTitle,
-    metaDescription: conteudo.metaDescription,
-  });
-
-  const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
-  if (!verificacao.ok) {
-    await atualizarStatusPost(post.id, "falhou");
-    await registrarReprovacaoPauta(pauta.id, verificacao.detalhes ?? "Rascunho não conforme no WordPress.");
-    return { status: "reprovado" as const, pautaId: pauta.id };
-  }
-
-  const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
-  await atualizarStatusPost(post.id, "publicado", {
-    canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
-    publicadoEm: new Date().toISOString(),
-  });
-  await marcarPautaPublicada(pauta.id);
-
-  return { status: "publicado" as const, url: publicado.urlPublicada };
 }

@@ -101,4 +101,17 @@ describe("processarProximaPauta", () => {
     expect(bloquearSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
     expect(gerarSpy).not.toHaveBeenCalled();
   });
+
+  it("reprova e não deixa a pauta presa quando uma etapa lança exceção inesperada", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    vi.spyOn(escritor, "gerarConteudo").mockRejectedValue(new Error("Falha de rede"));
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
+    expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Falha de rede");
+  });
 });
