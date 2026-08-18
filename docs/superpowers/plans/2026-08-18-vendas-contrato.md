@@ -14,14 +14,15 @@ A sub-frente **Cadastro** (Cliente/Fornecedor/Serviço) já está mesclada em `m
 
 ## Arquitetura
 
-- **`src/lib/vendas/`** (mesmo módulo da sub-frente Cadastro) ganha: `contratos.ts`, `contrato-templates.ts`, `valor-por-extenso.ts`, `geracao-pdf.ts`, `fechamento-venda.ts`, `comissoes.ts`.
+- **`src/lib/vendas/`** (mesmo módulo da sub-frente Cadastro) ganha: `contratos.ts`, `contrato-templates.ts`, `valor-por-extenso.ts`, `calculo-parcelas.ts`, `geracao-pdf.ts`, `comissoes.ts`.
+- **`src/components/vendas/`** ganha: `editor-html-contrato.tsx` (TipTap, Task 6a) — reaproveitado pela tela de template (Task 6b).
 - **`src/lib/assinafy/`** (novo, mesmo padrão de `src/lib/whatsapp/`): `cliente.ts` (chamadas HTTP cruas, único arquivo que fala com a API deles) + `adapter.ts` (funções de mais alto nível: `enviarContratoParaAssinatura`, `buscarStatusDocumento`).
 - **`src/lib/asaas/`** (novo, mesmo padrão): `cliente.ts` + `adapter.ts` (`criarOuBuscarCliente`, `criarCobrancaParcelada`).
-- **Telas:** `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/` (nova — tela de Fechamento de Venda, chega aqui a partir de uma futura lista/painel de oportunidades em `dados_contrato`, fora de escopo construir a lista agora — acesso direto por URL/id nesta passada, mesma decisão já registrada na spec seção 7 item 4).
+- **Telas:** `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/` (Fechamento de Venda, acesso direto por URL/id nesta passada — sem lista/painel ainda, spec seção 7 item 4) e `src/app/admin/(shell)/vendas/produtos/[produtoId]/contrato-template/` (edição do template, Task 6b).
 - **Webhooks:** `src/app/api/webhooks/assinafy/route.ts`, `src/app/api/webhooks/asaas/route.ts` — clones estruturais de `src/app/api/webhooks/zapster/route.ts`.
-- **PDF:** Server Action rodando Puppeteer + `@sparticuz/chromium` (dependência nova), gera PDF do `contrato_templates.conteudo_markdown` já resolvido, sobe pro bucket `contratos` (privado, mesmo padrão de `pessoa-documentos`).
+- **PDF:** Server Action rodando Puppeteer + `@sparticuz/chromium` (dependência nova), exporta direto o `contrato_templates.conteudo_html` já resolvido (HTML de verdade, editado num editor rico — sem conversão de markdown), sobe pro bucket `contratos` (privado, mesmo padrão de `pessoa-documentos`).
 
-**Tech Stack:** o mesmo da sub-frente Cadastro + `puppeteer-core` + `@sparticuz/chromium` (novo).
+**Tech Stack:** o mesmo da sub-frente Cadastro + `puppeteer-core` + `@sparticuz/chromium` + TipTap (`@tiptap/react`, `@tiptap/pm`, `@tiptap/starter-kit`, `@tiptap/extension-table`, `@tiptap/extension-image`, `@tiptap/extension-text-align`, `@tiptap/extension-text-style`, `@tiptap/extension-font-family`, `@tiptap/extension-color` — todas novas, MIT/open-source).
 
 **Spec:** `docs/superpowers/specs/2026-08-17-modulo-vendas-design.md` (seções 3.2, 3.3, 3.4, 3.5 — já atualizada nesta sessão com a tela de Fechamento de Venda).
 
@@ -60,7 +61,7 @@ A sub-frente **Cadastro** (Cliente/Fornecedor/Serviço) já está mesclada em `m
 create table contrato_templates (
   id uuid primary key default gen_random_uuid(),
   produto_id uuid not null references produtos(id),
-  conteudo_markdown text not null,
+  conteudo_html text not null,
   versao integer not null default 1,
   ativo boolean not null default true,
   created_at timestamptz not null default now(),
@@ -120,6 +121,22 @@ create table comissoes_fornecedor_receber (
 ```
 + índices (`oportunidade_id`, `contrato_id`, `fornecedor_id`) + storage bucket `contratos` (privado, mesmo padrão de `pessoa-documentos`).
 
+## Task 1b: Migration — dados de Pessoa exigidos pelo contrato
+
+**Status: ✅ feito** (`supabase/migrations/20260818100000_vendas_dados_contrato_pessoa.sql`, timestamp `20260818100000` reservado).
+
+**Files:** `supabase/migrations/20260818100000_vendas_dados_contrato_pessoa.sql`
+
+```sql
+alter table pessoas add column rg text;
+alter table pessoas add column estado_civil text;
+alter table pessoas add column profissao text;
+alter table oportunidade_documentos add column pessoa_id uuid references pessoas(id);
+create index idx_oportunidade_documentos_pessoa on oportunidade_documentos(pessoa_id);
+```
+
+Todas nullable/aditivas — `pessoas` e `oportunidade_documentos` são núcleo compartilhado, registrado no quadro-branco por transparência, sem quebrar nenhum consumidor existente (CRM, motor de fluxo). `pessoa_id` em `oportunidade_documentos` é o que permite montar o bloco de dados completos (não só o CPF/CNPJ) de cada documento do "pacote" no contrato.
+
 ---
 
 ## Task 2: `valor-por-extenso.ts` (lógica pura, TDD)
@@ -140,8 +157,22 @@ create table comissoes_fornecedor_receber (
 
 ## Task 4: Repositório `contrato-templates.ts`
 
-**Files:** Create `src/lib/vendas/contrato-templates.ts`
-**Produz:** `buscarTemplateAtivoPorProduto(produtoId)`, `resolverPlaceholders(template, dados)` (`{{nome_cliente}}`, `{{documento_cliente}}`, `{{valor_total}}`, `{{valor_total_extenso}}`, `{{tabela_vencimentos}}`, `{{forma_pagamento}}`, `{{lista_documentos}}`).
+**Status: ✅ feito, mas com placeholders redesenhados em 18/08 — a função `resolverPlaceholders` em si não muda (é só substituição de string, indiferente a markdown/HTML), o que muda é o CONJUNTO de placeholders e quem monta cada bloco.**
+
+**Files:** `src/lib/vendas/contrato-templates.ts`
+**Produz:** `buscarTemplateAtivoPorProduto(produtoId)`, `resolverPlaceholders(conteudoHtml, dados)`.
+
+**Placeholders finais** (decidido com o Luiz em 18/08, ver seção 3 do quadro-branco):
+- `{{dados_cliente}}` — bloco HTML já pronto (montado por quem chama, não por `resolverPlaceholders`) com os dados do signatário principal:
+  - **PF:** Nome completo, CPF, RG, Estado Civil, Profissão, E-mail, Fone/WhatsApp, Endereço.
+  - **PJ:** Razão Social, CNPJ, e os mesmos 8 campos acima **do representante legal** (via `pessoa_representantes`, que é uma `pessoas` PF normal).
+- `{{lista_documentos}}` — repete o mesmo bloco `dados_cliente` pra **cada documento do pacote** (`oportunidade_documentos`, quando > 1), resolvendo cada um contra uma `pessoas` real via `oportunidade_documentos.pessoa_id` (Task 1b). Vazio quando não é pacote.
+- `{{valor_total}}` (moeda BRL) / `{{valor_total_extenso}}` — calculados aqui dentro, via `valorPorExtenso` (Task 2), como já estava.
+- `{{tabela_vencimentos}}` — `<table>` HTML de verdade agora (não markdown): colunas Nº / Vencimento / Valor / Forma de Pagamento (mesma forma em toda linha, vem de `contratos.metodo_pagamento`).
+- `{{forma_pagamento}}` — texto simples (ex. "Parcelado em 3x, Boleto/Pix").
+- **Removidos:** `{{nome_cliente}}`/`{{documento_cliente}}` isolados — viraram parte do bloco `dados_cliente` (não fazia sentido separado do RG/estado civil/profissão/endereço, que sempre andam juntos no corpo de um contrato).
+
+**Quem monta os blocos HTML** (`dados_cliente`, `lista_documentos`, `tabela_vencimentos`) é uma função nova, `montarDadosContratoHtml`, no mesmo arquivo — `resolverPlaceholders` só faz a substituição final, continua puro/testável.
 
 ## Task 5: Repositório `contratos.ts`
 
@@ -153,7 +184,27 @@ create table comissoes_fornecedor_receber (
 ## Task 6: Geração de PDF
 
 **Files:** Create `src/lib/vendas/geracao-pdf.ts`
-**Produz:** `gerarPdfContrato(html: string): Promise<Buffer>` via `puppeteer-core` + `@sparticuz/chromium`. Adicionar dependências ao `package.json`. **Risco registrado, não bloqueia:** projeto está no plano Hobby da Vercel (sem `vercel.json` hoje) — validar tamanho/duração da function quando testar em preview real; pode exigir Pro depois. Upload do PDF resultante pro bucket `contratos` segue exatamente o padrão de `src/lib/vendas/pessoa-documentos.ts` (path `${contratoId}/${Date.now()}-contrato.pdf`, signed URL sob demanda).
+**Produz:** `gerarPdfContrato(html: string): Promise<Buffer>` via `puppeteer-core` + `@sparticuz/chromium`. Adicionar dependências ao `package.json`. **Simplificado em 18/08:** como `contrato_templates.conteudo_html` já é HTML de verdade (Task 1b/4), não existe mais etapa de conversão markdown→HTML — o HTML resolvido (placeholders já substituídos) vai direto pro Puppeteer. **Risco registrado, não bloqueia:** projeto está no plano Hobby da Vercel (sem `vercel.json` hoje) — validar tamanho/duração da function quando testar em preview real; pode exigir Pro depois. Upload do PDF resultante pro bucket `contratos` segue exatamente o padrão de `src/lib/vendas/pessoa-documentos.ts` (path `${contratoId}/${Date.now()}-contrato.pdf`, signed URL sob demanda).
+
+## Task 6a: Editor HTML rico (TipTap) — componente compartilhado
+
+**Decisão do Luiz, 18/08/2026:** editor "algo pronto", com tabela, formatação de texto/fonte, alinhamento e imagem — não um textarea simples nem construído do zero.
+
+**Lib escolhida: TipTap** (MIT, open-source, confirmado na doc oficial antes de codar — regra de ouro):
+- `@tiptap/react` + `@tiptap/pm` + `@tiptap/starter-kit` (núcleo — negrito/itálico/títulos/listas)
+- `@tiptap/extension-table` (exporta `TableKit`, já inclui linha/célula/cabeçalho — não precisa instalar separado)
+- `@tiptap/extension-image`
+- `@tiptap/extension-text-align`
+- `@tiptap/extension-text-style` + `@tiptap/extension-font-family` + `@tiptap/extension-color` (fonte e cor — dependem de `TextStyle` como base)
+
+**Files:** Create `src/components/vendas/editor-html-contrato.tsx`
+**Produz:** componente `"use client"` `EditorHtmlContrato({ valorInicial, aoMudar })` — `useEditor` com as extensions acima, `EditorContent` + barra de ferramentas (negrito/itálico/alinhamento/tabela/imagem/fonte/cor). Upload de imagem reaproveita o padrão de Storage já usado (`src/lib/vendas/pessoa-documentos.ts` como referência de path/signed-URL, bucket próprio ou o `contratos` mesmo). `aoMudar(html: string)` dispara a cada edição, componente pai decide quando salvar.
+
+## Task 6b: Tela de edição de `contrato_templates`
+
+**Files:** Create `src/app/admin/(shell)/vendas/produtos/[produtoId]/contrato-template/page.tsx` + `actions.ts` + `contrato-template-client.tsx`
+
+Mesmo padrão `page.tsx`/`actions.ts`/`*-client.tsx`. Client usa `EditorHtmlContrato` (Task 6a) do lado esquerdo; do lado direito, lista os placeholders disponíveis (`{{dados_cliente}}`, `{{lista_documentos}}`, `{{valor_total}}`, `{{valor_total_extenso}}`, `{{tabela_vencimentos}}`, `{{forma_pagamento}}`) com descrição curta de cada um, clicáveis pra inserir no cursor do editor. Salvar grava `contrato_templates.conteudo_html` (cria nova linha se não existir template ativo pro Produto, ou atualiza + incrementa `versao` se já existir).
 
 ## Task 7: Config `pessoa_arrudacred_signatario_id`
 
@@ -170,6 +221,7 @@ Mesmo padrão de `page.tsx`(Server Component)/`actions.ts`(`"use server"`)/`*-cl
 
 - **Caminho CRM:** lê `conversas.dados.detalhe_pagamento` (formato exato, spec do CRM seção 4: `{ forma: "boleto_pix"|"cartao", tipo: "avista"|"parcelado", parcelas: [{numero, valor, vencimento}] }`). Quando existir, é **só exibir e confirmar** — os dados já vêm calculados pela mesma regra de âncora, não precisa recalcular. Mapeamento: `detalhe_pagamento.tipo` → `contratos.forma_pagamento`, `detalhe_pagamento.forma` → `contratos.metodo_pagamento`, `detalhe_pagamento.parcelas` → direto pra `criarContrato({ ..., parcelas })`.
 - **Caminho venda sem funil prévio (ou `detalhe_pagamento` ainda não existir):** admin escolhe forma/método/data da 1ª parcela/dia-âncora, tela usa `calcularParcelasContrato` (Task 3) pra montar o preview da tabela de vencimentos.
+- **Dados exigidos pro contrato (adicionado em 18/08, não é sobre pagamento — não conflita com a correção de escopo):** antes de gerar, a tela confere se a Pessoa signatária (e o representante legal, quando PJ) já tem RG/Estado Civil/Profissão/Endereço preenchidos (Task 1b). Se faltar, formulário simples pra completar — reaproveita `CampoEndereco` (já existe, sub-frente Cadastro) pro endereço; RG/Estado Civil/Profissão são 3 campos de texto novos, sem componente especial. Quando é pacote (`oportunidade_documentos` com mais de 1 linha), repete a checagem pra cada documento, resolvendo/criando a Pessoa por CPF/CNPJ via `resolverOuCriarPessoa` (já existe) e gravando `oportunidade_documentos.pessoa_id`.
 - Validação: soma das parcelas confirmadas == `valor_total`. Ao confirmar, chama `criarContrato` (Task 5), gera PDF (Task 6) e sobe status pra `gerado`.
 
 ---
