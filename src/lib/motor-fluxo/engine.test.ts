@@ -19,7 +19,7 @@ const etapasPorCodigo = construirEtapasPorCodigo([
   { definicoes: ETAPAS_LIMPEZA_NOME, fluxoId: "fluxo-limpeza-nome" },
 ]);
 
-const calcularDadosDerivados = criarCalculadoraDadosDerivados(CONFIG);
+const calcularDadosDerivados = criarCalculadoraDadosDerivados(CONFIG, FAIXAS_PRECOS);
 const resolverMensagensDinamicas = criarResolverMensagensDinamicas(FAIXAS_PRECOS, CONFIG);
 
 const VARIAVEIS_GLOBAIS = { saudacao: "bom dia" };

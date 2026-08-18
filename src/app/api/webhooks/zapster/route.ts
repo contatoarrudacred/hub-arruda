@@ -64,7 +64,7 @@ async function montarDependencias() {
   return {
     etapasPorCodigo,
     resolverMensagensDinamicas: criarResolverMensagensDinamicas(faixas, config),
-    calcularDadosDerivados: criarCalculadoraDadosDerivados(config),
+    calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas),
   };
 }
 

@@ -15,6 +15,7 @@
 // 3.2/3.3/4.1/4.2 (assinatura_digital/pagamento/ganha/perdida) ficam fora do automatizado do MVP1,
 // exceto "perdida" que o motor já atribui sozinho quando `encerra_com_perda` dispara (engine.ts).
 
+import { dataDeHojeISO, expandirParcelas, type DiaAncora } from "./calculo-vencimentos-pagamento";
 import { tipoEtapaDb } from "./db";
 import { extrairDadosAbertura } from "./extracao";
 import type { ConteudoEtapa, DadosConversa, EtapaCarregada, MensagemEtapa } from "./tipos";
@@ -24,6 +25,7 @@ import {
   combinarFaixasPacote,
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
+  type ParcelaTier,
   montarPropostaAltoValorSelfService,
   montarPropostaBaixoValor,
   montarPropostaPorFaixa,
@@ -824,6 +826,7 @@ function valoresPorDocumento(dados: DadosConversa): number[] {
 
 export function criarCalculadoraDadosDerivados(
   config: Pick<ConfigPrecificacaoLimpaNome, "altoValorFixo" | "altoValorPercentual" | "corteAltoValor">,
+  faixasPrecos: FaixaPreco[],
 ) {
   return (dados: DadosConversa): DadosConversa => {
     const derivados: DadosConversa = {};
@@ -837,6 +840,30 @@ export function criarCalculadoraDadosDerivados(
       derivados.valor_restricao_estimado = String(total);
       derivados.alto_valor = classificarAltoValor(total, config.corteAltoValor) ? "sim" : "nao";
       derivados.documentos_valor_baixo = total < 3000 ? "sim" : "nao";
+    }
+
+    // Defaults do detalhe de pagamento (spec 2026-08-18) — calculados UMA vez, assim que
+    // forma_pagamento é escolhida (ln_passo15_normal/selfservice); se parcelas_valores já existe,
+    // é porque já foi calculado antes (ou já foi ajustado pela negociação) — nunca sobrescreve,
+    // senão perderia um ajuste que o lead já tinha feito.
+    if (dados.forma_pagamento && !dados.parcelas_valores) {
+      const parcelado = dados.forma_pagamento === "parcelado";
+      const faixaCombinada = combinarFaixasPacote(valoresPorDocumento(dados), faixasPrecos);
+      const tiers: ParcelaTier[] = parcelado
+        ? (faixaCombinada?.parcelasBoleto ?? [])
+        : [{ quantidade: 1, valor: faixaCombinada?.precoAvista ?? 0 }];
+
+      if (tiers.length > 0) {
+        const hojeISO = dataDeHojeISO();
+        const diaAncora: DiaAncora = 10;
+        const parcelas = expandirParcelas(tiers, hojeISO, diaAncora);
+
+        derivados.forma_pagamento_detalhe = "boleto_pix";
+        derivados.data_primeira_parcela = hojeISO;
+        if (parcelado) derivados.dia_ancora_parcelas = String(diaAncora);
+        derivados.parcelas_valores = parcelas.map((p) => p.valor.toFixed(2)).join(",");
+        derivados.parcelas_vencimentos = parcelas.map((p) => p.vencimento).join(",");
+      }
     }
 
     return derivados;
