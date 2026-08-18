@@ -643,12 +643,22 @@ export async function listarPostsPublicados(propriedadeId?: string): Promise<Pos
  * resultado de `fn()` pra persistir na mesma linha de conclusão — usado pelas etapas
  * gerar_conteudo/revisar, cujo retorno agora carrega `usage` (ver escritor.ts/revisor.ts). Parâmetro
  * opcional pra não quebrar chamadores que não precisam de tokens (ex.: buscar_checklist, sanitizar).
+ *
+ * `extrairDetalhes` (opcional, Task 5): sem isto, uma rejeição de NEGÓCIO que não lança exceção
+ * (ex.: revisar reprovando por score baixo, publicar reprovando por verificacao.ok === false — ver
+ * processar-pauta.ts) grava `sucesso: true, detalhes: null` na conclusão, indistinguível no log de
+ * uma etapa que realmente teve sucesso. Este extrator roda também no branch de SUCESSO técnico de
+ * `fn()` (diferente de `extrairTokens`, mas com a mesma forma), permitindo ao chamador colocar o
+ * motivo da rejeição de negócio (ex. resultado.motivo) na mesma coluna `detalhes` que já é usada
+ * pro erro técnico do branch de exceção logo abaixo. Retorno `undefined` = não escreve nada
+ * (comportamento idêntico ao de antes deste parâmetro existir).
  */
 export async function registrarEtapa<T>(
   pautaId: string,
   etapa: EtapaLog,
   fn: () => Promise<T>,
   extrairTokens?: (resultado: T) => { tokensEntrada: number; tokensSaida: number } | undefined,
+  extrairDetalhes?: (resultado: T) => string | undefined,
 ): Promise<T> {
   const supabase = createAdminClient();
   const { data: log, error: erroInsercao } = await supabase
@@ -664,12 +674,14 @@ export async function registrarEtapa<T>(
     const resultado = await fn();
     if (log) {
       const tokens = extrairTokens?.(resultado);
+      const detalhes = extrairDetalhes?.(resultado);
       const { error } = await supabase
         .from("pautas_execucao_log")
         .update({
           concluido_em: new Date().toISOString(),
           sucesso: true,
           ...(tokens ? { tokens_entrada: tokens.tokensEntrada, tokens_saida: tokens.tokensSaida } : {}),
+          ...(detalhes !== undefined ? { detalhes } : {}),
         })
         .eq("id", log.id);
       if (error) console.error(`Falha ao registrar conclusão da etapa ${etapa} da pauta ${pautaId}: ${error.message}`);

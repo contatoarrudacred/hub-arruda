@@ -900,6 +900,46 @@ describe("registrarEtapa", () => {
     expect(payload).not.toHaveProperty("tokens_entrada");
     expect(payload).not.toHaveProperty("tokens_saida");
   });
+
+  // Review do Task 5: sem isto, uma rejeição de NEGÓCIO que não lança exceção (revisar reprovando
+  // por score baixo, publicar reprovando por verificacao.ok === false) gravava sucesso: true,
+  // detalhes: null — indistinguível de uma etapa que realmente teve sucesso, pra quem lê o log
+  // (ex.: o Monitor de execução).
+  it("persiste detalhes na conclusão de SUCESSO quando um extrator de detalhes é passado (ex.: motivo de uma rejeição de negócio que não lança exceção)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    const resultado = await registrarEtapa(
+      "pauta-1",
+      "publicar",
+      async () => ({ sucesso: false as const, detalhes: "Rascunho não conforme no WordPress." }),
+      undefined,
+      (r) => (r.sucesso ? undefined : r.detalhes),
+    );
+
+    expect(resultado.sucesso).toBe(false);
+    expect(builderUpdate.update).toHaveBeenCalledWith(
+      expect.objectContaining({ sucesso: true, detalhes: "Rascunho não conforme no WordPress." }),
+    );
+  });
+
+  it("não grava a coluna detalhes na conclusão de sucesso quando o extrator retorna undefined (ex.: etapa publicar realmente publicou)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    await registrarEtapa(
+      "pauta-1",
+      "publicar",
+      async () => ({ sucesso: true as const }),
+      undefined,
+      (r) => (r.sucesso ? undefined : "não deveria chegar aqui"),
+    );
+
+    const payload = (builderUpdate.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("detalhes");
+  });
 });
 
 describe("carregarResumoVisaoGeral", () => {

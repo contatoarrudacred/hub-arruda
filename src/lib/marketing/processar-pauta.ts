@@ -124,11 +124,16 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
     );
 
+    // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio, não
+    // erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de log
+    // ficaria sucesso: true, detalhes: null, indistinguível de uma revisão realmente aprovada. Só
+    // grava o motivo quando reprovado; aprovado devolve undefined (não escreve nada em detalhes).
     const { resultado: revisao } = await registrarEtapa(
       pauta.id,
       "revisar",
       () => revisarConteudo(conteudo, checklist),
       (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+      (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
     );
 
     if (!revisao.aprovado) {
@@ -146,27 +151,37 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
 
     // Etapa "publicar" envolve criar rascunho + verificar + aprovar/publicar como uma unidade só.
-    // Igual à etapa "revisar", uma rejeição de negócio (verificacao.ok === false) não é uma exceção
-    // técnica — não lança, só retorna um resultado discriminado; sucesso/detalhes do log reflete
-    // exceções de verdade (erro de rede/API do WordPress), não a decisão de aprovar/reprovar.
-    const resultadoPublicacao = await registrarEtapa(pauta.id, "publicar", async () => {
-      const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
-      const rascunho = await adaptador.criarRascunho({
-        titulo: conteudo.titulo,
-        corpoHtml: corpoHtmlSanitizado,
-        slug: conteudo.slug,
-        metaTitle: conteudo.metaTitle,
-        metaDescription: conteudo.metaDescription,
-      });
+    // Decisão desta task: uma rejeição de negócio (verificacao.ok === false) não é uma exceção
+    // técnica — não lança, só retorna um resultado discriminado (mesma escolha de design aplicada
+    // à etapa "revisar" logo acima, ambas instrumentadas pela primeira vez nesta mesma task — não
+    // é um padrão pré-existente sendo seguido, é uma decisão nova replicada nas duas). sucesso do
+    // log reflete exceções de verdade (erro de rede/API do WordPress); extrairDetalhes abaixo grava
+    // o motivo da rejeição de negócio na mesma coluna, senão a linha ficaria sucesso: true,
+    // detalhes: null — indistinguível de uma publicação real pra quem lê o log.
+    const resultadoPublicacao = await registrarEtapa(
+      pauta.id,
+      "publicar",
+      async () => {
+        const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
+        const rascunho = await adaptador.criarRascunho({
+          titulo: conteudo.titulo,
+          corpoHtml: corpoHtmlSanitizado,
+          slug: conteudo.slug,
+          metaTitle: conteudo.metaTitle,
+          metaDescription: conteudo.metaDescription,
+        });
 
-      const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
-      if (!verificacao.ok) {
-        return { sucesso: false as const, detalhes: verificacao.detalhes ?? "Rascunho não conforme no WordPress." };
-      }
+        const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
+        if (!verificacao.ok) {
+          return { sucesso: false as const, detalhes: verificacao.detalhes ?? "Rascunho não conforme no WordPress." };
+        }
 
-      const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
-      return { sucesso: true as const, rascunho, publicado };
-    });
+        const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+        return { sucesso: true as const, rascunho, publicado };
+      },
+      undefined,
+      (r) => (r.sucesso ? undefined : r.detalhes),
+    );
 
     if (!resultadoPublicacao.sucesso) {
       await atualizarStatusPost(post.id, "falhou");

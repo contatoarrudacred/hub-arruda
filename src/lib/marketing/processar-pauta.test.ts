@@ -34,18 +34,34 @@ const propriedadeFalsa = {
 };
 
 /**
- * Espiona registrarEtapa (Task 3, extraído em Task 5 pra também aceitar tokens — ver
- * repositorio.ts) sem bater no banco: repassa direto pra fn() e grava a ordem das etapas
- * chamadas, pra asserts de "etapa X foi registrada, na ordem certa" nos testes de
- * processarProximaPauta abaixo.
+ * Espiona registrarEtapa (Task 3, estendida em Task 5 pra também aceitar extrairTokens/
+ * extrairDetalhes — ver repositorio.ts) sem bater no banco: repassa direto pra fn() e grava (a) a
+ * ordem das etapas chamadas e (b) o que os extratores de tokens/detalhes de processar-pauta.ts
+ * REALMENTE produzem a partir do resultado de fn() — sem isto, um bug de transposição
+ * (tokensEntrada/tokensSaida trocados, ou um extrairDetalhes que nunca captura o motivo de uma
+ * rejeição de negócio) compilaria e passaria a suíte inteira em silêncio, porque o mecanismo
+ * genérico de registrarEtapa já é testado à parte em repositorio.test.ts com dados forjados à mão
+ * — isto aqui testa as lambdas específicas que processar-pauta.ts passa pra ele.
+ *
+ * `etapa` é empilhada ANTES de aguardar fn() (mesma ordem do registrarEtapa real, que insere a
+ * linha de log antes de rodar a etapa de negócio) — por isso etapasChamadas continua incluindo uma
+ * etapa mesmo quando fn() lança. Os extratores só são invocados quando fn() resolve (replicando o
+ * branch de sucesso do registrarEtapa real, onde eles de fato são chamados).
  */
 function espiarRegistrarEtapa() {
   const etapasChamadas: string[] = [];
-  const spy = vi.spyOn(repositorio, "registrarEtapa").mockImplementation(async (_pautaId, etapa, fn) => {
-    etapasChamadas.push(etapa);
-    return fn();
-  });
-  return { spy, etapasChamadas };
+  const tokensExtraidos: Record<string, { tokensEntrada: number; tokensSaida: number } | undefined> = {};
+  const detalhesExtraidos: Record<string, string | undefined> = {};
+  const spy = vi
+    .spyOn(repositorio, "registrarEtapa")
+    .mockImplementation(async (_pautaId, etapa, fn, extrairTokens, extrairDetalhes) => {
+      etapasChamadas.push(etapa);
+      const resultado = await fn();
+      if (extrairTokens) tokensExtraidos[etapa] = extrairTokens(resultado);
+      if (extrairDetalhes) detalhesExtraidos[etapa] = extrairDetalhes(resultado);
+      return resultado;
+    });
+  return { spy, etapasChamadas, tokensExtraidos, detalhesExtraidos };
 }
 
 describe("dentroDaJanela", () => {
@@ -188,7 +204,7 @@ describe("processarProximaPauta", () => {
     vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
     vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
     vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
-    const { etapasChamadas } = espiarRegistrarEtapa();
+    const { etapasChamadas, tokensExtraidos, detalhesExtraidos } = espiarRegistrarEtapa();
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -211,6 +227,14 @@ describe("processarProximaPauta", () => {
       "publicar",
       "registrar_resultado",
     ]);
+    // Prova que a lambda de extração de tokens de gerar_conteudo/revisar (processar-pauta.ts)
+    // mapeia usage.inputTokens/outputTokens pra tokensEntrada/tokensSaida SEM trocar os dois —
+    // um bug de transposição compilaria e passaria o resto da suíte em silêncio sem este assert.
+    expect(tokensExtraidos.gerar_conteudo).toEqual({ tokensEntrada: 1000, tokensSaida: 2000 });
+    expect(tokensExtraidos.revisar).toEqual({ tokensEntrada: 500, tokensSaida: 50 });
+    // Revisão aprovada e publicação bem-sucedida: nenhum motivo de rejeição de negócio pra gravar.
+    expect(detalhesExtraidos.revisar).toBeUndefined();
+    expect(detalhesExtraidos.publicar).toBeUndefined();
   });
 
   it("mantém o resultado publicado sem reprovar quando só o registro de metadados do post falha", async () => {
@@ -343,7 +367,10 @@ describe("processarProximaPauta", () => {
     // Cenário de "publicar falhou" que já existia na lógica de negócio (verificacao.ok === false),
     // mas ganhou uma forma nova de fluir pela etapa "publicar" (Task 5): não lança exceção — a
     // etapa "publicar" é registrada como concluída (sucesso: true, é a decisão de negócio de
-    // reprovar, não uma exceção técnica), igual ao padrão já usado por "revisar".
+    // reprovar, não uma exceção técnica). Essa mesma escolha de design foi aplicada à etapa
+    // "revisar" nesta mesma task (nenhuma das duas era instrumentada antes) — extrairDetalhes grava
+    // o motivo da rejeição na coluna detalhes mesmo sem exceção, pra não ficar indistinguível de
+    // uma publicação real no log (ver assert de detalhesExtraidos.publicar abaixo).
     vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
     vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
@@ -366,7 +393,7 @@ describe("processarProximaPauta", () => {
     const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
     vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
-    const { etapasChamadas } = espiarRegistrarEtapa();
+    const { etapasChamadas, detalhesExtraidos } = espiarRegistrarEtapa();
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
@@ -383,6 +410,10 @@ describe("processarProximaPauta", () => {
     expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Rascunho sem conteúdo renderizado.");
     expect(marcarPublicadaSpy).not.toHaveBeenCalled();
     expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar", "inserir_links", "sanitizar", "publicar"]);
+    // Important #1 da revisão: a linha de log da etapa "publicar" precisa carregar o motivo da
+    // rejeição em `detalhes`, mesmo sucesso: true (rejeição de negócio, não exceção técnica) —
+    // senão fica indistinguível de uma publicação real pra quem lê pautas_execucao_log.
+    expect(detalhesExtraidos.publicar).toBe("Rascunho sem conteúdo renderizado.");
   });
 
   it("reprova sem publicar quando o score da revisão é baixo", async () => {
@@ -404,13 +435,20 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 200, outputTokens: 20 },
     });
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
-    const { etapasChamadas } = espiarRegistrarEtapa();
+    const { etapasChamadas, tokensExtraidos, detalhesExtraidos } = espiarRegistrarEtapa();
 
     const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
     expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
     expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
     expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar"]);
+    // Important #1 da revisão: o motivo da reprovação por score baixo precisa ir pra pautas_execucao_log
+    // (coluna detalhes da etapa "revisar"), mesmo a linha sendo sucesso: true (não é exceção técnica).
+    expect(detalhesExtraidos.revisar).toBe("Muito curto.");
+    // Important #2 da revisão: confirma que a lambda de tokens de gerar_conteudo/revisar não troca
+    // inputTokens/outputTokens também neste cenário (score baixo), não só no de sucesso.
+    expect(tokensExtraidos.gerar_conteudo).toEqual({ tokensEntrada: 300, tokensSaida: 100 });
+    expect(tokensExtraidos.revisar).toEqual({ tokensEntrada: 200, tokensSaida: 20 });
   });
 
   it("bloqueia sem gerar quando o limite de tentativas já foi esgotado", async () => {
