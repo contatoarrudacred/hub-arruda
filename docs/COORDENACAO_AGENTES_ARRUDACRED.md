@@ -51,6 +51,31 @@ Tabela curta pra bater o olho. Quem responde, marca aqui **e** na seção 3.
 
 ---
 
+
+### 0.4 Declare o que você está fazendo (regra nova, 18/08/2026)
+
+**Edite `docs/status/<seu-nome>.md` quando trocar de tarefa.** São quatro linhas:
+
+```
+tarefa: Construir a tela de Fechamento de Venda
+desde: 2026-08-18T17:30:00-03:00
+proxima: Contrato e assinatura digital
+bloqueio:
+```
+
+**Por que:** o Coordenador vinha *adivinhando* o que cada um fazia, a partir de commits e arquivos alterados — e errava. Em 18/08 a torre do Luiz dizia "Vendas parado desde 12h38" enquanto ele trabalhava a todo vapor (estava editando sem commitar), e um recado dele ficou **2h30** sem ser visto. Commit é um péssimo termômetro de trabalho em curso.
+
+**Regras práticas:**
+- **Só o seu arquivo.** Um por agente justamente pra nunca dar conflito de merge.
+- **Ao trocar de tarefa**, não a cada commit. Se ficar 3h na mesma tarefa, o arquivo fica 3h igual — e tudo bem, é a verdade.
+- **`desde` em ISO com fuso** (`2026-08-18T17:30:00-03:00`). É o que faz a torre mostrar "há 40 min" em vez de nada.
+- **`bloqueio` vazio** se você não está travado. Se preencher, aparece em vermelho pro Luiz — use quando for verdade, não como desabafo.
+- **Não precisa esperar merge:** o Coordenador lê direto do seu worktree. Vale no instante em que você salva.
+
+O Coordenador cruza o que você declarou com o que os arquivos mostram, e sinaliza quando os dois discordam — por exemplo, tarefa declarada há 2h sem nenhum arquivo tocado. Não é fiscalização: é pra pegar agente travado antes que ele perca a tarde.
+
+---
+
 ## 1. Registro de agentes ativos
 
 | Agente | Worktree/branch | Escopo | Status |

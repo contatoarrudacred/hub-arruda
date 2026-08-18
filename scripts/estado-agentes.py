@@ -27,6 +27,37 @@ def git(*args, cwd=None):
         return ""
 
 
+def ler_status(caminho):
+    """Lê um docs/status/<agente>.md no formato `chave: valor`."""
+    d = {}
+    if not os.path.isfile(caminho):
+        return d
+    for linha in open(caminho, encoding="utf-8").read().splitlines():
+        if ":" in linha and not linha.startswith("#"):
+            k, v = linha.split(":", 1)
+            k = k.strip().lower()
+            if k in ("tarefa", "desde", "proxima", "bloqueio"):
+                d[k] = v.strip()
+    return d
+
+
+def idade(iso):
+    """'há 40 min' a partir de um ISO. Devolve (texto, minutos) ou ('', None)."""
+    if not iso:
+        return "", None
+    try:
+        from datetime import datetime
+        t = datetime.fromisoformat(iso)
+        mins = int((datetime.now(t.tzinfo) - t).total_seconds() // 60)
+    except Exception:
+        return "", None
+    if mins < 0:
+        return "", None
+    if mins < 60:
+        return f"há {mins} min", mins
+    return f"há {mins // 60}h{mins % 60:02d}", mins
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -94,6 +125,58 @@ def main() -> int:
         print("   ✅ Nenhuma colisão. Cada timestamp tem um arquivo só.")
     else:
         print("   Quem escreveu DEPOIS renomeia (convenção do projeto). Avise os dois hoje.")
+
+    # --- 1.7 O QUE CADA AGENTE DECLARA estar fazendo (fonte: eles, não eu) ---
+    print()
+    print("🗣️  O QUE CADA AGENTE DECLARA (docs/status/, lido direto do worktree)")
+    locais_status = [("CRM", os.path.join(raiz, "docs", "status", "crm.md"), raiz),
+                     ("Coordenador", os.path.join(raiz, "docs", "status", "coordenador.md"), raiz)]
+    wt_dir = os.path.join(raiz, ".claude", "worktrees")
+    if os.path.isdir(wt_dir):
+        for nome in os.listdir(wt_dir):
+            slug = "marketing" if "marketing" in nome else ("vendas" if "vendas" in nome else None)
+            if slug:
+                base = os.path.join(wt_dir, nome)
+                locais_status.append((slug.capitalize(), os.path.join(base, "docs", "status", slug + ".md"), base))
+
+    for nome, cam, base in locais_status:
+        st = ler_status(cam)
+        tarefa = st.get("tarefa") or ""
+        if not tarefa:
+            print(f"   {nome:<13} ⚪ não declarou nada — a torre vai ter que adivinhar de novo")
+            continue
+        txt, mins = idade(st.get("desde"))
+        if mins is None:
+            sinal = "⚪"
+        elif mins <= 30:
+            sinal = "🟢"
+        elif mins <= 60:
+            sinal = "🟡"
+        else:
+            sinal = "🔴"
+        print(f"   {nome:<13} {sinal} {tarefa[:64]}")
+        if txt:
+            print(f"                 nesta tarefa {txt}")
+        if st.get("bloqueio"):
+            print(f"                 🚨 BLOQUEIO: {st['bloqueio'][:70]}")
+        # cruza o que ele declara com o que os arquivos mostram
+        novo_mtime = 0.0
+        for sub in ("src", "docs", "supabase"):
+            d2 = os.path.join(base, sub)
+            if not os.path.isdir(d2):
+                continue
+            for pasta, _, arqs in os.walk(d2):
+                if "node_modules" in pasta or ".next" in pasta:
+                    continue
+                for a in arqs:
+                    try:
+                        novo_mtime = max(novo_mtime, os.path.getmtime(os.path.join(pasta, a)))
+                    except OSError:
+                        pass
+        if novo_mtime:
+            parado = (time.time() - novo_mtime) / 60
+            if parado > 45 and mins is not None:
+                print(f"                 ⚠️  declarou isso, mas não toca em arquivo há {int(parado)} min")
 
     # --- 2. última atividade por branch ---
     print("\n🕒 ÚLTIMO COMMIT POR BRANCH (quem tocou o quê, e quando)")
