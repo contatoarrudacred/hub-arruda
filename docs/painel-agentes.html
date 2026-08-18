@@ -598,8 +598,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 13h50",
- "commit": "11c4b98",
+ "atualizado": "18/08/2026 · 14h45",
+ "commit": "fca9026",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -649,6 +649,24 @@
      "url": "https://hub-arruda.vercel.app/admin/vendas/nova"
     }
    ],
+   "respostas": []
+  },
+  {
+   "id": "cripto-ja-feita",
+   "prazo": "agora",
+   "prazoRot": "❌ Decisão",
+   "titulo": "A criptografia já foi construída — manter ou remover?",
+   "corpo": "Quando você decidiu que não precisava cifrar, era custo futuro. Só que o Marketing <b>já tinha implementado</b> — módulo, testes e uso no repositório — porque estava 7 commits atrás e não viu sua decisão. <b>Manter custa a você um comando</b> (<code>openssl rand -base64 32</code> e colar no .env.local + Vercel). <b>Remover custa retrabalho dele</b> e deixa a senha em texto plano. Como o trabalho já está pago, <b>recomendo manter</b> — mas é sua chamada. A migration dele <b>não foi rodada</b>, então nada está no banco ainda.",
+   "acoes": [],
+   "respostas": []
+  },
+  {
+   "id": "prioridade-crm",
+   "prazo": "agora",
+   "prazoRot": "❌ Decisão",
+   "titulo": "O CRM está livre e quer saber o que puxar",
+   "corpo": "Ele avaliou o pedido do Vendas (captura de parcelas/valores/vencimentos): <b>viável, e mais simples do que parecia</b> — o cálculo de parcelas já existe no código, só está sendo descartado. Falta forma de pagamento detalhada, validar a data e persistir. Ele diz que a fila dele está vazia e perguntou se começa agora. A ordem que combinamos em 16/08 era <b>Kanban → Dashboard de KPIs</b>. O que vem primeiro?",
+   "acoes": [],
    "respostas": []
   },
   {
@@ -762,13 +780,13 @@
    "eu": true,
    "branch": "main · integra, mescla e conversa com os outros — não escreve feature",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ rodando"
+    "tipo": "cuidado",
+    "texto": "⚠️ falhei uma"
    },
    "agora": [
-    "Repassou ao Marketing a decisão de manter a senha do WordPress sem cifra, com o limite registrado pra não virar precedente."
+    "Consertando uma falha própria: mantive esta torre dizendo <b>“aguardando CRM, há 1h32”</b> por mais de uma hora depois de ele ter respondido. Escrevi de cabeça em vez de apurar. Criei <code>scripts/estado-agentes.py</code>, que apura o estado real e acusa incoerência entre a torre e o inbox — foi ele que pegou este erro."
    ],
-   "proxima": "➡️ Esperar você abrir a sessão do CRM e testar as telas de Vendas — são as duas únicas coisas pendentes.",
+   "proxima": "➡️ Sincronizar o Marketing com a main (7 commits atrás) e levar suas duas decisões acima aos agentes.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
@@ -781,7 +799,8 @@
     "✅ Escreveu o protocolo de comunicação e a caixa de entrada de pedidos abertos",
     "✅ Leu a spec da Fase 2 do Marketing por conta própria e achou um problema de arquitetura antes de virar código",
     "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código",
-    "✅ Hook SessionStart + docs/INBOX_AGENTES.md: agente ativo passa a ver na hora que alguém espera por ele"
+    "✅ Hook SessionStart + docs/INBOX_AGENTES.md: agente ativo passa a ver na hora que alguém espera por ele",
+    "⚠️ Falhou em varrer o estado por ~1h — corrigido com apuração automática antes de publicar a torre"
    ],
    "dims": null
   },
@@ -789,42 +808,38 @@
    "nome": "CRM",
    "branch": "main · trabalha direto na raiz, sem worktree",
    "chip": {
-    "tipo": "cuidado",
-    "texto": "⚠️ bola com ele"
+    "tipo": "rodando",
+    "texto": "✅ respondeu 13h24"
    },
    "agora": [
-    "Sinalizou no quadro-branco que não encontrou a mensagem do Vendas — e estava certo. Aguardando ele reler agora que o recado chegou."
+    "Nada em curso — fila vazia. <b>Já respondeu ao Vendas</b> às 13h24: foi no código, confirmou que é viável, mapeou o que falta e fechou o item no inbox. Está esperando você dizer o que puxar."
    ],
-   "proxima": "➡️ Responder ao pedido do Vendas sobre capturar o detalhe do fechamento da venda (parcelas, valores, vencimentos).",
-   "proximaExtra": "Depois disso, a ordem combinada com você em 16/08 segue: Kanban → Dashboard de KPIs.",
+   "proxima": "➡️ Depende de você: a captura de pagamento que o Vendas pediu, ou o Kanban (ordem original).",
+   "proximaExtra": "Ele estimou a captura de pagamento como uma frente do porte da Fase 4 de precificação — não é ajuste pontual.",
    "entregue": [
     "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
     "✅ WhatsApp real via Zapster, funcionando de verdade",
     "✅ Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints",
     "✅ Follow-up automático com cron e e-mail via Resend",
     "✅ Hoje: resgatou o fix do extrator de nome que estava perdido num worktree órfão",
-    "✅ Hoje: cobrou um recado que não tinha chegado, em vez de ficar parado sem dizer nada"
+    "✅ Hoje: cobrou um recado que não tinha chegado, em vez de ficar parado sem dizer nada",
+    "✅ Hoje 13h24: avaliou o pedido do Vendas no código e respondeu seguindo o protocolo novo, sem ninguém cobrar"
    ],
    "dims": {
     "plan": 95,
     "prod": 70
-   },
-   "alerta": {
-    "nivel": "leve",
-    "sinal": "⚠️",
-    "texto": "Estava esperando um recado que <b>nunca tinha chegado nele</b> — o pedido do Vendas foi escrito dentro de outro worktree e não estava na main, então o CRM não tinha como ver. <b>Corrigido:</b> o pedido está na main desde 12h40. Agora a bola está com ele."
    }
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ liberado"
+    "tipo": "cuidado",
+    "texto": "⚠️ 9 commits, base velha"
    },
    "agora": [
-    "Spec e plano da Fase 2 (telas de admin) <b>escritos e commitados</b> — e já registrou no quadro-branco, antes de criar tabela, quais migrations vai precisar.",
-    "Worktree sincronizado com a main e com o build funcionando pela primeira vez."
+    "Construindo a Fase 2: repositório de configuração admin, gating de cota diária e janela de publicação, e instrumentação do log de execução do pipeline.",
+    "9 commits desde 13h08, o último às 14h36 — <b>é o agente mais ativo agora</b>."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
    "proximaExtra": "Criptografia <b>liberada</b> pelo Luiz — fica dentro do módulo dele, cifrada. As migrations da Fase 2 ele escreve, mas <b>não roda</b>: vêm pra mim e eu te trago.",
@@ -838,22 +853,27 @@
    "dims": {
     "plan": 95,
     "prod": 45
+   },
+   "alerta": {
+    "nivel": "leve",
+    "sinal": "⚠️",
+    "texto": "Está <b>produzindo bem</b> (9 commits, o último 14h36: cota diária, janela de publicação, log de execução do pipeline) — mas <b>7 commits atrás da main</b>, então construiu a criptografia sem ter visto sua decisão de não cifrar. <b>Respeitou a regra dura:</b> escreveu a migration e não rodou no banco. Pedi que ele pause essa parte até você decidir acima."
    }
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ rodando"
+    "tipo": "parado",
+    "texto": "⏸ parado desde 12h38"
    },
    "alerta": {
-    "nivel": "grave",
-    "sinal": "❌",
-    "texto": "Está <b>esperando o CRM</b> pra ter os dados completos do fechamento da venda. <b>Não está parado</b>: combinou com você construir uma tela de Fechamento de Venda como solução imediata. Vira travamento de verdade só se o CRM não responder e o paliativo não der conta."
+    "nivel": "leve",
+    "sinal": "⚠️",
+    "texto": "Sem commit desde 12h38 — a sessão dele não está aberta. <b>Boa notícia que ele ainda não sabe:</b> o CRM respondeu o pedido dele e disse que é viável. Quando você abrir a sessão do Vendas, o hook mostra isso."
    },
    "agora": [
-    "Abriu a sub-frente Contrato e mapeou o que falta pra gerar contrato: hoje o bot só salva <code>\"avista\"</code> ou <code>\"parcelado\"</code>, sem parcelas, valores nem vencimentos."
+    "Nada em curso desde 12h38. A tela de Fechamento de Venda está na spec mas ainda não foi construída."
    ],
    "proxima": "➡️ Construir a tela de Fechamento de Venda — parcelas, valores e datas de vencimento.",
    "proximaExtra": "Depois: contrato, assinatura digital e financeiro da venda. As duas últimas dependem da sua decisão sobre Assinafy e Asaas.",
@@ -869,22 +889,15 @@
   }
  ],
  "dependencia": {
-  "rota": "⚠️ 1 pedido aberto · caixa de entrada",
-  "titulo": "Quem está esperando por quem",
+  "rota": "✅ nenhum pedido aberto entre agentes",
+  "titulo": "Ninguém está esperando por ninguém",
   "paragrafos": [
-   "<b>Vendas → CRM · aguardando.</b> O bot precisa capturar parcelas, valores e vencimentos do fechamento — hoje só salva <code>\"avista\"</code> ou <code>\"parcelado\"</code>. O pedido tinha ficado preso dentro do worktree do Vendas e o CRM não conseguia enxergar; trouxe pra main às 12h40 e respondi a ele. O Vendas <b>não está parado</b>: segue com a tela de Fechamento de Venda.",
-   "<b>Coordenador → Marketing · ✅ resolvido.</b> A criptografia fica no módulo do Marketing mesmo, cifrada no banco — o Luiz autorizou guardar a senha de WordPress lá. Meu argumento de cofre transversal estava exagerado e foi retirado: Assinafy, Asaas e as outras 12 chaves seguem em env.local.",
-   "<b>A regra nova que fecha esse buraco:</b> recado só existe quando chega na main; ninguém para esperando resposta (registra, segue pelo caminho alternativo, migra depois); quem recebe responde na mesma sessão, nem que seja \"visto\"; e eu passo a varrer os worktrees em vez de esperar alguém reclamar."
+   "O pedido Vendas → CRM <b>foi respondido às 13h24</b> e fechado no inbox pelo próprio CRM, seguindo o protocolo. O que travou não foi a comunicação entre eles — foi eu, que só li a resposta uma hora depois e deixei esta página afirmando o contrário nesse meio-tempo.",
+   "<b>O que mudei por causa disso:</b> existe agora um comando que apura o estado real (pedidos abertos, último commit de cada agente, divergência dos worktrees) e <b>compara com o que esta torre afirma</b>, acusando incoerência. Não publico mais sem rodar.",
+   "<b>O que continua sendo verdade:</b> agente com a sessão fechada não lê nada. O Vendas está parado desde 12h38 e não sabe que o CRM respondeu — vai descobrir quando você abrir a conversa dele."
   ]
  },
- "esperas": [
-  {
-   "tempo": "1h32",
-   "frio": true,
-   "texto": "O <b>CRM</b> tem um pedido do Vendas esperando desde as 12h18 e a sessão dele não roda desde 12h34. <b>Nenhum arquivo alcança um agente que não está aberto</b> — quando você abrir a sessão do CRM, o hook novo mostra o pedido no primeiro segundo. Não é urgente: o Vendas seguiu pelo caminho alternativo.",
-   "acao": "abrir a sessão do CRM"
-  }
- ]
+ "esperas": []
 }
 </script>
 

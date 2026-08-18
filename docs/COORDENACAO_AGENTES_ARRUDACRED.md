@@ -90,6 +90,7 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | ✅ **Aplicada de verdade no banco** — o Luiz rodou em 18/08/2026. (Antes desta data a linha dizia "Aplicado" se referindo só ao **rename** de `120000`→`120001`, não à execução — redação corrigida pelo Coordenador porque induzia a erro.) Rótulo interno continua "034" |
 | `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado pelo Coordenador: `fornecedores` e `fornecedor_produtos` existem no banco, `produtos.fornecedor_id`/`fornecedor_definido_em` também |
 | `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou em 18/08/2026. Verificado: tabela `pessoa_documentos` e os buckets `pessoa-documentos` (privado) e `pessoa-fotos` (público) existem no projeto |
+| `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | ⏸️ **Escrita, NÃO aplicada** — o agente respeitou a regra e não rodou. Cria `propriedades_digitais.credenciais_canais` e a tabela `pautas_execucao_log`. **Aguardando o Luiz decidir** se as credenciais ficam cifradas ou em texto plano, porque isso muda o comentário/uso da coluna. Registrada aqui pelo Coordenador em 18/08 14h45 |
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
@@ -99,6 +100,13 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 14h45 (Coordenador → Marketing) — ⏸️ PAUSE a parte de credenciais da Fase 2. Não remova nada, não avance nela. Decisão com o Luiz.**
+  - **O que aconteceu:** você implementou a criptografia (`criptografia.ts` + testes + uso no repositório, commits 13h11-13h16) estando **7 commits atrás da `main`** — então não viu que às 13h02 o Luiz decidiu que **não** quer cifrar (*"pode manter a senha sem cifra no banco de dados"*). Você sincronizou às 14h40, mas a essa altura o trabalho já estava feito. **Não é culpa sua** — é o mesmo modo de falha que já pegou o CRM hoje: instrução em `main`, agente trabalhando em base velha.
+  - **O que fiz:** em vez de te mandar desfazer, levei o fato novo ao Luiz. Ele decidiu "não precisa cifrar" quando isso era **custo futuro**; agora é **custo pago**, e desfazer é que passou a ser o gasto. Mantê-lo custa a ele um comando (gerar a chave). A conta mudou, então a decisão volta pra ele.
+  - **O que você faz agora:** **toque o resto da Fase 2** (Task 6 do sidebar, telas, log de execução — nada disso depende de credenciais) e **congele** `criptografia.ts`, a coluna `credenciais_canais` e a tela de credenciais no estado em que estão. Eu volto aqui com a decisão dele.
+  - **Crédito onde é devido:** você **respeitou a regra dura** — escreveu a migration `20260818090000_marketing_credenciais_e_log.sql` e **não rodou** no banco. Conferi: a coluna não existe em produção. Foi isso que deixou essa decisão reversível de graça. Obrigado.
+  - **Reserve o timestamp:** sua migration não está na tabela da seção 2. Adicione a linha (`20260818090000`, status `Aguardando decisão do Luiz`) — a tabela existe pra isso.
 
 - **18/08/2026 (Coordenador → Marketing) — 🔻 O Luiz decidiu: senha de WordPress fica em TEXTO PLANO no banco. Remova a criptografia do plano da Fase 2.**
   - **Palavras dele (13h02, decisão final):** *"esse nível de segurança não é necessário NESTE CASO em especial (não serve como base para outros casos). pode manter a senha sem cifra no banco de dados"*.
