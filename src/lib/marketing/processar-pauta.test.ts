@@ -65,6 +65,44 @@ describe("processarProximaPauta", () => {
     expect(adaptadorFalso.aprovarPublicar).toHaveBeenCalledWith("123");
   });
 
+  it("mantém o resultado publicado sem reprovar quando o registro pós-publicação falha", async () => {
+    // Regressão do bug de janela de publicação duplicada: se aprovarPublicar já teve sucesso
+    // (post no ar) mas atualizarStatusPost falhar depois, NÃO pode cair em registrarReprovacaoPauta
+    // — isso devolveria a pauta pra fila e geraria um segundo artigo publicado no próximo ciclo.
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      titulo: "Como Limpar o Nome no Serasa",
+      conteudoHtml: "<h1>...</h1>",
+      metaTitle: "Como Limpar Nome no Serasa",
+      metaDescription: "Guia completo.",
+      slug: "como-limpar-nome-serasa",
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({ aprovado: true, score: 92, motivo: null });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    vi.spyOn(repositorio, "atualizarStatusPost").mockRejectedValue(new Error("Falha ao gravar no banco"));
+    const marcarPublicadaSpy = vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+    expect(reprovarSpy).not.toHaveBeenCalled();
+    expect(marcarPublicadaSpy).not.toHaveBeenCalled();
+    expect(erroSpy).toHaveBeenCalled();
+
+    erroSpy.mockRestore();
+  });
+
   it("reprova sem publicar quando o score da revisão é baixo", async () => {
     vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
     vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);

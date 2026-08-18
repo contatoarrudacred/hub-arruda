@@ -58,11 +58,24 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     }
 
     const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
-    await atualizarStatusPost(post.id, "publicado", {
-      canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
-      publicadoEm: new Date().toISOString(),
-    });
-    await marcarPautaPublicada(pauta.id);
+
+    // A partir daqui o post JÁ ESTÁ no ar no WordPress — se o registro local (atualizarStatusPost/
+    // marcarPautaPublicada) falhar, NÃO podemos cair no catch/registrarReprovacaoPauta: isso
+    // devolveria a pauta pra fila e geraria um segundo artigo publicado no próximo ciclo
+    // (duplicidade real, ruim pra SEO). Um registro local desatualizado é um problema bem menor
+    // do que conteúdo duplicado — por isso só logamos, sem reprovar.
+    try {
+      await atualizarStatusPost(post.id, "publicado", {
+        canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
+        publicadoEm: new Date().toISOString(),
+      });
+      await marcarPautaPublicada(pauta.id);
+    } catch (erroPosPublicacao) {
+      console.error(
+        `Pauta ${pauta.id} publicada em ${publicado.urlPublicada}, mas falhou ao registrar localmente:`,
+        erroPosPublicacao,
+      );
+    }
 
     return { status: "publicado" as const, url: publicado.urlPublicada };
   } catch (erro) {
