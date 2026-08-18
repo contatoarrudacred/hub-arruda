@@ -1,6 +1,6 @@
 # Status — Vendas
 
-tarefa: Sub-frente Contrato — geração de PDF do contrato (puppeteer-core + @sparticuz/chromium)
-desde: 2026-08-18T18:16:19-03:00
-proxima: Config do signatário ArrudaCred, depois tela de Fechamento de Venda (paliativo de prazo curto — CRM já assumiu a captura como prioridade 1, antes do Kanban — não superdimensionar)
+tarefa: Sub-frente Contrato — geração de PDF (Task 6) e editor HTML rico TipTap do template de contrato (Task 6a/6b, decisão nova do Luiz — editor não é markdown, é HTML rico com tabela/imagem/formatação)
+desde: 2026-08-18T19:05:00-03:00
+proxima: Task 7 (config signatário ArrudaCred), depois Task 8 (Fechamento de Venda — paliativo de prazo curto, mas agora também confere RG/estado civil/profissão/endereço do signatário antes de gerar contrato)
 bloqueio:
