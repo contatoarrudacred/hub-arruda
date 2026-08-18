@@ -1,14 +1,17 @@
 import "server-only";
 import type { AdaptadorCanal, ConteudoCanal, ResultadoPublicacao, ResultadoRascunho, ResultadoVerificacao } from "./tipos";
 
-function credenciaisBasicAuth(): string {
-  const usuario = process.env.WORDPRESS_USUARIO;
-  const senha = process.env.WORDPRESS_SENHA_APP;
-  if (!usuario || !senha) throw new Error("WORDPRESS_USUARIO/WORDPRESS_SENHA_APP não configuradas.");
-  return Buffer.from(`${usuario}:${senha}`).toString("base64");
+export type CredenciaisWordPress = { usuario: string; senhaApp: string };
+
+function credenciaisBasicAuth(credenciais: CredenciaisWordPress): string {
+  if (!credenciais.usuario || !credenciais.senhaApp) throw new Error("Credenciais de WordPress (usuario/senhaApp) não configuradas.");
+  return Buffer.from(`${credenciais.usuario}:${credenciais.senhaApp}`).toString("base64");
 }
 
-export function criarAdaptadorWordPress(urlBase: string): AdaptadorCanal {
+// Recebe as credenciais como parâmetro em vez de ler process.env diretamente — com mais de um
+// site (ex.: roadmap vozdocredito.com.br), credenciais globais vazariam a senha do site A pro
+// host do site B. O chamador (processar-pauta.ts) monta as credenciais por propriedade.
+export function criarAdaptadorWordPress(urlBase: string, credenciais: CredenciaisWordPress): AdaptadorCanal {
   const baseApi = `${urlBase.replace(/\/$/, "")}/wp-json/wp/v2`;
 
   async function chamarApi(caminho: string, corpo: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -16,7 +19,7 @@ export function criarAdaptadorWordPress(urlBase: string): AdaptadorCanal {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Basic ${credenciaisBasicAuth()}`,
+        Authorization: `Basic ${credenciaisBasicAuth(credenciais)}`,
       },
       body: JSON.stringify(corpo),
     });
@@ -38,7 +41,7 @@ export function criarAdaptadorWordPress(urlBase: string): AdaptadorCanal {
 
     async verificarRascunho(idRemoto: string): Promise<ResultadoVerificacao> {
       const resposta = await fetch(`${baseApi}/posts/${idRemoto}`, {
-        headers: { Authorization: `Basic ${credenciaisBasicAuth()}` },
+        headers: { Authorization: `Basic ${credenciaisBasicAuth(credenciais)}` },
       });
       if (!resposta.ok) return { ok: false, detalhes: `REST API respondeu ${resposta.status}` };
       const post = (await resposta.json()) as { status: string; content?: { rendered?: string } };

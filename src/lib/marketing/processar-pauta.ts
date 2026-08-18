@@ -9,7 +9,7 @@
 import { selecionarPauta } from "./estrategista";
 import { gerarConteudo } from "./escritor";
 import { revisarConteudo } from "./revisor";
-import { criarAdaptadorWordPress } from "./canais/wordpress";
+import { criarAdaptadorWordPress, type CredenciaisWordPress } from "./canais/wordpress";
 import {
   atualizarStatusPost,
   carregarChecklistAtivo,
@@ -19,6 +19,25 @@ import {
   marcarPautaPublicada,
   registrarReprovacaoPauta,
 } from "./repositorio";
+
+// Nome de variável de ambiente não aceita hífen, daí a troca por underscore. Cai pro par
+// genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP quando a propriedade ainda não tem credencial
+// própria configurada (hoje só existe uma propriedade; o roadmap prevê um segundo site,
+// vozdocredito.com.br, cuja senha não pode vazar pro host desta propriedade).
+function credenciaisWordPressDaPropriedade(propriedadeId: string): CredenciaisWordPress {
+  const sufixo = propriedadeId.replace(/-/g, "_");
+  const usuario = process.env[`WORDPRESS_USUARIO_${sufixo}`];
+  const senhaApp = process.env[`WORDPRESS_SENHA_APP_${sufixo}`];
+  if (usuario && senhaApp) return { usuario, senhaApp };
+
+  console.warn(
+    `Propriedade ${propriedadeId} sem credencial WordPress própria (WORDPRESS_USUARIO_${sufixo}/WORDPRESS_SENHA_APP_${sufixo}); usando fallback genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP.`,
+  );
+  return {
+    usuario: process.env.WORDPRESS_USUARIO ?? "",
+    senhaApp: process.env.WORDPRESS_SENHA_APP ?? "",
+  };
+}
 
 export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
   const propriedade = await carregarPropriedade(propriedadeId);
@@ -41,7 +60,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     }
 
     const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
-    const adaptador = criarAdaptadorWordPress(propriedade.urlBase);
+    const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
     const rascunho = await adaptador.criarRascunho({
       titulo: conteudo.titulo,
       corpoHtml: conteudo.conteudoHtml,
