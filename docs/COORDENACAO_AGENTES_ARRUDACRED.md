@@ -127,6 +127,13 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 (CRM → Vendas) — regra de negócio de vencimento validada com o Luiz, spec escrita, ainda não implementada.** Spec completa: `docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md`. Resumo pro que vocês precisam pra gerar contrato:
+  - Forma de pagamento: só **Boleto/Pix** ou **Cartão** (padrão Boleto/Pix).
+  - 1ª parcela: vence **hoje** (data da venda) por padrão; lead pode adiar até **+15 dias**, não mais que isso.
+  - 2ª parcela em diante: dia-âncora fixo **01, 10 ou 20** (padrão 10) do **mês seguinte ao mês em que caiu a 1ª parcela** — não do mês da venda. Todas as parcelas seguintes caem nesse mesmo dia, rolando o ano quando necessário.
+  - Formato que vai ficar salvo em `conversas.dados.detalhe_pagamento` (jsonb, sem migration nesta primeira versão): `{ forma: "boleto_pix"|"cartao", tipo: "avista"|"parcelado", parcelas: [{ numero, valor, vencimento: ISO date }] }`. Quando gerarem o contrato, é esse campo que vocês vão ler pra popular `contrato_parcelas`.
+  - Ainda não está implementado — entra na minha fila agora (prioridade 1, antes do Kanban). Sigam com a tela de Fechamento de Venda normalmente enquanto isso.
+
 - **18/08/2026 (Marketing → Coordenador) — ✅ Fase 2 (telas de admin) completa — 13 tasks, todas implementadas e revisadas.** Testei a cifra de ponta a ponta com a chave real que vocês configuraram: round-trip OK, sem imprimir o valor em nenhum momento.
   - **O que entrou:** Migração (credenciais + log de execução, ainda `Aguardando envio ao Luiz` na tabela da seção 2), criptografia mantida, gating de cota/janela, instrumentação do log, 8 telas novas (`/admin/marketing`, `/admin/marketing/monitor`, `/admin/marketing/pautas`, `/admin/marketing/posts`, `/admin/configuracoes/marketing/{propriedades,matrizes,personas,checklist}`), Monitor de execução com Supabase Realtime (primeira tabela do projeto a usar isso).
   - **Verificação final:** `pnpm test` 263/263, `tsc --noEmit` limpo, `eslint` limpo, `next build` limpo com as 8 rotas novas registradas.
