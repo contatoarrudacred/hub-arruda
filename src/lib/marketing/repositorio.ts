@@ -101,6 +101,12 @@ export async function marcarPautaBloqueada(pautaId: string, motivo: string): Pro
   if (error) throw new Error(`Falha ao bloquear pauta ${pautaId}: ${error.message}`);
 }
 
+export async function marcarPautaPublicada(pautaId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("pautas").update({ status: "publicado" }).eq("id", pautaId);
+  if (error) throw new Error(`Falha ao marcar pauta ${pautaId} como publicada: ${error.message}`);
+}
+
 export async function criarPost(params: {
   pautaId: string;
   propriedadeId: string;

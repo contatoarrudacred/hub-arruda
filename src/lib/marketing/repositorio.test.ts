@@ -1,7 +1,7 @@
 // src/lib/marketing/repositorio.test.ts
 import { describe, expect, it } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { selecionarProximaPautaPendente } from "./repositorio";
+import { marcarPautaPublicada, selecionarProximaPautaPendente } from "./repositorio";
 
 async function criarPropriedadeDeTeste() {
   const supabase = createAdminClient();
@@ -64,5 +64,28 @@ describe("selecionarProximaPautaPendente", () => {
     const { matrizId } = await criarPropriedadeDeTeste();
     const selecionada = await selecionarProximaPautaPendente(matrizId);
     expect(selecionada).toBeNull();
+  });
+});
+
+describe("marcarPautaPublicada", () => {
+  it("marca a pauta como publicada", async () => {
+    const { matrizId } = await criarPropriedadeDeTeste();
+    const supabase = createAdminClient();
+    const { data: pauta } = await supabase
+      .from("pautas")
+      .insert({
+        matriz_conteudo_id: matrizId,
+        palavra_chave_principal: "teste publicacao",
+        angulo: "informacional_direto",
+        funil: "topo",
+        status: "em_producao",
+      })
+      .select("id")
+      .single();
+
+    await marcarPautaPublicada(pauta!.id);
+
+    const { data: atualizada } = await supabase.from("pautas").select("status").eq("id", pauta!.id).single();
+    expect(atualizada?.status).toBe("publicado");
   });
 });
