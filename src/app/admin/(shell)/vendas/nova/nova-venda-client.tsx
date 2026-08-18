@@ -23,6 +23,7 @@ export function NovaVendaClient({ produtos }: { produtos: Produto[] }) {
   const [endereco, setEndereco] = useState<ValorEndereco>(enderecoVazio);
   const [erro, setErro] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ oportunidadeId: string; pessoaId: string } | null>(null);
+  const [criando, setCriando] = useState(false);
   const buscaIdRef = useRef(0);
   const buscaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -44,28 +45,33 @@ export function NovaVendaClient({ produtos }: { produtos: Produto[] }) {
 
   async function criarVenda() {
     setErro(null);
-    const resultadoAction = await criarVendaSemFunilPrevioAction({
-      pessoaId: pessoaEncontrada?.id ?? null,
-      pessoaNova: pessoaEncontrada ? null : { nome: nomeNovaPessoa, documento },
-      produtoId,
-      valorEstimado: valorEstimado ? Number(valorEstimado) : null,
-      endereco: endereco.cep
-        ? {
-            cep: endereco.cep,
-            logradouro: endereco.logradouro,
-            numero: endereco.numero,
-            complemento: endereco.complemento || null,
-            bairro: endereco.bairro,
-            cidade: endereco.cidade,
-            uf: endereco.uf,
-          }
-        : null,
-    });
-    if (!resultadoAction.sucesso) {
-      setErro(resultadoAction.erro);
-      return;
+    setCriando(true);
+    try {
+      const resultadoAction = await criarVendaSemFunilPrevioAction({
+        pessoaId: pessoaEncontrada?.id ?? null,
+        pessoaNova: pessoaEncontrada ? null : { nome: nomeNovaPessoa, documento },
+        produtoId,
+        valorEstimado: valorEstimado ? Number(valorEstimado) : null,
+        endereco: endereco.cep
+          ? {
+              cep: endereco.cep,
+              logradouro: endereco.logradouro,
+              numero: endereco.numero,
+              complemento: endereco.complemento || null,
+              bairro: endereco.bairro,
+              cidade: endereco.cidade,
+              uf: endereco.uf,
+            }
+          : null,
+      });
+      if (!resultadoAction.sucesso) {
+        setErro(resultadoAction.erro);
+        return;
+      }
+      setResultado({ oportunidadeId: resultadoAction.oportunidadeId, pessoaId: resultadoAction.pessoaId });
+    } finally {
+      setCriando(false);
     }
-    setResultado({ oportunidadeId: resultadoAction.oportunidadeId, pessoaId: resultadoAction.pessoaId });
   }
 
   if (resultado) {
@@ -138,8 +144,12 @@ export function NovaVendaClient({ produtos }: { produtos: Produto[] }) {
       <CampoEndereco value={endereco} onChange={setEndereco} />
 
       {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
-      <button onClick={criarVenda} className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-        Criar venda
+      <button
+        onClick={criarVenda}
+        disabled={criando}
+        className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+      >
+        {criando ? "Criando..." : "Criar venda"}
       </button>
     </div>
   );

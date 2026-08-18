@@ -44,7 +44,12 @@ export function UploadDocumentosPessoa({ pessoaId }: { pessoaId: string }) {
   }
 
   async function excluir(id: string) {
-    await excluirDocumentoPessoaAction(id);
+    setErro(null);
+    const resultado = await excluirDocumentoPessoaAction(id);
+    if (!resultado.sucesso) {
+      setErro(resultado.erro);
+      return;
+    }
     setDocumentos((atual) => atual.filter((d) => d.id !== id));
   }
 

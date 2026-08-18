@@ -62,7 +62,50 @@ export async function salvarFornecedor(entrada: EntradaSalvarFornecedor): Promis
   }
   const { data, error } = await supabase.from("fornecedores").insert(linha).select("id").single();
   if (error) throw new Error(`Falha ao criar fornecedor: ${error.message}`);
+
+  // O design (spec seção 3.1) define `fornecedores` como extensão de
+  // `pessoa_papeis.tipo_papel = 'fornecedor'` — é essa linha que carrega o escopo por
+  // unidade de negócio (`fornecedores` não tem `unidade_negocio_id` próprio). Só roda no
+  // CREATE: um fornecedor já existente já tem seu papel. Best-effort: não deixa a criação
+  // do fornecedor falhar por causa disso.
+  await garantirPapelFornecedor(entrada.pessoaId);
+
   return { id: data.id };
+}
+
+async function garantirPapelFornecedor(pessoaId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: unidade, error: erroUnidade } = await supabase
+    .from("unidades_negocio")
+    .select("id")
+    .eq("nome", "ArrudaCred")
+    .single();
+  if (erroUnidade || !unidade) {
+    console.error("Falha ao localizar unidade de negócio 'ArrudaCred' para papel de fornecedor:", erroUnidade?.message);
+    return;
+  }
+
+  const { data: papelExistente, error: erroBusca } = await supabase
+    .from("pessoa_papeis")
+    .select("id")
+    .eq("pessoa_id", pessoaId)
+    .eq("unidade_negocio_id", unidade.id)
+    .eq("tipo_papel", "fornecedor")
+    .eq("status", "ativo")
+    .maybeSingle();
+  if (erroBusca) {
+    console.error("Falha ao checar papel de fornecedor:", erroBusca.message);
+    return;
+  }
+  if (papelExistente) return;
+
+  const { error: erroInsert } = await supabase
+    .from("pessoa_papeis")
+    .insert({ pessoa_id: pessoaId, unidade_negocio_id: unidade.id, tipo_papel: "fornecedor" });
+  if (erroInsert) {
+    console.error("Falha ao criar papel de fornecedor:", erroInsert.message);
+  }
 }
 
 export async function excluirFornecedor(id: string): Promise<void> {

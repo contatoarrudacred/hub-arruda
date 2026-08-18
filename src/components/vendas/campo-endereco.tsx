@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { formatarCep, normalizarCep } from "@/lib/vendas/mascaras";
 import { buscarEnderecoPorCepAction } from "./campo-endereco-actions";
 
@@ -25,15 +26,24 @@ const campo =
 const rotulo = "text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
 export function CampoEndereco({ value, onChange }: { value: ValorEndereco; onChange: (v: ValorEndereco) => void }) {
-  async function aoMudarCep(cepDigitado: string) {
-    const cepFormatado = formatarCep(cepDigitado);
-    onChange({ ...value, cep: cepFormatado });
+  // Espelha o `value` atual (prop controlada) para que o merge da resposta do ViaCEP,
+  // que pode chegar bem depois do usuário já ter digitado número/complemento, leia o
+  // estado mais recente em vez do `value` capturado no fechamento no início da busca.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
-    if (normalizarCep(cepFormatado).length !== 8) return;
+  const buscaIdRef = useRef(0);
+  const buscaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function buscarCep(cepFormatado: string) {
+    const idAtual = ++buscaIdRef.current;
     const encontrado = await buscarEnderecoPorCepAction(cepFormatado);
+    if (idAtual !== buscaIdRef.current) return; // uma busca de CEP mais recente já foi disparada, descarta esta resposta
     if (encontrado) {
       onChange({
-        ...value,
+        ...valueRef.current,
         cep: cepFormatado,
         logradouro: encontrado.logradouro,
         bairro: encontrado.bairro,
@@ -41,6 +51,17 @@ export function CampoEndereco({ value, onChange }: { value: ValorEndereco; onCha
         uf: encontrado.uf,
       });
     }
+  }
+
+  function aoMudarCep(cepDigitado: string) {
+    const cepFormatado = formatarCep(cepDigitado);
+    onChange({ ...value, cep: cepFormatado });
+
+    if (buscaTimeoutRef.current) clearTimeout(buscaTimeoutRef.current);
+    if (normalizarCep(cepFormatado).length !== 8) return;
+    buscaTimeoutRef.current = setTimeout(() => {
+      buscarCep(cepFormatado);
+    }, 300);
   }
 
   return (

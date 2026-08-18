@@ -32,20 +32,31 @@ export async function salvarFornecedorAction(
     return { sucesso: false, erro: pessoa.erro };
   }
 
-  const resultado = await salvarFornecedorRepo({ ...entrada, pessoaId: pessoa.pessoaId });
+  try {
+    const resultado = await salvarFornecedorRepo({ ...entrada, pessoaId: pessoa.pessoaId });
 
-  if (entrada.endereco && entrada.endereco.cep) {
-    await salvarEndereco({ ...entrada.endereco, pessoaId: pessoa.pessoaId, tipo: "comercial" });
+    if (entrada.endereco && entrada.endereco.cep) {
+      await salvarEndereco({ ...entrada.endereco, pessoaId: pessoa.pessoaId, tipo: "comercial" });
+    }
+
+    revalidatePath("/admin/fornecedores");
+    return { sucesso: true, id: resultado.id, pessoaId: pessoa.pessoaId };
+  } catch {
+    return {
+      sucesso: false,
+      erro: "Falha ao salvar fornecedor. Verifique se essa pessoa já não está cadastrada como fornecedor.",
+    };
   }
-
-  revalidatePath("/admin/fornecedores");
-  return { sucesso: true, id: resultado.id, pessoaId: pessoa.pessoaId };
 }
 
 export type ResultadoExcluirFornecedor = { sucesso: true } | { sucesso: false; erro: string };
 
 export async function excluirFornecedorAction(id: string): Promise<ResultadoExcluirFornecedor> {
-  await excluirFornecedorRepo(id);
-  revalidatePath("/admin/fornecedores");
-  return { sucesso: true };
+  try {
+    await excluirFornecedorRepo(id);
+    revalidatePath("/admin/fornecedores");
+    return { sucesso: true };
+  } catch {
+    return { sucesso: false, erro: "Falha ao excluir fornecedor." };
+  }
 }

@@ -33,14 +33,18 @@ export async function criarVendaSemFunilPrevioAction(entrada: EntradaCriarVenda)
     return { sucesso: false, erro: "Selecione um Serviço." };
   }
 
-  if (entrada.endereco && entrada.endereco.cep) {
-    await salvarEndereco({ ...entrada.endereco, pessoaId: pessoa.pessoaId, tipo: "residencial" });
-  }
+  try {
+    if (entrada.endereco && entrada.endereco.cep) {
+      await salvarEndereco({ ...entrada.endereco, pessoaId: pessoa.pessoaId, tipo: "residencial" });
+    }
 
-  const resultado = await criarOportunidadeSemFunilPrevio({
-    pessoaId: pessoa.pessoaId,
-    produtoId: entrada.produtoId,
-    valorEstimado: entrada.valorEstimado,
-  });
-  return { sucesso: true, oportunidadeId: resultado.oportunidadeId, pessoaId: pessoa.pessoaId };
+    const resultado = await criarOportunidadeSemFunilPrevio({
+      pessoaId: pessoa.pessoaId,
+      produtoId: entrada.produtoId,
+      valorEstimado: entrada.valorEstimado,
+    });
+    return { sucesso: true, oportunidadeId: resultado.oportunidadeId, pessoaId: pessoa.pessoaId };
+  } catch {
+    return { sucesso: false, erro: "Falha ao criar a venda. Tente novamente." };
+  }
 }

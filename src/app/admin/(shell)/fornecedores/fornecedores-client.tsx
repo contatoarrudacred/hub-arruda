@@ -30,6 +30,7 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
   const [endereco, setEndereco] = useState<ValorEndereco>(enderecoVazio);
   const [erro, setErro] = useState<string | null>(null);
   const [pessoaIdSalva, setPessoaIdSalva] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
   const buscaIdRef = useRef(0);
   const buscaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -51,29 +52,34 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
 
   async function salvar() {
     setErro(null);
-    const resultado = await salvarFornecedorAction({
-      id: null,
-      pessoaId: pessoaSelecionada?.id ?? "",
-      categoria,
-      ativo: true,
-      pessoaNova: pessoaSelecionada ? null : { nome: nomeNovaPessoa, documento: documentoBusca },
-      endereco: endereco.cep
-        ? {
-            cep: endereco.cep,
-            logradouro: endereco.logradouro,
-            numero: endereco.numero,
-            complemento: endereco.complemento || null,
-            bairro: endereco.bairro,
-            cidade: endereco.cidade,
-            uf: endereco.uf,
-          }
-        : null,
-    });
-    if (!resultado.sucesso) {
-      setErro(resultado.erro);
-      return;
+    setSalvando(true);
+    try {
+      const resultado = await salvarFornecedorAction({
+        id: null,
+        pessoaId: pessoaSelecionada?.id ?? "",
+        categoria,
+        ativo: true,
+        pessoaNova: pessoaSelecionada ? null : { nome: nomeNovaPessoa, documento: documentoBusca },
+        endereco: endereco.cep
+          ? {
+              cep: endereco.cep,
+              logradouro: endereco.logradouro,
+              numero: endereco.numero,
+              complemento: endereco.complemento || null,
+              bairro: endereco.bairro,
+              cidade: endereco.cidade,
+              uf: endereco.uf,
+            }
+          : null,
+      });
+      if (!resultado.sucesso) {
+        setErro(resultado.erro);
+        return;
+      }
+      setPessoaIdSalva(resultado.pessoaId);
+    } finally {
+      setSalvando(false);
     }
-    setPessoaIdSalva(resultado.pessoaId);
   }
 
   function fecharNovo() {
@@ -87,7 +93,11 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
   }
 
   async function excluir(id: string) {
-    await excluirFornecedorAction(id);
+    const resultado = await excluirFornecedorAction(id);
+    if (!resultado.sucesso) {
+      setErro(resultado.erro);
+      return;
+    }
     setFornecedores((atual) => atual.filter((f) => f.id !== id));
   }
 
@@ -157,8 +167,12 @@ export function FornecedoresClient({ fornecedoresIniciais }: { fornecedoresInici
 
           {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
           <div className="flex gap-2">
-            <button onClick={salvar} className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-              Salvar
+            <button
+              onClick={salvar}
+              disabled={salvando}
+              className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+            >
+              {salvando ? "Salvando..." : "Salvar"}
             </button>
             <button onClick={() => setFormAberto(false)} className="rounded-full px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400">
               Cancelar

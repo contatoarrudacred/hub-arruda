@@ -35,8 +35,14 @@ export async function enviarDocumentoPessoaAction(formData: FormData): Promise<R
   }
 }
 
-export async function excluirDocumentoPessoaAction(id: string): Promise<void> {
-  await excluirDocumentoPessoaRepo(id);
+export type ResultadoExcluirDocumento = { sucesso: true } | { sucesso: false; erro: string };
+
+export async function excluirDocumentoPessoaAction(id: string): Promise<ResultadoExcluirDocumento> {
+  try {
+    return await excluirDocumentoPessoaRepo(id);
+  } catch {
+    return { sucesso: false, erro: "Falha ao excluir documento. Tente novamente." };
+  }
 }
 
 export async function buscarFotoMaisRecenteAction(pessoaId: string): Promise<string | null> {
