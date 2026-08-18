@@ -220,7 +220,7 @@ Mesmo padrão `page.tsx`/`actions.ts`/`*-client.tsx`. Client usa `EditorHtmlCont
 
 ## Task 7: Config `pessoa_arrudacred_signatario_id`
 
-**Files:** nenhum arquivo novo — só uma linha em `configuracoes` (`chave: 'contrato_arrudacred_signatario'`, `valor: {"pessoa_id": "..."}`) que o Luiz preenche manualmente via `/admin/configuracoes` já existente.
+**Status: ✅ nada a codar** — `buscarPessoaArrudaCredSignatario()` (Task 5) já lê a chave `contrato_arrudacred_signatario` de `configuracoes`. Falta só o Luiz preencher o valor manualmente via `/admin/configuracoes` já existente (`valor: {"pessoa_id": "..."}`) — registrado como lembrete no quadro-branco, não bloqueia o resto da sub-frente.
 
 ## Task 8: Tela de Fechamento de Venda
 
