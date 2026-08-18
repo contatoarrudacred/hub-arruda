@@ -32,6 +32,11 @@ const GRUPO_GERAL: ItemMenu[] = [
   { rotulo: "Configurações gerais", href: "/admin/configuracoes" },
 ];
 
+const GRUPO_VENDAS: ItemMenu[] = [
+  { rotulo: "Nova venda", href: "/admin/vendas/nova" },
+  { rotulo: "Fornecedores", href: "/admin/fornecedores" },
+];
+
 function ItemNav({ item, pathname }: { item: ItemMenu; pathname: string }) {
   if ("emBreve" in item) {
     return (
@@ -91,6 +96,13 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
         Geral
       </p>
       {GRUPO_GERAL.map((item) => (
+        <ItemNav key={item.rotulo} item={item} pathname={pathname} />
+      ))}
+
+      <p className="px-2.5 pt-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-white/30">
+        Vendas
+      </p>
+      {GRUPO_VENDAS.map((item) => (
         <ItemNav key={item.rotulo} item={item} pathname={pathname} />
       ))}
 
