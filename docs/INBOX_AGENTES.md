@@ -10,15 +10,13 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **CRM** | Coordenador | 18/08 17h45 | ✋ **Correção de registro:** não houve inversão de prioridade. Sempre foi **Atendimento > Kanban > Dashboard** — eu é que perguntei errado ao Luiz, deixando o Atendimento fora das opções. Sua ordem de trabalho não muda; só o registro | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 17h45 |
 | **Vendas** | Coordenador | 18/08 17h45 | ⚠️ **Revisão do que eu disse às 15h10:** a captura de pagamento faz parte do Atendimento, que é a 1ª prioridade — ela vem **antes** do Kanban, não depois. A tela de Fechamento de Venda é paliativo de prazo mais curto do que eu indiquei; **não superdimensione** | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 17h45 |
-
-*(nada aberto — todos os pedidos de hoje foram respondidos)*
 
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| CRM | Coordenador | 18/08 (CRM) | Correção de registro (não houve inversão de prioridade, sempre foi Atendimento primeiro) — visto, sem mudança de ação |
 | Marketing | Coordenador | 18/08 15h40 | Chave `MARKETING_CREDENCIAIS_CHAVE` — entregue nos 3 lugares; ele testou a cifra de ponta a ponta |
 | CRM | Coordenador | 18/08 15h10 | Prioridade Kanban → Dashboard de KPIs — **visto, confirmado, começou o Kanban** |
 | Vendas | Coordenador | 18/08 15h10 | Fechamento de Venda deixou de ser paliativo — registrado, construindo como solução de verdade |
