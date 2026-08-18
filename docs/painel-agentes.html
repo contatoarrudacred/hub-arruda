@@ -213,6 +213,18 @@
     font-size: 11px;
     color: var(--texto-suave);
   }
+  .luiz > header .cab-dir {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .luiz > header .ver-feitos {
+    background: transparent;
+    border-color: var(--linha-forte);
+    color: var(--texto-suave);
+  }
+  .luiz > header .ver-feitos:hover { border-color: var(--ouro); color: var(--ouro); }
 
   .tarefas { list-style: none; margin: 0; padding: 0; }
   .tarefas > li {
@@ -223,6 +235,9 @@
     border-bottom: 1px solid var(--linha);
   }
   .tarefas > li:last-child { border-bottom: 0; }
+  /* `display: grid` acima vence o [hidden] do navegador — sem esta linha,
+     esconder um item não funcionaria. */
+  .tarefas > li[hidden] { display: none; }
   .tarefas .quando {
     font-family: var(--mono);
     font-size: 10px;
@@ -247,6 +262,37 @@
     text-decoration: line-through;
     text-decoration-color: var(--linha-forte);
     font-weight: 500;
+  }
+
+  /* itens concluídos vêm fechados — clicar abre. Ocupam uma linha só. */
+  .tarefas details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 1px 0;
+  }
+  .tarefas details > summary::-webkit-details-marker { display: none; }
+  .tarefas details > summary::before {
+    content: "▸";
+    font-size: 11px;
+    color: var(--texto-fraco);
+    flex: none;
+    transition: transform .12s ease;
+  }
+  .tarefas details[open] > summary::before { content: "▾"; }
+  .tarefas details > summary:hover .titulo { color: var(--texto-suave); }
+  .tarefas details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .tarefas details > summary .resumo {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--texto-fraco);
+    flex: none;
+  }
+  .tarefas details .detalhe { padding-top: 4px; }
+  @media (prefers-reduced-motion: reduce) {
+    .tarefas details > summary::before { transition: none; }
   }
 
   .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; align-items: center; }
@@ -314,6 +360,39 @@
   }
   .respostas .fala { white-space: pre-wrap; }
   .respostas li.doCoord { background: var(--surface-2); border-left-color: var(--linha-forte); }
+
+  /* relógio de espera — quem está parado esperando, e há quanto tempo */
+  .espera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    background: var(--atencao-fundo);
+    border: 1px solid var(--atencao);
+    border-left: 5px solid var(--atencao);
+    box-shadow: var(--sombra);
+    padding: 12px 16px;
+  }
+  .espera.frio { background: var(--trava-fundo); border-color: var(--trava); border-left-color: var(--trava); }
+  .espera .relogio {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--atencao);
+    flex: none;
+  }
+  .espera.frio .relogio { color: var(--trava); }
+  .espera .quem { font-size: 13.5px; line-height: 1.5; flex: 1 1 320px; }
+  .espera .quem b { font-weight: 700; }
+  .espera .acao {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--texto-suave);
+    border: 1px dashed var(--linha-forte);
+    padding: 4px 9px;
+    flex: none;
+  }
 
   /* ---------- grade de agentes ---------- */
 
@@ -519,8 +598,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 13h30",
- "commit": "5c89dae",
+ "atualizado": "18/08/2026 · 13h50",
+ "commit": "11c4b98",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -603,12 +682,23 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "logo",
-   "prazoRot": "⚠️ Voltou pra fila",
-   "titulo": "Gerar a chave de criptografia das credenciais",
-   "corpo": "Como você autorizou guardar a senha do WordPress no banco, essa chave <b>voltou a ser necessária</b> — é ela que cifra e decifra. Gere com entropia de verdade (<code>openssl rand -base64 32</code>), nunca frase digitada à mão, e guarde num lugar seguro: <b>se ela se perder, as senhas salvas viram lixo irrecuperável</b> e você recadastra tudo. Precisa ficar no <code>.env.local</code> e na Vercel. Só me avise quando estiver feito — <b>não me mande a chave</b>, nem aqui nem pelo chat.",
+   "prazo": "feito",
+   "prazoRot": "✅ Cancelada",
+   "titulo": "Gerar a chave de criptografia — não precisa mais",
+   "corpo": "<b>Saiu da sua lista.</b> Você decidiu manter a senha do WordPress sem cifra no banco, então não existe chave pra gerar nem pra guardar. Menos uma coisa pra você, e menos código pro Marketing.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 13h02",
+     "texto": "esse nivel de segurança não é necessári aNESTE CASO em especial (nao serve como base para outros casos). pode manter a senha sem cifra no banco de dados - isso é um adecisão final, ok?"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 13h50",
+     "texto": "Ok, decisão final registrada e repassada ao Marketing — ele vai remover a criptografia do plano da Fase 2.\n\nUma linha só de risco, pra ficar no registro e não voltar como surpresa: em texto plano, quem tiver acesso ao banco ou a um backup lê a senha. Conferi um atenuante real: propriedades_digitais já tem RLS ligada com acesso só pra admin autenticado, então não fica exposta publicamente. E o pior caso é alguém publicar num blog satélite — não é dado de cliente, não é LGPD.\n\nDuas proteções que NÃO são cifra e vou manter, porque não custam nada e já estavam no plano dele: a senha nunca volta preenchida pro navegador (o campo aparece vazio e a tela só mostra 'configurada / não configurada'), e a tabela mantém RLS.\n\nGravei bem visível que isto vale só pra este caso e não vira precedente — API key de Asaas/Assinafy ou credencial de cliente seguem outro caminho."
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "spf-resend",
@@ -676,9 +766,9 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Fechou a decisão de criptografia com o Luiz e liberou o Marketing pra implementar. Chave de cifra voltou pra lista dele."
+    "Repassou ao Marketing a decisão de manter a senha do WordPress sem cifra, com o limite registrado pra não virar precedente."
    ],
-   "proxima": "➡️ Esperar o teste das telas de Vendas e a chave de criptografia; cobrar a resposta do CRM ao Vendas.",
+   "proxima": "➡️ Esperar você abrir a sessão do CRM e testar as telas de Vendas — são as duas únicas coisas pendentes.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
@@ -690,7 +780,8 @@
     "✅ Resolveu 2 conflitos no quadro-branco sem perder recado de ninguém",
     "✅ Escreveu o protocolo de comunicação e a caixa de entrada de pedidos abertos",
     "✅ Leu a spec da Fase 2 do Marketing por conta própria e achou um problema de arquitetura antes de virar código",
-    "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código"
+    "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código",
+    "✅ Hook SessionStart + docs/INBOX_AGENTES.md: agente ativo passa a ver na hora que alguém espera por ele"
    ],
    "dims": null
   },
@@ -785,7 +876,15 @@
    "<b>Coordenador → Marketing · ✅ resolvido.</b> A criptografia fica no módulo do Marketing mesmo, cifrada no banco — o Luiz autorizou guardar a senha de WordPress lá. Meu argumento de cofre transversal estava exagerado e foi retirado: Assinafy, Asaas e as outras 12 chaves seguem em env.local.",
    "<b>A regra nova que fecha esse buraco:</b> recado só existe quando chega na main; ninguém para esperando resposta (registra, segue pelo caminho alternativo, migra depois); quem recebe responde na mesma sessão, nem que seja \"visto\"; e eu passo a varrer os worktrees em vez de esperar alguém reclamar."
   ]
- }
+ },
+ "esperas": [
+  {
+   "tempo": "1h32",
+   "frio": true,
+   "texto": "O <b>CRM</b> tem um pedido do Vendas esperando desde as 12h18 e a sessão dele não roda desde 12h34. <b>Nenhum arquivo alcança um agente que não está aberto</b> — quando você abrir a sessão do CRM, o hook novo mostra o pedido no primeiro segundo. Não é urgente: o Vendas seguiu pelo caminho alternativo.",
+   "acao": "abrir a sessão do CRM"
+  }
+ ]
 }
 </script>
 
@@ -850,10 +949,23 @@
   }
 
   function tarefaHTML(t) {
-    var h = '<li class="' + (t.concluida ? "concluida" : "") + '" data-tarefa="' + esc(t.id) + '">';
+    // Item concluído vem fechado (<details>): a lista fica curta e o histórico
+    // continua a um clique. Item aberto continua sempre visível.
+    var fechavel = !!t.concluida;
+    var nResp = (t.respostas || []).length;
+
+    var h = '<li class="' + (t.concluida ? "concluida" : "") + '" data-tarefa="' + esc(t.id) + '"' +
+            (t.concluida ? " hidden" : "") + ">";
     h += '<span class="quando ' + t.prazo + '">' + esc(t.prazoRot) + "</span>";
-    h += "<div>";
-    h += '<div class="titulo">' + esc(t.titulo) + "</div>";
+
+    if (fechavel) {
+      h += "<details><summary><span class=\"titulo\">" + esc(t.titulo) + "</span>";
+      if (nResp) h += '<span class="resumo">' + nResp + (nResp === 1 ? " resposta" : " respostas") + "</span>";
+      h += '</summary><div class="detalhe">';
+    } else {
+      h += "<div>";
+      h += '<div class="titulo">' + esc(t.titulo) + "</div>";
+    }
     h += '<p class="corpo">' + rico(t.corpo) + "</p>";
 
     if (t.respostas && t.respostas.length) {
@@ -880,7 +992,7 @@
     h += '<p class="dica">Sua resposta fica registrada aqui no item e chega pro Coordenador com a referência da tarefa.</p>';
     h += "</div>";
 
-    h += "</div></li>";
+    h += fechavel ? "</div></details></li>" : "</div></li>";
     return h;
   }
 
@@ -900,10 +1012,27 @@
     });
     h += "</section>";
 
+    (dados.esperas || []).forEach(function (e) {
+      h += '<div class="espera' + (e.frio ? " frio" : "") + '">' +
+           '<span class="relogio">' + esc(e.tempo) + '</span>' +
+           '<span class="quem">' + rico(e.texto) + '</span>' +
+           '<span class="acao">' + esc(e.acao) + '</span></div>';
+    });
+
     h += '<div class="aviso-ro" id="aviso-ro" hidden>⚠️ Esta visualização está em modo leitura — dá pra acompanhar tudo, mas o botão de responder não vai gravar. Me responda pelo chat mesmo.</div>';
 
+    var nFeitos = dados.tarefas.filter(function (t) { return t.concluida; }).length;
+    var nAbertos = dados.tarefas.length - nFeitos;
+
     h += '<section class="luiz" aria-labelledby="tit-luiz">' +
-         '<header><h2 id="tit-luiz">Sua vez, Luiz</h2><span class="nota">o que só você pode fazer</span></header>' +
+         '<header><h2 id="tit-luiz">Sua vez, Luiz</h2>' +
+         '<span class="cab-dir">' +
+         '<span class="nota">' + (nAbertos ? nAbertos + (nAbertos === 1 ? " item aberto" : " itens abertos") : "nada pendente 🎉") + '</span>';
+    if (nFeitos) {
+      h += '<button class="botao ver-feitos" type="button" aria-expanded="false">▸ ' +
+           nFeitos + " já " + (nFeitos === 1 ? "resolvido" : "resolvidos") + "</button>";
+    }
+    h += "</span></header>" +
          '<ul class="tarefas">';
     dados.tarefas.forEach(function (t) { h += tarefaHTML(t); });
     h += "</ul></section>";
@@ -1032,6 +1161,18 @@
   document.addEventListener("click", function (ev) {
     var alvo = ev.target.closest ? ev.target.closest("button.botao") : null;
     if (!alvo) return;
+
+    // mostrar/esconder o histórico de itens já resolvidos
+    if (alvo.classList.contains("ver-feitos")) {
+      var feitos = document.querySelectorAll('.tarefas > li.concluida');
+      var vaiMostrar = alvo.getAttribute("aria-expanded") !== "true";
+      for (var i = 0; i < feitos.length; i++) feitos[i].hidden = !vaiMostrar;
+      alvo.setAttribute("aria-expanded", vaiMostrar ? "true" : "false");
+      alvo.textContent = (vaiMostrar ? "▾ esconder " : "▸ ") + feitos.length +
+        (vaiMostrar ? " resolvidos" : " já " + (feitos.length === 1 ? "resolvido" : "resolvidos"));
+      return;
+    }
+
     var id = alvo.getAttribute("data-alvo");
     if (!id) return;
 

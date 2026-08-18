@@ -32,5 +32,19 @@
       "mcp__Claude_Browser__tabs_close",
       "mcp__Claude_Browser__form_input"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/scripts/hook-inbox-agentes.py\" 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Lendo a caixa de entrada dos agentes..."
+          }
+        ]
+      }
+    ]
   }
 }
