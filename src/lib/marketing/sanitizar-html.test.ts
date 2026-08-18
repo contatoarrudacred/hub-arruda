@@ -31,4 +31,21 @@ describe("sanitizarConteudoHtml", () => {
     expect(resultado).toContain('alt="Descrição"');
     expect(resultado).toContain("<td>Célula</td>");
   });
+
+  it("preserva links mailto: e tel: (CTA pro canal de contato exigido pelo checklist)", () => {
+    const html = '<p><a href="mailto:contato@exemplo.com">e-mail</a> ou <a href="tel:+5511999999999">telefone</a></p>';
+    const resultado = sanitizarConteudoHtml(html);
+
+    expect(resultado).toContain('href="mailto:contato@exemplo.com"');
+    expect(resultado).toContain('href="tel:+5511999999999"');
+  });
+
+  it("preserva o Schema FAQPage mesmo com variação de caixa/espaço no atributo type", () => {
+    const html = '<script type=" application/LD+JSON ">{"a":1}</script>';
+    const resultado = sanitizarConteudoHtml(html);
+
+    expect(resultado).toContain("<script");
+    expect(resultado).toContain('{"a":1}');
+    expect(resultado).not.toBe("");
+  });
 });

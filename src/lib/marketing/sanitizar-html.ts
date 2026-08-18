@@ -17,7 +17,11 @@ export function sanitizarConteudoHtml(html: string): string {
       img: ["src", "alt", "width", "height"],
       script: ["type"],
     },
-    allowedSchemes: ["http", "https"],
-    exclusiveFilter: (frame) => frame.tag === "script" && frame.attribs.type !== "application/ld+json",
+    // "mailto"/"tel" incluídos porque o checklist item 5 exige CTA pro canal de contato — sem
+    // isso, hrefs mailto:/tel: seriam silenciosamente removidos.
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    // .trim().toLowerCase() pra não deixar o Schema FAQPage cair fora por variação boba do LLM
+    // (ex.: "application/LD+JSON" ou espaço em branco sobrando no atributo).
+    exclusiveFilter: (frame) => frame.tag === "script" && (frame.attribs.type ?? "").trim().toLowerCase() !== "application/ld+json",
   });
 }

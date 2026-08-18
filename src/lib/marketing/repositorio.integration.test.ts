@@ -31,11 +31,22 @@ async function criarPropriedadeDeTeste() {
 }
 
 afterAll(async () => {
-  // Apagar a propriedade cascateia matrizes_conteudo -> pautas; a pessoa é apagada por último.
+  // Apagar a propriedade cascateia matrizes_conteudo -> pautas (ambas com "on delete cascade" na
+  // migration 20260817070000); a pessoa é apagada por último. ATENÇÃO: "posts" NÃO tem cascade em
+  // pauta_id/propriedade_id (ver mesma migration, linhas ~62-63) — se algum teste futuro criar uma
+  // linha em "posts", este delete de propriedades_digitais vai falhar por violação de FK. Nenhum
+  // teste atual cria "posts", então isso não morde hoje, mas fica registrado pra quem for
+  // adicionar um teste que crie post: seria preciso apagar o post primeiro.
   const supabase = createAdminClient();
   for (const pessoaId of pessoasParaLimpar) {
-    await supabase.from("propriedades_digitais").delete().eq("pessoa_id", pessoaId);
-    await supabase.from("pessoas").delete().eq("id", pessoaId);
+    const { error: erroPropriedade } = await supabase.from("propriedades_digitais").delete().eq("pessoa_id", pessoaId);
+    if (erroPropriedade) {
+      console.error(`Falha ao limpar propriedades_digitais da pessoa de teste ${pessoaId}:`, erroPropriedade.message);
+    }
+    const { error: erroPessoa } = await supabase.from("pessoas").delete().eq("id", pessoaId);
+    if (erroPessoa) {
+      console.error(`Falha ao limpar pessoa de teste ${pessoaId}:`, erroPessoa.message);
+    }
   }
 });
 

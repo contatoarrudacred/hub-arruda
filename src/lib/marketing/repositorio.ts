@@ -214,13 +214,19 @@ export async function carregarPostsPublicadosDaPropriedade(
   excluirPostId?: string,
 ): Promise<PostRelacionado[]> {
   const supabase = createAdminClient();
+  // O .limit() roda ANTES do filtro por url válida (abaixo) — se buscássemos só 6 e alguns viessem
+  // sem url, poderíamos acabar com menos de 6 válidos mesmo havendo 6+ de verdade disponíveis.
+  // Busca uma margem maior (12) e só depois filtra/corta pros 6 finais.
+  const LIMITE_BUSCA = 12;
+  const MAXIMO_RELACIONADOS = 6;
+
   let query = supabase
     .from("posts")
     .select("titulo, canais, publicado_em")
     .eq("propriedade_id", propriedadeId)
     .eq("status", "publicado")
     .order("publicado_em", { ascending: false })
-    .limit(6);
+    .limit(LIMITE_BUSCA);
 
   if (excluirPostId) {
     query = query.neq("id", excluirPostId);
@@ -234,7 +240,8 @@ export async function carregarPostsPublicadosDaPropriedade(
       const canais = linha.canais as { wordpress?: { url?: string } } | null;
       return { titulo: linha.titulo as string, url: canais?.wordpress?.url ?? "" };
     })
-    .filter((post) => post.url !== "");
+    .filter((post) => post.url !== "")
+    .slice(0, MAXIMO_RELACIONADOS);
 }
 
 export async function atualizarStatusPost(
