@@ -44,13 +44,9 @@
 -- -----------------------------------------------------------------------------
 -- 1. produtos.tipo — troca o enum de proprio/terceiro para os 3 modelos reais
 -- -----------------------------------------------------------------------------
--- Migração de dado existente: hoje só existem produtos 'terceiro' do tipo
--- comissionado (Consórcio, Crédito) — nenhum "subcontratado" foi cadastrado
--- ainda. Ver PENDÊNCIA 1 da spec — revisar antes de rodar se algum produto
--- 'terceiro' hoje for na real subcontratado (nesse caso, corrigir manualmente
--- essa linha antes da constraint nova ser adicionada abaixo).
-update produtos set tipo = 'comissionado' where tipo = 'terceiro';
-
+-- IMPORTANTE: a constraint precisa ser trocada ANTES do UPDATE — a constraint
+-- antiga (check tipo in ('proprio','terceiro')) ainda está ativa até aqui, e
+-- não permite gravar 'comissionado'. Gravar antes quebraria a migration.
 do $$
 declare
   nome_constraint text;
@@ -70,6 +66,14 @@ alter table produtos add constraint produtos_tipo_check
   check (tipo in ('proprio', 'subcontratado', 'comissionado'));
 comment on column produtos.tipo is
   'proprio = ArrudaCred executa e fatura, sem fornecedor. subcontratado = ArrudaCred fatura o cliente mas paga um fornecedor pra executar. comissionado = fornecedor/administradora fatura o cliente direto, ArrudaCred só recebe comissão. Ver docs/superpowers/specs/2026-08-17-modulo-vendas-design.md seção 2.';
+
+-- Migração de dado existente: hoje só existem produtos 'terceiro' do tipo
+-- comissionado (Consórcio, Crédito) — nenhum "subcontratado" foi cadastrado
+-- ainda. Ver PENDÊNCIA 1 da spec — revisar antes de rodar se algum produto
+-- 'terceiro' hoje for na real subcontratado (nesse caso, corrigir manualmente
+-- essa linha antes de rodar a migration). Só pode rodar DEPOIS da constraint
+-- nova acima, senão viola a constraint antiga.
+update produtos set tipo = 'comissionado' where tipo = 'terceiro';
 
 -- -----------------------------------------------------------------------------
 -- 2. produtos.fornecedor_id — só para tipo = 'comissionado' (1 Produto = 1 fornecedor fixo)
@@ -482,14 +486,14 @@ git commit -m "feat(vendas): repositório de fornecedores"
 - Create: `src/lib/vendas/pessoas.ts`
 
 **Interfaces:**
-- Consome: `normalizarDocumento`, `tipoPessoaPorDocumento` (Task 3).
-- Produz: `buscarPessoaPorDocumento(documento: string): Promise<PessoaEncontrada | null>`, `criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: string }>` — consumidos pelas Tasks 4 (tela), 6 e 7.
+- Consome: `normalizarDocumento`, `tipoPessoaPorDocumento`, `validarDocumento` (Task 3).
+- Produz: `buscarPessoaPorDocumento(documento: string): Promise<PessoaEncontrada | null>`, `criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: string }>`, `resolverOuCriarPessoa(entrada: EntradaResolverOuCriarPessoa): Promise<ResultadoResolverPessoa>` — este último é o helper compartilhado que as Tasks 7 e 8 usam nas suas Server Actions (evita duplicar a lógica de "achou pessoa existente? usa; não achou? valida e cria" nos dois lugares).
 
 - [ ] **Step 1: Implementar (sem teste unitário — CRUD passthrough)**
 
 ```ts
 import { createClient } from "@/lib/supabase/server";
-import { normalizarDocumento, tipoPessoaPorDocumento } from "./documento";
+import { normalizarDocumento, tipoPessoaPorDocumento, validarDocumento } from "./documento";
 
 export type PessoaEncontrada = {
   id: string;
@@ -556,6 +560,43 @@ export async function criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: st
     .single();
   if (error) throw new Error(`Falha ao criar pessoa: ${error.message}`);
   return { id: data.id };
+}
+
+export type EntradaResolverOuCriarPessoa = {
+  pessoaId: string | null;
+  pessoaNova: { nome: string; documento: string } | null;
+};
+
+export type ResultadoResolverPessoa = { sucesso: true; pessoaId: string } | { sucesso: false; erro: string };
+
+export async function resolverOuCriarPessoa(entrada: EntradaResolverOuCriarPessoa): Promise<ResultadoResolverPessoa> {
+  if (entrada.pessoaId) {
+    return { sucesso: true, pessoaId: entrada.pessoaId };
+  }
+
+  if (!entrada.pessoaNova) {
+    return { sucesso: false, erro: "Selecione ou cadastre uma Pessoa." };
+  }
+
+  if (!validarDocumento(entrada.pessoaNova.documento)) {
+    return { sucesso: false, erro: "CPF/CNPJ inválido." };
+  }
+  if (!entrada.pessoaNova.nome.trim()) {
+    return { sucesso: false, erro: "Nome é obrigatório." };
+  }
+
+  const pessoaExistente = await buscarPessoaPorDocumento(entrada.pessoaNova.documento);
+  if (pessoaExistente) {
+    return { sucesso: true, pessoaId: pessoaExistente.id };
+  }
+
+  const nova = await criarPessoa({
+    nome: entrada.pessoaNova.nome,
+    documento: entrada.pessoaNova.documento,
+    email: null,
+    whatsapp: null,
+  });
+  return { sucesso: true, pessoaId: nova.id };
 }
 ```
 
@@ -647,7 +688,7 @@ git commit -m "feat(vendas): promoção de Pessoa a Cliente e criação de Oport
 - Create: `src/app/admin/(shell)/fornecedores/fornecedores-client.tsx`
 
 **Interfaces:**
-- Consome: `listarFornecedores`, `salvarFornecedor`, `excluirFornecedor` (Task 4), `buscarPessoaPorDocumento`, `criarPessoa` (Task 5).
+- Consome: `listarFornecedores`, `salvarFornecedor`, `excluirFornecedor` (Task 4), `buscarPessoaPorDocumento`, `resolverOuCriarPessoa` (Task 5).
 
 - [ ] **Step 1: `page.tsx` — Server Component**
 
@@ -667,14 +708,12 @@ export default async function FornecedoresPage() {
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { buscarPessoaPorDocumento } from "@/lib/vendas/pessoas";
-import { criarPessoa } from "@/lib/vendas/pessoas";
+import { buscarPessoaPorDocumento, resolverOuCriarPessoa } from "@/lib/vendas/pessoas";
 import {
   excluirFornecedor as excluirFornecedorRepo,
   salvarFornecedor as salvarFornecedorRepo,
   type EntradaSalvarFornecedor,
 } from "@/lib/vendas/fornecedores";
-import { validarDocumento } from "@/lib/vendas/documento";
 
 export type ResultadoBuscarPessoa =
   | { encontrada: true; id: string; nome: string; documento: string }
@@ -691,34 +730,12 @@ export type ResultadoSalvarFornecedor = { sucesso: true; id: string } | { sucess
 export async function salvarFornecedorAction(
   entrada: EntradaSalvarFornecedor & { pessoaNova: { nome: string; documento: string } | null },
 ): Promise<ResultadoSalvarFornecedor> {
-  let pessoaId = entrada.pessoaId;
-
-  if (entrada.pessoaNova) {
-    if (!validarDocumento(entrada.pessoaNova.documento)) {
-      return { sucesso: false, erro: "CPF/CNPJ inválido." };
-    }
-    if (!entrada.pessoaNova.nome.trim()) {
-      return { sucesso: false, erro: "Nome é obrigatório." };
-    }
-    const pessoaExistente = await buscarPessoaPorDocumento(entrada.pessoaNova.documento);
-    if (pessoaExistente) {
-      pessoaId = pessoaExistente.id;
-    } else {
-      const nova = await criarPessoa({
-        nome: entrada.pessoaNova.nome,
-        documento: entrada.pessoaNova.documento,
-        email: null,
-        whatsapp: null,
-      });
-      pessoaId = nova.id;
-    }
+  const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId || null, pessoaNova: entrada.pessoaNova });
+  if (!pessoa.sucesso) {
+    return { sucesso: false, erro: pessoa.erro };
   }
 
-  if (!pessoaId) {
-    return { sucesso: false, erro: "Selecione ou cadastre uma Pessoa." };
-  }
-
-  const resultado = await salvarFornecedorRepo({ ...entrada, pessoaId });
+  const resultado = await salvarFornecedorRepo({ ...entrada, pessoaId: pessoa.pessoaId });
   revalidatePath("/admin/fornecedores");
   return { sucesso: true, id: resultado.id };
 }
@@ -876,7 +893,8 @@ git commit -m "feat(vendas): tela /admin/fornecedores (cadastro + busca de pesso
 - Create: `src/app/admin/(shell)/vendas/nova/nova-venda-client.tsx`
 
 **Interfaces:**
-- Consome: `buscarPessoaPorDocumento`, `criarPessoa` (Task 5), `criarOportunidadeSemFunilPrevio` (Task 6), `listarProdutos` (já existe em `src/lib/motor-fluxo/repositorio-admin.ts`, mesma função usada por `/admin/faqs`).
+- Consome: `buscarPessoaPorDocumento`, `resolverOuCriarPessoa` (Task 5), `criarOportunidadeSemFunilPrevio` (Task 6), `listarProdutos` (já existe em `src/lib/motor-fluxo/repositorio-admin.ts`, mesma função usada por `/admin/faqs`).
+- **Antes de escrever `page.tsx`:** abrir `src/lib/motor-fluxo/repositorio-admin.ts` e conferir a assinatura real de `listarProdutos()` (tipo de retorno exato — o campo pode não se chamar `nome`, e pode ter mais campos que `id`/`nome`). O `type Produto = { id: string; nome: string }` abaixo é um palpite baseado no padrão de outras funções do arquivo, não uma cópia confirmada — ajustar pra bater com a assinatura real antes de usar.
 
 - [ ] **Step 1: `page.tsx` — Server Component**
 
@@ -895,10 +913,8 @@ export default async function NovaVendaPage() {
 ```ts
 "use server";
 
-import { redirect } from "next/navigation";
-import { buscarPessoaPorDocumento, criarPessoa } from "@/lib/vendas/pessoas";
+import { buscarPessoaPorDocumento, resolverOuCriarPessoa } from "@/lib/vendas/pessoas";
 import { criarOportunidadeSemFunilPrevio } from "@/lib/vendas/clientes";
-import { validarDocumento } from "@/lib/vendas/documento";
 
 export type ResultadoBuscarPessoa =
   | { encontrada: true; id: string; nome: string; documento: string }
@@ -920,38 +936,16 @@ export type EntradaCriarVenda = {
 export type ResultadoCriarVenda = { sucesso: true; oportunidadeId: string } | { sucesso: false; erro: string };
 
 export async function criarVendaSemFunilPrevioAction(entrada: EntradaCriarVenda): Promise<ResultadoCriarVenda> {
-  let pessoaId = entrada.pessoaId;
-
-  if (entrada.pessoaNova) {
-    if (!validarDocumento(entrada.pessoaNova.documento)) {
-      return { sucesso: false, erro: "CPF/CNPJ inválido." };
-    }
-    if (!entrada.pessoaNova.nome.trim()) {
-      return { sucesso: false, erro: "Nome é obrigatório." };
-    }
-    const pessoaExistente = await buscarPessoaPorDocumento(entrada.pessoaNova.documento);
-    if (pessoaExistente) {
-      pessoaId = pessoaExistente.id;
-    } else {
-      const nova = await criarPessoa({
-        nome: entrada.pessoaNova.nome,
-        documento: entrada.pessoaNova.documento,
-        email: null,
-        whatsapp: null,
-      });
-      pessoaId = nova.id;
-    }
-  }
-
-  if (!pessoaId) {
-    return { sucesso: false, erro: "Selecione ou cadastre uma Pessoa." };
+  const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId, pessoaNova: entrada.pessoaNova });
+  if (!pessoa.sucesso) {
+    return { sucesso: false, erro: pessoa.erro };
   }
   if (!entrada.produtoId) {
     return { sucesso: false, erro: "Selecione um Serviço." };
   }
 
   const resultado = await criarOportunidadeSemFunilPrevio({
-    pessoaId,
+    pessoaId: pessoa.pessoaId,
     produtoId: entrada.produtoId,
     valorEstimado: entrada.valorEstimado,
   });
