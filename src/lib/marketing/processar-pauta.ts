@@ -16,11 +16,60 @@ import {
   atualizarStatusPost,
   carregarChecklistAtivo,
   carregarPropriedade,
+  contarPostsPublicadosDesde,
   criarPost,
   marcarPautaBloqueada,
   marcarPautaPublicada,
   registrarReprovacaoPauta,
 } from "./repositorio";
+import type { JanelaPublicacao } from "./tipos";
+
+const FUSO_SAO_PAULO = "America/Sao_Paulo";
+
+/**
+ * Data/hora atual convertida pro fuso de Brasília, via Intl.DateTimeFormat (sem lib nova) — ver
+ * spec seção 5, "Nota de fuso horário". Decisão: `janela_publicacao` é sempre configurada em
+ * horário de Brasília, independente do fuso em que o servidor roda (Vercel roda em UTC por
+ * padrão) — sem esta conversão, a comparação de horário usaria o fuso do servidor e o gating
+ * ficaria incorreto sempre que os dois fusos divergissem. `hourCycle: "h23"` evita o "24:00" que
+ * `hour12: false` produz pra meia-noite em algumas builds de ICU.
+ */
+function obterMomentoSaoPaulo(agora: Date): { horaMinuto: string; diaISO: string } {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO_SAO_PAULO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(agora);
+
+  const valor = (tipo: string) => partes.find((parte) => parte.type === tipo)?.value ?? "";
+  return {
+    diaISO: `${valor("year")}-${valor("month")}-${valor("day")}`,
+    horaMinuto: `${valor("hour")}:${valor("minute")}`,
+  };
+}
+
+/** Sem janela configurada = sem restrição de horário (comportamento da Fase 1). */
+export function dentroDaJanela(janela: JanelaPublicacao | undefined, agora: Date = new Date()): boolean {
+  if (!janela) return true;
+  const { horaMinuto } = obterMomentoSaoPaulo(agora);
+  return horaMinuto >= janela.inicio && horaMinuto <= janela.fim;
+}
+
+/**
+ * Sem limite configurado = sem cota (comportamento da Fase 1). "Hoje" é o dia civil em horário de
+ * Brasília (mesmo fuso da janela, por consistência) — Brasília não observa horário de verão desde
+ * 2019, então o offset -03:00 é fixo e seguro de embutir aqui sem lib de fuso horário nova.
+ */
+export async function cotaDiariaAtingida(propriedadeId: string, limite: number | undefined, agora: Date = new Date()): Promise<boolean> {
+  if (!limite) return false;
+  const { diaISO } = obterMomentoSaoPaulo(agora);
+  const totalPublicadoHoje = await contarPostsPublicadosDesde(propriedadeId, `${diaISO}T00:00:00-03:00`);
+  return totalPublicadoHoje >= limite;
+}
 
 // Nome de variável de ambiente não aceita hífen, daí a troca por underscore. Cai pro par
 // genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP quando a propriedade ainda não tem credencial
@@ -43,6 +92,15 @@ function credenciaisWordPressDaPropriedade(propriedadeId: string): CredenciaisWo
 
 export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
   const propriedade = await carregarPropriedade(propriedadeId);
+
+  // Gating de cota/janela (spec seção 5) — roda ANTES de selecionarPauta: se a propriedade está
+  // fora do horário permitido ou já publicou a cota do dia, o tick inteiro é pulado sem tocar em
+  // nenhuma pauta (nem seleção, nem incremento de tentativas). Curto-circuita a checagem de janela
+  // (síncrona) antes da de cota (bate no banco) por ser mais barata.
+  if (!dentroDaJanela(propriedade.janelaPublicacao) || (await cotaDiariaAtingida(propriedadeId, propriedade.postsPorDia))) {
+    return { status: "fora_da_janela" as const };
+  }
+
   const pauta = await selecionarPauta(matrizConteudoId);
   if (!pauta) return { status: "sem_pauta" as const };
 

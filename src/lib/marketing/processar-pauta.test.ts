@@ -1,6 +1,6 @@
 // src/lib/marketing/processar-pauta.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { processarProximaPauta } from "./processar-pauta";
+import { cotaDiariaAtingida, dentroDaJanela, processarProximaPauta } from "./processar-pauta";
 import * as estrategista from "./estrategista";
 import * as escritor from "./escritor";
 import * as revisor from "./revisor";
@@ -33,9 +33,122 @@ const propriedadeFalsa = {
   maxTentativas: 3,
 };
 
+describe("dentroDaJanela", () => {
+  it("retorna true quando nenhuma janela está configurada", () => {
+    expect(dentroDaJanela(undefined)).toBe(true);
+  });
+
+  it("retorna true quando o horário atual (convertido pra Brasília) está dentro da janela", () => {
+    // 2026-08-18T13:00:00Z = 10:00 em America/Sao_Paulo (UTC-3, sem horário de verão desde 2019).
+    const agora = new Date("2026-08-18T13:00:00Z");
+    expect(dentroDaJanela({ inicio: "08:00", fim: "20:00" }, agora)).toBe(true);
+  });
+
+  it("retorna false quando o horário atual (convertido pra Brasília) está depois do fim da janela", () => {
+    // 2026-08-18T23:30:00Z = 20:30 em America/Sao_Paulo.
+    const agora = new Date("2026-08-18T23:30:00Z");
+    expect(dentroDaJanela({ inicio: "08:00", fim: "20:00" }, agora)).toBe(false);
+  });
+
+  it("retorna false quando o horário atual (convertido pra Brasília) está antes do início da janela", () => {
+    // 2026-08-18T10:59:00Z = 07:59 em America/Sao_Paulo.
+    const agora = new Date("2026-08-18T10:59:00Z");
+    expect(dentroDaJanela({ inicio: "08:00", fim: "20:00" }, agora)).toBe(false);
+  });
+
+  it("trata início e fim como inclusivos", () => {
+    // 11:00Z = 08:00 BRT (início exato); 23:00Z = 20:00 BRT (fim exato).
+    expect(dentroDaJanela({ inicio: "08:00", fim: "20:00" }, new Date("2026-08-18T11:00:00Z"))).toBe(true);
+    expect(dentroDaJanela({ inicio: "08:00", fim: "20:00" }, new Date("2026-08-18T23:00:00Z"))).toBe(true);
+  });
+});
+
+describe("cotaDiariaAtingida", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("retorna false sem consultar o banco quando não há limite configurado", async () => {
+    const contarSpy = vi.spyOn(repositorio, "contarPostsPublicadosDesde");
+
+    expect(await cotaDiariaAtingida("prop-1", undefined)).toBe(false);
+    expect(contarSpy).not.toHaveBeenCalled();
+  });
+
+  it("retorna true quando a contagem de publicados hoje já atingiu o limite", async () => {
+    vi.spyOn(repositorio, "contarPostsPublicadosDesde").mockResolvedValue(3);
+
+    expect(await cotaDiariaAtingida("prop-1", 3)).toBe(true);
+  });
+
+  it("retorna false quando a contagem ainda está abaixo do limite", async () => {
+    vi.spyOn(repositorio, "contarPostsPublicadosDesde").mockResolvedValue(2);
+
+    expect(await cotaDiariaAtingida("prop-1", 3)).toBe(false);
+  });
+
+  it("conta a partir da meia-noite do dia civil em Brasília (não do fuso do servidor)", async () => {
+    const contarSpy = vi.spyOn(repositorio, "contarPostsPublicadosDesde").mockResolvedValue(0);
+    // 2026-08-19T01:30:00Z = 2026-08-18T22:30 em America/Sao_Paulo — ainda dia 18 em Brasília,
+    // mesmo já sendo dia 19 em UTC. Início do dia esperado: 2026-08-18T00:00:00-03:00.
+    const agora = new Date("2026-08-19T01:30:00Z");
+
+    await cotaDiariaAtingida("prop-1", 3, agora);
+
+    expect(contarSpy).toHaveBeenCalledWith("prop-1", "2026-08-18T00:00:00-03:00");
+  });
+});
+
 describe("processarProximaPauta", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("retorna fora_da_janela sem selecionar pauta quando o horário atual está fora da janela de publicação", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-18T23:30:00Z")); // 20:30 BRT, fora de 08:00-20:00
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue({
+      ...propriedadeFalsa,
+      janelaPublicacao: { inicio: "08:00", fim: "20:00" },
+    });
+    const selecionarSpy = vi.spyOn(estrategista, "selecionarPauta");
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "fora_da_janela" });
+    expect(selecionarSpy).not.toHaveBeenCalled();
+  });
+
+  it("retorna fora_da_janela sem selecionar pauta quando a cota diária de posts já foi atingida", async () => {
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue({
+      ...propriedadeFalsa,
+      postsPorDia: 2,
+    });
+    vi.spyOn(repositorio, "contarPostsPublicadosDesde").mockResolvedValue(2);
+    const selecionarSpy = vi.spyOn(estrategista, "selecionarPauta");
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "fora_da_janela" });
+    expect(selecionarSpy).not.toHaveBeenCalled();
+  });
+
+  it("regressão: sem posts_por_dia nem janela_publicacao configurados, processa normalmente (comportamento da Fase 1)", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue({
+      ...pautaFalsa,
+      tentativas: 3,
+      motivoUltimaReprovacao: "Muito curto.",
+    });
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa); // sem os dois campos
+    const bloquearSpy = vi.spyOn(repositorio, "marcarPautaBloqueada").mockResolvedValue(undefined);
+    const contarSpy = vi.spyOn(repositorio, "contarPostsPublicadosDesde");
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "bloqueada", pautaId: "pauta-1" });
+    expect(bloquearSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
+    expect(contarSpy).not.toHaveBeenCalled(); // sem posts_por_dia, nem consulta o banco pra cota
   });
 
   it("publica quando a revisão aprova de primeira", async () => {

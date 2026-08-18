@@ -5,7 +5,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   carregarPersona,
+  carregarPropriedade,
   carregarResumoVisaoGeral,
+  contarPostsPublicadosDesde,
   excluirItemChecklist,
   listarChecklistPorPropriedade,
   listarMatrizes,
@@ -81,6 +83,92 @@ function mockarFrom(...buildersEmOrdem: ReturnType<typeof criarQueryFalsa>[]) {
 }
 
 const erro = { message: "erro de teste" };
+
+describe("carregarPropriedade", () => {
+  it("mapeia posts_por_dia/janela_publicacao quando presentes no config_pipeline (Task 4)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 5, posts_por_dia: 3, janela_publicacao: { inicio: "08:00", fim: "20:00" } },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade).toEqual({
+      id: "prop-1",
+      nome: "Site Teste",
+      urlBase: "https://teste.exemplo.com",
+      tipoCms: "wordpress",
+      maxTentativas: 5,
+      postsPorDia: 3,
+      janelaPublicacao: { inicio: "08:00", fim: "20:00" },
+    });
+  });
+
+  // Regressão: propriedades já em produção, criadas antes da Fase 2, não têm essas chaves no
+  // config_pipeline — carregarPropriedade não pode passar a exigi-las nem quebrar por causa disso.
+  it("deixa postsPorDia/janelaPublicacao undefined quando config_pipeline não os tem (regressão Fase 1)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.postsPorDia).toBeUndefined();
+    expect(propriedade.janelaPublicacao).toBeUndefined();
+    expect(propriedade.maxTentativas).toBe(3);
+  });
+
+  it("lança erro claro quando a propriedade não é encontrada", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    await expect(carregarPropriedade("prop-x")).rejects.toThrow(/Falha ao carregar propriedade prop-x/);
+  });
+});
+
+describe("contarPostsPublicadosDesde", () => {
+  it("conta posts publicados da propriedade desde o instante informado", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null, count: 2 });
+    mockarFrom(builder);
+
+    const total = await contarPostsPublicadosDesde("prop-1", "2026-08-18T00:00:00-03:00");
+
+    expect(total).toBe(2);
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+    expect(builder.eq).toHaveBeenCalledWith("status", "publicado");
+    expect(builder.gte).toHaveBeenCalledWith("publicado_em", "2026-08-18T00:00:00-03:00");
+  });
+
+  it("retorna 0 quando count vem null", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null, count: null }));
+
+    expect(await contarPostsPublicadosDesde("prop-1", "2026-08-18T00:00:00-03:00")).toBe(0);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(contarPostsPublicadosDesde("prop-1", "2026-08-18T00:00:00-03:00")).rejects.toThrow(
+      /Falha ao contar posts publicados da propriedade prop-1.*erro de teste/,
+    );
+  });
+});
 
 describe("listarPropriedades", () => {
   it("mapeia propriedade + credenciais sem nunca expor a senha", async () => {

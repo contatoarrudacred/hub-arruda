@@ -123,14 +123,35 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
 
   if (error || !data) throw new Error(`Falha ao carregar propriedade ${propriedadeId}: ${error?.message ?? "não encontrada"}`);
 
-  const config = data.config_pipeline as { max_tentativas?: number };
+  // Reaproveita o mesmo parser de config_pipeline usado pelas telas de admin (mapearConfigPipeline,
+  // definido mais abaixo neste arquivo) — evita duas leituras divergentes do mesmo jsonb.
+  const config = mapearConfigPipeline(data.config_pipeline);
   return {
     id: data.id,
     nome: data.nome,
     urlBase: data.url_base,
     tipoCms: data.tipo_cms,
-    maxTentativas: config.max_tentativas ?? 3,
+    maxTentativas: config.maxTentativas,
+    postsPorDia: config.postsPorDia ?? undefined,
+    janelaPublicacao: config.janelaPublicacao ?? undefined,
   };
+}
+
+/**
+ * Conta posts "publicado" da propriedade desde um instante (ISO com offset) — usado pelo gating de
+ * cota diária (cotaDiariaAtingida em processar-pauta.ts). `desdeIso` já vem pronto (início do dia
+ * civil em horário de Brasília, calculado pelo chamador) — este repositório só executa a contagem.
+ */
+export async function contarPostsPublicadosDesde(propriedadeId: string, desdeIso: string): Promise<number> {
+  const supabase = createAdminClient();
+  const { count, error } = await supabase
+    .from("posts")
+    .select("id", { count: "exact", head: true })
+    .eq("propriedade_id", propriedadeId)
+    .eq("status", "publicado")
+    .gte("publicado_em", desdeIso);
+  if (error) throw new Error(`Falha ao contar posts publicados da propriedade ${propriedadeId}: ${error.message}`);
+  return count ?? 0;
 }
 
 export async function carregarChecklistAtivo(propriedadeId: string): Promise<ItemChecklistCarregado[]> {

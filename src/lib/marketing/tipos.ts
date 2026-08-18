@@ -33,6 +33,14 @@ export type PropriedadeCarregada = {
   urlBase: string;
   tipoCms: "wordpress";
   maxTentativas: number;
+  /** Cota diária de publicações (config_pipeline.posts_por_dia) — undefined = sem limite (Fase 1). */
+  postsPorDia?: number;
+  /**
+   * Janela de publicação permitida (config_pipeline.janela_publicacao) — undefined = sem
+   * restrição de horário. Os horários são sempre em fuso de Brasília (America/Sao_Paulo),
+   * independente do fuso do servidor — ver dentroDaJanela em processar-pauta.ts.
+   */
+  janelaPublicacao?: JanelaPublicacao;
 };
 
 /** Saída do Escritor — o rascunho completo antes de qualquer revisão. */
