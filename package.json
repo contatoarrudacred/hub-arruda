@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:types": "supabase gen types typescript --project-id mzvaqjhalynaceecnayt > src/lib/supabase/database.types.ts"
   },
   "dependencies": {

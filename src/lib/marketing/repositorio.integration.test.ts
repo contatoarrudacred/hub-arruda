@@ -1,7 +1,13 @@
-// src/lib/marketing/repositorio.test.ts
-import { describe, expect, it } from "vitest";
+// src/lib/marketing/repositorio.integration.test.ts
+// Testes de INTEGRAÇÃO — batem no Supabase remoto real (não há Docker/Supabase local neste
+// ambiente). Por isso ficam fora do `pnpm test` padrão (ver exclude em vitest.config.mts) e só
+// rodam via `pnpm test:integration`, sabendo que escrevem no banco de produção. Cada teste limpa
+// o que criou no afterAll — ver `registrarParaLimpeza`/limpeza global abaixo.
+import { afterAll, describe, expect, it } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { marcarPautaPublicada, selecionarProximaPautaPendente } from "./repositorio";
+
+const pessoasParaLimpar: string[] = [];
 
 async function criarPropriedadeDeTeste() {
   const supabase = createAdminClient();
@@ -10,6 +16,7 @@ async function criarPropriedadeDeTeste() {
     .insert({ tipo_pessoa: "pj", nome_razao_social: "Propriedade Teste", documento: `teste-${Date.now()}` })
     .select("id")
     .single();
+  pessoasParaLimpar.push(pessoa!.id as string);
   const { data: propriedade } = await supabase
     .from("propriedades_digitais")
     .insert({ pessoa_id: pessoa!.id, nome: "Site Teste", url_base: "https://teste.exemplo.com" })
@@ -22,6 +29,15 @@ async function criarPropriedadeDeTeste() {
     .single();
   return { propriedadeId: propriedade!.id as string, matrizId: matriz!.id as string };
 }
+
+afterAll(async () => {
+  // Apagar a propriedade cascateia matrizes_conteudo -> pautas; a pessoa é apagada por último.
+  const supabase = createAdminClient();
+  for (const pessoaId of pessoasParaLimpar) {
+    await supabase.from("propriedades_digitais").delete().eq("pessoa_id", pessoaId);
+    await supabase.from("pessoas").delete().eq("id", pessoaId);
+  }
+});
 
 describe("selecionarProximaPautaPendente", () => {
   it("retorna a pauta pendente de maior prioridade, ignorando as em produção/publicadas", async () => {

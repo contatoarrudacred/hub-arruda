@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Resolve o mesmo alias "@/*" -> "./src/*" que já existe em tsconfig.json (paths),
 // mas que o Vitest não enxerga sozinho (ele não lê tsconfig paths por padrão).
@@ -19,8 +19,11 @@ import { defineConfig } from "vitest/config";
  * de depender disso, lê e faz o parse do .env.local manualmente aqui. Sem isto,
  * código que lê process.env.SUPABASE_* (ex.: createAdminClient) recebe undefined
  * nos testes mesmo com .env.local presente no projeto.
+ *
+ * Exportada (não local) porque vitest.integration.config.ts reaproveita — os testes de
+ * integração também precisam do .env.local pra falar com o Supabase remoto real.
  */
-function carregarEnvLocal(): Record<string, string> {
+export function carregarEnvLocal(): Record<string, string> {
   const envPath = path.resolve(import.meta.dirname, ".env.local");
   if (!fs.existsSync(envPath)) return {};
 
@@ -40,14 +43,24 @@ function carregarEnvLocal(): Record<string, string> {
   return env;
 }
 
+// Exportado (não local) pelo mesmo motivo de carregarEnvLocal: vitest.integration.config.ts
+// reaproveita, em vez de duplicar os mesmos caminhos.
+export function resolveAlias() {
+  return {
+    "@": path.resolve(import.meta.dirname, "./src"),
+    "server-only": path.resolve(import.meta.dirname, "./node_modules/server-only/empty.js"),
+  };
+}
+
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "./src"),
-      "server-only": path.resolve(import.meta.dirname, "./node_modules/server-only/empty.js"),
-    },
+    alias: resolveAlias(),
   },
   test: {
     env: carregarEnvLocal(),
+    // Testes *.integration.test.ts batem em serviços reais (Supabase remoto — não há Docker
+    // local neste ambiente) e não podem rodar no `pnpm test` padrão. Ver vitest.integration.config.ts
+    // e o script `test:integration` no package.json para rodá-los explicitamente.
+    exclude: [...configDefaults.exclude, "**/*.integration.test.ts"],
   },
 });
