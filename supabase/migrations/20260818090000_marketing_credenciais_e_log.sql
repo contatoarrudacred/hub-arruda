@@ -1,13 +1,12 @@
--- Fase 2 do módulo Marketing (18/08/2026) — credenciais de canal (texto plano, decisão do Luiz —
--- ver comment on column abaixo) + log de execução do pipeline. Ver
--- docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md seções 3.1 e 3.3.
--- REGRA DURA: este arquivo não é aplicado por nenhum agente — reservado em
+-- Fase 2 do módulo Marketing (18/08/2026) — credenciais de canal cifradas + log de execução do
+-- pipeline. Ver docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md
+-- seções 3.1 e 3.3. REGRA DURA: este arquivo não é aplicado por nenhum agente — reservado em
 -- COORDENACAO_AGENTES_ARRUDACRED.md, entregue ao Luiz pelo Coordenador, aplicado por ele no SQL
 -- Editor.
 
 alter table propriedades_digitais add column credenciais_canais jsonb not null default '{}'::jsonb;
 comment on column propriedades_digitais.credenciais_canais is
-  'Credenciais de canal por propriedade, em texto plano (decisão do Luiz, 18/08/2026 — não é precedente pra outros segredos). Formato: {"wordpress": {"usuario": "...", "senha": "..."}}. Fallback: propriedade sem entrada aqui continua usando WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico).';
+  'Credenciais de canal por propriedade, cifradas — nunca texto plano. Formato: {"wordpress": {"usuario": "...", "senha_cifrada": "<base64 iv+authTag+ciphertext>"}}. Cifrado/decifrado por src/lib/marketing/criptografia.ts usando MARKETING_CREDENCIAIS_CHAVE (env). Fallback: propriedade sem entrada aqui continua usando WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico).';
 
 create table pautas_execucao_log (
   id uuid primary key default gen_random_uuid(),

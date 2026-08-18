@@ -92,7 +92,7 @@ export type NivelConhecimento = "iniciante" | "intermediario" | "avancado";
 
 export type JanelaPublicacao = { inicio: string; fim: string };
 
-/** Estado de uma credencial de canal exposto pra tela — nunca carrega a senha em si, só indica se está configurada. */
+/** Estado de uma credencial de canal exposto pra tela — nunca carrega a senha (nem cifrada nem plana). */
 export type CredencialCanalAdmin = {
   usuario: string | null;
   senhaConfigurada: boolean;

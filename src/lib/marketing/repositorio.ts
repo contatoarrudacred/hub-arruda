@@ -1,6 +1,7 @@
 // src/lib/marketing/repositorio.ts
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { cifrar } from "./criptografia";
 import type {
   ConteudoGerado,
   DadosItemChecklist,
@@ -321,16 +322,14 @@ function mapearConfigPipeline(bruto: unknown): {
 }
 
 /**
- * Nunca inclui a senha no que volta pra tela — só se um canal está configurado ou não. Ver seção
- * 8 da spec: campo de senha na UI é sempre write-only. A senha é armazenada em texto plano no
- * jsonb (decisão do Luiz, 18/08/2026 — não é precedente pra outros segredos do projeto), mas essa
- * proteção de nunca devolver o valor pro caller não muda por isso.
+ * Nunca inclui a senha (nem cifrada nem decifrada) no que volta pra tela — só se um canal está
+ * configurado ou não. Ver seção 8 da spec: campo de senha na UI é sempre write-only.
  */
 function mapearCredenciais(bruto: unknown): PropriedadeAdmin["credenciais"] {
-  const credenciais = (bruto as Record<string, { usuario?: string; senha?: string }>) ?? {};
+  const credenciais = (bruto as Record<string, { usuario?: string; senha_cifrada?: string }>) ?? {};
   const resultado: PropriedadeAdmin["credenciais"] = {};
   for (const [canal, valor] of Object.entries(credenciais)) {
-    resultado[canal] = { usuario: valor?.usuario ?? null, senhaConfigurada: Boolean(valor?.senha) };
+    resultado[canal] = { usuario: valor?.usuario ?? null, senhaConfigurada: Boolean(valor?.senha_cifrada) };
   }
   return resultado;
 }
@@ -421,15 +420,10 @@ export async function salvarPropriedade(dados: DadosPropriedade): Promise<Propri
 }
 
 /**
- * `senhaPlana` vazia = mantém a senha já salva (write-only na tela — o campo de senha nunca vem
- * preenchido com o valor salvo, então "não digitou nada" precisa significar "não mexer", não
- * "apagar a senha"). `usuario` vazio se comporta igual: só sobrescreve se vier preenchido.
- *
- * A senha é gravada em texto plano no jsonb — decisão explícita do Luiz (18/08/2026, ver
- * COORDENACAO_AGENTES_ARRUDACRED.md seção 3): "esse nível de segurança não é necessário NESTE
- * CASO em especial... pode manter a senha sem cifra no banco de dados". Isto NÃO é precedente pra
- * outros segredos do projeto (API keys, tokens, dado de cliente continuam com proteção normal) —
- * vale só pra esta credencial de WordPress especificamente.
+ * `senhaPlana` vazia = mantém a credencial cifrada já salva (write-only na tela — o campo de
+ * senha nunca vem preenchido com o valor salvo, então "não digitou nada" precisa significar
+ * "não mexer", não "apagar a senha"). `usuario` vazio se comporta igual: só sobrescreve se
+ * vier preenchido.
  */
 export async function salvarCredencialCanal(propriedadeId: string, canal: string, usuario: string, senhaPlana: string): Promise<void> {
   const supabase = createAdminClient();
@@ -442,14 +436,14 @@ export async function salvarCredencialCanal(propriedadeId: string, canal: string
     throw new Error(`Falha ao carregar credenciais da propriedade ${propriedadeId}: ${erroLeitura?.message ?? "não encontrada"}`);
   }
 
-  const credenciaisAtuais = (atual.credenciais_canais as Record<string, { usuario?: string; senha?: string }>) ?? {};
+  const credenciaisAtuais = (atual.credenciais_canais as Record<string, { usuario?: string; senha_cifrada?: string }>) ?? {};
   const credencialAtualDoCanal = credenciaisAtuais[canal] ?? {};
 
   const credenciais = {
     ...credenciaisAtuais,
     [canal]: {
       usuario: usuario || credencialAtualDoCanal.usuario || "",
-      senha: senhaPlana || credencialAtualDoCanal.senha,
+      senha_cifrada: senhaPlana ? cifrar(senhaPlana) : credencialAtualDoCanal.senha_cifrada,
     },
   };
 
