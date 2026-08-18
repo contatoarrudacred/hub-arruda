@@ -63,3 +63,127 @@ export type PostRelacionado = {
   titulo: string;
   url: string;
 };
+
+// ---------------------------------------------------------------------------
+// Tipos das telas de admin (Fase 2) — ver
+// docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md
+// ---------------------------------------------------------------------------
+
+export type NivelConhecimento = "iniciante" | "intermediario" | "avancado";
+
+export type JanelaPublicacao = { inicio: string; fim: string };
+
+/** Estado de uma credencial de canal exposto pra tela — nunca carrega a senha (nem cifrada nem plana). */
+export type CredencialCanalAdmin = {
+  usuario: string | null;
+  senhaConfigurada: boolean;
+};
+
+export type PropriedadeAdmin = {
+  id: string;
+  nome: string;
+  urlBase: string;
+  tipoCms: "wordpress";
+  ativo: boolean;
+  maxTentativas: number;
+  postsPorDia: number | null;
+  janelaPublicacao: JanelaPublicacao | null;
+  credenciais: Record<string, CredencialCanalAdmin>;
+};
+
+export type DadosPropriedade = {
+  id?: string;
+  nome: string;
+  urlBase: string;
+  tipoCms: "wordpress";
+  ativo?: boolean;
+  maxTentativas: number;
+  postsPorDia?: number | null;
+  janelaPublicacao?: JanelaPublicacao | null;
+  /** Um dos dois é obrigatório na criação — constraint chk_propriedade_tem_dono do banco. */
+  pessoaId?: string | null;
+  unidadeNegocioId?: string | null;
+};
+
+export type MatrizAdmin = {
+  id: string;
+  propriedadeId: string;
+  nome: string;
+  ativo: boolean;
+  /** Só leitura nesta fase — populado pelo Construtor de Matriz (ainda não construído) ou direto no banco. */
+  temas: string[];
+  angulos: string[];
+  geografias: string[] | null;
+};
+
+export type DadosMatriz = {
+  id?: string;
+  propriedadeId: string;
+  nome: string;
+  ativo?: boolean;
+};
+
+/** Formulário de persona — seção 6.2 do doc de negócio. Grava em matrizes_conteudo.eixos.persona. */
+export type PersonaFormulario = {
+  nome: string;
+  perfilDemografico: string;
+  tomDeVoz: string;
+  nivelConhecimento: NivelConhecimento;
+  doresNecessidades: string;
+  objecoesTipicas: string[];
+  vocabularioPreferido: string[];
+  vocabularioEvitar: string[];
+};
+
+export type ItemChecklistAdmin = {
+  id: string;
+  propriedadeId: string;
+  item: string;
+  peso: number;
+  ativo: boolean;
+};
+
+export type DadosItemChecklist = {
+  id?: string;
+  propriedadeId: string;
+  item: string;
+  peso: number;
+  ativo?: boolean;
+};
+
+/** Post publicado, com os campos que a tela de Posts Publicados precisa mostrar. */
+export type PostAdmin = {
+  id: string;
+  titulo: string;
+  url: string;
+  scoreQa: number | null;
+  publicadoEm: string | null;
+  tentativas: number;
+};
+
+export type EtapaLog =
+  | "buscar_checklist"
+  | "gerar_conteudo"
+  | "revisar"
+  | "inserir_links"
+  | "sanitizar"
+  | "publicar"
+  | "registrar_resultado";
+
+export type ResumoPropriedade = {
+  propriedadeId: string;
+  propriedadeNome: string;
+  pendentes: number;
+  emProducao: number;
+  bloqueadas: number;
+};
+
+export type ResumoVisaoGeral = {
+  porPropriedade: ResumoPropriedade[];
+  publicadosNaSemana: number;
+  /** aprovados / total de revisões concluídas (etapa "revisar" em pautas_execucao_log); null se não há histórico ainda. */
+  taxaAprovacaoRevisor: number | null;
+  /** Acumulado desde sempre (não filtrado por período) — ver nota na Task 12 sobre isto ser tokens brutos, não R$. */
+  tokensEntradaTotal: number;
+  tokensSaidaTotal: number;
+};
