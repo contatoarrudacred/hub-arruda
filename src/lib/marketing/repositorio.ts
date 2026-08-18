@@ -813,11 +813,15 @@ export async function carregarResumoVisaoGeral(): Promise<ResumoVisaoGeral> {
 // progresso. A carga inicial de "Na fila" reusa listarPautasPorStatus("pendente") (já existente,
 // mesma função usada pela Fila de Pautas, Task 10) — decisão deliberada: PautaCarregada não expõe
 // prioridade_score hoje (só a query interna de selecionarProximaPautaPendente usa essa coluna pra
-// ordenar), então "ordenadas por prioridade" (texto do brief) é aproximado por created_at desc, a
-// mesma ordenação que a Fila de Pautas já mostra. Estender PautaCarregada com prioridade_score pra
-// ordenar de verdade tocaria um tipo usado por toda tela do módulo — fora do escopo desta task,
-// registrado no relatório da Task 13. As duas leituras de pautas_execucao_log abaixo, porém, são
-// novas (a tabela não tinha nenhum consumidor de leitura fora de registrarEtapa/carregarResumoVisaoGeral).
+// ordenar), então "ordenadas por prioridade" (texto do brief) não é possível de verdade aqui.
+// Estender PautaCarregada com prioridade_score pra ordenar de verdade tocaria um tipo usado por
+// toda tela do módulo — fora do escopo desta task, registrado no relatório da Task 13. A ORDEM em
+// que o array chega (created_at desc, igual à Fila de Pautas) é invertida em page.tsx antes de
+// virar prop do client (`.reverse()`, mais antigas primeiro) — bate com o desempate real que o
+// cron usa hoje (prioridade_score desc, created_at asc; prioridade_score é 0 pra toda pauta, então
+// created_at asc decide na prática). Ver comentário em monitor/page.tsx pro detalhe. As duas
+// leituras de pautas_execucao_log abaixo, porém, são novas (a tabela não tinha nenhum consumidor
+// de leitura fora de registrarEtapa/carregarResumoVisaoGeral).
 // ---------------------------------------------------------------------------
 
 function mapearNomePauta(embed: unknown): string {
