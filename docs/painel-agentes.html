@@ -652,8 +652,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 19h37",
- "commit": "407db5c",
+ "atualizado": "18/08/2026 · 19h45",
+ "commit": "bc56ac0",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -687,6 +687,24 @@
   }
  ],
  "tarefas": [
+  {
+   "id": "aguardando-marketing",
+   "respostas": [],
+   "prazo": "agora",
+   "prazoRot": "🟡 Esperando",
+   "concluida": false,
+   "titulo": "Marketing parou às 18h11 esperando sua resposta",
+   "corpo": "<b>O que ele te perguntou:</b><br><i>“…Status declarado em docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i><br><br>Responda aqui embaixo — eu entrego direto na conversa dele, e ele volta a trabalhar. Enquanto ninguém responder, ele fica parado."
+  },
+  {
+   "id": "aguardando-crm",
+   "respostas": [],
+   "prazo": "agora",
+   "prazoRot": "🟡 Esperando",
+   "concluida": false,
+   "titulo": "CRM parou às 18h11 esperando sua resposta",
+   "corpo": "<b>O que ele te perguntou:</b><br><i>“…tura-detalhe-pagamento-fechamento-design.md), já avisei o Vendas do formato de dados e da regra de vencimento no quadro de coordenação, e registrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i><br><br>Responda aqui embaixo — eu entrego direto na conversa dele, e ele volta a trabalhar. Enquanto ninguém responder, ele fica parado."
+  },
   {
    "id": "migrations-2-novas",
    "prazo": "feito",
@@ -907,7 +925,7 @@
    "branch": "main · integra, mescla e conversa com os outros — não escreve feature",
    "chip": {
     "tipo": "rodando",
-    "texto": "🟢 trabalhando"
+    "texto": "🟢 TRABALHANDO"
    },
    "agora": [
     "Torre gerada por apuração (não mais digitada) + migrations confirmadas no banco <i>(declarado pelo próprio agente)</i>"
@@ -987,19 +1005,20 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T19:37:15-03:00",
-    "rotulo": "18/08 19:37"
-   }
+    "iso": "2026-08-18T19:45:07-03:00",
+    "rotulo": "18/08 19:45"
+   },
+   "estado": "TRABALHANDO"
   },
   {
    "nome": "CRM",
    "branch": "main · trabalha direto na raiz, sem worktree",
    "chip": {
     "tipo": "aguardando",
-    "texto": "🟡 aguardando você"
+    "texto": "🟡 AGUARDANDO"
    },
    "agora": [
-    "<b>Encerrou o turno às 18h11 e está esperando você.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. A última coisa que te disse: <i>“…gistrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i>"
+    "<b>Parou às 18h11 e está esperando sua resposta.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. O que te disse: <i>“…gistrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i>"
    ],
    "proxima": "➡️ Revisão da spec com o Luiz, depois plano de implementação (motor de fluxo)",
    "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
@@ -1043,23 +1062,24 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T19:30:36-03:00",
-    "rotulo": "18/08 19:30"
+    "iso": "2026-08-18T19:38:07-03:00",
+    "rotulo": "18/08 19:38"
    },
-   "inativo": true,
-   "aguardandoLuiz": true,
    "esperaDesde": "18h11",
-   "ultimaFala": "specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md), já avisei o Vendas do formato de dados e da regra de vencimento no quadro de coordenação, e registrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.)."
+   "ultimaFala": "specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md), já avisei o Vendas do formato de dados e da regra de vencimento no quadro de coordenação, e registrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).",
+   "estado": "AGUARDANDO",
+   "inativo": true,
+   "aguardandoLuiz": true
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
     "tipo": "aguardando",
-    "texto": "🟡 aguardando você"
+    "texto": "🟡 AGUARDANDO"
    },
    "agora": [
-    "<b>Encerrou o turno às 18h11 e está esperando você.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. A última coisa que te disse: <i>“… docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i>"
+    "<b>Parou às 18h11 e está esperando sua resposta.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. O que te disse: <i>“… docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i>"
    ],
    "proxima": "➡️ A definir — candidatos: Construtor de Matriz de Conteúdo (personas via tela já resolvido, falta o agente de pesquisa de temas/ângulos), distribuição multi-canal (GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium), ou aplicar a migration pendente (20260818090000) e validar o Monitor ao vivo",
    "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
@@ -1110,20 +1130,21 @@
     "iso": "2026-08-18T19:30:36-03:00",
     "rotulo": "18/08 19:30"
    },
-   "inativo": true,
-   "aguardandoLuiz": true,
    "esperaDesde": "18h11",
-   "ultimaFala": "Status declarado em docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente."
+   "ultimaFala": "Status declarado em docs/status/marketing.md, sincronizado com a main (confirmado: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.",
+   "estado": "AGUARDANDO",
+   "inativo": true,
+   "aguardandoLuiz": true
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "aguardando",
-    "texto": "🟡 aguardando você"
+    "tipo": "rodando",
+    "texto": "🟢 TRABALHANDO"
    },
    "agora": [
-    "<b>Encerrou o turno às 18h23 e está esperando você.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. A última coisa que te disse: <i>“…dedicado, e o PDF é só a exportação desse HTML — nesse caso é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?”</i>"
+    "Sub-frente Contrato — geração de PDF do contrato (puppeteer-core + @sparticuz/chromium) <i>(declarado pelo próprio agente)</i>"
    ],
    "proxima": "➡️ Config do signatário ArrudaCred, depois tela de Fechamento de Venda (paliativo de prazo curto — CRM já assumiu a captura como prioridade 1, antes do Kanban — não superdimensionar)",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
@@ -1162,20 +1183,19 @@
     "iso": "2026-08-18T19:30:36-03:00",
     "rotulo": "18/08 19:30"
    },
-   "inativo": true,
-   "aguardandoLuiz": true,
    "esperaDesde": "18h23",
-   "ultimaFala": "arkdown → HTML → PDF) — nesse caso, confere, sigo como está. 2. Você quer mudar o desenho: o admin edita HTML diretamente (não markdown) num editor de contrato dedicado, e o PDF é só a exportação desse HTML — nesse caso é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?"
+   "ultimaFala": "arkdown → HTML → PDF) — nesse caso, confere, sigo como está. 2. Você quer mudar o desenho: o admin edita HTML diretamente (não markdown) num editor de contrato dedicado, e o PDF é só a exportação desse HTML — nesse caso é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?",
+   "estado": "TRABALHANDO"
   }
  ],
  "dependencia": {
-  "rota": "🟢 trabalhando  ·  🟡 aguardando você  ·  ⏸ sem sinal",
-  "titulo": "A torre passou a ler as conversas, e é assim que ela sabe quem está te esperando",
+  "rota": "🟢 TRABALHANDO  ·  🟡 AGUARDANDO  ·  ⏸ PARADO  ·  ❌ ERRO",
+  "titulo": "Quatro estados, e a resposta que você escreve aqui chega no agente",
   "paragrafos": [
-   "<b>O que estava errado:</b> eu media atividade por commit e por arquivo alterado. Os dois mentem. Um agente pode trabalhar uma hora sem commitar, e quando <i>eu</i> sincronizo o worktree dele os arquivos mudam sem ele ter feito nada. Pior: nenhum dos dois sabe dizer se ele parou porque terminou ou porque está esperando você.",
-   "<b>O que passou a valer:</b> o Claude Code grava a transcrição de cada sessão em disco. Ela responde as duas perguntas de uma vez — <b>quando</b> foi a última troca e <b>de quem</b> foi a última palavra. Se a última palavra foi do agente, ele encerrou o turno: respondeu e não volta a se mexer até você falar com ele. É isso que vira o 🟡.",
-   "<b>Por que isso importa:</b> um agente parado é o estado <i>normal</i> dele entre uma mensagem sua e a próxima, não uma exceção. A torre antes não sabia representar justamente o estado mais comum — e por isso repetia por horas um 'fazendo agora' que já não existia.",
-   "<b>O que muda pra você:</b> quando alguém te espera, aparece na sua caixa com a hora em que parou e <b>a última frase que ele te disse</b> — a pergunta que ficou sem resposta. Você decide quem retomar sem abrir as três conversas."
+   "<b>São quatro, e só quatro.</b> 🟢 <b>TRABALHANDO</b> — a última palavra da conversa foi sua, ele está com a bola. 🟡 <b>AGUARDANDO</b> — a última palavra foi dele: respondeu e não volta a se mexer até você falar. ⏸ <b>PARADO</b> — não há conversa recente, sessão fechada. ❌ <b>ERRO</b> — a conversa terminou em falha (limite de uso, queda de API); esperar não resolve.",
+   "<b>Como eu sei:</b> pela transcrição da conversa de cada um, não por commit nem por arquivo alterado. Só ela distingue <i>terminou</i> de <i>está esperando</i> — e ela responde isso mesmo com as sessões fechadas.",
+   "<b>O ciclo fechou:</b> cada agente em 🟡 vira um item na sua caixa com a pergunta dele à mostra e um campo de resposta. O que você escrever ali eu <b>entrego dentro da conversa dele</b> — ele recebe como se fosse você falando e volta a trabalhar. Antes você tinha que abrir as três conversas pra descobrir quem estava travado; agora a torre te diz quem e por quê, e a resposta sai daqui.",
+   "<b>O que ainda depende de você:</b> a decisão. Eu levo e trago recado, cobro, sincronizo e apuro — mas o que responder ao Vendas ou ao CRM continua sendo seu."
   ]
  },
  "esperas": [
@@ -1183,7 +1203,7 @@
    "tempo": "🟡",
    "frio": false,
    "acao": "retomar a conversa",
-   "texto": "<b>3 agentes estão parados esperando você.</b> Cada um terminou de responder e não volta a se mexer sozinho — um agente só trabalha enquanto tem conversa aberta com você. O que cada um deixou na sua mão:<ul><li><b>CRM</b> — parado desde <b>18h11</b>: <i>“…pec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i></li><li><b>Marketing</b> — parado desde <b>18h11</b>: <i>“…do: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i></li><li><b>Vendas — Contrato</b> — parado desde <b>18h23</b>: <i>“…é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?”</i></li></ul>"
+   "texto": "<b>2 agentes estão parados esperando você.</b> Cada um terminou de responder e não volta a se mexer sozinho — um agente só trabalha enquanto tem conversa aberta com você. O que cada um deixou na sua mão:<ul><li><b>CRM</b> — parado desde <b>18h11</b>: <i>“…pec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i></li><li><b>Marketing</b> — parado desde <b>18h11</b>: <i>“…do: minha Fase 2 está mesclada, 296 testes verdes na árvore integrada). O item da caixa de entrada é endereçado ao Vendas, não a mim — não precisa de resposta minha. Fico no aguardo da próxima frente.”</i></li></ul>"
   }
  ]
 }
@@ -1343,7 +1363,7 @@
     h += '<button class="botao principal enviar" type="button" data-alvo="' + esc(t.id) + '">Enviar pro Coordenador</button>';
     h += '<button class="botao cancelar" type="button" data-alvo="' + esc(t.id) + '">Cancelar</button>';
     h += "</div>";
-    h += '<p class="dica">Sua resposta fica registrada aqui no item e chega pro Coordenador com a referência da tarefa.</p>';
+    h += '<p class="dica">Sua resposta fica registrada aqui e chega pro Coordenador com a referência do item. Se for pra um agente parado, ele entrega dentro da conversa dele — e o agente volta a trabalhar.</p>';
     h += "</div>";
 
     h += fechavel ? "</div></details></li>" : "</div></li>";

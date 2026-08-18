@@ -45,7 +45,7 @@ def git(*args, cwd=None):
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sessoes import ler_sessoes  # noqa: E402
+from sessoes import estado, ler_sessoes  # noqa: E402
 
 
 def ler_status(caminho):
@@ -185,45 +185,87 @@ def main():
             # Sessão fechada não é o mesmo que trabalhando devagar. Depois de 45min
             # sem tocar em arquivo nenhum, o honesto é dizer que ele parou — senão
             # a torre mostra uma tarefa antiga como se estivesse em curso.
-            # A transcrição da sessão é a fonte primária: diz QUANDO foi a
-            # última troca e DE QUEM foi a última palavra. Se a última palavra
-            # foi do agente, ele encerrou o turno — e um agente não volta a se
-            # mexer sozinho. Os sinais de código ficam de reserva, pra quando
-            # não há transcrição.
+            # Quatro estados. Não existe um quinto, e nenhum agente fica sem um.
+            #
+            #   TRABALHANDO — a última palavra da conversa foi de um humano
+            #   AGUARDANDO  — a última palavra foi do agente: ele parou e espera
+            #   PARADO      — não há conversa recente; sessão fechada
+            #   ERRO        — a conversa terminou em falha (limite, queda de API)
+            #
+            # A fonte é a transcrição da sessão, não commit nem arquivo alterado:
+            # só ela distingue "terminou" de "está esperando".
             ses = sessoes.get(nome)
-            idade = int((time.time() - ses["fim"]) / 60) if ses else None
+            est = "TRABALHANDO" if nome == "Coordenador" else estado(ses)
+            agente["estado"] = est
+            agente.pop("inativo", None)
+            agente.pop("aguardandoLuiz", None)
 
-            if nome == "Coordenador":
-                agente["chip"] = {"tipo": "rodando", "texto": "🟢 trabalhando"}
-                agente.pop("inativo", None)
-                agente.pop("aguardandoLuiz", None)
-            elif ses and ses["papel"] == "assistant" and idade >= 3:
-                agente["chip"] = {"tipo": "aguardando", "texto": "🟡 aguardando você"}
+            CHIPS = {
+                "TRABALHANDO": ("rodando", "🟢 TRABALHANDO"),
+                "AGUARDANDO": ("aguardando", "🟡 AGUARDANDO"),
+                "PARADO": ("parado", "⏸ PARADO"),
+                "ERRO": ("travado", "❌ ERRO"),
+            }
+            tipo, rotulo = CHIPS[est]
+            agente["chip"] = {"tipo": tipo, "texto": rotulo}
+
+            if est == "AGUARDANDO":
                 agente["inativo"] = True
                 agente["aguardandoLuiz"] = True
                 agente["esperaDesde"] = time.strftime("%Hh%M", time.localtime(ses["fim"]))
                 agente["ultimaFala"] = ses["texto"]
                 agente["agora"] = [
-                    "<b>Encerrou o turno às " + agente["esperaDesde"] + " e está esperando você.</b> "
+                    "<b>Parou às " + agente["esperaDesde"] + " e está esperando sua resposta.</b> "
                     "Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele."
-                    + (" A última coisa que te disse: <i>“…" + ses["texto"][-260:] + "”</i>"
-                       if ses["texto"] else "")
+                    + (" O que te disse: <i>“…" + ses["texto"][-260:] + "”</i>" if ses["texto"] else "")
                 ]
-            elif ses and (ses["papel"] == "user" or idade < 3):
-                agente["chip"] = {"tipo": "rodando", "texto": "🟢 trabalhando"}
-                agente.pop("inativo", None)
-                agente.pop("aguardandoLuiz", None)
-            elif parado_min >= 45:
-                horas = parado_min // 60
-                quanto = (f"{horas}h{parado_min % 60:02d}" if horas else f"{parado_min} min")
-                agente["chip"] = {"tipo": "parado", "texto": f"⏸ sem sinal há {quanto}"}
+            elif est == "ERRO":
                 agente["inativo"] = True
-                agente.pop("aguardandoLuiz", None)
-            else:
-                agente.pop("inativo", None)
-                agente.pop("aguardandoLuiz", None)
-                if agente.get("chip", {}).get("tipo") in ("parado", "aguardando"):
-                    agente["chip"] = {"tipo": "rodando", "texto": "🟢 trabalhando"}
+                agente["alerta"] = {"nivel": "grave", "sinal": "🚨",
+                                    "texto": "<b>A conversa dele terminou em erro:</b> " +
+                                             (ses.get("erro") or "sem detalhe") +
+                                             ". Não adianta esperar — precisa abrir a conversa."}
+            elif est == "PARADO":
+                agente["inativo"] = True
+                agente["agora"] = [
+                    "<b>Sessão fechada.</b> Nenhuma conversa recente. "
+                    + ("A última coisa que ele declarou foi: <i>" + st["tarefa"] + "</i>."
+                       if st.get("tarefa") else "")
+                ]
+
+    # ---- um item de resposta por agente que está esperando ----
+    # A caixa do Luiz precisa ter UMA linha por agente parado, com a pergunta
+    # dele à mostra e campo de resposta. O que ele escrever aqui eu entrego
+    # dentro da conversa do agente (send_message), fechando o ciclo.
+    def slug(n):
+        return (n.split("—")[0].strip().lower()
+                .replace("ç", "c").replace("ã", "a").replace(" ", "-"))
+
+    por_id = {t.get("id"): t for t in d["tarefas"]}
+    for agente in d["agentes"]:
+        if agente["nome"] == "Coordenador":
+            continue
+        iid = "aguardando-" + slug(agente["nome"])
+        item = por_id.get(iid)
+        if agente.get("aguardandoLuiz"):
+            if item is None:
+                item = {"id": iid, "respostas": []}
+                d["tarefas"].insert(0, item)
+            item.update({
+                "prazo": "agora",
+                "prazoRot": "🟡 Esperando",
+                "concluida": False,
+                "titulo": agente["nome"] + " parou às " + agente.get("esperaDesde", "?") +
+                          " esperando sua resposta",
+                "corpo": ("<b>O que ele te perguntou:</b><br><i>“…" +
+                          (agente.get("ultimaFala") or "")[-400:] + "”</i><br><br>" +
+                          "Responda aqui embaixo — eu entrego direto na conversa dele, e ele "
+                          "volta a trabalhar. Enquanto ninguém responder, ele fica parado."),
+            })
+        elif item is not None and not item.get("concluida"):
+            item["concluida"] = True
+            item["prazoRot"] = "✅ Retomado"
+            item["titulo"] = agente["nome"] + " voltou a trabalhar"
 
     # ---- instrumentos ----
     pend = migrations_pendentes()
