@@ -182,6 +182,59 @@ def main():
         {"rot": "Migrations", "val": "✅ sem colisão", "bom": True},
     ]
 
+    # ---- ALERTAS: derivados do estado, nunca escritos à mão ----
+    # Um alerta que sobrevive ao fato que o gerou é pior que nenhum alerta:
+    # ensina o Luiz a ignorar a faixa vermelha. Por isso esta lista é
+    # reconstruída do zero a cada apuração.
+    esperas = []
+
+    if pend:
+        esperas.append({
+            "tempo": "🗄️",
+            "frio": False,
+            "acao": "rodar no SQL Editor",
+            "texto": ("<b>" + str(len(pend)) + " migration" + ("s" if len(pend) > 1 else "") +
+                      " aguardando você</b> — escrita" + ("s" if len(pend) > 1 else "") +
+                      " pelos agentes e paradas antes do banco, como a regra manda: <code>" +
+                      "</code>, <code>".join(m[:40] for m in pend) + "</code>. " +
+                      "Arquivo consolidado em <code>docs/migrations-pendentes-supabase.sql</code>."),
+        })
+
+    # pedidos abertos no inbox
+    inbox = os.path.join(RAIZ, "docs", "INBOX_AGENTES.md")
+    abertos = []
+    if os.path.isfile(inbox):
+        dentro = False
+        for linha in open(inbox, encoding="utf-8").read().splitlines():
+            if linha.startswith("## Abertos"):
+                dentro = True
+                continue
+            if dentro and linha.startswith("## "):
+                break
+            if dentro and linha.startswith("| **"):
+                abertos.append(linha.split("|")[1].strip().strip("*"))
+    if abertos:
+        esperas.append({
+            "tempo": "📬",
+            "frio": False,
+            "acao": "os agentes veem ao abrir sessão",
+            "texto": ("<b>" + str(len(abertos)) + " pedido" + ("s" if len(abertos) > 1 else "") +
+                      " aberto" + ("s" if len(abertos) > 1 else "") + " entre agentes</b> — para: " +
+                      ", ".join("<b>" + a + "</b>" for a in abertos) +
+                      ". Se algum deles estiver com a sessão fechada, um toque seu na conversa resolve."),
+        })
+
+    # bloqueios declarados pelos próprios agentes
+    for agente in d["agentes"]:
+        al = agente.get("alerta") or {}
+        if al.get("sinal") == "🚨":
+            esperas.append({
+                "tempo": "🚨", "frio": True, "acao": "avisar " + agente["nome"],
+                "texto": "<b>" + agente["nome"] + " declarou bloqueio.</b> " + al.get("texto", ""),
+            })
+
+    d["esperas"] = esperas
+
     novo = json.dumps(d, ensure_ascii=False, indent=1)
     s = s[:m.start(2)] + novo + s[m.end(2):]
     io.open(TORRE, "w", encoding="utf-8").write(s)
@@ -190,6 +243,7 @@ def main():
     print(f"  declararam status: {', '.join(mudou) if mudou else 'ninguém'}")
     print(f"  migrations pendentes: {len(pend)}" + (f" ({', '.join(pend)})" if pend else ""))
     print(f"  testes: {testes or 'não apurado'}")
+    print(f"  alertas na torre: {len(esperas)}" + (" (nenhum — nada pendente)" if not esperas else ""))
     print("\nAgora publique o artifact. NUNCA responda ao Luiz antes de publicar.")
     return 0
 
