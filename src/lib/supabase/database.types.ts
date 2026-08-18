@@ -228,6 +228,70 @@ export type Database = {
           },
         ]
       }
+      comissoes_fornecedor_receber: {
+        Row: {
+          created_at: string
+          data_prevista: string
+          fornecedor_id: string
+          id: string
+          numero: number
+          oportunidade_id: string
+          produto_id: string
+          recebido_em: string | null
+          status: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          created_at?: string
+          data_prevista: string
+          fornecedor_id: string
+          id?: string
+          numero: number
+          oportunidade_id: string
+          produto_id: string
+          recebido_em?: string | null
+          status?: string
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          created_at?: string
+          data_prevista?: string
+          fornecedor_id?: string
+          id?: string
+          numero?: number
+          oportunidade_id?: string
+          produto_id?: string
+          recebido_em?: string | null
+          status?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissoes_fornecedor_receber_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissoes_fornecedor_receber_oportunidade_id_fkey"
+            columns: ["oportunidade_id"]
+            isOneToOne: false
+            referencedRelation: "oportunidades"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissoes_fornecedor_receber_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       configuracoes: {
         Row: {
           atualizado_por: string | null
@@ -279,6 +343,193 @@ export type Database = {
             columns: ["produto_id"]
             isOneToOne: false
             referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contrato_parcelas: {
+        Row: {
+          asaas_installment_id: string | null
+          asaas_payment_id: string | null
+          contrato_id: string
+          created_at: string
+          id: string
+          numero: number
+          pago_em: string | null
+          status: string
+          updated_at: string
+          valor: number
+          vencimento_previsto: string
+        }
+        Insert: {
+          asaas_installment_id?: string | null
+          asaas_payment_id?: string | null
+          contrato_id: string
+          created_at?: string
+          id?: string
+          numero: number
+          pago_em?: string | null
+          status?: string
+          updated_at?: string
+          valor: number
+          vencimento_previsto: string
+        }
+        Update: {
+          asaas_installment_id?: string | null
+          asaas_payment_id?: string | null
+          contrato_id?: string
+          created_at?: string
+          id?: string
+          numero?: number
+          pago_em?: string | null
+          status?: string
+          updated_at?: string
+          valor?: number
+          vencimento_previsto?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_parcelas_contrato_id_fkey"
+            columns: ["contrato_id"]
+            isOneToOne: false
+            referencedRelation: "contratos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contrato_templates: {
+        Row: {
+          ativo: boolean
+          conteudo_markdown: string
+          created_at: string
+          id: string
+          produto_id: string
+          updated_at: string
+          versao: number
+        }
+        Insert: {
+          ativo?: boolean
+          conteudo_markdown: string
+          created_at?: string
+          id?: string
+          produto_id: string
+          updated_at?: string
+          versao?: number
+        }
+        Update: {
+          ativo?: boolean
+          conteudo_markdown?: string
+          created_at?: string
+          id?: string
+          produto_id?: string
+          updated_at?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_templates_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contratos: {
+        Row: {
+          assinado_em: string | null
+          assinafy_document_id: string | null
+          assinafy_document_status: string | null
+          contrato_template_id: string
+          created_at: string
+          enviado_em: string | null
+          forma_pagamento: string
+          fornecedor_id: string | null
+          id: string
+          metodo_pagamento: string
+          oportunidade_id: string
+          parcelas_qtd: number
+          pdf_url: string | null
+          pessoa_arrudacred_signatario_id: string
+          pessoa_signatario_id: string
+          status: string
+          updated_at: string
+          valor_total: number
+        }
+        Insert: {
+          assinado_em?: string | null
+          assinafy_document_id?: string | null
+          assinafy_document_status?: string | null
+          contrato_template_id: string
+          created_at?: string
+          enviado_em?: string | null
+          forma_pagamento: string
+          fornecedor_id?: string | null
+          id?: string
+          metodo_pagamento: string
+          oportunidade_id: string
+          parcelas_qtd?: number
+          pdf_url?: string | null
+          pessoa_arrudacred_signatario_id: string
+          pessoa_signatario_id: string
+          status?: string
+          updated_at?: string
+          valor_total: number
+        }
+        Update: {
+          assinado_em?: string | null
+          assinafy_document_id?: string | null
+          assinafy_document_status?: string | null
+          contrato_template_id?: string
+          created_at?: string
+          enviado_em?: string | null
+          forma_pagamento?: string
+          fornecedor_id?: string | null
+          id?: string
+          metodo_pagamento?: string
+          oportunidade_id?: string
+          parcelas_qtd?: number
+          pdf_url?: string | null
+          pessoa_arrudacred_signatario_id?: string
+          pessoa_signatario_id?: string
+          status?: string
+          updated_at?: string
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contratos_contrato_template_id_fkey"
+            columns: ["contrato_template_id"]
+            isOneToOne: false
+            referencedRelation: "contrato_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_oportunidade_id_fkey"
+            columns: ["oportunidade_id"]
+            isOneToOne: true
+            referencedRelation: "oportunidades"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_pessoa_arrudacred_signatario_id_fkey"
+            columns: ["pessoa_arrudacred_signatario_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_pessoa_signatario_id_fkey"
+            columns: ["pessoa_signatario_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
             referencedColumns: ["id"]
           },
         ]
@@ -1204,6 +1455,53 @@ export type Database = {
           },
         ]
       }
+      pautas_execucao_log: {
+        Row: {
+          concluido_em: string | null
+          created_at: string
+          detalhes: string | null
+          etapa: string
+          id: string
+          iniciado_em: string
+          pauta_id: string
+          sucesso: boolean | null
+          tokens_entrada: number | null
+          tokens_saida: number | null
+        }
+        Insert: {
+          concluido_em?: string | null
+          created_at?: string
+          detalhes?: string | null
+          etapa: string
+          id?: string
+          iniciado_em?: string
+          pauta_id: string
+          sucesso?: boolean | null
+          tokens_entrada?: number | null
+          tokens_saida?: number | null
+        }
+        Update: {
+          concluido_em?: string | null
+          created_at?: string
+          detalhes?: string | null
+          etapa?: string
+          id?: string
+          iniciado_em?: string
+          pauta_id?: string
+          sucesso?: boolean | null
+          tokens_entrada?: number | null
+          tokens_saida?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pautas_execucao_log_pauta_id_fkey"
+            columns: ["pauta_id"]
+            isOneToOne: false
+            referencedRelation: "pautas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pessoa_documentos: {
         Row: {
           created_at: string
@@ -1605,6 +1903,7 @@ export type Database = {
           ativo: boolean
           config_pipeline: Json
           created_at: string
+          credenciais_canais: Json
           id: string
           nome: string
           pessoa_id: string | null
@@ -1617,6 +1916,7 @@ export type Database = {
           ativo?: boolean
           config_pipeline?: Json
           created_at?: string
+          credenciais_canais?: Json
           id?: string
           nome: string
           pessoa_id?: string | null
@@ -1629,6 +1929,7 @@ export type Database = {
           ativo?: boolean
           config_pipeline?: Json
           created_at?: string
+          credenciais_canais?: Json
           id?: string
           nome?: string
           pessoa_id?: string | null

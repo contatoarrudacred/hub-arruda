@@ -301,6 +301,18 @@
     display: block;
   }
   .inicio b { color: var(--texto-suave); font-weight: 600; }
+  .inicio.sinal, .inicio.semdec { margin-top: -3px; }
+  .inicio.semdec { color: var(--atencao); }
+  .crono {
+    display: inline-block;
+    font-weight: 700;
+    padding: 1px 6px;
+    border: 1px solid var(--linha-forte);
+    margin-right: 4px;
+  }
+  .crono.ok      { color: var(--ok);      border-color: var(--ok);      background: var(--ok-fundo); }
+  .crono.atencao { color: var(--atencao); border-color: var(--atencao); background: var(--atencao-fundo); }
+  .crono.tarde   { color: var(--trava);   border-color: var(--trava);   background: var(--trava-fundo); }
 
   /* bloco "Já entregou" fechado por padrão, dentro do card do agente */
   /* o histórico é um botão de verdade, não um rótulo discreto */
@@ -639,17 +651,12 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h40",
- "commit": "96b678b",
+ "atualizado": "18/08/2026 · 18h26",
+ "commit": "56f7c10",
  "instrumentos": [
   {
    "rot": "Testes",
-   "val": "✅ 168 verdes",
-   "bom": true
-  },
-  {
-   "rot": "Lint e build",
-   "val": "✅ limpos",
+   "val": "✅ 303 verdes",
    "bom": true
   },
   {
@@ -663,17 +670,56 @@
    "bom": true
   },
   {
-   "rot": "Migrations",
-   "val": "✅ sem colisão",
+   "rot": "Agentes ativos",
+   "val": "🟢 4 na última hora",
    "bom": true
   },
   {
-   "rot": "Agentes ativos",
-   "val": "🟢 3 mexendo agora",
+   "rot": "Declararam status",
+   "val": "4 de 4",
+   "bom": true
+  },
+  {
+   "rot": "Migrations",
+   "val": "✅ sem colisão",
    "bom": true
   }
  ],
  "tarefas": [
+  {
+   "id": "migrations-2-novas",
+   "prazo": "feito",
+   "prazoRot": "✅ Rodadas",
+   "titulo": "Rodar 2 migrations no Supabase — feito",
+   "corpo": "<b>Confirmado no banco</b>, tabela por tabela: <code>pautas_execucao_log</code>, <code>contrato_templates</code>, <code>contratos</code>, <code>contrato_parcelas</code>, <code>comissoes_fornecedor_receber</code> e a coluna <code>credenciais_canais</code> existem em produção. Regenerei o <code>database.types.ts</code> (+301 linhas) e revalidei: 296 testes verdes, lint limpo.",
+   "acoes": [
+    {
+     "texto": "abrir o arquivo .sql",
+     "url": "https://github.com/contatoarrudacred/hub-arruda/blob/main/docs/migrations-pendentes-supabase.sql"
+    },
+    {
+     "texto": "SQL Editor do Supabase",
+     "url": "https://supabase.com/dashboard/project/mzvaqjhalynaceecnayt/sql/new"
+    }
+   ],
+   "respostas": [
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 18h00",
+     "texto": "Falha minha de processo: eu te falei destas migrations no chat e nunca coloquei aqui na torre — que é onde você olha. Item que só existe na conversa não existe. Agora está no topo da sua caixa, com link direto pro arquivo e pro SQL Editor.\n\nO que estas migrations destravam:\n- Marketing: a tela de credenciais por propriedade e o log de execução do pipeline (Fase 2, que mesclei hoje com 296 testes verdes)\n- Vendas: o núcleo de contrato — templates, contratos, parcelas e comissão de fornecedor\n\nDepois que você rodar, me avise: eu regenero o database.types.ts e confirmo tabela por tabela, como fiz com as 3 de Vendas hoje de manhã."
+    },
+    {
+     "quando": "18/08 · 18h14",
+     "texto": "rodei o arquivo"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 18h20",
+     "texto": "Verifiquei direto no banco em vez de perguntar — as 6 tabelas/colunas existem. Tipos regenerados e enviados.\n\nO que isso destravou:\n- Marketing: a Fase 2 agora funciona de verdade em produção (tela de credenciais por propriedade e log de execução do pipeline)\n- Vendas: o núcleo de contrato existe — templates, contratos, parcelas e comissão de fornecedor\n\nAvisei os dois."
+    }
+   ],
+   "concluida": true
+  },
   {
    "id": "testar-telas-vendas",
    "prazo": "agora",
@@ -863,10 +909,9 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Chave de criptografia registrada nos três lugares — o terceiro eu copiei direto pro worktree do Marketing, sem expor o valor. Ele já foi avisado.",
-    "Sem pendência entre agentes: nenhuma colisão, ninguém esperando ninguém."
+    "Torre gerada por apuração (não mais digitada) + migrations confirmadas no banco <i>(declarado pelo próprio agente)</i>"
    ],
-   "proxima": "➡️ Seguir varrendo. A única coisa aberta com você é o teste das telas de Vendas.",
+   "proxima": "➡️ Varredura periódica; levar ao Luiz o que aparecer",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -924,13 +969,25 @@
     {
      "t": "✅ Replicou a chave de cifra pro worktree do Marketing sem expor o valor, com verificação por hash",
      "q": "18/08 15h40"
+    },
+    {
+     "t": "✅ Mesclou a Fase 2 do Marketing (13 tasks) e destravou o Vendas, que estava parado há 2h30",
+     "q": "18/08 17h40"
+    },
+    {
+     "t": "✅ Trocou adivinhação por declaração: agentes reportam status e eu leio direto do worktree",
+     "q": "18/08 17h50"
     }
    ],
    "dims": null,
    "inicio": {
-    "iso": "2026-08-18T11:27:00-03:00",
-    "rotulo": "18/08 11h27",
-    "nota": "1º commit desta sessão"
+    "iso": "2026-08-18T18:15:00-03:00",
+    "rotulo": "",
+    "nota": "nesta tarefa"
+   },
+   "ultimoSinal": {
+    "iso": "2026-08-18T18:26:09-03:00",
+    "rotulo": "18/08 18:26"
    }
   },
   {
@@ -941,9 +998,9 @@
     "texto": "✅ tem direção"
    },
    "agora": [
-    "Fila vazia, mas <b>acabou de ganhar direção</b>: você confirmou Kanban → Dashboard. Ele pega o Kanban quando a sessão abrir."
+    "Desenhar e escrever a spec de captura de detalhe de pagamento no fechamento (forma, parcelas, vencimentos) — pedido do Vendas, prioridade 1 do CRM antes do Kanban <i>(declarado pelo próprio agente)</i>"
    ],
-   "proxima": "➡️ Construir o Kanban do funil comercial.",
+   "proxima": "➡️ Revisão da spec com o Luiz, depois plano de implementação (motor de fluxo)",
    "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
    "entregue": [
     {
@@ -980,9 +1037,13 @@
     "prod": 70
    },
    "inicio": {
-    "iso": "2026-08-18T13:24:00-03:00",
-    "rotulo": "18/08 13h24",
-    "nota": "sem tarefa desde então; Kanban recém-priorizado"
+    "iso": "2026-08-18T18:10:33-03:00",
+    "rotulo": "",
+    "nota": "nesta tarefa"
+   },
+   "ultimoSinal": {
+    "iso": "2026-08-18T18:26:09-03:00",
+    "rotulo": "18/08 18:26"
    }
   },
   {
@@ -993,10 +1054,9 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "<b>Trabalhando na Fase 2</b>: configuração admin, cota diária, janela de publicação, log de execução do pipeline.",
-    "Desfez a reversão da criptografia em 2 minutos — o módulo voltou e a senha volta a ser cifrada."
+    "Fase 2 (telas de admin) concluída e mesclada — sincronizando com main, aguardando definição da próxima frente com o Luiz <i>(declarado pelo próprio agente)</i>"
    ],
-   "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
+   "proxima": "➡️ A definir — candidatos: Construtor de Matriz de Conteúdo (personas via tela já resolvido, falta o agente de pesquisa de temas/ângulos), distribuição multi-canal (GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium), ou aplicar a migration pendente (20260818090000) e validar o Monitor ao vivo",
    "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
    "entregue": [
     {
@@ -1026,6 +1086,10 @@
     {
      "t": "✅ Restaurou a criptografia depois que a decisão mudou, sem reclamar do retrabalho",
      "q": "18/08 15h00"
+    },
+    {
+     "t": "✅ Fase 2 inteira: telas de admin, cota diária, janela de publicação, log de execução, credenciais cifradas",
+     "q": "18/08 17h02"
     }
    ],
    "dims": {
@@ -1033,9 +1097,13 @@
     "prod": 45
    },
    "inicio": {
-    "iso": "2026-08-18T13:08:00-03:00",
-    "rotulo": "18/08 13h08",
-    "nota": "1º commit da Fase 2"
+    "iso": "2026-08-18T18:00:00-03:00",
+    "rotulo": "",
+    "nota": "nesta tarefa"
+   },
+   "ultimoSinal": {
+    "iso": "2026-08-18T18:11:21-03:00",
+    "rotulo": "18/08 18:11"
    }
   },
   {
@@ -1046,10 +1114,9 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "<b>A todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy.",
-    "Resolveu a colisão de migration em 2 minutos assim que você avisou — e conferiu o rótulo interno do arquivo, não só renomeou."
+    "Sub-frente Contrato — geração de PDF do contrato (puppeteer-core + @sparticuz/chromium) <i>(declarado pelo próprio agente)</i>"
    ],
-   "proxima": "➡️ Seguir com a tela de Fechamento de Venda, agora sabendo que ela não é mais provisória.",
+   "proxima": "➡️ Config do signatário ArrudaCred, depois tela de Fechamento de Venda (paliativo de prazo curto — CRM já assumiu a captura como prioridade 1, antes do Kanban — não superdimensionar)",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
    "entregue": [
     {
@@ -1078,19 +1145,23 @@
     "prod": 35
    },
    "inicio": {
-    "iso": "2026-08-18T14:20:00-03:00",
-    "rotulo": "18/08 ~14h20",
-    "nota": "retomou a sub-frente Contrato"
+    "iso": "2026-08-18T18:16:19-03:00",
+    "rotulo": "",
+    "nota": "nesta tarefa"
+   },
+   "ultimoSinal": {
+    "iso": "2026-08-18T18:25:38-03:00",
+    "rotulo": "18/08 18:25"
    }
   }
  ],
  "dependencia": {
-  "rota": "✅ nada aberto entre agentes",
-  "titulo": "Os dois incidentes foram resolvidos em 2 minutos",
+  "rota": "✅ os quatro agentes declararam status",
+  "titulo": "A torre passou a ser preenchida por apuração, não por digitação",
   "paragrafos": [
-   "<b>Colisão de migration:</b> o Vendas renomeou para <code>090001</code> e conferiu o rótulo interno do arquivo — não sobrou referência ao número antigo. <b>Custou zero</b> porque nenhuma das duas tinha ido ao banco: a regra de não rodar migration provou o valor dela hoje.",
-   "<b>Reversão da criptografia:</b> o Marketing desfez e o módulo voltou. O retrabalho foi causado pelo meu atraso em comunicar sua decisão, e ele resolveu sem reclamar.",
-   "<b>O que ainda não está resolvido:</b> os dois só souberam porque <b>você avisou em cada conversa</b>. O hook não alcança sessão que já está aberta — e é justamente o agente produtivo que fica horas com ela aberta. Enquanto isso não mudar, você continua sendo o carteiro dos casos urgentes. É a próxima coisa a atacar."
+   "<b>O que mudou:</b> os campos de estado desta página — o que cada agente faz, desde quando, último arquivo tocado, migrations pendentes, testes — agora são <b>gerados por um script</b> que apura git, arquivos, <code>docs/status/</code> e o banco. Eu só escrevo o que é editorial: decisões, recados e contexto.",
+   "<b>Por que:</b> a torre era digitada por mim em paralelo ao chat, e duas escritas manuais divergem sempre. Hoje ela afirmou \\\"aguardando CRM\\\" por uma hora depois de ele responder, disse \\\"Vendas parado\\\" enquanto ele trabalhava, e deixou 2 migrations só no chat. Todas essas falhas tinham a mesma causa.",
+   "<b>Regra que adotei:</b> publico a torre <b>antes</b> de responder no chat, nunca depois. Se está no chat e não está aqui, é bug meu."
   ]
  },
  "esperas": []
@@ -1130,6 +1201,21 @@
     return "há " + Math.floor(h / 24) + " dias";
   }
 
+  function minutosDesde(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) return null;
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < -5 || min > 60 * 24 * 60) return null;
+    return Math.max(min, 0);
+  }
+
+  function horaDe(iso) {
+    var t = new Date(iso);
+    if (isNaN(t.getTime())) return "";
+    var p = function (n) { return n < 10 ? "0" + n : "" + n; };
+    return p(t.getDate()) + "/" + p(t.getMonth() + 1) + " " + p(t.getHours()) + "h" + p(t.getMinutes());
+  }
+
   function barras(dims) {
     if (!dims) return "";
     return '<div class="bloco"><div class="rot">Evolução do módulo</div><div class="dims">' +
@@ -1155,11 +1241,22 @@
     h += '<div class="bloco"><div class="rot">🔄 Fazendo agora</div>';
     // o "desde quando" vem logo abaixo do título: é a primeira coisa que
     // situa o leitor antes de ele ler o que o agente está fazendo.
-    if (a.inicio) {
-      var dec = a.inicio.iso ? decorrido(a.inicio.iso) : "";
-      h += '<span class="inicio">Início em: <b>' + esc(a.inicio.rotulo) + "</b>" +
-           (dec ? " (" + dec + ")" : "") +
-           (a.inicio.nota ? " · " + esc(a.inicio.nota) : "") + "</span>";
+    if (a.inicio && a.inicio.iso) {
+      var min = minutosDesde(a.inicio.iso);
+      var cls = min === null ? "" : (min <= 30 ? "ok" : (min <= 60 ? "atencao" : "tarde"));
+      var icone = min === null ? "🕐" : (min <= 30 ? "🟢" : (min <= 60 ? "🟡" : "🔴"));
+      var rot = a.inicio.rotulo || horaDe(a.inicio.iso);
+      h += '<span class="inicio"><span class="crono ' + cls + '">' + icone + " " +
+           esc(decorrido(a.inicio.iso) || "agora") + "</span> nesta tarefa · desde <b>" +
+           esc(rot) + "</b></span>";
+    }
+    if (a.ultimoSinal && a.ultimoSinal.iso) {
+      var d2 = decorrido(a.ultimoSinal.iso);
+      h += '<span class="inicio sinal">Último arquivo tocado: <b>' + esc(a.ultimoSinal.rotulo) + "</b>" +
+           (d2 ? " (" + d2 + ")" : "") + "</span>";
+    }
+    if (a.semDeclaracao) {
+      h += '<span class="inicio semdec">⚪ não declarou status — o que está escrito acima é leitura minha, não dele</span>';
     }
     a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
     h += "</div>";

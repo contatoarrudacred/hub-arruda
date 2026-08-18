@@ -129,8 +129,14 @@ create table comissoes_fornecedor_receber (
 
 ## Task 3: Cálculo de parcelas (lógica pura, TDD)
 
-**Files:** Create `src/lib/vendas/calculo-parcelas.ts` + `.test.ts`
-**Produz:** `calcularParcelas(valorTotal: number, qtd: number, primeiroVencimento: Date, intervaloDias: number): { numero: number; valor: number; vencimento: Date }[]` — última parcela absorve o resto de arredondamento (soma bate exatamente com `valorTotal`). Usado tanto pela tela de Fechamento de Venda (preview) quanto por `comissoes.ts` (Task 12).
+**Status: ✅ feito, e atualizado em 18/08 depois da spec de captura de pagamento do CRM (`docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md`) sair.**
+
+**Files:** `src/lib/vendas/calculo-parcelas.ts` + `.test.ts`
+**Produz:**
+- `dividirValorEmParcelas(valorTotal, qtd): number[]` — divide valor em centavos, última parcela absorve o resto de arredondamento (soma bate exatamente com `valorTotal`). Extraída como base compartilhada pelas duas funções abaixo.
+- `calcularParcelas(valorTotal, qtd, primeiroVencimento, intervaloDias)` — vencimento por intervalo fixo de dias. Usada só por `comissoes.ts` (Task 12), que tem regra própria (`fornecedor_produtos.comissao_intervalo_dias_parcelas`).
+- `calcularVencimentosPorAncora(primeiraParcela, diaAncora: 1|10|20, qtdParcelas): Date[]` — regra real de vencimento do contrato com cliente (spec seção 1): 1ª parcela na data informada, 2ª em diante no dia-âncora do mês **seguinte ao mês da 1ª parcela**, rolando o ano.
+- `calcularParcelasContrato(valorTotal, qtdParcelas, primeiraParcela, diaAncora)` — combina as duas acima. É o que a tela de Fechamento de Venda usa (Task 8) pra venda sem funil prévio, ou quando o admin sobrescreve o que veio do CRM.
 
 ## Task 4: Repositório `contrato-templates.ts`
 
@@ -139,8 +145,10 @@ create table comissoes_fornecedor_receber (
 
 ## Task 5: Repositório `contratos.ts`
 
-**Files:** Create `src/lib/vendas/contratos.ts`
-**Produz:** `criarContrato(entrada)` (grava `contratos` + `contrato_parcelas` a partir do resultado da Task 3), `buscarContratoPorOportunidade(oportunidadeId)`, `atualizarStatusContrato(id, status)`, `buscarPessoaArrudaCredSignatario()` (lê a chave `contrato_arrudacred_signatario` de `configuracoes`).
+**Status: ✅ feito.**
+
+**Files:** `src/lib/vendas/contratos.ts`
+**Produz:** `criarContrato(entrada)` — recebe as parcelas **já calculadas** (`entrada.parcelas: Parcela[]`), não recalcula: quem chama decide se vêm de `conversas.dados.detalhe_pagamento.parcelas` (CRM) ou de `calcularParcelasContrato` (Task 3, venda sem funil prévio/edição manual). `buscarContratoPorOportunidade(oportunidadeId)`, `atualizarStatusContrato(id, status)`, `buscarPessoaArrudaCredSignatario()` (lê a chave `contrato_arrudacred_signatario` de `configuracoes`). `MetodoPagamento` é só `"boleto_pix" | "cartao"` (regra validada com o Luiz, ver Task 0/1).
 
 ## Task 6: Geração de PDF
 
@@ -153,10 +161,16 @@ create table comissoes_fornecedor_receber (
 
 ## Task 8: Tela de Fechamento de Venda
 
+**⚠️ Correção de escopo (Coordenador, 18/08 17h45): volta a ser paliativo de prazo CURTO — o CRM já assumiu a captura de pagamento como prioridade 1 do Atendimento, antes do Kanban (não depois de duas frentes inteiras, como dito antes). Não superdimensionar: construir funcional, sem investir em polimento que não sobrevive à convergência com o bot.**
+
 **Files:**
 - Create: `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/page.tsx` + `actions.ts` + `fechamento-client.tsx`
 
-Mesmo padrão de `page.tsx`(Server Component)/`actions.ts`(`"use server"`)/`*-client.tsx` já usado em `vendas/nova/`. Pré-preenche `forma_pagamento` a partir de `conversas.dados` quando existir (join por `oportunidade_id` → `conversas.oportunidade_id`); usa `calcularParcelas` (Task 3) pra preview da tabela de vencimentos antes de confirmar; valida soma das parcelas == `valor_total`; ao confirmar, chama `criarContrato` (Task 5), gera PDF (Task 6) e sobe status pra `gerado`.
+Mesmo padrão de `page.tsx`(Server Component)/`actions.ts`(`"use server"`)/`*-client.tsx` já usado em `vendas/nova/`.
+
+- **Caminho CRM:** lê `conversas.dados.detalhe_pagamento` (formato exato, spec do CRM seção 4: `{ forma: "boleto_pix"|"cartao", tipo: "avista"|"parcelado", parcelas: [{numero, valor, vencimento}] }`). Quando existir, é **só exibir e confirmar** — os dados já vêm calculados pela mesma regra de âncora, não precisa recalcular. Mapeamento: `detalhe_pagamento.tipo` → `contratos.forma_pagamento`, `detalhe_pagamento.forma` → `contratos.metodo_pagamento`, `detalhe_pagamento.parcelas` → direto pra `criarContrato({ ..., parcelas })`.
+- **Caminho venda sem funil prévio (ou `detalhe_pagamento` ainda não existir):** admin escolhe forma/método/data da 1ª parcela/dia-âncora, tela usa `calcularParcelasContrato` (Task 3) pra montar o preview da tabela de vencimentos.
+- Validação: soma das parcelas confirmadas == `valor_total`. Ao confirmar, chama `criarContrato` (Task 5), gera PDF (Task 6) e sobe status pra `gerado`.
 
 ---
 

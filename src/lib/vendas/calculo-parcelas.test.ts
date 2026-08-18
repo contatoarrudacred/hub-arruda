@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularParcelas } from "./calculo-parcelas";
+import { calcularParcelas, calcularParcelasContrato, calcularVencimentosPorAncora } from "./calculo-parcelas";
 
 describe("calcularParcelas", () => {
   it("gera uma única parcela à vista, com o valor total, na data informada", () => {
@@ -46,5 +46,61 @@ describe("calcularParcelas", () => {
 
   it("lança erro para quantidade de parcelas não inteira", () => {
     expect(() => calcularParcelas(100, 2.5, new Date(), 30)).toThrow();
+  });
+});
+
+describe("calcularVencimentosPorAncora", () => {
+  it("reproduz o exemplo da spec: venda em 18/08/2026, 6x, âncora dia 10, rolando o ano", () => {
+    const vencimentos = calcularVencimentosPorAncora(new Date("2026-08-18T00:00:00Z"), 10, 6);
+
+    expect(vencimentos.map((v) => v.toISOString().slice(0, 10))).toEqual([
+      "2026-08-18",
+      "2026-09-10",
+      "2026-10-10",
+      "2026-11-10",
+      "2026-12-10",
+      "2027-01-10",
+    ]);
+  });
+
+  it("parcela única (à vista) devolve só a 1ª parcela, na data informada", () => {
+    const primeira = new Date("2026-08-18T00:00:00Z");
+    const vencimentos = calcularVencimentosPorAncora(primeira, 10, 1);
+    expect(vencimentos).toEqual([primeira]);
+  });
+
+  it("aceita âncora no dia 01", () => {
+    const vencimentos = calcularVencimentosPorAncora(new Date("2026-08-18T00:00:00Z"), 1, 2);
+    expect(vencimentos[1].toISOString().slice(0, 10)).toBe("2026-09-01");
+  });
+
+  it("aceita âncora no dia 20", () => {
+    const vencimentos = calcularVencimentosPorAncora(new Date("2026-08-18T00:00:00Z"), 20, 2);
+    expect(vencimentos[1].toISOString().slice(0, 10)).toBe("2026-09-20");
+  });
+
+  it("conta o mês seguinte a partir do mês da 1ª parcela, não do mês da venda, quando a 1ª parcela foi adiada pra outro mês", () => {
+    // 1ª parcela adiada de 18/08 pra 05/09 (dentro do limite de +15 dias) -- a 2ª deve cair em
+    // outubro (mês seguinte ao de setembro), não em setembro (mês seguinte ao de agosto).
+    const vencimentos = calcularVencimentosPorAncora(new Date("2026-09-05T00:00:00Z"), 10, 2);
+    expect(vencimentos[1].toISOString().slice(0, 10)).toBe("2026-10-10");
+  });
+
+  it("lança erro para quantidade de parcelas menor que 1", () => {
+    expect(() => calcularVencimentosPorAncora(new Date(), 10, 0)).toThrow();
+  });
+});
+
+describe("calcularParcelasContrato", () => {
+  it("combina valor dividido e vencimento por âncora", () => {
+    const parcelas = calcularParcelasContrato(100, 3, new Date("2026-08-18T00:00:00Z"), 10);
+
+    expect(parcelas.map((p) => p.valor)).toEqual([33.33, 33.33, 33.34]);
+    expect(parcelas.map((p) => p.vencimento.toISOString().slice(0, 10))).toEqual([
+      "2026-08-18",
+      "2026-09-10",
+      "2026-10-10",
+    ]);
+    expect(parcelas.map((p) => p.numero)).toEqual([1, 2, 3]);
   });
 });

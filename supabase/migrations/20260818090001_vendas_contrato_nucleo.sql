@@ -34,7 +34,7 @@ create table contratos (
   assinafy_document_id text,
   assinafy_document_status text,
   forma_pagamento text not null check (forma_pagamento in ('avista', 'parcelado')),
-  metodo_pagamento text not null check (metodo_pagamento in ('boleto', 'cartao', 'voucher', 'outro')),
+  metodo_pagamento text not null check (metodo_pagamento in ('boleto_pix', 'cartao')),
   parcelas_qtd integer not null default 1,
   valor_total numeric(12,2) not null,
   enviado_em timestamptz,
@@ -57,9 +57,9 @@ comment on column contratos.assinafy_document_id is
 comment on column contratos.assinafy_document_status is
   'Espelho do status retornado pela Assinafy (uploaded/metadata_ready/pending_signature/certificating/certificated/rejected_by_signer/...) — só pra debug, quem manda no fluxo é a coluna status acima.';
 comment on column contratos.forma_pagamento is
-  'avista ou parcelado — pré-preenchido de conversas.dados quando a Oportunidade vem do funil do CRM, sempre confirmado/completado na tela de Fechamento de Venda.';
+  'avista ou parcelado — mapeado de conversas.dados.detalhe_pagamento.tipo (CRM, spec 2026-08-18-captura-detalhe-pagamento-fechamento-design.md) quando existir, senão capturado na tela de Fechamento de Venda.';
 comment on column contratos.metodo_pagamento is
-  'Método real de pagamento (boleto/cartão/voucher/outro) — o CRM hoje não captura isso, só o binário avista/parcelado; capturado na tela de Fechamento de Venda.';
+  'boleto_pix ou cartao — únicas duas opções da regra de negócio validada com o Luiz (spec 2026-08-18-captura-detalhe-pagamento-fechamento-design.md, seção 1). Mapeado de conversas.dados.detalhe_pagamento.forma quando existir, senão capturado na tela de Fechamento de Venda.';
 comment on column contratos.parcelas_qtd is
   '1 = à vista.';
 comment on column contratos.valor_total is

@@ -1,289 +1,218 @@
 -- ============================================================================
--- MIGRATIONS PENDENTES — rodar no SQL Editor do Supabase (projeto hub-arruda,
--- mzvaqjhalynaceecnayt). Consolidado pelo Coordenador de Agentes em 18/08/2026.
+-- MIGRATIONS PENDENTES — rodar no SQL Editor do Supabase
+-- Projeto hub-arruda (mzvaqjhalynaceecnayt). Consolidado em 18/08/2026, 18h.
 --
--- Sao as 3 migrations da sub-frente Cadastro do modulo Vendas. Ja estao mescladas
--- em main (o codigo de /admin/vendas/nova e /admin/fornecedores depende delas), mas
--- nunca rodaram no banco. A ordem abaixo importa: a 2a e a 3a dependem da 1a.
+-- Sao 2 migrations, de dois modulos diferentes. Ja estao mescladas em main e
+-- passaram por teste/lint/build (296 testes verdes), mas NUNCA rodaram no banco.
+-- Nenhum agente rodou nada: os dois escreveram o .sql e pararam, como manda a
+-- regra. A ordem abaixo importa pouco (sao modulos independentes), mas mantive
+-- a ordem dos timestamps.
 --
--- Da pra rodar este arquivo inteiro de uma vez. Se preferir ir uma a uma, cada
--- bloco esta delimitado pelos comentarios ===== abaixo.
+-- Da pra rodar o arquivo inteiro de uma vez.
 -- ============================================================================
 
-
 -- ============================================================================
--- INICIO: 20260817110000_vendas_cadastro_nucleo.sql
+-- INICIO: 20260818090000_marketing_credenciais_e_log.sql
 -- ============================================================================
--- ============================================================================
--- MIGRATION 033 — Vendas: cadastro núcleo (produtos, fornecedores, fornecedor_produtos)
--- Sistema de Gestão ArrudaCred
--- Spec: docs/superpowers/specs/2026-08-17-modulo-vendas-design.md, seção 3.1
--- ============================================================================
+-- Fase 2 do módulo Marketing (18/08/2026) — credenciais de canal cifradas + log de execução do
+-- pipeline. Ver docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md
+-- seções 3.1 e 3.3. REGRA DURA: este arquivo não é aplicado por nenhum agente — reservado em
+-- COORDENACAO_AGENTES_ARRUDACRED.md, entregue ao Luiz pelo Coordenador, aplicado por ele no SQL
+-- Editor.
 
--- -----------------------------------------------------------------------------
--- 1. produtos.tipo — troca o enum de proprio/terceiro para os 3 modelos reais
--- -----------------------------------------------------------------------------
--- IMPORTANTE: a constraint precisa ser trocada ANTES do UPDATE — a constraint
--- antiga (check tipo in ('proprio','terceiro')) ainda está ativa até aqui, e
--- não permite gravar 'comissionado'. Gravar antes quebraria a migration.
-do $$
-declare
-  nome_constraint text;
-begin
-  select con.conname into nome_constraint
-  from pg_constraint con
-  join pg_class rel on rel.oid = con.conrelid
-  where rel.relname = 'produtos'
-    and con.contype = 'c'
-    and pg_get_constraintdef(con.oid) like '%tipo%proprio%';
-  if nome_constraint is not null then
-    execute format('alter table produtos drop constraint %I', nome_constraint);
-  end if;
-end $$;
+alter table propriedades_digitais add column credenciais_canais jsonb not null default '{}'::jsonb;
+comment on column propriedades_digitais.credenciais_canais is
+  'Credenciais de canal por propriedade, cifradas — nunca texto plano. Formato: {"wordpress": {"usuario": "...", "senha_cifrada": "<base64 iv+authTag+ciphertext>"}}. Cifrado/decifrado por src/lib/marketing/criptografia.ts usando MARKETING_CREDENCIAIS_CHAVE (env). Fallback: propriedade sem entrada aqui continua usando WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico).';
 
-alter table produtos add constraint produtos_tipo_check
-  check (tipo in ('proprio', 'subcontratado', 'comissionado'));
-comment on column produtos.tipo is
-  'proprio = ArrudaCred executa e fatura, sem fornecedor. subcontratado = ArrudaCred fatura o cliente mas paga um fornecedor pra executar. comissionado = fornecedor/administradora fatura o cliente direto, ArrudaCred só recebe comissão. Ver docs/superpowers/specs/2026-08-17-modulo-vendas-design.md seção 2.';
-
--- Migração de dado existente: hoje só existem produtos 'terceiro' do tipo
--- comissionado (Consórcio, Crédito) — nenhum "subcontratado" foi cadastrado
--- ainda. Ver PENDÊNCIA 1 da spec — revisar antes de rodar se algum produto
--- 'terceiro' hoje for na real subcontratado (nesse caso, corrigir manualmente
--- essa linha antes de rodar a migration). Só pode rodar DEPOIS da constraint
--- nova acima, senão viola a constraint antiga.
-update produtos set tipo = 'comissionado' where tipo = 'terceiro';
-
--- -----------------------------------------------------------------------------
--- 2. produtos.fornecedor_id — só para tipo = 'comissionado' (1 Produto = 1 fornecedor fixo)
--- -----------------------------------------------------------------------------
-alter table produtos add column fornecedor_id uuid references pessoas(id);
-comment on column produtos.fornecedor_id is
-  'Fornecedor/administradora único deste Produto — só preenchido quando tipo = ''comissionado'' (resolve fornecedor_produtos pra calcular a comissão). Produtos subcontratados NÃO usam esta coluna — a escolha de fornecedor por venda fica em contratos.fornecedor_id (sub-frente de Contrato).';
-alter table produtos add constraint produtos_fornecedor_id_tipo_check
-  check (fornecedor_id is null or tipo = 'comissionado');
-
--- -----------------------------------------------------------------------------
--- 3. produtos.fornecedor_definido_em — só para tipo = 'subcontratado'
--- -----------------------------------------------------------------------------
-alter table produtos add column fornecedor_definido_em text;
-comment on column produtos.fornecedor_definido_em is
-  'Só relevante quando tipo = ''subcontratado''. ''venda'' = a tela de Vendas exige escolher o fornecedor no fechamento (guardado em contratos.fornecedor_id). ''ordem_servico'' = fica em aberto pro módulo Operação decidir depois.';
-alter table produtos add constraint produtos_fornecedor_definido_em_valor_check
-  check (fornecedor_definido_em is null or fornecedor_definido_em in ('venda', 'ordem_servico'));
-alter table produtos add constraint produtos_fornecedor_definido_em_tipo_check
-  check (fornecedor_definido_em is null or tipo = 'subcontratado');
-
--- -----------------------------------------------------------------------------
--- 4. fornecedores — extensão de pessoa_papeis.tipo_papel = 'fornecedor'
--- -----------------------------------------------------------------------------
-create table fornecedores (
+create table pautas_execucao_log (
   id uuid primary key default gen_random_uuid(),
-  pessoa_id uuid not null unique references pessoas(id),
-  categoria text not null check (categoria in ('consorcio', 'credito', 'subcontratado_servico', 'administrativo')),
-  dados_bancarios jsonb,
+  pauta_id uuid not null references pautas(id) on delete cascade,
+  etapa text not null check (etapa in (
+    'buscar_checklist', 'gerar_conteudo', 'revisar', 'inserir_links', 'sanitizar', 'publicar', 'registrar_resultado'
+  )),
+  iniciado_em timestamptz not null default now(),
+  concluido_em timestamptz,
+  sucesso boolean,
+  detalhes text,
+  tokens_entrada int,
+  tokens_saida int,
+  created_at timestamptz not null default now()
+);
+comment on table pautas_execucao_log is
+  'Log append-only de cada etapa do pipeline por pauta — alimenta o Monitor de execução (tela ao vivo, MODULO_MARKETING_CONTEUDO_ARRUDACRED.md seção 7.2) via Supabase Realtime, e o Painel de Custo (soma de tokens). Uma linha por etapa por tentativa — reprovações geram novas linhas pra mesma pauta, dando histórico de retrabalho visível.';
+comment on column pautas_execucao_log.tokens_entrada is
+  'Preenchido só nas etapas gerar_conteudo/revisar (chamadas à Anthropic) — vem de resposta.usage.input_tokens.';
+comment on column pautas_execucao_log.tokens_saida is
+  'Preenchido só nas etapas gerar_conteudo/revisar — vem de resposta.usage.output_tokens.';
+
+alter table pautas_execucao_log enable row level security;
+create policy admin_acesso_total on pautas_execucao_log for all to authenticated using (true) with check (true);
+create trigger trg_auditoria_pautas_execucao_log
+  after insert or update or delete on pautas_execucao_log
+  for each row execute function fn_auditoria_log();
+
+create index idx_execucao_log_pauta on pautas_execucao_log (pauta_id, iniciado_em desc);
+
+-- Habilita Realtime nesta tabela (primeira do projeto a usar — ver spec seção 3.3 pra justificativa).
+alter publication supabase_realtime add table pautas_execucao_log;
+
+-- FIM: 20260818090000_marketing_credenciais_e_log.sql
+
+-- ============================================================================
+-- INICIO: 20260818090001_vendas_contrato_nucleo.sql
+-- ============================================================================
+-- ============================================================================
+-- MIGRATION 036 — Vendas: núcleo de Contrato, Assinatura e Financeiro da venda
+-- Sistema de Gestão ArrudaCred
+-- Spec: docs/superpowers/specs/2026-08-17-modulo-vendas-design.md, seções 3.2/3.3/3.4
+-- Plano: docs/superpowers/plans/2026-08-18-vendas-contrato.md
+-- ============================================================================
+
+create table contrato_templates (
+  id uuid primary key default gen_random_uuid(),
+  produto_id uuid not null references produtos(id),
+  conteudo_markdown text not null,
+  versao integer not null default 1,
   ativo boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-comment on table fornecedores is
-  'Extensão de pessoa_papeis.tipo_papel = ''fornecedor'' — qualquer fornecedor do negócio (administradora de consórcio, banco/operadora de crédito, subcontratado de execução, fornecedor administrativo). Escopo amplo confirmado por Luiz — só cadastro nesta frente, contas a pagar ficam pro módulo Financeiro futuro.';
-comment on column fornecedores.categoria is
-  'Categoria livre pra crescer: consorcio, credito, subcontratado_servico (produto tipo=subcontratado), administrativo (fornecedor que não vende nem executa serviço da ArrudaCred, só recebe pagamento por algo que a própria ArrudaCred contratou).';
-comment on column fornecedores.dados_bancarios is
-  'jsonb livre (banco, agência, conta, chave PIX) — usado só quando o módulo Financeiro/Operação existir pra pagar o fornecedor. Não tem consumidor ainda nesta frente.';
+comment on table contrato_templates is
+  'Template de contrato por Produto (só faz sentido pra tipo proprio/subcontratado). Placeholders resolvidos na geração: {{nome_cliente}}, {{documento_cliente}}, {{valor_total}}, {{valor_total_extenso}}, {{tabela_vencimentos}}, {{forma_pagamento}}, {{lista_documentos}}. Editável pelo admin sem deploy.';
+comment on column contrato_templates.conteudo_markdown is
+  'Corpo do contrato em markdown com placeholders — convertido pra HTML e depois PDF na geração (src/lib/vendas/geracao-pdf.ts).';
+comment on column contrato_templates.versao is
+  'Incrementada manualmente pelo admin ao editar um template já usado em contrato existente — contratos já gerados guardam o texto resolvido no PDF, não recalculam ao template mudar.';
 
-alter table fornecedores enable row level security;
-create policy admin_acesso_total on fornecedores for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_fornecedores
-  after insert or update or delete on fornecedores
-  for each row execute function fn_auditoria_log();
-
--- -----------------------------------------------------------------------------
--- 5. fornecedor_produtos — comissão que a ArrudaCred RECEBE (espelha afiliado_produtos)
--- -----------------------------------------------------------------------------
-create table fornecedor_produtos (
+create table contratos (
   id uuid primary key default gen_random_uuid(),
-  fornecedor_id uuid not null references fornecedores(id),
-  produto_id uuid not null references produtos(id),
-  percentual_comissao numeric(5,2) not null check (percentual_comissao > 0 and percentual_comissao <= 100),
-  forma_comissao text not null check (forma_comissao in ('parcela_unica', 'parcelado')),
-  comissao_parcelas_qtd int check (comissao_parcelas_qtd is null or comissao_parcelas_qtd > 0),
-  comissao_dias_primeira_parcela int not null check (comissao_dias_primeira_parcela >= 0),
-  comissao_intervalo_dias_parcelas int check (comissao_intervalo_dias_parcelas is null or comissao_intervalo_dias_parcelas > 0),
-  condicoes jsonb,
-  ativo boolean not null default true,
+  oportunidade_id uuid not null unique references oportunidades(id),
+  contrato_template_id uuid not null references contrato_templates(id),
+  pessoa_signatario_id uuid not null references pessoas(id),
+  pessoa_arrudacred_signatario_id uuid not null references pessoas(id),
+  fornecedor_id uuid references pessoas(id),
+  pdf_url text,
+  status text not null default 'gerado'
+    check (status in ('gerado', 'enviado', 'assinado', 'recusado', 'cancelado')),
+  assinafy_document_id text,
+  assinafy_document_status text,
+  forma_pagamento text not null check (forma_pagamento in ('avista', 'parcelado')),
+  metodo_pagamento text not null check (metodo_pagamento in ('boleto', 'cartao', 'voucher', 'outro')),
+  parcelas_qtd integer not null default 1,
+  valor_total numeric(12,2) not null,
+  enviado_em timestamptz,
+  assinado_em timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint fornecedor_produtos_parcelado_exige_qtd_check
-    check (forma_comissao = 'parcela_unica' or comissao_parcelas_qtd is not null),
-  unique (fornecedor_id, produto_id)
+  updated_at timestamptz not null default now()
 );
-comment on table fornecedor_produtos is
-  'Regra de comissão que a ArrudaCred RECEBE de um fornecedor por um Produto (direção inversa de afiliado_produtos, que é comissão que a ArrudaCred PAGA). Um par fornecedor+produto tem no máximo uma regra ativa. Ver docs/superpowers/specs/2026-08-17-modulo-vendas-design.md seção 3.1.';
-comment on column fornecedor_produtos.comissao_dias_primeira_parcela is
-  'Dias entre a data de referência (data em que o cliente assinou com o fornecedor, informada manualmente na confirmação da venda) e o vencimento da 1ª parcela de comissão — regra explícita de Luiz: "geralmente X dias após o cliente assinar contrato".';
-comment on column fornecedor_produtos.comissao_intervalo_dias_parcelas is
-  'Intervalo em dias entre parcelas subsequentes de comissão, quando forma_comissao = ''parcelado''. Nulo quando forma_comissao = ''parcela_unica''.';
-comment on column fornecedor_produtos.condicoes is
-  'Escape hatch em jsonb só pra exceção que genuinamente não couber nas colunas acima (ex.: regra escalonada por faixa de valor). Não usar pra agenda de pagamento — isso já tem coluna própria.';
+comment on table contratos is
+  '1 Oportunidade = 1 contrato, mesmo em pacote de vários documentos (regra fechada em KANBAN_COMERCIAL_LIMPANOME.md/seção 11 do plano mestre). Gerado pela tela de Fechamento de Venda (spec seção 3.2.1), que completa o detalhe de pagamento que o CRM ainda não captura por completo.';
+comment on column contratos.oportunidade_id is
+  'Único — reforça a regra de 1 Oportunidade = 1 contrato.';
+comment on column contratos.pessoa_signatario_id is
+  'O cliente, ou o representante legal (via pessoa_representantes) quando o cliente é PJ.';
+comment on column contratos.pessoa_arrudacred_signatario_id is
+  'Pessoa da ArrudaCred que assina — configurável via configuracoes (chave contrato_arrudacred_signatario), não hardcoded no código.';
+comment on column contratos.fornecedor_id is
+  'Só preenchido quando o Produto é subcontratado e fornecedor_definido_em = ''venda'' — é aqui que a escolha do fornecedor por venda fica registrada, não em produtos.';
+comment on column contratos.assinafy_document_id is
+  'id do documento na Assinafy (campo object.id no payload do webhook) — preenchido ao enviar pra assinatura.';
+comment on column contratos.assinafy_document_status is
+  'Espelho do status retornado pela Assinafy (uploaded/metadata_ready/pending_signature/certificating/certificated/rejected_by_signer/...) — só pra debug, quem manda no fluxo é a coluna status acima.';
+comment on column contratos.forma_pagamento is
+  'avista ou parcelado — pré-preenchido de conversas.dados quando a Oportunidade vem do funil do CRM, sempre confirmado/completado na tela de Fechamento de Venda.';
+comment on column contratos.metodo_pagamento is
+  'Método real de pagamento (boleto/cartão/voucher/outro) — o CRM hoje não captura isso, só o binário avista/parcelado; capturado na tela de Fechamento de Venda.';
+comment on column contratos.parcelas_qtd is
+  '1 = à vista.';
+comment on column contratos.valor_total is
+  'Snapshot de oportunidades.valor_estimado no momento da geração — inclui a soma de oportunidade_documentos quando é pacote.';
 
-alter table fornecedor_produtos enable row level security;
-create policy admin_acesso_total on fornecedor_produtos for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_fornecedor_produtos
-  after insert or update or delete on fornecedor_produtos
-  for each row execute function fn_auditoria_log();
-
--- ============================================================================
--- Fim da migration 033.
--- ============================================================================
-
--- FIM: 20260817110000_vendas_cadastro_nucleo.sql
-
--- ============================================================================
--- INICIO: 20260817120001_vendas_seguranca_nucleo_pessoa.sql
--- ============================================================================
--- ============================================================================
--- MIGRATION 034 — Fecha lacuna de segurança: RLS + auditoria nas 6 tabelas
--- núcleo de Pessoa/Papel que nunca tiveram (SEGURANCA_E_AUDITORIA_ARRUDACRED.md
--- seção 2.6), mais reforço defensivo de RLS em outras 6 tabelas pré-existentes
--- (12 no total). Vendas é a primeira frente a escrever nelas via cliente
--- autenticado — sem isso, /admin/fornecedores e /admin/vendas ficam
--- bloqueados em silêncio pelo RLS automático do Supabase.
--- Sistema de Gestão ArrudaCred
--- ============================================================================
-
-alter table entidades_legais enable row level security;
-create policy admin_acesso_total on entidades_legais for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_entidades_legais
-  after insert or update or delete on entidades_legais
-  for each row execute function fn_auditoria_log();
-
-alter table unidades_negocio enable row level security;
-create policy admin_acesso_total on unidades_negocio for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_unidades_negocio
-  after insert or update or delete on unidades_negocio
-  for each row execute function fn_auditoria_log();
-
-alter table pessoa_papeis enable row level security;
-create policy admin_acesso_total on pessoa_papeis for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_pessoa_papeis
-  after insert or update or delete on pessoa_papeis
-  for each row execute function fn_auditoria_log();
-
-alter table pessoa_representantes enable row level security;
-create policy admin_acesso_total on pessoa_representantes for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_pessoa_representantes
-  after insert or update or delete on pessoa_representantes
-  for each row execute function fn_auditoria_log();
-
-alter table enderecos enable row level security;
-create policy admin_acesso_total on enderecos for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_enderecos
-  after insert or update or delete on enderecos
-  for each row execute function fn_auditoria_log();
-
-alter table identidades_canal enable row level security;
-create policy admin_acesso_total on identidades_canal for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_identidades_canal
-  after insert or update or delete on identidades_canal
-  for each row execute function fn_auditoria_log();
-
--- ============================================================================
--- Reforço defensivo (não é fix de lacuna confirmada): `pessoas`, `oportunidades`,
--- `conversas`, `usuarios_sistema`, `fluxos` e `etapas_fluxo` já têm
--- `create policy admin_acesso_total` desde a migration
--- 20260814160000_auditoria_quem_fez.sql, mas a revisão final não achou um
--- `alter table ... enable row level security` explícito para elas no
--- histórico de migrations. Isso muito provavelmente é um falso alarme: o
--- Supabase habilita RLS automaticamente em toda tabela nova do schema public,
--- então essas tabelas quase certamente já tinham RLS ligado desde a criação
--- (ver docs/SEGURANCA_E_AUDITORIA_ARRUDACRED.md seção 2.4) — e uma policy só
--- funciona se RLS já estiver habilitado, então elas não estariam
--- funcionando hoje se RLS estivesse desligado. Ainda assim,
--- `alter table ... enable row level security` é idempotente (no-op se já
--- habilitado, nunca dá erro), então não custa nada reforçar explicitamente.
--- Nenhuma policy ou trigger nova aqui — essas já existem para as 6 tabelas.
--- ============================================================================
-
-alter table pessoas enable row level security;
-alter table oportunidades enable row level security;
-alter table conversas enable row level security;
-alter table usuarios_sistema enable row level security;
-alter table fluxos enable row level security;
-alter table etapas_fluxo enable row level security;
-
--- ============================================================================
--- Fim da migration 034 (12 tabelas: 6 com RLS+auditoria novos, 6 com reforço
--- defensivo de RLS apenas).
--- ============================================================================
-
--- FIM: 20260817120001_vendas_seguranca_nucleo_pessoa.sql
-
--- ============================================================================
--- INICIO: 20260817130000_vendas_pessoa_documentos.sql
--- ============================================================================
--- ============================================================================
--- MIGRATION 035 — Vendas: pessoa_documentos + buckets de Storage
--- Sistema de Gestão ArrudaCred
--- Spec: docs/superpowers/specs/2026-08-17-modulo-vendas-design.md, seção 3.1.2
--- ============================================================================
-
-create table pessoa_documentos (
+create table contrato_parcelas (
   id uuid primary key default gen_random_uuid(),
-  pessoa_id uuid not null references pessoas(id) on delete cascade,
-  tipo_documento text not null,
-  descricao text,
-  url text not null,
-  nome_arquivo text not null,
-  enviado_em timestamptz not null default now(),
-  created_at timestamptz not null default now()
+  contrato_id uuid not null references contratos(id) on delete cascade,
+  numero integer not null,
+  valor numeric(12,2) not null,
+  vencimento_previsto date not null,
+  asaas_payment_id text,
+  asaas_installment_id text,
+  status text not null default 'previsto'
+    check (status in ('previsto', 'gerado', 'pago', 'atrasado', 'cancelado')),
+  pago_em timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
-comment on table pessoa_documentos is
-  'Documentos anexados ao cadastro de uma Pessoa (RG, CNH, comprovante de residência, contrato social, etc.) — sem consumidor além do próprio cadastro nesta frente; futuras sub-frentes (Contrato/Operação) podem usar. Armazenado no bucket privado pessoa-documentos.';
-comment on column pessoa_documentos.tipo_documento is
-  'Lista sugerida na UI (rg, cnh, comprovante_residencia, contrato_social, cartao_cnpj, outro), mas campo livre no banco pra não travar em lista fechada.';
-comment on column pessoa_documentos.descricao is
-  'Preenchido quando tipo_documento = ''outro'' — descrição livre de que documento é.';
-comment on column pessoa_documentos.url is
-  'Caminho do objeto no bucket privado pessoa-documentos (Supabase Storage) — NÃO é uma URL pública. O acesso real é via signed URL gerada sob demanda (o bucket é privado de propósito, documento de identificação é dado sensível).';
+comment on table contrato_parcelas is
+  'Plano de parcelas de um contrato — confirmado na tela de Fechamento de Venda, alimenta a tabela de vencimentos do PDF e depois é reaproveitado (sem recalcular) quando a cobrança real é criada na Asaas após a assinatura. Preparado pro consumo futuro da régua de cobrança (REGUA_COBRANCA_ARRUDACRED.md, fora de escopo aqui).';
+comment on column contrato_parcelas.asaas_payment_id is
+  'id da cobrança individual na Asaas (formato pay_...) — preenchido só depois da assinatura, quando a cobrança real é criada.';
+comment on column contrato_parcelas.asaas_installment_id is
+  'id do parcelamento completo na Asaas — compartilhado entre todas as parcelas do mesmo contrato quando parcelas_qtd > 1.';
 
-create index idx_pessoa_documentos_pessoa on pessoa_documentos(pessoa_id);
+create table comissoes_fornecedor_receber (
+  id uuid primary key default gen_random_uuid(),
+  oportunidade_id uuid not null references oportunidades(id),
+  fornecedor_id uuid not null references pessoas(id),
+  produto_id uuid not null references produtos(id),
+  numero integer not null,
+  valor numeric(12,2) not null,
+  data_prevista date not null,
+  status text not null default 'previsto' check (status in ('previsto', 'recebido')),
+  recebido_em timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+comment on table comissoes_fornecedor_receber is
+  'Comissão que a ArrudaCred recebe do fornecedor em produtos comissionados (sem contrato/Assinafy — o contrato de verdade é entre cliente e fornecedor, fora do sistema). Gerada de uma vez na ação "Confirmar venda", a partir da regra em fornecedor_produtos.';
+comment on column comissoes_fornecedor_receber.data_prevista is
+  'data de referência informada na confirmação (data em que o cliente assinou com o fornecedor) + fornecedor_produtos.comissao_dias_primeira_parcela + comissao_intervalo_dias_parcelas × (número da parcela − 1).';
 
-alter table pessoa_documentos enable row level security;
-create policy admin_acesso_total on pessoa_documentos for all to authenticated using (true) with check (true);
-create trigger trg_auditoria_pessoa_documentos
-  after insert or update or delete on pessoa_documentos
+create index idx_contrato_templates_produto on contrato_templates(produto_id);
+create index idx_contratos_oportunidade on contratos(oportunidade_id);
+create index idx_contrato_parcelas_contrato on contrato_parcelas(contrato_id);
+create index idx_comissoes_fornecedor_receber_oportunidade on comissoes_fornecedor_receber(oportunidade_id);
+create index idx_comissoes_fornecedor_receber_fornecedor on comissoes_fornecedor_receber(fornecedor_id);
+
+alter table contrato_templates enable row level security;
+create policy admin_acesso_total on contrato_templates for all to authenticated using (true) with check (true);
+create trigger trg_auditoria_contrato_templates
+  after insert or update or delete on contrato_templates
+  for each row execute function fn_auditoria_log();
+
+alter table contratos enable row level security;
+create policy admin_acesso_total on contratos for all to authenticated using (true) with check (true);
+create trigger trg_auditoria_contratos
+  after insert or update or delete on contratos
+  for each row execute function fn_auditoria_log();
+
+alter table contrato_parcelas enable row level security;
+create policy admin_acesso_total on contrato_parcelas for all to authenticated using (true) with check (true);
+create trigger trg_auditoria_contrato_parcelas
+  after insert or update or delete on contrato_parcelas
+  for each row execute function fn_auditoria_log();
+
+alter table comissoes_fornecedor_receber enable row level security;
+create policy admin_acesso_total on comissoes_fornecedor_receber for all to authenticated using (true) with check (true);
+create trigger trg_auditoria_comissoes_fornecedor_receber
+  after insert or update or delete on comissoes_fornecedor_receber
   for each row execute function fn_auditoria_log();
 
 -- -----------------------------------------------------------------------------
--- Buckets de Storage
+-- Bucket de Storage
 -- -----------------------------------------------------------------------------
--- pessoa-documentos: PRIVADO (RG/CNH/comprovante são dado sensível — acesso só via
--- signed URL, nunca URL pública direta).
+-- contratos: PRIVADO (contrato assinado tem dado pessoal do cliente — mesmo motivo de
+-- pessoa-documentos ser privado). Acesso só via signed URL gerada sob demanda.
 insert into storage.buckets (id, name, public)
-values ('pessoa-documentos', 'pessoa-documentos', false)
+values ('contratos', 'contratos', false)
 on conflict (id) do nothing;
 
-create policy pessoa_documentos_storage_acesso_total on storage.objects
+create policy contratos_storage_acesso_total on storage.objects
   for all to authenticated
-  using (bucket_id = 'pessoa-documentos')
-  with check (bucket_id = 'pessoa-documentos');
-
--- pessoa-fotos: PÚBLICO (mesma natureza da foto de perfil do WhatsApp já salva em
--- pessoa_fotos.url como URL pública direta — precisa continuar sendo URL de verdade,
--- não path interno, pra não quebrar conversas_resumo.pessoa_foto_url já em produção).
-insert into storage.buckets (id, name, public)
-values ('pessoa-fotos', 'pessoa-fotos', true)
-on conflict (id) do nothing;
-
-create policy pessoa_fotos_storage_acesso_total on storage.objects
-  for all to authenticated
-  using (bucket_id = 'pessoa-fotos')
-  with check (bucket_id = 'pessoa-fotos');
+  using (bucket_id = 'contratos')
+  with check (bucket_id = 'contratos');
 
 -- ============================================================================
--- Fim da migration 035.
+-- Fim da migration 036.
 -- ============================================================================
 
--- FIM: 20260817130000_vendas_pessoa_documentos.sql
+-- FIM: 20260818090001_vendas_contrato_nucleo.sql
