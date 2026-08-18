@@ -209,9 +209,9 @@ function NoLista({
 export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
   const pathname = usePathname();
   const [retraido, setRetraido] = useState(false);
+  const [hoverExpandido, setHoverExpandido] = useState(false);
   const [moduloAberto, setModuloAberto] = useState<string | null>(null);
   const [subgrupoAberto, setSubgrupoAberto] = useState<string | null>(null);
-  const [moduloHover, setModuloHover] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const inputBuscaRef = useRef<HTMLInputElement>(null);
 
@@ -254,7 +254,7 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
   }, [busca]);
 
   function abrirBuscaExpandindo() {
-    setRetraido(false);
+    if (retraido) setRetraido(false);
     requestAnimationFrame(() => inputBuscaRef.current?.focus());
   }
 
@@ -267,93 +267,53 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
     setSubgrupoAberto((atual) => (atual === rotulo ? null : rotulo));
   }
 
-  if (retraido) {
-    return (
-      <div className="flex h-full w-14 shrink-0 flex-col items-center gap-1 py-3.5" style={{ backgroundColor: NAVY }}>
-        <div
-          className="mb-3 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium"
-          style={{ backgroundColor: DOURADO, color: NAVY }}
-          title="Hub Arruda"
-        >
-          H
+  // Corpo (busca ou árvore de módulos) — idêntico estando a barra fixa expandida ou aberta
+  // temporariamente por hover no modo retraído, por isso vive fora dos dois JSX que o usam.
+  const corpo = busca.trim() ? (
+    <div className="flex flex-col gap-1">
+      {resultadosBusca.length === 0 && <p className="px-2.5 py-2 text-xs text-white/40">Nada encontrado.</p>}
+      {resultadosBusca.map(({ modulo, grupo, item }) => (
+        <div key={`${modulo.chave}-${grupo ?? ""}-${item.rotulo}`}>
+          <p className="px-2.5 pt-1 text-[10px] text-white/30">
+            {modulo.rotulo}
+            {grupo ? ` › ${grupo}` : ""}
+          </p>
+          <ItemNav item={item} pathname={pathname} onClicar={() => setBusca("")} />
         </div>
-
-        <button
-          type="button"
-          onClick={() => setRetraido(false)}
-          title="Expandir menu"
-          className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white/80"
-        >
-          »
-        </button>
-
-        <button
-          type="button"
-          onClick={abrirBuscaExpandindo}
-          title="Buscar"
-          className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white/80"
-        >
-          🔍
-        </button>
-
-        <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
-          {MODULOS.map((modulo) => {
-            const ativo = moduloContemRotaAtiva(modulo, pathname);
-            return (
-              <div
-                key={modulo.chave}
-                className="relative"
-                onMouseEnter={() => setModuloHover(modulo.chave)}
-                onMouseLeave={() => setModuloHover(null)}
-              >
-                <button
-                  type="button"
-                  title={modulo.rotulo}
-                  className="flex h-10 w-10 items-center justify-center rounded-lg text-lg"
-                  style={ativo ? { backgroundColor: "rgba(200,165,93,0.16)" } : undefined}
-                >
-                  {modulo.icone}
-                </button>
-                {moduloHover === modulo.chave && (
-                  <div
-                    className="absolute left-full top-0 z-30 ml-1 w-60 rounded-lg border border-white/10 py-2 shadow-xl"
-                    style={{ backgroundColor: NAVY }}
-                  >
-                    <p className="px-3 pb-1.5 text-xs font-medium uppercase tracking-wide text-white/40">{modulo.rotulo}</p>
-                    <div className="px-2">
-                      <NoLista
-                        itens={modulo.itens}
-                        pathname={pathname}
-                        subgrupoAberto={subgrupoAberto}
-                        onAlternarSubgrupo={alternarSubgrupo}
-                        onClicarLink={() => setModuloHover(null)}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-auto flex flex-col items-center gap-1 border-t border-white/10 pt-3">
-          <div className="h-6 w-6 shrink-0 rounded-full bg-white/15" title={userEmail} />
-          <form action={sair}>
+      ))}
+    </div>
+  ) : (
+    <div className="flex flex-col gap-0.5">
+      {MODULOS.map((modulo) => {
+        const aberto = moduloAberto === modulo.chave;
+        const ativo = moduloContemRotaAtiva(modulo, pathname);
+        return (
+          <div key={modulo.chave}>
             <button
-              type="submit"
-              title="Sair"
-              className="flex h-7 w-7 items-center justify-center rounded text-white/50 hover:text-white/80"
+              type="button"
+              onClick={() => alternarModulo(modulo.chave)}
+              className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-sm"
+              style={{ color: ativo ? DOURADO : "rgba(255,255,255,0.85)" }}
             >
-              ⏻
+              <span className="w-4 shrink-0 text-center">{modulo.icone}</span>
+              <span className="flex-1 truncate font-medium">{modulo.rotulo}</span>
+              <span className="shrink-0 text-[10px] text-white/40">{aberto ? "▾" : "▸"}</span>
             </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+            {aberto && (
+              <div className="mb-1 mt-0.5 border-l border-white/10 py-0.5 pl-3">
+                <NoLista itens={modulo.itens} pathname={pathname} subgrupoAberto={subgrupoAberto} onAlternarSubgrupo={alternarSubgrupo} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 
-  return (
-    <div className="flex h-full w-64 shrink-0 flex-col gap-1 p-3.5" style={{ backgroundColor: NAVY }}>
+  // Cabeçalho (logo + busca) + corpo + rodapé (usuário/sair) — mesmo conteúdo usado tanto na barra
+  // fixa expandida quanto no overlay que aparece ao passar o mouse no modo retraído.
+  const conteudoCompleto = (
+    <>
       <div className="mb-3 flex items-center gap-2 px-1">
         <div
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium"
@@ -364,11 +324,11 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
         <span className="flex-1 truncate text-sm font-medium text-white">Hub Arruda</span>
         <button
           type="button"
-          onClick={() => setRetraido(true)}
-          title="Retrair menu"
+          onClick={() => setRetraido(!retraido)}
+          title={retraido ? "Fixar menu expandido" : "Retrair menu"}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-white/40 hover:bg-white/10 hover:text-white/80"
         >
-          «
+          {retraido ? "📌" : "«"}
         </button>
       </div>
 
@@ -388,53 +348,7 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {busca.trim() ? (
-          <div className="flex flex-col gap-1">
-            {resultadosBusca.length === 0 && <p className="px-2.5 py-2 text-xs text-white/40">Nada encontrado.</p>}
-            {resultadosBusca.map(({ modulo, grupo, item }) => (
-              <div key={`${modulo.chave}-${grupo ?? ""}-${item.rotulo}`}>
-                <p className="px-2.5 pt-1 text-[10px] text-white/30">
-                  {modulo.rotulo}
-                  {grupo ? ` › ${grupo}` : ""}
-                </p>
-                <ItemNav item={item} pathname={pathname} onClicar={() => setBusca("")} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            {MODULOS.map((modulo) => {
-              const aberto = moduloAberto === modulo.chave;
-              const ativo = moduloContemRotaAtiva(modulo, pathname);
-              return (
-                <div key={modulo.chave}>
-                  <button
-                    type="button"
-                    onClick={() => alternarModulo(modulo.chave)}
-                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-sm"
-                    style={{ color: ativo ? DOURADO : "rgba(255,255,255,0.85)" }}
-                  >
-                    <span className="w-4 shrink-0 text-center">{modulo.icone}</span>
-                    <span className="flex-1 truncate font-medium">{modulo.rotulo}</span>
-                    <span className="shrink-0 text-[10px] text-white/40">{aberto ? "▾" : "▸"}</span>
-                  </button>
-                  {aberto && (
-                    <div className="mb-1 mt-0.5 border-l border-white/10 py-0.5 pl-3">
-                      <NoLista
-                        itens={modulo.itens}
-                        pathname={pathname}
-                        subgrupoAberto={subgrupoAberto}
-                        onAlternarSubgrupo={alternarSubgrupo}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <div className="flex-1 overflow-y-auto">{corpo}</div>
 
       <form action={sair} className="mt-auto flex items-center gap-2 border-t border-white/10 pt-3">
         <div className="h-5.5 w-5.5 shrink-0 rounded-full bg-white/15" />
@@ -443,6 +357,88 @@ export function Sidebar({ userEmail }: { userEmail: string | undefined }) {
           Sair
         </button>
       </form>
+    </>
+  );
+
+  if (retraido) {
+    // Barra estreita (só ícones) sempre ocupando o espaço reservado no layout; passar o mouse por
+    // cima expande o menu inteiro num overlay flutuando acima do conteúdo (não empurra o `<main>`)
+    // — decisão original de Luiz (16/08/2026). O overlay é filho do mesmo container que escuta
+    // mouseenter/mouseleave, então entrar nele não conta como "sair" da barra.
+    return (
+      <div
+        className="relative h-full w-14 shrink-0"
+        onMouseEnter={() => setHoverExpandido(true)}
+        onMouseLeave={() => setHoverExpandido(false)}
+      >
+        <div className="flex h-full w-14 flex-col items-center gap-1 py-3.5" style={{ backgroundColor: NAVY }}>
+          <div
+            className="mb-3 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium"
+            style={{ backgroundColor: DOURADO, color: NAVY }}
+            title="Hub Arruda"
+          >
+            H
+          </div>
+
+          <button
+            type="button"
+            onClick={abrirBuscaExpandindo}
+            title="Buscar"
+            className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white/80"
+          >
+            🔍
+          </button>
+
+          <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
+            {MODULOS.map((modulo) => {
+              const ativo = moduloContemRotaAtiva(modulo, pathname);
+              return (
+                <button
+                  key={modulo.chave}
+                  type="button"
+                  title={modulo.rotulo}
+                  onClick={() => {
+                    setModuloAberto(modulo.chave);
+                    setRetraido(false);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-lg"
+                  style={ativo ? { backgroundColor: "rgba(200,165,93,0.16)" } : undefined}
+                >
+                  {modulo.icone}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-auto flex flex-col items-center gap-1 border-t border-white/10 pt-3">
+            <div className="h-6 w-6 shrink-0 rounded-full bg-white/15" title={userEmail} />
+            <form action={sair}>
+              <button
+                type="submit"
+                title="Sair"
+                className="flex h-7 w-7 items-center justify-center rounded text-white/50 hover:text-white/80"
+              >
+                ⏻
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {hoverExpandido && (
+          <div
+            className="absolute left-0 top-0 z-40 flex h-full w-64 flex-col gap-1 p-3.5 shadow-2xl"
+            style={{ backgroundColor: NAVY }}
+          >
+            {conteudoCompleto}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full w-64 shrink-0 flex-col gap-1 p-3.5" style={{ backgroundColor: NAVY }}>
+      {conteudoCompleto}
     </div>
   );
 }
