@@ -7,6 +7,9 @@ import type {
   DadosItemChecklist,
   DadosMatriz,
   DadosPropriedade,
+  DuracaoMediaPorEtapa,
+  EtapaConcluida,
+  EtapaEmAndamento,
   EtapaLog,
   ItemChecklistAdmin,
   ItemChecklistCarregado,
@@ -28,7 +31,13 @@ import type {
 const CAMPOS_PAUTA =
   "id, matriz_conteudo_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao";
 
-const RECLAIM_MINUTOS = 10; // pauta em_producao com atualizado_em mais antigo que isto é considerada travada
+// Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
+// porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
+// MESMO limiar pra distinguir "em andamento de verdade" de "possivelmente travada" numa etapa de
+// pautas_execucao_log sem concluido_em — ver spec seção 6. monitor-client.tsx é "use client" e este
+// arquivo é `server-only`, então o valor chega até lá via prop passada pelo page.tsx (Server
+// Component), não por import direto.
+export const RECLAIM_MINUTOS = 10;
 
 function mapearPauta(data: {
   id: string;
@@ -797,4 +806,123 @@ export async function carregarResumoVisaoGeral(): Promise<ResumoVisaoGeral> {
     tokensEntradaTotal,
     tokensSaidaTotal,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Tela Monitor de execução (Task 13, Realtime) — carga inicial dos 3 blocos + estimativa de
+// progresso. A carga inicial de "Na fila" reusa listarPautasPorStatus("pendente") (já existente,
+// mesma função usada pela Fila de Pautas, Task 10) — decisão deliberada: PautaCarregada não expõe
+// prioridade_score hoje (só a query interna de selecionarProximaPautaPendente usa essa coluna pra
+// ordenar), então "ordenadas por prioridade" (texto do brief) é aproximado por created_at desc, a
+// mesma ordenação que a Fila de Pautas já mostra. Estender PautaCarregada com prioridade_score pra
+// ordenar de verdade tocaria um tipo usado por toda tela do módulo — fora do escopo desta task,
+// registrado no relatório da Task 13. As duas leituras de pautas_execucao_log abaixo, porém, são
+// novas (a tabela não tinha nenhum consumidor de leitura fora de registrarEtapa/carregarResumoVisaoGeral).
+// ---------------------------------------------------------------------------
+
+function mapearNomePauta(embed: unknown): string {
+  const pauta = embed as { palavra_chave_principal?: string } | { palavra_chave_principal?: string }[] | null;
+  if (Array.isArray(pauta)) return pauta[0]?.palavra_chave_principal ?? "(pauta desconhecida)";
+  return pauta?.palavra_chave_principal ?? "(pauta desconhecida)";
+}
+
+/**
+ * Etapas de `pautas_execucao_log` ainda sem `concluido_em`, restritas a pautas com
+ * `status = em_producao` (join inner com `pautas`, ver spec seção 7) — implementa o bloco "Em
+ * andamento agora". Não deduplica por pauta_id: no cenário de reclaim (spec seção 6), uma pauta
+ * pode ter DUAS linhas abertas simultaneamente — a órfã (função anterior morreu, nunca fechou a
+ * linha) e a da tentativa atual — e mostrar as duas é o comportamento desejado (a órfã aparece
+ * naturalmente como "possivelmente travada" na tela, sem precisar de lógica extra aqui).
+ *
+ * Nota (mesma cautela já registrada em listarPautasPorStatus): o embed `pautas!inner(...)` só foi
+ * testado com mock do Supabase (regra dura de migration — tabela pautas_execucao_log ainda não
+ * existe em produção) — validar manualmente contra o Postgrest real depois da migration da Task 1
+ * ser aplicada, antes de confiar cegamente neste caminho.
+ */
+export async function listarEtapasEmAndamento(): Promise<EtapaEmAndamento[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("pautas_execucao_log")
+    .select("id, pauta_id, etapa, iniciado_em, pautas!inner(palavra_chave_principal, status)")
+    .is("concluido_em", null)
+    .eq("pautas.status", "em_producao")
+    .order("iniciado_em", { ascending: false });
+  if (error) throw new Error(`Falha ao listar etapas em andamento: ${error.message}`);
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id as string,
+    pautaId: linha.pauta_id as string,
+    palavraChavePrincipal: mapearNomePauta((linha as { pautas?: unknown }).pautas),
+    etapa: linha.etapa as EtapaLog,
+    iniciadoEm: linha.iniciado_em as string,
+  }));
+}
+
+/**
+ * Últimas `limite` etapas concluídas (sucesso ou falha) de `pautas_execucao_log`, mais recentes
+ * primeiro — implementa o bloco "Concluídos recentes". `pautas` (embed simples, sem `!inner`) é
+ * seguro aqui porque `pauta_id` é `not null references pautas(id)` — toda linha concluída tem uma
+ * pauta associada, não precisa de inner join pra filtrar nada.
+ */
+export async function listarEtapasConcluidasRecentes(limite = 20): Promise<EtapaConcluida[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("pautas_execucao_log")
+    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes, pautas(palavra_chave_principal)")
+    .not("concluido_em", "is", null)
+    .order("concluido_em", { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(`Falha ao listar etapas concluídas recentes: ${error.message}`);
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id as string,
+    pautaId: linha.pauta_id as string,
+    palavraChavePrincipal: mapearNomePauta((linha as { pautas?: unknown }).pautas),
+    etapa: linha.etapa as EtapaLog,
+    iniciadoEm: linha.iniciado_em as string,
+    concluidoEm: linha.concluido_em as string,
+    sucesso: linha.sucesso as boolean | null,
+    detalhes: linha.detalhes as string | null,
+  }));
+}
+
+/**
+ * Duração média (segundos) de `concluido_em - iniciado_em` por etapa, sobre uma amostra recente
+ * (`amostra` linhas concluídas mais recentes, de todas as etapas somadas — não por etapa
+ * individualmente, então uma etapa rara pode ficar sub-representada; aceitável para uma estimativa
+ * aproximada de progresso, não uma métrica de precisão). Agregação em JS (reduce/Map), não SQL
+ * `avg()` — PostgREST não expressa `concluido_em - iniciado_em` num `.select()` sem uma view ou
+ * função nova no banco, e a spec pede explicitamente "sem view/materialização nova" (seção 7).
+ * Zero linhas (tabela vazia, migration da Task 1 ainda não aplicada) devolve `{}` — nenhuma divisão
+ * por zero, nenhuma chave "garbage"; o chamador (Monitor) trata etapa ausente como "sem dados
+ * históricos ainda", nunca como 0s.
+ */
+export async function carregarDuracaoMediaPorEtapa(amostra = 300): Promise<DuracaoMediaPorEtapa> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("pautas_execucao_log")
+    .select("etapa, iniciado_em, concluido_em")
+    .not("concluido_em", "is", null)
+    .order("concluido_em", { ascending: false })
+    .limit(amostra);
+  if (error) throw new Error(`Falha ao carregar duração média por etapa: ${error.message}`);
+
+  const acumulado = new Map<EtapaLog, { soma: number; contagem: number }>();
+  for (const linha of data ?? []) {
+    const etapa = linha.etapa as EtapaLog;
+    const duracaoSegundos = (new Date(linha.concluido_em as string).getTime() - new Date(linha.iniciado_em as string).getTime()) / 1000;
+    // Defensivo contra dado inconsistente (relógio do servidor, linha corrompida) — uma duração
+    // negativa ou não-finita não pode contaminar a média de uma etapa inteira.
+    if (!Number.isFinite(duracaoSegundos) || duracaoSegundos < 0) continue;
+    const atual = acumulado.get(etapa) ?? { soma: 0, contagem: 0 };
+    atual.soma += duracaoSegundos;
+    atual.contagem += 1;
+    acumulado.set(etapa, atual);
+  }
+
+  const resultado: DuracaoMediaPorEtapa = {};
+  for (const [etapa, { soma, contagem }] of acumulado) {
+    resultado[etapa] = soma / contagem;
+  }
+  return resultado;
 }

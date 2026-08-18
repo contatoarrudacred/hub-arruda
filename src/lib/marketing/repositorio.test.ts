@@ -4,12 +4,15 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  carregarDuracaoMediaPorEtapa,
   carregarPersona,
   carregarPropriedade,
   carregarResumoVisaoGeral,
   contarPostsPublicadosDesde,
   excluirItemChecklist,
   listarChecklistPorPropriedade,
+  listarEtapasConcluidasRecentes,
+  listarEtapasEmAndamento,
   listarMatrizes,
   listarPautasPorStatus,
   listarPostsPublicados,
@@ -57,6 +60,7 @@ function criarQueryFalsa(resultado: ResultadoQuery) {
     "gte",
     "in",
     "not",
+    "is",
     "update",
     "insert",
     "upsert",
@@ -1044,5 +1048,215 @@ describe("carregarResumoVisaoGeral", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(carregarResumoVisaoGeral()).rejects.toThrow(/Falha ao carregar propriedades para o resumo.*erro de teste/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 13 (Monitor de execução, Realtime) — carga inicial dos 3 blocos + estimativa de progresso.
+// ---------------------------------------------------------------------------
+
+describe("listarEtapasEmAndamento", () => {
+  it("mapeia etapas sem concluido_em, resolvendo o nome da pauta via embed", async () => {
+    const builder = criarQueryFalsa({
+      data: [
+        {
+          id: "log-1",
+          pauta_id: "pauta-1",
+          etapa: "gerar_conteudo",
+          iniciado_em: "2026-08-18T10:00:00Z",
+          pautas: { palavra_chave_principal: "limpar nome", status: "em_producao" },
+        },
+      ],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const etapas = await listarEtapasEmAndamento();
+
+    expect(etapas).toEqual([
+      {
+        id: "log-1",
+        pautaId: "pauta-1",
+        palavraChavePrincipal: "limpar nome",
+        etapa: "gerar_conteudo",
+        iniciadoEm: "2026-08-18T10:00:00Z",
+      },
+    ]);
+  });
+
+  // As duas asserções protegem a mesma lógica indissociável do embed inner join (mesma lição do
+  // Task 3 sobre listarPautasPorStatus): filtrar por `pautas.status` só é válido no PostgREST se
+  // `pautas!inner(...)` também estiver no select — checar só o `.eq()` não pegaria alguém removendo
+  // o embed do `select()` por engano.
+  it("filtra por concluido_em nulo e pautas.status = em_producao via inner join", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await listarEtapasEmAndamento();
+
+    expect(builder.select).toHaveBeenCalledWith(expect.stringContaining("pautas!inner(palavra_chave_principal, status)"));
+    expect(builder.is).toHaveBeenCalledWith("concluido_em", null);
+    expect(builder.eq).toHaveBeenCalledWith("pautas.status", "em_producao");
+  });
+
+  it("usa um rótulo de fallback quando o embed de pauta vem vazio (defensivo)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ id: "log-1", pauta_id: "pauta-1", etapa: "revisar", iniciado_em: "2026-08-18T10:00:00Z", pautas: null }],
+        error: null,
+      }),
+    );
+
+    const [etapa] = await listarEtapasEmAndamento();
+
+    expect(etapa.palavraChavePrincipal).toBe("(pauta desconhecida)");
+  });
+
+  it("retorna lista vazia quando não há etapas em andamento", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await listarEtapasEmAndamento()).toEqual([]);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(listarEtapasEmAndamento()).rejects.toThrow(/Falha ao listar etapas em andamento.*erro de teste/);
+  });
+});
+
+describe("listarEtapasConcluidasRecentes", () => {
+  const linhaBruta = {
+    id: "log-2",
+    pauta_id: "pauta-2",
+    etapa: "publicar",
+    iniciado_em: "2026-08-18T09:00:00Z",
+    concluido_em: "2026-08-18T09:02:30Z",
+    sucesso: true,
+    detalhes: null,
+    pautas: { palavra_chave_principal: "score de crédito" },
+  };
+
+  it("mapeia etapas concluídas com sucesso/detalhes/nome da pauta", async () => {
+    mockarFrom(criarQueryFalsa({ data: [linhaBruta], error: null }));
+
+    const etapas = await listarEtapasConcluidasRecentes();
+
+    expect(etapas).toEqual([
+      {
+        id: "log-2",
+        pautaId: "pauta-2",
+        palavraChavePrincipal: "score de crédito",
+        etapa: "publicar",
+        iniciadoEm: "2026-08-18T09:00:00Z",
+        concluidoEm: "2026-08-18T09:02:30Z",
+        sucesso: true,
+        detalhes: null,
+      },
+    ]);
+  });
+
+  it("filtra concluido_em não nulo, ordena desc e usa o limite default de 20", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await listarEtapasConcluidasRecentes();
+
+    expect(builder.not).toHaveBeenCalledWith("concluido_em", "is", null);
+    expect(builder.order).toHaveBeenCalledWith("concluido_em", { ascending: false });
+    expect(builder.limit).toHaveBeenCalledWith(20);
+  });
+
+  it("respeita um limite customizado", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await listarEtapasConcluidasRecentes(5);
+
+    expect(builder.limit).toHaveBeenCalledWith(5);
+  });
+
+  it("mapeia sucesso false e detalhes preenchidos (etapa que falhou)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ ...linhaBruta, sucesso: false, detalhes: "Timeout ao publicar no WordPress." }],
+        error: null,
+      }),
+    );
+
+    const [etapa] = await listarEtapasConcluidasRecentes();
+
+    expect(etapa.sucesso).toBe(false);
+    expect(etapa.detalhes).toBe("Timeout ao publicar no WordPress.");
+  });
+
+  it("retorna lista vazia quando não há etapas concluídas (tabela ainda vazia, migration pendente)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await listarEtapasConcluidasRecentes()).toEqual([]);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(listarEtapasConcluidasRecentes()).rejects.toThrow(/Falha ao listar etapas concluídas recentes.*erro de teste/);
+  });
+});
+
+describe("carregarDuracaoMediaPorEtapa", () => {
+  it("calcula a média de duração (segundos) por etapa a partir de iniciado_em/concluido_em", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          { etapa: "gerar_conteudo", iniciado_em: "2026-08-18T10:00:00Z", concluido_em: "2026-08-18T10:01:00Z" }, // 60s
+          { etapa: "gerar_conteudo", iniciado_em: "2026-08-18T10:00:00Z", concluido_em: "2026-08-18T10:02:00Z" }, // 120s
+          { etapa: "revisar", iniciado_em: "2026-08-18T10:00:00Z", concluido_em: "2026-08-18T10:00:30Z" }, // 30s
+        ],
+        error: null,
+      }),
+    );
+
+    const duracoes = await carregarDuracaoMediaPorEtapa();
+
+    expect(duracoes.gerar_conteudo).toBe(90);
+    expect(duracoes.revisar).toBe(30);
+    expect(duracoes.publicar).toBeUndefined();
+  });
+
+  it("devolve objeto vazio (não 0, não NaN) quando não há histórico — degrade gracioso pré-migration", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await carregarDuracaoMediaPorEtapa()).toEqual({});
+  });
+
+  it("ignora linhas com duração negativa/inconsistente sem quebrar a média das demais", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          { etapa: "sanitizar", iniciado_em: "2026-08-18T10:00:10Z", concluido_em: "2026-08-18T10:00:00Z" }, // negativa — descartada
+          { etapa: "sanitizar", iniciado_em: "2026-08-18T10:00:00Z", concluido_em: "2026-08-18T10:00:10Z" }, // 10s — válida
+        ],
+        error: null,
+      }),
+    );
+
+    expect(await carregarDuracaoMediaPorEtapa()).toEqual({ sanitizar: 10 });
+  });
+
+  it("consulta com o limite/ordenação corretos e respeita um tamanho de amostra customizado", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await carregarDuracaoMediaPorEtapa(50);
+
+    expect(builder.not).toHaveBeenCalledWith("concluido_em", "is", null);
+    expect(builder.order).toHaveBeenCalledWith("concluido_em", { ascending: false });
+    expect(builder.limit).toHaveBeenCalledWith(50);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarDuracaoMediaPorEtapa()).rejects.toThrow(/Falha ao carregar duração média por etapa.*erro de teste/);
   });
 });

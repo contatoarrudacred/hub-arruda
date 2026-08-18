@@ -207,3 +207,44 @@ export type ResumoVisaoGeral = {
   tokensEntradaTotal: number;
   tokensSaidaTotal: number;
 };
+
+// ---------------------------------------------------------------------------
+// Tela Monitor de execução (Task 13, Realtime) — ver
+// docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md seção 7.
+// ---------------------------------------------------------------------------
+
+/**
+ * Uma linha de `pautas_execucao_log` ainda sem `concluido_em` — pauta com etapa em andamento
+ * (ou possivelmente travada, ver RECLAIM_MINUTOS em repositorio.ts e a nota da spec seção 6:
+ * "sem concluido_em" pode significar em andamento de verdade OU travado por timeout, e só o
+ * tempo decorrido desde iniciadoEm distingue os dois — decisão que cabe à tela, não ao repositório).
+ */
+export type EtapaEmAndamento = {
+  id: string;
+  pautaId: string;
+  palavraChavePrincipal: string;
+  etapa: EtapaLog;
+  iniciadoEm: string;
+};
+
+/** Uma linha de `pautas_execucao_log` já concluída (sucesso ou falha) — alimenta o bloco
+ * "Concluídos recentes" do Monitor. */
+export type EtapaConcluida = {
+  id: string;
+  pautaId: string;
+  palavraChavePrincipal: string;
+  etapa: EtapaLog;
+  iniciadoEm: string;
+  concluidoEm: string;
+  sucesso: boolean | null;
+  detalhes: string | null;
+};
+
+/**
+ * Duração média (em segundos) de `concluido_em - iniciado_em` por etapa, calculada sobre uma
+ * amostra recente do log — usada pelo Monitor pra estimar progresso/tempo restante de uma etapa
+ * em andamento. `Partial`: uma etapa sem nenhuma execução concluída na amostra simplesmente não
+ * aparece como chave (em vez de 0 ou NaN) — degrade gracioso quando a tabela está vazia (schema
+ * ainda não aplicado em produção, ver Task 1) ou quando uma etapa específica nunca rodou ainda.
+ */
+export type DuracaoMediaPorEtapa = Partial<Record<EtapaLog, number>>;
