@@ -19,6 +19,7 @@ import {
   marcarNotificacaoLida,
   obterUsuarioSistemaAtual,
   registrarMensagemHumana,
+  resolverEstagnacao,
   type ContagemNaoLidas,
   type ConversaDetalhe,
   type ConversaResumo,
@@ -142,6 +143,12 @@ export async function ativarFollowupManualAction(conversaId: string, agendaId: s
 
 export async function alternarFavoritaAction(conversaId: string, favorita: boolean): Promise<void> {
   await alternarFavorita(conversaId, favorita);
+  revalidatePath("/admin/atendimento");
+}
+
+/** Atendente marca a estagnação (selo de risco 🔴, sinal 3) como resolvida (Bloco D/Fase 5). */
+export async function resolverEstagnacaoAction(conversaId: string): Promise<void> {
+  await resolverEstagnacao(conversaId);
   revalidatePath("/admin/atendimento");
 }
 

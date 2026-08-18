@@ -371,6 +371,31 @@ export async function listarConfiguracoes(): Promise<ConfiguracaoAdmin[]> {
   }));
 }
 
+export type LimiaresSeloRisco = { horasAmarelo: number; horasVermelho: number };
+
+/** Variante autenticada de `carregarLimiaresSeloRisco` (repositorio.ts) — usada por `/admin/atendimento` (page.tsx) pra calcular o selo de risco de esfriar no client (`selo-risco.ts`). Fallback preserva os valores iniciais da migration 033. */
+export async function carregarLimiaresSeloRisco(): Promise<LimiaresSeloRisco> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", ["selo_risco_esfriar_horas_amarelo", "selo_risco_esfriar_horas_vermelho"]);
+
+  if (error) {
+    throw new Error(`Falha ao carregar limiares do selo de risco: ${error.message}`);
+  }
+
+  const porChave = Object.fromEntries((data ?? []).map((linha) => [linha.chave, linha.valor])) as Record<
+    string,
+    unknown
+  >;
+
+  return {
+    horasAmarelo: Number(porChave.selo_risco_esfriar_horas_amarelo ?? 4),
+    horasVermelho: Number(porChave.selo_risco_esfriar_horas_vermelho ?? 24),
+  };
+}
+
 export type EntradaSalvarConfiguracao = {
   id: string | null;
   chave: string;

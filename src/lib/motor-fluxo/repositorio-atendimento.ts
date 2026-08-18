@@ -145,6 +145,10 @@ export type ConversaResumo = {
   favorita: boolean;
   /** Foto de perfil do WhatsApp mais recente (Bloco D) — null quando o contato não tem foto pública ou ainda não mandou mensagem nenhuma. */
   fotoUrl: string | null;
+  /** Sinais brutos do selo de risco de esfriar (Bloco D/Fase 5) — combinados em `selo-risco.ts` (calcularSeloRisco), calculado no client pra reaproveitar exatamente a mesma lógica testada do cabeçalho da conversa. */
+  aguardandoRespostaDesde: string | null;
+  contadorNaoReconhecimento: number;
+  estagnadoDesde: string | null;
 };
 
 /** Placeholders gravados por `carregarOuCriarConversaWhatsapp`/repositorio-atendimento quando o lead ainda não disse o nome — string exata, não é o ideal (frágil a typo), mas evita uma coluna nova só pra isto agora. */
@@ -227,6 +231,9 @@ export async function listarConversasAtendimento(
       atendenteCor: ehCorBadgeValida(linha.atendente_cor ?? "") ? (linha.atendente_cor as CorBadge) : null,
       favorita: linha.favorita ?? false,
       fotoUrl: linha.pessoa_foto_url ?? null,
+      aguardandoRespostaDesde: linha.aguardando_resposta_desde ?? null,
+      contadorNaoReconhecimento: linha.contador_nao_reconhecimento ?? 0,
+      estagnadoDesde: linha.estagnado_desde ?? null,
     };
   });
 
@@ -254,6 +261,13 @@ export async function alternarFavorita(conversaId: string, favorita: boolean): P
   const supabase = await createClient();
   const { error } = await supabase.from("conversas").update({ favorita }).eq("id", conversaId);
   if (error) throw new Error(`Falha ao favoritar conversa: ${error.message}`);
+}
+
+/** Atendente marca a estagnação (selo de risco 🔴, sinal 3) como resolvida — objeção endereçada ou negociação retomada manualmente. Bloco D/Fase 5, `selo-risco.ts`. */
+export async function resolverEstagnacao(conversaId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("conversas").update({ estagnado_desde: null }).eq("id", conversaId);
+  if (error) throw new Error(`Falha ao resolver estagnação: ${error.message}`);
 }
 
 export type ContagemNaoLidas = {
@@ -346,6 +360,10 @@ export type ConversaDetalhe = {
   mensagens: MensagemConversa[];
   /** Foto de perfil do WhatsApp mais recente (Bloco D) — null quando o contato não tem foto pública. */
   fotoUrl: string | null;
+  /** Sinais brutos do selo de risco de esfriar (Bloco D/Fase 5) — combinados em `selo-risco.ts` (calcularSeloRisco). */
+  aguardandoRespostaDesde: string | null;
+  contadorNaoReconhecimento: number;
+  estagnadoDesde: string | null;
 };
 
 /** Conversa inteira (cabeçalho + timeline) — painel direito. */
@@ -355,7 +373,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select(
-      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, created_at, dados, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome, nome_reduzido)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
+      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, created_at, dados, contador_nao_reconhecimento, estagnado_desde, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome, nome_reduzido)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
     )
     .eq("id", conversaId)
     .single();
@@ -427,6 +445,9 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     followupAtivo,
     followupProximoEm,
     fotoUrl: ultimaFoto?.url ?? null,
+    aguardandoRespostaDesde: conversa.aguardando_resposta_desde,
+    contadorNaoReconhecimento: conversa.contador_nao_reconhecimento ?? 0,
+    estagnadoDesde: conversa.estagnado_desde,
     notas: (notas ?? []).map((n) => {
       const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
       return {

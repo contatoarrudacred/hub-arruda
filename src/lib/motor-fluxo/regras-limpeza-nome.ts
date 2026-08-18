@@ -97,8 +97,12 @@ export function montarPropostaBaixoValor(config: ConfigPrecificacaoLimpaNome): s
 }
 
 /** Bloco de proposta (Passo 15) padrão — restrição dentro da tabela por faixa (até R$500 mil). */
+/**
+ * Recebe a faixa já combinada por documento (`combinarFaixasPacote`) — com 1 documento só (caso
+ * mais comum) o resultado é idêntico ao de uma faixa única, sem mudança de comportamento.
+ */
 export function montarPropostaPorFaixa(
-  faixaPreco: FaixaPreco,
+  faixaPreco: FaixaCombinadaPacote,
   quisPrioridadeHoje: boolean,
 ): string[] {
   const mensagens: string[] = [
@@ -107,20 +111,101 @@ export function montarPropostaPorFaixa(
   ];
 
   if (faixaPreco.precoCheio && faixaPreco.precoAvista) {
+    const linhaParcelado =
+      faixaPreco.parcelasBoleto.length > 0 ? `\n\nou\n\n📌 *Parcelado Boleto/Pix*:\n${formatarParcelas(faixaPreco.parcelasBoleto)}` : "";
+    const linhaCartao = faixaPreco.parcelasCartaoMax ? ` ou ainda em até ${faixaPreco.parcelasCartaoMax}x no cartão.` : "";
     mensagens.push(
-      `👉 *PREÇO JÁ COM DESCONTO para pagamento Boleto/Pix sendo primeira parcela imediata junto com a assinatura do contrato*:\n\n📌 *Especial à vista*:\n~De: ${formatarReais(faixaPreco.precoCheio)}~\nPor: ${formatarReais(faixaPreco.precoAvista)} parcela única\n\nou\n\n📌 *Parcelado Boleto/Pix*:\n${faixaPreco.parcelasBoletoQtd}x ${formatarReais(faixaPreco.parcelasBoletoValor ?? 0)} ou ainda em até ${faixaPreco.parcelasCartaoMax}x no cartão.`,
+      `👉 *PREÇO JÁ COM DESCONTO para pagamento Boleto/Pix sendo primeira parcela imediata junto com a assinatura do contrato*:\n\n📌 *Especial à vista*:\n~De: ${formatarReais(faixaPreco.precoCheio)}~\nPor: ${formatarReais(faixaPreco.precoAvista)} parcela única${linhaParcelado}${linhaCartao}`,
     );
   }
 
   if (quisPrioridadeHoje && faixaPreco.voucherAvista) {
+    const linhaVoucherParcelado =
+      faixaPreco.voucherParcelas.length > 0 ? ` ou ${formatarParcelas(faixaPreco.voucherParcelas)}` : "";
     mensagens.push(
-      `💥💥 *Condição Especial*\n_Fechando agora com voucher especial (válido por 24h):_\n\n👉 *${formatarReais(faixaPreco.voucherAvista)}* à vista ou ${faixaPreco.voucherParcelasQtd} vezes de ${formatarReais(faixaPreco.voucherParcelasValor ?? 0)} 🤩`,
+      `💥💥 *Condição Especial*\n_Fechando agora com voucher especial (válido por 24h):_\n\n👉 *${formatarReais(faixaPreco.voucherAvista)}* à vista${linhaVoucherParcelado} 🤩`,
     );
   }
 
   mensagens.push(`🙋‍♂️Como fica melhor para você fechar HOJE?\n\n👉 *À vista ou parcelado?*`);
 
   return mensagens;
+}
+
+export type ParcelaTier = { quantidade: number; valor: number };
+
+/**
+ * Combina as parcelas de N documentos numa régua só, mês a mês — decisão de Luiz (pacote Fase 4,
+ * 17/08/2026): o total de parcelas é o maior entre os documentos; em cada mês, soma o valor de todo
+ * documento que ainda tem parcela devida naquele mês (documento com menos parcelas "sai" da soma
+ * assim que termina). Ex.: CPF 6x R$100 + CNPJ 3x R$200 vira 2 tiers — 3x R$300 (meses 1-3, os dois
+ * ainda pagando) + 3x R$100 (meses 4-6, só o CPF) —, 6 parcelas no total. Com um documento só (caso
+ * mais comum), degenera num tier único (mesmo resultado de hoje, sem pacote).
+ */
+export function combinarParcelas(itens: ParcelaTier[]): ParcelaTier[] {
+  const cortes = [...new Set(itens.map((i) => i.quantidade))].filter((q) => q > 0).sort((a, b) => a - b);
+  const tiers: ParcelaTier[] = [];
+  let mesAnterior = 0;
+  for (const corte of cortes) {
+    const duracao = corte - mesAnterior;
+    const valorMes = itens.filter((i) => i.quantidade >= corte).reduce((soma, i) => soma + i.valor, 0);
+    if (duracao > 0 && valorMes > 0) tiers.push({ quantidade: duracao, valor: valorMes });
+    mesAnterior = corte;
+  }
+  return tiers;
+}
+
+export type FaixaCombinadaPacote = {
+  precoCheio: number | null;
+  precoAvista: number | null;
+  parcelasBoleto: ParcelaTier[];
+  parcelasCartaoMax: number | null;
+  voucherAvista: number | null;
+  voucherParcelas: ParcelaTier[];
+};
+
+/**
+ * Preço do pacote pela faixa de CADA documento, somadas — decisão de Luiz (pacote Fase 4,
+ * 17/08/2026): antes disto, o preço vinha de uma única faixa sobre o VALOR total combinado
+ * (`somarValoresDocumentos` + `buscarFaixaPreco`), o que sub/sobre-precificava pacotes com
+ * documentos de portes bem diferentes (ex.: 1 CPF de R$10 mil + 1 CNPJ de R$80 mil virava uma faixa
+ * só, em vez da faixa de cada um). Preço cheio/à vista/voucher à vista somam direto; parcelamento
+ * usa `combinarParcelas` (régua mês a mês, não simples soma de quantidade de parcelas). Documentos
+ * sem faixa encontrada são ignorados na soma (defensivo — não deveria acontecer com valores dentro
+ * do corte de alto valor, que é sempre <= o teto da tabela de faixas).
+ */
+export function combinarFaixasPacote(valoresPorDocumento: number[], faixasPrecos: FaixaPreco[]): FaixaCombinadaPacote | null {
+  const faixas = valoresPorDocumento
+    .map((valor) => buscarFaixaPreco(valor, faixasPrecos))
+    .filter((f): f is FaixaPreco => f !== null);
+  if (faixas.length === 0) return null;
+
+  const somarSeTodasTiverem = (extrair: (f: FaixaPreco) => number | null): number | null =>
+    faixas.every((f) => extrair(f) != null) ? faixas.reduce((soma, f) => soma + (extrair(f) ?? 0), 0) : null;
+
+  return {
+    precoCheio: somarSeTodasTiverem((f) => f.precoCheio),
+    precoAvista: somarSeTodasTiverem((f) => f.precoAvista),
+    parcelasCartaoMax: faixas.some((f) => f.parcelasCartaoMax != null)
+      ? Math.max(...faixas.map((f) => f.parcelasCartaoMax ?? 0))
+      : null,
+    voucherAvista: somarSeTodasTiverem((f) => f.voucherAvista),
+    parcelasBoleto: combinarParcelas(
+      faixas
+        .filter((f) => f.parcelasBoletoQtd != null && f.parcelasBoletoValor != null)
+        .map((f) => ({ quantidade: f.parcelasBoletoQtd as number, valor: f.parcelasBoletoValor as number })),
+    ),
+    voucherParcelas: combinarParcelas(
+      faixas
+        .filter((f) => f.voucherParcelasQtd != null && f.voucherParcelasValor != null)
+        .map((f) => ({ quantidade: f.voucherParcelasQtd as number, valor: f.voucherParcelasValor as number })),
+    ),
+  };
+}
+
+/** Formata uma régua de parcelas — "Nx de R$X" quando só tem um tier (caso comum, 1 documento), ou "Nx de R$X + Mx de R$Y" encadeado quando o pacote combina documentos com prazos diferentes. */
+export function formatarParcelas(tiers: ParcelaTier[]): string {
+  return tiers.map((t) => `${t.quantidade}x ${formatarReais(t.valor)}`).join(" + ");
 }
 
 /** Bloco de qualificação para alto valor (>R$500 mil) — PLANO_MESTRE seção 8.6: qualifica e tenta agendar call com Luiz antes de propor. */

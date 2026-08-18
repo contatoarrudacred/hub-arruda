@@ -194,3 +194,45 @@ export async function listarRegrasRoteamentoAtivas(): Promise<RegraRoteamento[]>
 
   return (data ?? []).map((linha) => ({ termos: linha.termos, etapaCodigo: linha.etapa_codigo }));
 }
+
+export type LimiaresSeloRisco = { horasAmarelo: number; horasVermelho: number };
+
+/** Limiares do sinal 1 do selo de risco de esfriar (Bloco D/Fase 5, `selo-risco.ts`) — configuráveis, decisão de Luiz (17/08/2026). Fallback preserva os valores iniciais da migration 033 se as chaves não existirem. */
+export async function carregarLimiaresSeloRisco(): Promise<LimiaresSeloRisco> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("chave, valor")
+    .in("chave", ["selo_risco_esfriar_horas_amarelo", "selo_risco_esfriar_horas_vermelho"]);
+
+  if (error) {
+    throw new Error(`Falha ao carregar limiares do selo de risco: ${error.message}`);
+  }
+
+  const porChave = Object.fromEntries((data ?? []).map((linha) => [linha.chave, linha.valor])) as Record<
+    string,
+    unknown
+  >;
+
+  return {
+    horasAmarelo: Number(porChave.selo_risco_esfriar_horas_amarelo ?? 4),
+    horasVermelho: Number(porChave.selo_risco_esfriar_horas_vermelho ?? 24),
+  };
+}
+
+export type ObjecaoParaDetectorCarregada = { id: string; objecao: string; comoLidar: string };
+
+/** Variante service-role de `listarObjecoes` (repositorio-admin.ts) — usada pelo detector automático de objeção no webhook (Bloco D/Fase 5), que roda sem usuário Supabase autenticado por trás. */
+export async function listarObjecoesAtivas(): Promise<ObjecaoParaDetectorCarregada[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("objecoes")
+    .select("id, objecao, como_lidar")
+    .eq("ativo", true);
+
+  if (error) {
+    throw new Error(`Falha ao carregar objeções ativas: ${error.message}`);
+  }
+
+  return (data ?? []).map((linha) => ({ id: linha.id, objecao: linha.objecao, comoLidar: linha.como_lidar }));
+}

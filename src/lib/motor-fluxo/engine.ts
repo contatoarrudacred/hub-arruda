@@ -348,21 +348,36 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   }
 
   if (!reconhecido) {
-    const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? undefined;
-    const retomada = substituirVariaveisMensagem(
-      mensagemRetomada(conteudo, dinamicas ?? undefined),
-      dados,
-      variaveisGlobais,
-    );
-    return {
-      mensagens: [empacotar(retomada, conteudo)],
-      etapaFinal: etapaAtual,
-      dadosNovos: {},
-      efeitos: [],
-      naoReconhecido: true,
-      interpretadoPorIA,
-      kanbanSubetapa: conteudo.kanban_subetapa ?? null,
-    };
+    // Checkpoint "opcional" (opcional_apos_tentativas, PLANO_MESTRE seção 8.12) — depois de N
+    // tentativas seguidas sem reconhecer a resposta, desiste em vez de travar o funil indefinidamente.
+    // O contador vive em `dados` (chave reservada, prefixo "_" — não colide com campo de negócio
+    // nenhum), incrementado a cada tentativa e nunca lido de novo depois que a etapa avança.
+    const chaveTentativas = `_tentativas:${conteudo.codigo}`;
+    const tentativas = Number(dados[chaveTentativas] ?? "0") + 1;
+    const desiste = conteudo.opcional_apos_tentativas != null && tentativas >= conteudo.opcional_apos_tentativas;
+
+    if (!desiste) {
+      const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? undefined;
+      const retomada = substituirVariaveisMensagem(
+        mensagemRetomada(conteudo, dinamicas ?? undefined),
+        dados,
+        variaveisGlobais,
+      );
+      return {
+        mensagens: [empacotar(retomada, conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: { [chaveTentativas]: String(tentativas) },
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    }
+
+    // Desistiu — segue o resto do turno exatamente como se o lead tivesse respondido de verdade,
+    // só que com valor vazio (nenhuma opção escolhida, então nem `proximo_condicional` nem
+    // `opcoes` são afetados; checkpoints assim usam `proximo_codigo` linear).
+    reconhecido = { valor: "" };
   }
 
   const dadosNovosBrutos: DadosConversa = etapaAtual.campoSalvo

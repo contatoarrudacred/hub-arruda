@@ -32,6 +32,7 @@ import {
   listarFotosPessoaAction,
   listarNotificacoesAction,
   marcarNotificacaoLidaAction,
+  resolverEstagnacaoAction,
   sugerirRespostaAction,
 } from "./actions";
 import { resetarConversaAction } from "../reset-conversa/actions";
@@ -46,6 +47,7 @@ import emojisPtRaw from "emoji-picker-react/dist/data/emojis-pt.json";
 const emojisPt = emojisPtRaw as unknown as EmojiData;
 import { CORES_BADGE, corControlador } from "@/lib/motor-fluxo/cores-atendimento";
 import { rotuloCurtoDaSubetapa, rotuloDaSubetapa } from "@/lib/motor-fluxo/kanban";
+import { calcularSeloRisco, type NivelRisco } from "@/lib/motor-fluxo/selo-risco";
 
 // Tela de Atendimento, Bloco A (fundação) — ver docs/TELA_ATENDIMENTO_ARRUDACRED.md. Simplificações
 // conscientes deste primeiro bloco, registradas lá: "não lida" é só "última mensagem é do lead" (sem
@@ -183,6 +185,13 @@ function IconeStatusEntrega({ entregueEm, lidoEm }: { entregueEm: string | null;
   if (lidoEm) return <span className="text-[13px] text-blue-500" title="Lido">✓✓</span>;
   if (entregueEm) return <span className="text-[13px] text-zinc-400" title="Entregue">✓✓</span>;
   return <span className="text-[13px] text-zinc-400" title="Enviado">✓</span>;
+}
+
+/** Emoji do selo de risco de esfriar (Bloco D/Fase 5) — "baixo" não mostra nada (só quem está em risco de verdade precisa se destacar, mesmo critério já usado pro painel de status de integrações). */
+function emojiSeloRisco(nivel: NivelRisco): string | null {
+  if (nivel === "alto") return "🔴";
+  if (nivel === "medio") return "🟡";
+  return null;
 }
 
 /** Rótulo curto tipo "em ~10 min" / "em ~4h" / "amanhã" — usado no chip de follow-up ativo, não precisa de precisão de segundo (o polling de 4s já mantém isso razoavelmente fresco). */
@@ -561,6 +570,7 @@ export function AtendimentoClient({
   atendentesIniciais,
   respostasProntasIniciais,
   agendasFollowupIniciais,
+  limiaresSeloRisco,
 }: {
   usuarioAtual: UsuarioSistema;
   conversasIniciais: ConversaResumo[];
@@ -568,6 +578,7 @@ export function AtendimentoClient({
   atendentesIniciais: UsuarioSistema[];
   respostasProntasIniciais: RespostaPronta[];
   agendasFollowupIniciais: AgendaAdmin[];
+  limiaresSeloRisco: { horasAmarelo: number; horasVermelho: number };
 }) {
   const [filtroChave, setFiltroChave] = useState<ChaveFiltro>("tudo");
   const [menuHumanoAberto, setMenuHumanoAberto] = useState(false);
@@ -729,6 +740,14 @@ export function AtendimentoClient({
     setConversaSelecionadaId(null);
     await recarregarLista();
     await recarregarContagens();
+  }
+
+  /** Selo de risco de esfriar (Bloco D/Fase 5) — atendente marca a estagnação como resolvida (objeção endereçada, negociação retomada manualmente). */
+  async function resolverEstagnacao() {
+    if (!conversaSelecionadaId) return;
+    await resolverEstagnacaoAction(conversaSelecionadaId);
+    await recarregarDetalhe(conversaSelecionadaId);
+    await recarregarLista();
   }
 
   /** Histórico de fotos de perfil do contato (Bloco D) — busca sob demanda ao abrir a modal, não fica no estado da conversa. */
@@ -1146,6 +1165,13 @@ export function AtendimentoClient({
             const naoLida = c.naoLidasContagem > 0;
             const nomeOuTelefone = c.nomeConhecido ? c.pessoaNome : formatarTelefone(c.pessoaTelefone) || c.pessoaNome;
             const nossaMensagem = c.ultimaMensagemRemetente !== null && c.ultimaMensagemRemetente !== "lead";
+            const nivelRisco = calcularSeloRisco({
+              aguardandoRespostaDesde: c.aguardandoRespostaDesde,
+              contadorNaoReconhecimento: c.contadorNaoReconhecimento,
+              estagnadoDesde: c.estagnadoDesde,
+              ...limiaresSeloRisco,
+            });
+            const seloRisco = emojiSeloRisco(nivelRisco);
             return (
               <div
                 key={c.conversaId}
@@ -1176,6 +1202,18 @@ export function AtendimentoClient({
                     {c.favorita && (
                       <span className="absolute -left-1 -top-1 text-[11px]" title="Favorita">
                         ⭐
+                      </span>
+                    )}
+                    {seloRisco && (
+                      <span
+                        className="absolute -right-0.5 -top-0.5 text-[11px] leading-none"
+                        title={
+                          nivelRisco === "alto"
+                            ? "Risco de esfriar: alto"
+                            : "Risco de esfriar: médio"
+                        }
+                      >
+                        {seloRisco}
                       </span>
                     )}
                   </div>
@@ -1295,12 +1333,38 @@ export function AtendimentoClient({
                   )}
                 </button>
                 <div>
-                  <p className="font-semibold text-zinc-900 dark:text-zinc-50">{detalhe.pessoaNome}</p>
+                  <p className="flex items-center gap-1.5 font-semibold text-zinc-900 dark:text-zinc-50">
+                    {detalhe.pessoaNome}
+                    {(() => {
+                      const nivel = calcularSeloRisco({
+                        aguardandoRespostaDesde: detalhe.aguardandoRespostaDesde,
+                        contadorNaoReconhecimento: detalhe.contadorNaoReconhecimento,
+                        estagnadoDesde: detalhe.estagnadoDesde,
+                        ...limiaresSeloRisco,
+                      });
+                      const emoji = emojiSeloRisco(nivel);
+                      if (!emoji) return null;
+                      return (
+                        <span title={nivel === "alto" ? "Risco de esfriar: alto" : "Risco de esfriar: médio"}>
+                          {emoji}
+                        </span>
+                      );
+                    })()}
+                  </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     {formatarTelefone(detalhe.pessoaTelefone)}
                     {detalhe.produtoNome && ` · ${detalhe.produtoNome}`}
                     {detalhe.valorEstimado && ` · R$ ${detalhe.valorEstimado.toLocaleString("pt-BR")}`}
                   </p>
+                  {detalhe.estagnadoDesde && (
+                    <button
+                      type="button"
+                      onClick={resolverEstagnacao}
+                      className="mt-0.5 text-[11px] text-emerald-600 hover:underline dark:text-emerald-400"
+                    >
+                      ✅ Marcar negociação como retomada
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">

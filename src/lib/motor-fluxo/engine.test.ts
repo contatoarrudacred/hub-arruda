@@ -452,3 +452,25 @@ describe("regra de desvio (resposta não reconhecida)", () => {
     expect(r.dadosNovos.documentos_valores).toBe("15000,nao_sei");
   });
 });
+
+describe("checkpoint opcional (opcional_apos_tentativas, PLANO_MESTRE seção 8.12)", () => {
+  it("abertura_email: 1ª tentativa não reconhecida repete a pergunta e conta a tentativa em dados", async () => {
+    const r = await responder("abertura_email", {}, "pra que vocês querem meu e-mail?");
+    expect(r.naoReconhecido).toBe(true);
+    expect(r.etapaFinal?.conteudo.codigo).toBe("abertura_email");
+    expect(r.dadosNovos["_tentativas:abertura_email"]).toBe("1");
+  });
+
+  it("abertura_email: desiste na 2ª tentativa e segue em frente com e-mail vazio, sem travar o funil", async () => {
+    const r = await responder("abertura_email", { "_tentativas:abertura_email": "1" }, "não tenho e-mail não");
+    expect(r.naoReconhecido).toBe(false);
+    expect(r.dadosNovos.email).toBe("");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("triagem_menu");
+  });
+
+  it("checkpoint sem opcional_apos_tentativas nunca desiste, mesmo depois de muitas tentativas", async () => {
+    const r = await responder("ln_passo4", { "_tentativas:ln_passo4": "99" }, "sei lá");
+    expect(r.naoReconhecido).toBe(true);
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo4");
+  });
+});

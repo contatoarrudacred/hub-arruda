@@ -11,8 +11,9 @@ import {
   MOTIVO_PERDA_BLOQUEIO_WHATSAPP,
   MOTIVO_PERDA_SEM_RESPOSTA,
 } from "./motor-followup";
+import { detectarObjecao } from "./detector-objecao";
 import { criarDocumentosOportunidadeSeNecessario } from "./oportunidade-documentos";
-import { carregarIdAgendaPadrao, type ItemAgendaFollowupCarregado } from "./repositorio";
+import { carregarIdAgendaPadrao, listarObjecoesAtivas, type ItemAgendaFollowupCarregado } from "./repositorio";
 import type { DadosConversa, EfeitoNegocio, EtapaCarregada, MensagemEnviada, MensagemEtapa, ResultadoAvanco } from "./tipos";
 
 // Persistência de conversa "de verdade" — grava em pessoas/oportunidades/conversas/mensagens.
@@ -231,6 +232,37 @@ export async function registrarMensagemLead(
   }
 }
 
+/** Marca `conversas.estagnado_desde` (selo de risco de esfriar, sinal 3) se ainda não estiver marcada — nunca sobrescreve uma pendência já aberta, a data precisa refletir quando ela começou de verdade. */
+async function marcarEstagnadaSeNecessario(conversaId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data } = await supabase.from("conversas").select("estagnado_desde").eq("id", conversaId).single();
+  if (data?.estagnado_desde) return;
+
+  const { error } = await supabase
+    .from("conversas")
+    .update({ estagnado_desde: new Date().toISOString() })
+    .eq("id", conversaId);
+  if (error) throw new Error(`Falha ao marcar conversa como estagnada: ${error.message}`);
+}
+
+/**
+ * Detector automático de objeção (Bloco D/Fase 5) — roda a cada mensagem de texto do lead (chamado
+ * via `after()` no webhook, route.ts) e marca a conversa como estagnada quando detecta uma. Reaproveita
+ * o mesmo `detectarObjecao` do botão manual do Bloco C (`detector-objecao.ts`), só que automático em
+ * vez de sob demanda. Silencioso em qualquer falha — é um sinal complementar pro selo de risco, nunca
+ * pode travar o atendimento nem atrasar a resposta da Malala.
+ */
+export async function detectarEMarcarObjecaoPendente(conversaId: string, textoLead: string): Promise<void> {
+  try {
+    const objecoesAtivas = await listarObjecoesAtivas();
+    const detectada = await detectarObjecao(textoLead, objecoesAtivas);
+    if (!detectada) return;
+    await marcarEstagnadaSeNecessario(conversaId);
+  } catch (e) {
+    console.error("[persistencia] erro ao detectar objeção automática:", e);
+  }
+}
+
 /** Aplica um efeito de negócio já decidido pelo motor (engine.ts) — hoje isto ficava calculado e nunca era usado, porque nada persistia. Também é usada pelo cron de follow-up ao sintetizar um "marcar_perdida" quando a agenda se esgota. */
 export async function aplicarEfeitoNegocio(
   conversaId: string,
@@ -276,6 +308,13 @@ export async function aplicarEfeitoNegocio(
     const { error } = await supabase.from("conversas").update({ sob_supervisor: true }).eq("id", conversaId);
     if (error) throw new Error(`Falha ao escalar conversa pro supervisor: ${error.message}`);
   }
+
+  // Selo de risco de esfriar, sinal 3 (Bloco D/Fase 5) — o fluxo automatizado acabou sem chegar em
+  // "ganha" (decisão de Luiz, 17/08/2026: essa é a leitura escolhida pra "o lead não fechar", em vez
+  // de tentar marcar recusas pontuais no meio do script, que exigiria schema novo no editor de fluxo).
+  if (efeito.etapaKanban !== "ganha") {
+    await marcarEstagnadaSeNecessario(conversaId);
+  }
 }
 
 /** Grava as mensagens que a Malala mandou neste turno, aplica os efeitos de negócio que o motor decidiu, sincroniza o nome capturado com `pessoas` (pro follow-up conseguir montar `[Primeiro_Nome]` depois), e rearma (ou desarma) a cadência de follow-up conforme a etapa em que a conversa parou. */
@@ -286,7 +325,8 @@ export async function registrarTurnoMalala(params: {
   dadosNovos: Record<string, string>;
   /** `dados` completo (turnos anteriores + este) — só precisa quando algum efeito colateral precisa de um campo capturado num turno anterior (ex.: documentos_tipos, capturado em ln_passo4, quando a faixa de cada um é capturada só depois em ln_passo6). Opcional pra não obrigar quem só usa dadosNovos a montar isso à toa. */
   dadosCompletos?: Record<string, string>;
-  resultado: Pick<ResultadoAvanco, "mensagens" | "etapaFinal" | "efeitos">;
+  /** `naoReconhecido` só existe em turnos de `avancarConversa` (conversa já em andamento) — turnos de `iniciarFluxo` (primeira mensagem) não têm o conceito, tratam como `false` (selo de risco, sinal 2). */
+  resultado: Pick<ResultadoAvanco, "mensagens" | "etapaFinal" | "efeitos"> & { naoReconhecido?: boolean };
 }): Promise<void> {
   const { conversaId, oportunidadeId, pessoaId, dadosNovos, dadosCompletos, resultado } = params;
   const supabase = createAdminClient();
@@ -348,13 +388,23 @@ export async function registrarTurnoMalala(params: {
   // mensagem e outra: cada chamada é uma invocação serverless nova, então precisa reconstruir de
   // onde a conversa parou a partir do banco. Gravar aqui sempre (não só quando vem do WhatsApp)
   // mantém as duas portas de entrada consistentes.
-  const { data: dadosAtuais } = await supabase.from("conversas").select("dados").eq("id", conversaId).single();
+  const { data: dadosAtuais } = await supabase
+    .from("conversas")
+    .select("dados, contador_nao_reconhecimento")
+    .eq("id", conversaId)
+    .single();
+  // Selo de risco de esfriar, sinal 2 (Bloco D/Fase 5) — zera assim que a Malala reconhece uma
+  // resposta de novo, só sobe enquanto o lead segue "confundindo" o mesmo checkpoint.
+  const contadorNaoReconhecimento = resultado.naoReconhecido
+    ? (dadosAtuais?.contador_nao_reconhecimento ?? 0) + 1
+    : 0;
   const { error: erroPosicao } = await supabase
     .from("conversas")
     .update({
       etapa_fluxo_atual_id: resultado.etapaFinal?.id ?? null,
       fluxo_id: resultado.etapaFinal?.fluxoId ?? null,
       dados: { ...(dadosAtuais?.dados ?? {}), ...dadosNovos },
+      contador_nao_reconhecimento: contadorNaoReconhecimento,
     })
     .eq("id", conversaId);
   if (erroPosicao) throw new Error(`Falha ao salvar posição da conversa: ${erroPosicao.message}`);
