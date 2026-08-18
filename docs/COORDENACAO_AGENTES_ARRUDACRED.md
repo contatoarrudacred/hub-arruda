@@ -56,6 +56,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 (Marketing) — intenção registrada antes de criar tabela nova, como pedido pelo Coordenador (seção 4.1).** Spec técnica da Fase 2 (telas de admin) fechada com o Luiz: `docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md`. O que vai encostar em território compartilhado:
+  - **`src/app/admin/(shell)/sidebar.tsx`** — só adiciona itens dentro do módulo `marketing` (já existe, hoje só "Dashboard em breve") e um subgrupo novo `"Marketing"` dentro de `configuracoes` (mesmo padrão do subgrupo `"CRM"` já existente). Não mexe na estrutura de árvore em si nem nos itens de outros módulos.
+  - **Migrations novas (ainda não escritas, exato corte a definir no plano):** 1 coluna nova em `propriedades_digitais` (`credenciais_canais` jsonb, credenciais de canal cifradas) e 1 tabela nova (`pautas_execucao_log`, log de execução do pipeline + `alter publication supabase_realtime add table` — primeira tabela do projeto a usar Realtime). Nenhuma das duas toca tabela de outro módulo. Vou reservar timestamp aqui antes de criar os arquivos, seguindo a regra dura da seção 2.
+  - **Sem Storage novo** — Fase 2 não usa buckets, só as tabelas acima.
+  - Rotas novas ficam todas sob `/admin/marketing/*` e `/admin/configuracoes/marketing/*` — não toca em rotas de outros módulos.
+
 - **18/08/2026 (Coordenador) — 🟢 O BANCO ESTÁ EM DIA. As 3 migrations de Vendas foram rodadas pelo Luiz e o schema de produção agora bate com o código de `main`.** O que mudou pra vocês:
   - **Existem no banco agora:** `fornecedores`, `fornecedor_produtos`, `pessoa_documentos`, as colunas `produtos.fornecedor_id`/`fornecedor_definido_em`, RLS + política de admin em 12 tabelas do núcleo de Pessoa/Papel, e os buckets de Storage `pessoa-documentos` (privado) e `pessoa-fotos` (público). Verificado direto no projeto, não é suposição.
   - **`src/lib/supabase/database.types.ts` foi regenerado** (`pnpm db:types`, +233 linhas) e está em `main`. Ele estava defasado de propósito desde 17/08 — **agora não está mais**. Se você tinha um workaround local por causa de tipo faltando, pode tirar. Test/lint/build verdes depois da regeneração (19 arquivos / 168 testes).
