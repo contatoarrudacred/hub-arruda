@@ -44,15 +44,13 @@ Ver `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md` seção 7 para a decisão de escop
 
 Nenhum destes exige mudança nas tabelas já existentes (`pautas`, `posts`, `matrizes_conteudo`, `checklist_qa_itens` ficam como estão) — só em `propriedades_digitais` e uma tabela nova.
 
-### 3.1 Credenciais de canal cifradas — nova coluna em `propriedades_digitais`
+### 3.1 Credenciais de canal — nova coluna em `propriedades_digitais` (texto plano, decisão do Luiz — ver seção 4)
 
 ```sql
 alter table propriedades_digitais add column credenciais_canais jsonb not null default '{}'::jsonb;
 comment on column propriedades_digitais.credenciais_canais is
-  'Credenciais de canal por propriedade, cifradas — nunca texto plano. Formato: {"wordpress": {"usuario": "...", "senha_cifrada": "<base64 iv+authTag+ciphertext>"}}. Cifrado/decifrado por src/lib/marketing/criptografia.ts usando MARKETING_CREDENCIAIS_CHAVE (env). Fallback: se a propriedade não tiver entrada aqui, credenciaisWordPressDaPropriedade (processar-pauta.ts) continua caindo pra WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico) — não quebra o que já está em produção.';
+  'Credenciais de canal por propriedade, em texto plano (decisão do Luiz, 18/08/2026 — não é precedente pra outros segredos). Formato: {"wordpress": {"usuario": "...", "senha": "..."}}. Fallback: se a propriedade não tiver entrada aqui, credenciaisWordPressDaPropriedade (processar-pauta.ts) continua caindo pra WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico) — não quebra o que já está em produção.';
 ```
-
-`usuario` fica em texto puro (não é segredo, é só identificação) — só `senha_cifrada` é cifrada.
 
 ### 3.2 Cota diária e janela de publicação — dentro de `config_pipeline` (sem migração)
 
@@ -202,7 +200,7 @@ Carga inicial (antes da assinatura pegar eventos novos) vem do `page.tsx` (Serve
 
 ## 8. Segurança
 
-- Credenciais cifradas em repouso (seção 4) — chave só via `MARKETING_CREDENCIAIS_CHAVE` (`process.env`), nunca no banco/repositório. Campo de senha na UI é sempre write-only.
+- Credenciais em texto plano no banco, por decisão explícita do Luiz não-precedente (seção 4) — campo de senha na UI é sempre write-only e nunca retorna o valor salvo pro caller/client; RLS em `propriedades_digitais` é a proteção real de acesso agora que não há cifra.
 - RLS/auditoria em `pautas_execucao_log` seguem o mesmo padrão (`admin_acesso_total` + `fn_auditoria_log`) das demais tabelas do módulo — sem política nova a desenhar.
 - Realtime do Supabase respeita RLS por padrão (subscrição só entrega linhas que a policy permitiria ler) — como a policy já é `using (true)` pra usuário autenticado, não há ajuste extra necessário além de a rota já exigir login (mesma proteção do resto do `/admin`).
 
@@ -210,7 +208,7 @@ Carga inicial (antes da assinatura pegar eventos novos) vem do `page.tsx` (Serve
 
 ## 9. Plano de testes
 
-- **Criptografia:** unitário puro — cifrar/decifrar round-trip, decifrar com chave errada falha (authTag do GCM detecta), formato base64 estável.
+- **Credenciais de canal:** unitário — `salvarCredencialCanal` grava texto plano; senha/usuario vazios preservam o valor já salvo; caller nunca recebe a senha de volta, só `usuario` + `senhaConfigurada`.
 - **Gating de cota/janela:** unitário — `dentroDaJanela`/`cotaDiariaAtingida` com mocks de horário/contagem; `processarProximaPauta` retorna `fora_da_janela` sem chamar `selecionarPauta` quando aplicável.
 - **`registrarEtapa`:** unitário — sucesso grava `sucesso: true` + `concluido_em`; exceção grava `sucesso: false` + `detalhes` e repropaga o erro (não engole silenciosamente).
 - **Telas (CRUD):** mesmo padrão das telas existentes — sem teste de integração de UI nesta fase (o projeto não tem Playwright configurado pro admin ainda), validação server-side nas actions é o que garante corretude.
@@ -221,6 +219,6 @@ Carga inicial (antes da assinatura pegar eventos novos) vem do `page.tsx` (Serve
 ## Pendências desta spec
 
 - **Fuso horário da janela de publicação** (seção 5) — decidir se a tela pede o horário já em UTC ou se o código converte um fuso fixo. Não bloqueia o resto do desenho.
-- **Exato corte de migrations** (uma ou duas — credenciais cifradas e log de execução podem ir juntas ou separadas) — decidir no plano de implementação, junto com a reserva de timestamp em `COORDENACAO_AGENTES_ARRUDACRED.md`.
+- **Exato corte de migrations** (uma ou duas — credenciais de canal e log de execução podem ir juntas ou separadas) — decidir no plano de implementação, junto com a reserva de timestamp em `COORDENACAO_AGENTES_ARRUDACRED.md`.
 - **Tooltip/`<Ajuda>` — nível de detalhe do texto por status/tela:** esta spec define o mecanismo (componente reaproveitável), não o texto de cada tooltip — fica pro plano de implementação, revisado com Luiz junto com o mockup de cada tela.
 - **Nenhuma tela nova de "criar pauta manualmente"** — decisão já fechada com Luiz (conversa de 18/08): pauta continua entrando só via inserção direta no banco até o Construtor de Matriz existir.
