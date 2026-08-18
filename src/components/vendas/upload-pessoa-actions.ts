@@ -27,8 +27,12 @@ export async function enviarDocumentoPessoaAction(formData: FormData): Promise<R
     return { sucesso: false, erro: "Selecione o tipo do documento." };
   }
 
-  await enviarDocumentoPessoa({ pessoaId, tipoDocumento, descricao, nomeArquivo: arquivo.name, conteudo: arquivo });
-  return { sucesso: true };
+  try {
+    await enviarDocumentoPessoa({ pessoaId, tipoDocumento, descricao, nomeArquivo: arquivo.name, conteudo: arquivo });
+    return { sucesso: true };
+  } catch {
+    return { sucesso: false, erro: "Falha ao enviar arquivo. Tente novamente." };
+  }
 }
 
 export async function excluirDocumentoPessoaAction(id: string): Promise<void> {
@@ -48,6 +52,10 @@ export async function enviarFotoPessoaAction(formData: FormData): Promise<Result
     return { sucesso: false, erro: "Selecione uma foto." };
   }
   const extensao = arquivo.name.split(".").pop() ?? "jpg";
-  const resultado = await enviarFotoPessoa(pessoaId, arquivo, extensao);
-  return { sucesso: true, url: resultado.url };
+  try {
+    const resultado = await enviarFotoPessoa(pessoaId, arquivo, extensao);
+    return { sucesso: true, url: resultado.url };
+  } catch {
+    return { sucesso: false, erro: "Falha ao enviar foto. Tente novamente." };
+  }
 }
