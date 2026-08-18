@@ -12,24 +12,30 @@ export async function buscarEnderecoPorCep(cep: string): Promise<EnderecoViaCep 
   const cepNormalizado = normalizarCep(cep);
   if (cepNormalizado.length !== 8) return null;
 
-  const resposta = await fetch(`https://viacep.com.br/ws/${cepNormalizado}/json/`);
-  if (!resposta.ok) return null;
+  try {
+    const resposta = await fetch(`https://viacep.com.br/ws/${cepNormalizado}/json/`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resposta.ok) return null;
 
-  const dados = (await resposta.json()) as {
-    erro?: boolean;
-    logradouro?: string;
-    bairro?: string;
-    localidade?: string;
-    uf?: string;
-  };
-  if (dados.erro) return null;
+    const dados = (await resposta.json()) as {
+      erro?: boolean;
+      logradouro?: string;
+      bairro?: string;
+      localidade?: string;
+      uf?: string;
+    };
+    if (dados.erro) return null;
 
-  return {
-    logradouro: paraCaixaAlta(dados.logradouro ?? ""),
-    bairro: paraCaixaAlta(dados.bairro ?? ""),
-    cidade: paraCaixaAlta(dados.localidade ?? ""),
-    uf: dados.uf ?? "",
-  };
+    return {
+      logradouro: paraCaixaAlta(dados.logradouro ?? ""),
+      bairro: paraCaixaAlta(dados.bairro ?? ""),
+      cidade: paraCaixaAlta(dados.localidade ?? ""),
+      uf: dados.uf ?? "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export type TipoEndereco = "residencial" | "comercial" | "cobranca";
