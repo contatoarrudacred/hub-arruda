@@ -482,6 +482,22 @@ Luiz pediu explicitamente que objeções vivam no banco, não em arquivo de text
 >
 > **Onde fica o código:** `github.com/contatoarrudacred/hub-arruda`, branch `main`. Histórico de commits no git é a fonte definitiva do que mudou passo a passo — esta seção é o resumo em prosa pra não precisar ler diff nenhum pra se situar.
 
+### 🔶 Módulo Vendas — sub-frente Cadastro, construída e revisada (17-18/08/2026), pendente de ação manual de Luiz
+
+Primeira sub-frente do módulo Vendas (spec: `superpowers/specs/2026-08-17-modulo-vendas-design.md`, plano: `superpowers/plans/2026-08-17-vendas-cadastro.md`) — cadastro de Fornecedor e Cliente com endereço (CEP-primeiro via ViaCEP), upload de documento com tipo identificado, leitura de documento por IA (Claude, visão, só pré-preenche) e foto da pessoa, além da criação de Oportunidade "sem funil prévio". Construída via subagent-driven-development (19 tasks, cada uma com implementação + revisão de código independente; 3 tasks passaram por 1 rodada de correção após a revisão achar problema real — condição de corrida na busca de pessoa, tratamento de erro de rede, e captura de exceção nas actions de upload — todos corrigidos e re-revisados).
+
+**Construído (18 commits na branch `worktree-vendas-cadastro`, ainda não mesclada em `main`):**
+- 3 migrations novas (033-035): núcleo de cadastro (`produtos.tipo` ganha `subcontratado`/`comissionado`, tabelas `fornecedores`/`fornecedor_produtos`), fecha lacuna de RLS+auditoria em 6 tabelas núcleo de Pessoa/Papel que nunca tiveram, `pessoa_documentos` + buckets de Storage (`pessoa-documentos` privado, `pessoa-fotos` público)
+- Módulo novo `src/lib/vendas/` (documento, máscaras, pessoas, endereço, fornecedores, clientes, pessoa-documentos, pessoa-fotos, leitura-documento-ia) e `src/components/vendas/` (leitor de documento por IA, campo de endereço, uploads — componentes compartilhados entre as duas telas)
+- Telas `/admin/fornecedores` e `/admin/vendas/nova`, completas (máscara, endereço, upload, IA, foto), com item de navegação "Vendas" no sidebar
+
+**Pendente — ação manual de Luiz antes de considerar em produção:**
+1. Rodar as 3 migrations novas, nessa ordem, no SQL Editor do Supabase: `20260817110000_vendas_cadastro_nucleo.sql`, `20260817120000_vendas_seguranca_nucleo_pessoa.sql`, `20260817130000_vendas_pessoa_documentos.sql`
+2. Testar as duas telas de verdade no navegador (cadastro de fornecedor e de venda sem funil prévio, incluindo upload de documento/foto e leitura por IA) — **não foi possível fazer esse teste nesta sessão**: o worktree isolado onde a implementação rodou não tem `.env.local` com credenciais reais (só o `.env.local.example`), e testar de verdade também depende das migrations acima já estarem rodadas
+3. Decidir se mescla a branch `worktree-vendas-cadastro` em `main` (via `finishing-a-development-branch`) antes ou depois desse teste manual
+
+**Fora de escopo desta sub-frente** (registrado na spec, seção 7): módulo Operação, contas a pagar a fornecedor, régua de cobrança, agenda pós-venda, portal do cliente, split payment de afiliado — todos ficam pra frentes futuras.
+
 ### Stack técnica confirmada (13/08/2026)
 - **Next.js 16** (App Router, TypeScript, Tailwind, pnpm) na Vercel
 - **Supabase**: Postgres + **Supabase Auth** (login do admin — substituiu a ideia original de `senha_hash` próprio em `usuarios_sistema`) + Storage (mídia) — acesso via `service_role` no backend
