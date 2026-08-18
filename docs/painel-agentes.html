@@ -635,7 +635,7 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h00",
+ "atualizado": "18/08/2026 · 15h15",
  "commit": "5feb81a",
  "instrumentos": [
   {
@@ -659,13 +659,13 @@
    "bom": true
   },
   {
-   "rot": "Worktrees",
-   "val": "✅ 2 em dia",
-   "bom": true
+   "rot": "Migrations",
+   "val": "🚨 1 colisão",
+   "bom": false
   },
   {
-   "rot": "Bloqueios",
-   "val": "✅ nenhum",
+   "rot": "Agentes ativos",
+   "val": "🟢 3 mexendo agora",
    "bom": true
   }
  ],
@@ -710,12 +710,24 @@
   },
   {
    "id": "prioridade-crm",
-   "prazo": "agora",
-   "prazoRot": "❌ Decisão",
-   "titulo": "O CRM está livre e quer saber o que puxar",
-   "corpo": "Ele avaliou o pedido do Vendas (captura de parcelas/valores/vencimentos): <b>viável, e mais simples do que parecia</b> — o cálculo de parcelas já existe no código, só está sendo descartado. Falta forma de pagamento detalhada, validar a data e persistir. Ele diz que a fila dele está vazia e perguntou se começa agora. A ordem que combinamos em 16/08 era <b>Kanban → Dashboard de KPIs</b>. O que vem primeiro?",
+   "prazo": "feito",
+   "prazoRot": "✅ Decidido",
+   "titulo": "O que o CRM puxa — decidido",
+   "corpo": "<b>Kanban → Dashboard de KPIs</b>, como combinado em 16/08. A captura de pagamento que o Vendas pediu entra depois. Repassado aos dois — e avisei o Vendas de que, com isso, a tela de Fechamento de Venda deixa de ser paliativo.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h10",
+     "texto": "Repassado. O CRM começa o Kanban.\n\nUm efeito que vale você saber: a tela de Fechamento de Venda que o Vendas ia construir era um paliativo até o bot passar a capturar parcelas e vencimentos. Como isso ficou pra depois do Kanban e do Dashboard, essa tela deixa de ser provisória e vira o caminho normal por um bom tempo. Avisei o Vendas pra construí-la com esse peso, não como remendo."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h10",
+     "texto": "Repassado. O CRM pega o Kanban.\n\nEfeito colateral que vale saber: a tela de Fechamento de Venda do Vendas era um paliativo até o bot capturar parcelas e vencimentos. Como isso ficou pra depois de duas frentes inteiras, ela deixa de ser provisória e vira o caminho normal por um bom tempo. Avisei ele pra construir com esse peso."
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "cripto-transversal",
@@ -837,9 +849,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Levando suas decisões aos agentes e mantendo esta torre coerente com o estado real — agora com apuração obrigatória antes de publicar, depois de eu tê-la deixado desatualizada por uma hora."
+    "Apagando dois incêndios de uma vez: a <b>terceira colisão de migration</b> do projeto (Vendas × Marketing) e um retrabalho que eu causei no Marketing ao comunicar sua decisão com atraso.",
+    "Ensinei o <code>estado-agentes.py</code> a detectar colisão de timestamp sozinho e a medir atividade por <b>arquivo tocado</b>, não por commit — foi assim que descobri que os três estão trabalhando agora."
    ],
-   "proxima": "➡️ Liberar o Marketing da pausa e esperar sua decisão sobre o que o CRM puxa.",
+   "proxima": "➡️ Confirmar que o Vendas renomeou e que o Marketing restaurou a criptografia.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -881,6 +894,14 @@
     {
      "t": "⚠️ Deixou esta torre desatualizada por ~1h — corrigido com apuração obrigatória antes de publicar",
      "q": "18/08 14h45"
+    },
+    {
+     "t": "🚨 Detectou a 3ª colisão de migration antes de qualquer uma ser aplicada no banco",
+     "q": "18/08 15h15"
+    },
+    {
+     "t": "✅ Script passou a detectar colisão sozinho e a medir atividade por arquivo tocado, não por commit",
+     "q": "18/08 15h12"
     }
    ],
    "dims": null,
@@ -895,13 +916,13 @@
    "branch": "main · trabalha direto na raiz, sem worktree",
    "chip": {
     "tipo": "rodando",
-    "texto": "✅ respondeu 13h24"
+    "texto": "✅ tem direção"
    },
    "agora": [
-    "Nada em curso — fila vazia. <b>Já respondeu ao Vendas</b> às 13h24: foi no código, confirmou que é viável, mapeou o que falta e fechou o item no inbox. Está esperando você dizer o que puxar."
+    "Fila vazia, mas <b>acabou de ganhar direção</b>: você confirmou Kanban → Dashboard. Ele pega o Kanban quando a sessão abrir."
    ],
-   "proxima": "➡️ Depende de você: a captura de pagamento que o Vendas pediu, ou o Kanban (ordem original).",
-   "proximaExtra": "Ele estimou a captura de pagamento como uma frente do porte da Fase 4 de precificação — não é ajuste pontual.",
+   "proxima": "➡️ Construir o Kanban do funil comercial.",
+   "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
    "entregue": [
     {
      "t": "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
@@ -939,19 +960,18 @@
    "inicio": {
     "iso": "2026-08-18T13:24:00-03:00",
     "rotulo": "18/08 13h24",
-    "nota": "desde que respondeu ao Vendas, sem tarefa nova"
+    "nota": "sem tarefa desde então; Kanban recém-priorizado"
    }
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ liberado"
+    "tipo": "cuidado",
+    "texto": "⚠️ retrabalho por minha culpa"
    },
    "agora": [
-    "Construindo a Fase 2: repositório de configuração admin, gating de cota diária e janela de publicação, instrumentação do log de execução do pipeline.",
-    "10 commits desde 13h08 — <b>é o agente mais ativo agora</b>. A pausa que pedi na parte de credenciais <b>foi cancelada</b>: você decidiu manter a criptografia."
+    "<b>Trabalhando agora</b> — 12 commits próprios, 11 arquivos tocados nos últimos 30 min. Fase 2: configuração admin, cota diária, janela de publicação, log de execução."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
    "proximaExtra": "Criptografia <b>mantida</b> — pode retomar. A migration da Fase 2 ele escreve, mas <b>não roda</b>: vem pra mim e eu levo a você.",
@@ -989,25 +1009,30 @@
     "iso": "2026-08-18T13:08:00-03:00",
     "rotulo": "18/08 13h08",
     "nota": "1º commit da Fase 2"
+   },
+   "alerta": {
+    "nivel": "leve",
+    "sinal": "↩️",
+    "texto": "Reverteu a criptografia às 14h49 seguindo minha instrução das 13h50 — <b>3 minutos depois de você decidir manter</b>, e eu só comuniquei às 15h00. Pedi que desfaça a reversão. <b>O retrabalho foi causado pelo meu atraso</b>, não por erro dele."
    }
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ parado desde 12h38"
+    "tipo": "travado",
+    "texto": "🚨 colisão de migration"
    },
    "alerta": {
-    "nivel": "leve",
-    "sinal": "⚠️",
-    "texto": "Sem commit desde 12h38 — a sessão dele não está aberta. <b>Boa notícia que ele ainda não sabe:</b> o CRM respondeu o pedido dele e disse que é viável. Quando você abrir a sessão do Vendas, o hook mostra isso."
+    "nivel": "grave",
+    "sinal": "🚨",
+    "texto": "Escreveu <code>20260818090000_vendas_contrato_nucleo.sql</code> — <b>mesmo timestamp que o Marketing</b>. Nenhuma foi aplicada no banco (ele respeitou a regra dura), então custa um <code>git mv</code>. Pedi que renomeie pra <code>090001</code> antes de mais commits. Está <b>24 commits atrás da main</b> — foi por isso que não viu a reserva."
    },
    "agora": [
-    "Nada em curso desde 12h38. A tela de Fechamento de Venda está na spec mas ainda não foi construída."
+    "<b>Trabalhando a todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy. 5 commits próprios, o último às 14h53."
    ],
-   "proxima": "➡️ Construir a tela de Fechamento de Venda — parcelas, valores e datas de vencimento.",
-   "proximaExtra": "Depois: contrato, assinatura digital e financeiro da venda. As duas últimas dependem da sua decisão sobre Assinafy e Asaas.",
+   "proxima": "➡️ Renomear a migration (colisão) e seguir com a tela de Fechamento de Venda.",
+   "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
    "entregue": [
     {
      "t": "✅ Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura por IA",
@@ -1020,6 +1045,10 @@
     {
      "t": "✅ Levantou e documentou a lacuna do fechamento da venda, com o código na mão",
      "q": "18/08 12h18"
+    },
+    {
+     "t": "✅ Cálculo de parcelas, valor por extenso e repositório de templates de contrato",
+     "q": "18/08 14h52-14h53"
     }
    ],
    "dims": {
@@ -1027,22 +1056,29 @@
     "prod": 35
    },
    "inicio": {
-    "iso": "2026-08-18T12:38:00-03:00",
-    "rotulo": "18/08 12h38",
-    "nota": "último commit; sessão fechada desde então"
+    "iso": "2026-08-18T14:20:00-03:00",
+    "rotulo": "18/08 ~14h20",
+    "nota": "retomou a sub-frente Contrato"
    }
   }
  ],
  "dependencia": {
-  "rota": "✅ nenhum pedido aberto entre agentes",
-  "titulo": "Ninguém está esperando por ninguém",
+  "rota": "🚨 2 recados urgentes · Coordenador → Vendas e Marketing",
+  "titulo": "Duas coisas para consertar hoje",
   "paragrafos": [
-   "<b>Coordenador → Marketing · resolvido em 15 min.</b> Pedi pausa na parte de credenciais e você decidiu manter a criptografia — ele nem chegou a mexer. Liberado.",
-   "<b>Vendas → CRM · respondido às 13h24</b> pelo próprio CRM, que foi ao código, confirmou viabilidade e fechou o item no inbox sem ninguém cobrar.",
-   "<b>O único vazio de hoje foi meu:</b> li a resposta do CRM uma hora depois e mantive esta página afirmando o contrário. Agora existe um comando que apura o estado real e acusa incoerência com o que a torre diz — rodo antes de cada publicação."
+   "<b>Colisão de migration.</b> Vendas e Marketing escreveram <code>20260818090000</code> com conteúdos diferentes. Terceira vez no projeto — e a primeira detectada <b>antes</b> de qualquer uma chegar ao banco, porque os dois respeitaram a regra de não rodar migration. Custa um rename.",
+   "<b>Retrabalho no Marketing, causado por mim.</b> Ele reverteu a criptografia às 14h49 obedecendo o que eu tinha dito às 13h50; você já tinha decidido manter às 14h46. Pedi que desfaça.",
+   "<b>O que os dois casos têm em comum:</b> agente trabalhando em base velha. O Vendas está 24 commits atrás, o Marketing estava 7 quando construiu a criptografia. O hook resolve quem <i>abre</i> sessão; não resolve quem já está com ela aberta há horas. É a próxima coisa a atacar."
   ]
  },
- "esperas": []
+ "esperas": [
+  {
+   "tempo": "🚨",
+   "frio": true,
+   "texto": "<b>Colisão de migration entre Vendas e Marketing</b> — os dois escreveram <code>20260818090000</code>. Nenhuma foi aplicada no banco, então custa um rename. Pedi ao <b>Vendas</b> que renomeie pra <code>090001</code>. <b>Os dois estão com sessão aberta agora</b>, então o hook não dispara — vale um toque seu nas duas conversas.",
+   "acao": "avisar Vendas e Marketing"
+  }
+ ]
 }
 </script>
 

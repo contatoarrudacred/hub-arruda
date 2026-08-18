@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 
 def git(*args, cwd=None):
@@ -61,6 +62,39 @@ def main() -> int:
     else:
         print("   ✅ Nenhum. Se a torre diz que alguém espera, a TORRE está errada.")
 
+    # --- 1.5 COLISÃO DE MIGRATION: o incidente que criou este papel ---
+    print()
+    print("🗄️  MIGRATIONS — colisão de timestamp entre agentes")
+    vistos = {}
+    locais = [("main", os.path.join(raiz, "supabase", "migrations"))]
+    wt = os.path.join(raiz, ".claude", "worktrees")
+    if os.path.isdir(wt):
+        for nome in os.listdir(wt):
+            cam = os.path.join(wt, nome, "supabase", "migrations")
+            if os.path.isdir(cam):
+                locais.append((nome, cam))
+    for dono, cam in locais:
+        for arq in os.listdir(cam):
+            if not arq.endswith(".sql"):
+                continue
+            ts = arq[:14]
+            if not ts.isdigit():
+                continue
+            vistos.setdefault(ts, {})[arq] = vistos.setdefault(ts, {}).get(arq, [])
+            vistos[ts][arq].append(dono)
+
+    colidiu = False
+    for ts in sorted(vistos):
+        if len(vistos[ts]) > 1:   # mesmo timestamp, ARQUIVOS diferentes
+            colidiu = True
+            print(f"   ❌ COLISÃO em {ts}:")
+            for arq, donos in vistos[ts].items():
+                print(f"      {arq}  →  {', '.join(sorted(set(donos)))}")
+    if not colidiu:
+        print("   ✅ Nenhuma colisão. Cada timestamp tem um arquivo só.")
+    else:
+        print("   Quem escreveu DEPOIS renomeia (convenção do projeto). Avise os dois hoje.")
+
     # --- 2. última atividade por branch ---
     print("\n🕒 ÚLTIMO COMMIT POR BRANCH (quem tocou o quê, e quando)")
     for br in git("branch", "--format=%(refname:short)").splitlines():
@@ -82,6 +116,28 @@ def main() -> int:
             print(f"   {nome:<40} branch={br}")
             print(f"      atrás de main: {só_main} | commits próprios não mesclados: {só_br}"
                   f" | working tree: {'com mudanças' if sujo else 'limpo'}")
+            # commit é proxy ruim pra "está trabalhando": o agente pode estar
+            # editando há meia hora sem commitar. mtime dos fontes vê isso.
+            recentes, mais_novo = 0, 0.0
+            for sub in ("src", "docs", "supabase"):
+                base = os.path.join(atual, sub) if atual else None
+                if not base or not os.path.isdir(base):
+                    continue
+                for pasta, _, arqs in os.walk(base):
+                    if "node_modules" in pasta or ".next" in pasta:
+                        continue
+                    for a in arqs:
+                        try:
+                            mt = os.path.getmtime(os.path.join(pasta, a))
+                        except OSError:
+                            continue
+                        mais_novo = max(mais_novo, mt)
+                        if time.time() - mt < 30 * 60:
+                            recentes += 1
+            if mais_novo:
+                quando = time.strftime("%d/%m %H:%M", time.localtime(mais_novo))
+                viva = " 🟢 MEXENDO AGORA" if recentes else ""
+                print(f"      arquivo mais recente: {quando} ({recentes} tocados nos últimos 30min){viva}")
 
     # --- 4. main x GitHub ---
     cont = git("rev-list", "--left-right", "--count", "origin/main...main")
