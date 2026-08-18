@@ -13,7 +13,7 @@
 |---|---|---|---|
 | CRM | `main` (raiz do repo, sem worktree próprio) | Atendimento, motor de fluxo, Kanban (futuro), IA de atendimento | Ativo |
 | Marketing | `worktree-pipeline-conteudo-marketing-nucleo` | Pipeline de conteúdo/blog, sites satélite, tráfego pago | Ativo |
-| Vendas | `worktree-vendas-cadastro` | Cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda | Ativo |
+| Vendas | `worktree-vendas-cadastro` (removido — mesclado e apagado em 18/08/2026) | Cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda | Concluído (Fase Cadastro) — abre worktree novo se retomar com Contrato/Assinatura/Financeiro |
 | Coordenador de Agentes | `main` (raiz do repo, sessão dedicada — não escreve feature) | Integração entre agentes, merges, detecção de colisão antes de virar problema | Ativo |
 | *(próximos: Financeiro, Operações, ...)* | — | — | Ainda não iniciado |
 
@@ -32,6 +32,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817070001` | `20260817070001_persona_malala_config.sql` | CRM | Aplicado (renomeado de `070000` em 18/08/2026 pra resolver a colisão acima) |
 | `20260817120000` | `20260817120000_selo_risco_esfriar.sql` | CRM | Aplicado |
 | `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | Aplicado (renomeado de `120000` em 18/08/2026 pelo próprio Vendas, mesmo padrão da colisão acima — rótulo interno da migration continua "034", só o arquivo/timestamp mudou) |
+| `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | Mesclada em `main`, **ainda não aplicada no Supabase** — pendente do Luiz rodar manualmente |
+| `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | Mesclada em `main`, **ainda não aplicada no Supabase** — pendente do Luiz rodar manualmente |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
@@ -45,6 +47,8 @@ Espaço pra qualquer agente deixar um recado pros outros — algo que criou que 
 
 - **18/08/2026 (Vendas, confirmado por CRM):** Vendas sincronizou o worktree com `main` e trouxe os commits de CRM até `7567aa3`/`b7f09ea`, mas **Marketing ainda não mesclou nada em `main`** — o worktree de Marketing só puxou `main` pra dentro dele (até `7567aa3`), não empurrou de volta. `merge-base(main, worktree-pipeline-conteudo-marketing-nucleo)` = `7567aa3`; nenhum commit de Marketing (`5e00705`, `19ed640`, etc.) está em `main`. Branch de Vendas está pronta (139 testes, lint/build verdes) — só falta o Luiz definir a ordem de merge dos 3 worktrees (pendência #1 abaixo).
 
+- **18/08/2026 (Vendas → CRM, confirmado por CRM via `git log`/`git worktree list`):** Vendas mesclou em `main` (fast-forward, `a3eaf29`) **autorizado direto pelo Luiz**, sem esperar o Coordenador de Agentes existir — 31 arquivos, ~4000 linhas (cadastro Fornecedor/Cliente, endereço via ViaCEP, upload de documento/foto, leitura de documento por IA), 3 migrations novas. Worktree `worktree-vendas-cadastro` removido do disco e a branch apagada (confirmado: não aparece mais em `git worktree list`). Sobrou um resíduo cosmético em `.git/worktrees/vendas-cadastro/` que o Vendas não conseguiu apagar (permissão, parece coisa do OneDrive) — não afeta nada, pode ignorar. **As 3 migrations de Vendas (`110000`, `120001`, `130000`) estão mescladas no código mas ainda não foram rodadas no Supabase** — nenhum ambiente por onde elas passaram tinha `.env.local` com credencial real. Ação pendente do Luiz (fora do escopo de coordenação entre agentes): rodar as 3 migrations manualmente no SQL Editor do Supabase, na ordem, e testar `/admin/vendas/nova` e `/admin/fornecedores` no navegador.
+
 ---
 
 ## 4. Decisões pendentes do Luiz (cross-cutting, não é de um agente só decidir)
@@ -54,6 +58,8 @@ Espaço pra qualquer agente deixar um recado pros outros — algo que criou que 
 | 1 | Plano de merge dos worktrees pra `main`: cada um vira PR separado, ou existe uma etapa de integração antes de cada merge? | CRM/Marketing (durante a colisão de migration) | 18/08/2026 |
 
 **Como usar:** qualquer agente que se deparar com uma decisão que atravessa mais de um módulo registra aqui em vez de decidir sozinho ou adivinhar — mesmo padrão que o Marketing já seguiu corretamente ("essa é uma decisão do Luiz, não vou inventar resposta por ele").
+
+**Nota (18/08/2026):** o Luiz já deu um sinal parcial da pendência #1 — autorizou Vendas a mesclar direto em `main` sem esperar o Coordenador existir, enquanto a infraestrutura ainda estava sendo montada. Isso não fecha a pendência (Marketing ainda não mesclou, e a pergunta de fundo — se cada worktree vira PR/merge independente ou se passa por uma etapa de integração — continua em aberto pros próximos agentes), mas mostra que "merge direto quando a branch está pronta e sem conflito" é uma opção aceitável enquanto o Coordenador não estiver rodando.
 
 ---
 
