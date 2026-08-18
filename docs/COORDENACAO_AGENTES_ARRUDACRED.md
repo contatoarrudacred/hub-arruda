@@ -30,6 +30,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817070000` | `20260817070000_persona_malala_config.sql` (renomeado depois) | CRM | Aplicado (via REST direto, nunca passou pelo tracking do CLI) |
 | `20260817070000` | `20260817070000_modulo_marketing_nucleo.sql` | Marketing | Aplicado via `supabase db push` |
 | `20260817070001` | `20260817070001_persona_malala_config.sql` | CRM | Aplicado (renomeado de `070000` em 18/08/2026 pra resolver a colisão acima) |
+| `20260817120000` | `20260817120000_selo_risco_esfriar.sql` | CRM | Aplicado |
+| `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | Aplicado (renomeado de `120000` em 18/08/2026 pelo próprio Vendas, mesmo padrão da colisão acima — rótulo interno da migration continua "034", só o arquivo/timestamp mudou) |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
@@ -39,7 +41,7 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
-- *(vazio até agora — primeiro agente a ter algo relevante começa a lista)*
+- **18/08/2026 (Vendas, confirmado por CRM):** Vendas sincronizou o worktree com `main` e trouxe os commits de CRM até `7567aa3`/`b7f09ea`, mas **Marketing ainda não mesclou nada em `main`** — o worktree de Marketing só puxou `main` pra dentro dele (até `7567aa3`), não empurrou de volta. `merge-base(main, worktree-pipeline-conteudo-marketing-nucleo)` = `7567aa3`; nenhum commit de Marketing (`5e00705`, `19ed640`, etc.) está em `main`. Branch de Vendas está pronta (139 testes, lint/build verdes) — só falta o Luiz definir a ordem de merge dos 3 worktrees (pendência #1 abaixo).
 
 ---
 
