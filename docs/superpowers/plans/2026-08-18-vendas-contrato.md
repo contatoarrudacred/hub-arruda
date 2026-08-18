@@ -10,7 +10,7 @@ A sub-frente **Cadastro** (Cliente/Fornecedor/Serviço) já está mesclada em `m
 
 **Regra de ouro aplicada durante todo este plano** (definida pelo Luiz nesta sessão, vale pra **todos os agentes do projeto**, não só Vendas): nunca começar a codar contra uma API/plataforma externa sem ter a documentação atual em mãos. Documentação já obtida e registrada (ver Task 0 abaixo) para Assinafy e Asaas — as tasks de adapter (9, 13) citam exatamente os endpoints/campos confirmados nela, sem inventar nada.
 
-**O que fica de fora, mesmo com o escopo "ponta a ponta":** criar as contas reais na Assinafy/Asaas, configurar webhooks de verdade no painel deles, gastar crédito — isso é ação exclusiva do Luiz (orientação do Coordenador de Agentes). O código sai pronto pra funcionar assim que as chaves existirem; até lá, `ASSINAFY_API_KEY`/`ASAAS_API_KEY` ficam vazias em `.env.local.example` e as chamadas reais não são exercitadas.
+**O que fica de fora, mesmo com o escopo "ponta a ponta":** o Luiz **já tem conta e API key na Assinafy e na Asaas** (confirmado pelo Coordenador em 18/08) — não é mais bloqueio esperado. Mesmo assim, a regra continua: não contratamos nada, não gastamos crédito, não pedimos a chave direto a ele — o código sai pronto pra funcionar e avisamos o Coordenador quando estiver pronto pra plugar, ele pede a chave na hora certa. Até lá, `ASSINAFY_API_KEY`/`ASAAS_API_KEY` ficam vazias em `.env.local.example` e as chamadas reais não são exercitadas.
 
 ## Arquitetura
 
@@ -51,8 +51,8 @@ A sub-frente **Cadastro** (Cliente/Fornecedor/Serviço) já está mesclada em `m
 ## Task 1: Migration — schema de Contrato/Assinatura/Financeiro
 
 **Files:**
-- Timestamp reservado: `20260818090000` (`docs/COORDENACAO_AGENTES_ARRUDACRED.md` seção 2).
-- Create: `supabase/migrations/20260818090000_vendas_contrato_nucleo.sql`
+- Timestamp reservado: `20260818090001` (renomeado de `090000` em 18/08 — colidiu com a migration do Marketing; ver `docs/COORDENACAO_AGENTES_ARRUDACRED.md` seção 2).
+- Create: `supabase/migrations/20260818090001_vendas_contrato_nucleo.sql`
 
 **Tabelas** (todas com `comment on table/column`, RLS `admin_acesso_total`, trigger `trg_auditoria_*` — padrão exato de `20260817130000_vendas_pessoa_documentos.sql`):
 
