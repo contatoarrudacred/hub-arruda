@@ -297,29 +297,33 @@
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--texto-fraco);
-    margin-top: 6px;
+    margin: 0 0 7px;
     display: block;
   }
   .inicio b { color: var(--texto-suave); font-weight: 600; }
 
   /* bloco "Já entregou" fechado por padrão, dentro do card do agente */
-  .bloco details > summary {
-    cursor: pointer;
-    list-style: none;
-    display: flex;
+  /* o histórico é um botão de verdade, não um rótulo discreto */
+  .bloco details > summary { cursor: pointer; list-style: none; }
+  .bloco details > summary::-webkit-details-marker { display: none; }
+  .bloco details > summary .botao-hist {
+    display: inline-flex;
     align-items: center;
     gap: 7px;
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--texto-fraco);
+    font-size: 11.5px;
+    letter-spacing: .02em;
+    padding: 5px 11px;
+    color: var(--texto);
+    background: var(--surface-2);
+    border: 1px solid var(--linha-forte);
+    line-height: 1.5;
   }
-  .bloco details > summary::-webkit-details-marker { display: none; }
-  .bloco details > summary::before { content: "▸"; letter-spacing: 0; }
-  .bloco details[open] > summary::before { content: "▾"; }
-  .bloco details > summary:hover { color: var(--ouro); }
-  .bloco details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .bloco details > summary .botao-hist::after { content: "▸"; color: var(--texto-fraco); }
+  .bloco details[open] > summary .botao-hist::after { content: "▾"; }
+  .bloco details > summary:hover .botao-hist { border-color: var(--ouro); color: var(--ouro); }
+  .bloco details > summary:focus-visible { outline: none; }
+  .bloco details > summary:focus-visible .botao-hist { outline: 2px solid var(--ouro); outline-offset: 2px; }
   .bloco details > ul { margin-top: 7px; }
   .bloco details .qdo {
     font-family: var(--mono);
@@ -635,8 +639,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h30",
- "commit": "e0ffc0a",
+ "atualizado": "18/08/2026 · 15h35",
+ "commit": "6737d6e",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -1140,13 +1144,15 @@
     h += '<div class="corpo-agente">';
 
     h += '<div class="bloco"><div class="rot">🔄 Fazendo agora</div>';
-    a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
+    // o "desde quando" vem logo abaixo do título: é a primeira coisa que
+    // situa o leitor antes de ele ler o que o agente está fazendo.
     if (a.inicio) {
       var dec = a.inicio.iso ? decorrido(a.inicio.iso) : "";
       h += '<span class="inicio">Início em: <b>' + esc(a.inicio.rotulo) + "</b>" +
            (dec ? " (" + dec + ")" : "") +
            (a.inicio.nota ? " · " + esc(a.inicio.nota) : "") + "</span>";
     }
+    a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
     h += "</div>";
 
     h += '<div class="bloco"><div class="rot">Próxima tarefa</div>' +
@@ -1155,7 +1161,8 @@
     h += "</div>";
 
     // fechado por padrão: o card mostra o presente, o histórico fica a um clique
-    h += '<div class="bloco"><details><summary>Já entregou · ' + a.entregue.length + "</summary><ul>";
+    h += '<div class="bloco"><details><summary><span class="botao-hist">✅ Já entregou · ' +
+         a.entregue.length + "</span></summary><ul>";
     a.entregue.forEach(function (i) {
       var texto = typeof i === "string" ? i : i.t;
       var quando = typeof i === "string" ? "" : i.q;
