@@ -25,6 +25,8 @@ import {
   combinarFaixasPacote,
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
+  formatarDataBr,
+  formatarReais,
   type ParcelaTier,
   montarPropostaAltoValorSelfService,
   montarPropostaBaixoValor,
@@ -968,6 +970,32 @@ export function criarResolverMensagensDinamicas(
         config.altoValorPercentual,
       );
       return montarPropostaAltoValorSelfService(valorEstimado).map(t);
+    }
+
+    if (codigo === "ln_passo16_1") {
+      const valores = (dados.parcelas_valores ?? "").split(",").filter(Boolean).map(Number);
+      const vencimentos = (dados.parcelas_vencimentos ?? "").split(",").filter(Boolean);
+      if (valores.length === 0 || vencimentos.length !== valores.length) return null;
+
+      const formaTexto = dados.forma_pagamento_detalhe === "cartao" ? "Cartão" : "Boleto/Pix";
+      const totalContrato = valores.reduce((soma, v) => soma + v, 0);
+
+      if (valores.length === 1) {
+        return [
+          t(
+            `Valor do Contrato:\n${formatarReais(totalContrato)}\n\nPagamento:\nÀ Vista no ${formaTexto}\n\nVencimento:\n${formatarDataBr(vencimentos[0])}`,
+          ),
+        ];
+      }
+
+      const linhasVencimentos = vencimentos
+        .map((venc, i) => `${formatarDataBr(venc)} - ${formatarReais(valores[i])}`)
+        .join("\n");
+      return [
+        t(
+          `Valor do Contrato: ${formatarReais(totalContrato)}\n\nPagamento:\nem ${valores.length} vezes - Parcelado no ${formaTexto}\n\nValor da Parcela:\n${formatarReais(valores[0])}\n\nVencimentos:\n${linhasVencimentos}`,
+        ),
+      ];
     }
 
     return null;

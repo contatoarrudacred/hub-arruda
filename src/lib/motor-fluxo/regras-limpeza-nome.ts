@@ -88,6 +88,12 @@ export function formatarReais(valor: number): string {
   });
 }
 
+/** Data ISO (YYYY-MM-DD) formatada como DD/MM/AA — usado na mensagem de confirmação de pagamento. */
+export function formatarDataBr(dataISO: string): string {
+  const [ano, mes, dia] = dataISO.split("-");
+  return `${dia}/${mes}/${ano.slice(2)}`;
+}
+
 /** Bloco de proposta (Passo 15) para restrição abaixo de R$3 mil — usa o valor mínimo fixo, não a tabela por faixa. */
 export function montarPropostaBaixoValor(config: ConfigPrecificacaoLimpaNome): string[] {
   return [
