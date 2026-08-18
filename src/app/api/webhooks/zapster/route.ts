@@ -13,6 +13,7 @@ import {
   capturarFotoPerfilSeNecessario,
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
+  detectarEMarcarObjecaoPendente,
   extrairCodigoRastreio,
   marcarStatusMensagem,
   registrarMensagemLead,
@@ -134,6 +135,12 @@ async function processarMensagemRecebida(
     if (codigoRastreio) {
       await correlacionarCliqueRastreio(codigoRastreio, estado.pessoaId);
     }
+
+    // Selo de risco de esfriar, sinal 3 (Bloco D/Fase 5) — detector automático de objeção rodando a
+    // cada mensagem de texto do lead, independente de quem está no controle (Malala ou humano): é um
+    // sinal complementar pro atendente, útil nos dois casos. Desacoplado da resposta (after()) — não
+    // pode atrasar nem travar o turno.
+    after(() => detectarEMarcarObjecaoPendente(estado.conversaId, texto));
 
     if (estado.sobSupervisor) {
       await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
