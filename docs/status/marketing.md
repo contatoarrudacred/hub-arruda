@@ -1,6 +1,6 @@
 # Status — Marketing
 
-tarefa: Fase 2 (telas de admin) concluída e mesclada — sincronizando com main, aguardando definição da próxima frente com o Luiz
-desde: 2026-08-18T18:00:00-03:00
-proxima: A definir — candidatos: Construtor de Matriz de Conteúdo (personas via tela já resolvido, falta o agente de pesquisa de temas/ângulos), distribuição multi-canal (GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium), ou aplicar a migration pendente (20260818090000) e validar o Monitor ao vivo
+tarefa: Validar o pipeline de ponta a ponta pela UI nova (inserir pauta manual, acompanhar Fila de Pautas/Monitor/Posts Publicados até virar post real)
+desde: 2026-08-18T18:35:00-03:00
+proxima: A definir com o Luiz depois da validação — candidatos: Construtor de Matriz de Conteúdo, distribuição multi-canal
 bloqueio:
