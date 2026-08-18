@@ -13,6 +13,7 @@ import {
   contarNotificacoesNaoLidas,
   criarNotaInterna,
   listarConversasAtendimento,
+  listarFotosPessoa,
   listarNotificacoes,
   listarUsuariosSistema,
   marcarNotificacaoLida,
@@ -39,6 +40,11 @@ export async function listarConversasAction(filtro: FiltroConversas, busca: stri
 
 export async function carregarConversaAction(conversaId: string): Promise<ConversaDetalhe> {
   return carregarConversaDetalhe(conversaId);
+}
+
+/** Histórico de fotos de perfil do contato (Bloco D) — pra modal de histórico no cabeçalho da conversa. */
+export async function listarFotosPessoaAction(pessoaId: string): Promise<{ url: string; capturadaEm: string }[]> {
+  return listarFotosPessoa(pessoaId);
 }
 
 export async function contarNaoLidasAction(usuarioId: string): Promise<ContagemNaoLidas> {

@@ -10,6 +10,7 @@ import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
 import { interpretarFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import {
+  capturarFotoPerfilSeNecessario,
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
   extrairCodigoRastreio,
@@ -69,10 +70,17 @@ async function montarDependencias() {
  * cima — mesmo com a Malala no controle. A Malala só entende texto (parser determinístico); tratar
  * a URL de uma mídia como se fosse a resposta do lead corromperia a posição da conversa.
  */
-async function processarMidiaRecebida(telefone: string, midiaUrl: string, midiaTipo: string, legenda: string | null): Promise<void> {
+async function processarMidiaRecebida(
+  telefone: string,
+  midiaUrl: string,
+  midiaTipo: string,
+  legenda: string | null,
+  fotoPerfil: string | null = null,
+): Promise<void> {
   try {
     const { etapasPorCodigo } = await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
+    await capturarFotoPerfilSeNecessario(estado.pessoaId, fotoPerfil);
     await registrarMensagemLead(estado.conversaId, legenda, midiaUrl, midiaTipo);
   } catch (e) {
     console.error("[webhook zapster] erro ao processar mídia recebida:", e);
@@ -87,15 +95,15 @@ async function processarMidiaRecebida(telefone: string, midiaUrl: string, midiaT
  * áudio pro humano ouvir na Tela de Atendimento, sem rodar o motor em cima (não dá pra interpretar
  * uma resposta que não conseguimos entender).
  */
-async function processarAudioRecebido(telefone: string, audioUrl: string): Promise<void> {
+async function processarAudioRecebido(telefone: string, audioUrl: string, fotoPerfil: string | null = null): Promise<void> {
   const textoTranscrito = await transcreverAudio(audioUrl);
 
   if (!textoTranscrito) {
-    await processarMidiaRecebida(telefone, audioUrl, "audio", null);
+    await processarMidiaRecebida(telefone, audioUrl, "audio", null, fotoPerfil);
     return;
   }
 
-  await processarMensagemRecebida(telefone, textoTranscrito, audioUrl, "audio");
+  await processarMensagemRecebida(telefone, textoTranscrito, audioUrl, "audio", fotoPerfil);
 }
 
 /**
@@ -109,6 +117,7 @@ async function processarMensagemRecebida(
   textoRecebido: string,
   midiaUrl: string | null = null,
   midiaTipo: string | null = null,
+  fotoPerfil: string | null = null,
 ): Promise<void> {
   // Código de rastreio (zap.arrudacred.com.br, ver docs/RASTREIO_CLIQUES_WHATSAPP.md) tirado antes
   // de qualquer outra coisa — a Malala/o motor nunca veem "(ref: a1b2c3d4)" como parte da conversa.
@@ -117,6 +126,7 @@ async function processarMensagemRecebida(
   try {
     const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } = await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
+    await capturarFotoPerfilSeNecessario(estado.pessoaId, fotoPerfil);
 
     if (codigoRastreio) {
       await correlacionarCliqueRastreio(codigoRastreio, estado.pessoaId);
@@ -237,8 +247,13 @@ export async function POST(request: Request) {
     return Response.json({ ignorado: true, motivo: "sem phone_number no payload" });
   }
 
+  // Foto de perfil do WhatsApp do lead (Bloco D, 17/08/2026) — vem em `sender.profile_picture` em
+  // TODO message.received (confirmado no schema real da Zapster), null quando o contato não tem
+  // foto pública. Repassada pra cada handler abaixo, que decide se muda em relação à última salva.
+  const fotoPerfil: string | null = data?.sender?.profile_picture ?? null;
+
   if (data?.type === "text" && data?.content?.text) {
-    after(() => processarMensagemRecebida(telefone, data.content.text));
+    after(() => processarMensagemRecebida(telefone, data.content.text, null, null, fotoPerfil));
     return Response.json({ recebido: true });
   }
 
@@ -246,7 +261,7 @@ export async function POST(request: Request) {
   // roda o motor de fluxo em cima do texto, não só registra. Ver processarAudioRecebido.
   const audioUrl: string | undefined = data?.content?.media?.url;
   if (data?.type === "audio" && audioUrl) {
-    after(() => processarAudioRecebido(telefone, audioUrl));
+    after(() => processarAudioRecebido(telefone, audioUrl, fotoPerfil));
     return Response.json({ recebido: true });
   }
 
@@ -259,7 +274,7 @@ export async function POST(request: Request) {
   const midiaUrl: string | undefined = data?.content?.media?.url;
   if (midiaTipo && midiaUrl) {
     const legenda: string | null = data.content?.text || null;
-    after(() => processarMidiaRecebida(telefone, midiaUrl, midiaTipo, legenda));
+    after(() => processarMidiaRecebida(telefone, midiaUrl, midiaTipo, legenda, fotoPerfil));
     return Response.json({ recebido: true });
   }
 

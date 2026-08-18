@@ -177,6 +177,35 @@ export async function carregarOuCriarConversaWhatsapp(
   };
 }
 
+/**
+ * Histórico de fotos do contato (Bloco D, 17/08/2026) — a Zapster manda `sender.profile_picture`
+ * em todo `message.received`, então isso roda a cada mensagem recebida do lead, não só na
+ * primeira. Nunca sobrescreve: só insere uma linha nova quando a URL muda em relação à mais
+ * recente já salva — mantém o histórico completo (TELA_ATENDIMENTO_ARRUDACRED.md seção 4).
+ * Silenciosa em qualquer falha — captura de foto é complementar, nunca pode travar o webhook.
+ */
+export async function capturarFotoPerfilSeNecessario(pessoaId: string, urlFoto: string | null | undefined): Promise<void> {
+  if (!urlFoto) return;
+
+  try {
+    const supabase = createAdminClient();
+    const { data: ultimaFoto } = await supabase
+      .from("pessoa_fotos")
+      .select("url")
+      .eq("pessoa_id", pessoaId)
+      .order("capturada_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (ultimaFoto?.url === urlFoto) return;
+
+    const { error } = await supabase.from("pessoa_fotos").insert({ pessoa_id: pessoaId, url: urlFoto });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error("[persistencia] erro ao capturar foto de perfil:", e);
+  }
+}
+
 /** Grava a mensagem do lead e cancela qualquer cadência de follow-up pendente — ele acabou de responder. `midiaUrl`/`midiaTipo` preenchidos quando o lead manda foto/áudio/vídeo (Bloco B2, ver processarMensagemRecebida). */
 export async function registrarMensagemLead(
   conversaId: string,

@@ -29,6 +29,7 @@ import {
   enviarMidiaAction,
   gerarResumoConversaAction,
   listarConversasAction,
+  listarFotosPessoaAction,
   listarNotificacoesAction,
   marcarNotificacaoLidaAction,
   sugerirRespostaAction,
@@ -583,6 +584,8 @@ export function AtendimentoClient({
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [painelContatoAberto, setPainelContatoAberto] = useState(true);
   const [confirmandoReset, setConfirmandoReset] = useState(false);
+  const [historicoFotos, setHistoricoFotos] = useState<{ url: string; capturadaEm: string }[] | null>(null);
+  const [carregandoHistoricoFotos, setCarregandoHistoricoFotos] = useState(false);
   const [midiaEmTelaCheia, setMidiaEmTelaCheia] = useState<{ url: string; tipo: "imagem" | "video" } | null>(null);
   const [resetando, setResetando] = useState(false);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
@@ -726,6 +729,16 @@ export function AtendimentoClient({
     setConversaSelecionadaId(null);
     await recarregarLista();
     await recarregarContagens();
+  }
+
+  /** Histórico de fotos de perfil do contato (Bloco D) — busca sob demanda ao abrir a modal, não fica no estado da conversa. */
+  async function abrirHistoricoFotos() {
+    if (!detalhe) return;
+    setHistoricoFotos([]);
+    setCarregandoHistoricoFotos(true);
+    const fotos = await listarFotosPessoaAction(detalhe.pessoaId);
+    setHistoricoFotos(fotos);
+    setCarregandoHistoricoFotos(false);
   }
 
   async function handleEnviar() {
@@ -1150,11 +1163,16 @@ export function AtendimentoClient({
               >
                 <div className="flex gap-2.5">
                   <div className="relative shrink-0">
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium ${tom.bg} ${tom.texto}`}
-                    >
-                      {c.nomeConhecido ? iniciais(c.pessoaNome) : "☎"}
-                    </div>
+                    {c.fotoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL externa (foto de perfil do WhatsApp via Zapster)
+                      <img src={c.fotoUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+                    ) : (
+                      <div
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium ${tom.bg} ${tom.texto}`}
+                      >
+                        {c.nomeConhecido ? iniciais(c.pessoaNome) : "☎"}
+                      </div>
+                    )}
                     {c.favorita && (
                       <span className="absolute -left-1 -top-1 text-[11px]" title="Favorita">
                         ⭐
@@ -1260,13 +1278,30 @@ export function AtendimentoClient({
         ) : (
           <>
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <div>
-                <p className="font-semibold text-zinc-900 dark:text-zinc-50">{detalhe.pessoaNome}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {formatarTelefone(detalhe.pessoaTelefone)}
-                  {detalhe.produtoNome && ` · ${detalhe.produtoNome}`}
-                  {detalhe.valorEstimado && ` · R$ ${detalhe.valorEstimado.toLocaleString("pt-BR")}`}
-                </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={abrirHistoricoFotos}
+                  title="Ver histórico de fotos de perfil"
+                  className="shrink-0 rounded-full"
+                >
+                  {detalhe.fotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- URL externa (foto de perfil do WhatsApp via Zapster)
+                    <img src={detalhe.fotoUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 text-sm font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                      {iniciais(detalhe.pessoaNome)}
+                    </div>
+                  )}
+                </button>
+                <div>
+                  <p className="font-semibold text-zinc-900 dark:text-zinc-50">{detalhe.pessoaNome}</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {formatarTelefone(detalhe.pessoaTelefone)}
+                    {detalhe.produtoNome && ` · ${detalhe.produtoNome}`}
+                    {detalhe.valorEstimado && ` · R$ ${detalhe.valorEstimado.toLocaleString("pt-BR")}`}
+                  </p>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
@@ -1890,6 +1925,41 @@ export function AtendimentoClient({
               {resetando ? "Resetando..." : "Resetar"}
             </button>
           </div>
+        </div>
+      </div>
+    )}
+
+    {historicoFotos !== null && detalhe && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              Histórico de fotos — {detalhe.pessoaNome}
+            </p>
+            <button
+              onClick={() => setHistoricoFotos(null)}
+              className="rounded-full px-2 py-0.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              ✕
+            </button>
+          </div>
+          {carregandoHistoricoFotos ? (
+            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Carregando...</p>
+          ) : historicoFotos.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Nenhuma foto capturada ainda.</p>
+          ) : (
+            <div className="mt-3 grid max-h-80 grid-cols-3 gap-2 overflow-y-auto">
+              {historicoFotos.map((f) => (
+                <div key={f.capturadaEm} className="flex flex-col items-center gap-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- URL externa (foto de perfil do WhatsApp via Zapster) */}
+                  <img src={f.url} alt="" className="h-20 w-20 rounded-lg object-cover" />
+                  <span className="text-center text-[10px] text-zinc-500 dark:text-zinc-400">
+                    {formatarTempoRelativo(f.capturadaEm)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )}

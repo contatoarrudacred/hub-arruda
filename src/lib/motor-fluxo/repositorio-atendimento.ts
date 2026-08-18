@@ -143,6 +143,8 @@ export type ConversaResumo = {
   atendenteNome: string | null;
   atendenteCor: CorBadge | null;
   favorita: boolean;
+  /** Foto de perfil do WhatsApp mais recente (Bloco D) — null quando o contato não tem foto pública ou ainda não mandou mensagem nenhuma. */
+  fotoUrl: string | null;
 };
 
 /** Placeholders gravados por `carregarOuCriarConversaWhatsapp`/repositorio-atendimento quando o lead ainda não disse o nome — string exata, não é o ideal (frágil a typo), mas evita uma coluna nova só pra isto agora. */
@@ -224,6 +226,7 @@ export async function listarConversasAtendimento(
       atendenteNome: linha.atendente_nome,
       atendenteCor: ehCorBadgeValida(linha.atendente_cor ?? "") ? (linha.atendente_cor as CorBadge) : null,
       favorita: linha.favorita ?? false,
+      fotoUrl: linha.pessoa_foto_url ?? null,
     };
   });
 
@@ -232,6 +235,18 @@ export async function listarConversasAtendimento(
     if (a.favorita !== b.favorita) return a.favorita ? -1 : 1;
     return (b.ultimaMensagemEm ?? "").localeCompare(a.ultimaMensagemEm ?? "");
   });
+}
+
+/** Histórico completo de fotos de perfil de uma pessoa (Bloco D) — mais recente primeiro, pra modal de histórico da Tela de Atendimento. */
+export async function listarFotosPessoa(pessoaId: string): Promise<{ url: string; capturadaEm: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pessoa_fotos")
+    .select("url, capturada_em")
+    .eq("pessoa_id", pessoaId)
+    .order("capturada_em", { ascending: false });
+  if (error) throw new Error(`Falha ao carregar histórico de fotos: ${error.message}`);
+  return (data ?? []).map((f) => ({ url: f.url, capturadaEm: f.capturada_em }));
 }
 
 /** Liga/desliga o favorito da conversa (sobe pro topo da lista de contatos quando favoritada). */
@@ -329,6 +344,8 @@ export type ConversaDetalhe = {
   followupProximoEm: string | null;
   notas: NotaInterna[];
   mensagens: MensagemConversa[];
+  /** Foto de perfil do WhatsApp mais recente (Bloco D) — null quando o contato não tem foto pública. */
+  fotoUrl: string | null;
 };
 
 /** Conversa inteira (cabeçalho + timeline) — painel direito. */
@@ -370,6 +387,14 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     .order("created_at", { ascending: true });
   if (erroNotas) throw new Error(`Falha ao carregar notas internas: ${erroNotas.message}`);
 
+  const { data: ultimaFoto } = await supabase
+    .from("pessoa_fotos")
+    .select("url")
+    .eq("pessoa_id", conversa.pessoa_id)
+    .order("capturada_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const followupAtivo =
     Boolean(conversa.aguardando_resposta_desde) &&
     Boolean(conversa.agenda_followup_id) &&
@@ -401,6 +426,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     etapaFluxoAtualId: conversa.etapa_fluxo_atual_id,
     followupAtivo,
     followupProximoEm,
+    fotoUrl: ultimaFoto?.url ?? null,
     notas: (notas ?? []).map((n) => {
       const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
       return {
