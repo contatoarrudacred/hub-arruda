@@ -1,8 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
-import { calcularParcelas } from "./calculo-parcelas";
+import type { Parcela } from "./calculo-parcelas";
 
 export type FormaPagamento = "avista" | "parcelado";
-export type MetodoPagamento = "boleto" | "cartao" | "voucher" | "outro";
+// boleto_pix e cartao são as únicas duas opções da regra de negócio validada com o Luiz
+// (docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md, seção 1) —
+// mesmas duas opções que o bot do CRM oferece via conversas.dados.detalhe_pagamento.forma.
+export type MetodoPagamento = "boleto_pix" | "cartao";
 export type StatusContrato = "gerado" | "enviado" | "assinado" | "recusado" | "cancelado";
 
 export type EntradaCriarContrato = {
@@ -14,9 +17,11 @@ export type EntradaCriarContrato = {
   formaPagamento: FormaPagamento;
   metodoPagamento: MetodoPagamento;
   valorTotal: number;
-  parcelasQtd: number;
-  primeiroVencimento: Date;
-  intervaloDiasParcelas: number;
+  // Já calculadas por quem chama — via calcularParcelasContrato (venda sem funil prévio, ou
+  // Fechamento de Venda editando manualmente) ou lidas direto de
+  // conversas.dados.detalhe_pagamento.parcelas quando a Oportunidade vem do funil do CRM (o CRM já
+  // aplica a mesma regra de âncora, não precisa recalcular).
+  parcelas: Parcela[];
 };
 
 export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ contratoId: string }> {
@@ -33,22 +38,15 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
       status: "gerado",
       forma_pagamento: entrada.formaPagamento,
       metodo_pagamento: entrada.metodoPagamento,
-      parcelas_qtd: entrada.parcelasQtd,
+      parcelas_qtd: entrada.parcelas.length,
       valor_total: entrada.valorTotal,
     })
     .select("id")
     .single();
   if (erroContrato) throw new Error(`Falha ao criar contrato: ${erroContrato.message}`);
 
-  const parcelas = calcularParcelas(
-    entrada.valorTotal,
-    entrada.parcelasQtd,
-    entrada.primeiroVencimento,
-    entrada.intervaloDiasParcelas,
-  );
-
   const { error: erroParcelas } = await supabase.from("contrato_parcelas").insert(
-    parcelas.map((parcela) => ({
+    entrada.parcelas.map((parcela) => ({
       contrato_id: contrato.id,
       numero: parcela.numero,
       valor: parcela.valor,
