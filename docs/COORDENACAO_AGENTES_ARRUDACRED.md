@@ -12,17 +12,28 @@
 | Agente | Worktree/branch | Escopo | Status |
 |---|---|---|---|
 | CRM | `main` (raiz do repo, sem worktree próprio) | Atendimento, motor de fluxo, Kanban (futuro), IA de atendimento | Ativo |
-| Marketing | `worktree-pipeline-conteudo-marketing-nucleo` | Pipeline de conteúdo/blog, sites satélite, tráfego pago | Ativo — núcleo do pipeline concluído/testado/revisado (Tasks 1-10, `superpowers/plans/2026-08-17-pipeline-conteudo-marketing-nucleo.md`), branch ainda não mesclada em `main` (pendência #1). Fase 2 (telas de admin) escopada e documentada, spec técnica/plan ainda não escritas. |
-| Vendas | `worktree-vendas-cadastro` (removido — mesclado e apagado em 18/08/2026) | Cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda | Concluído (Fase Cadastro) — abre worktree novo se retomar com Contrato/Assinatura/Financeiro |
-| Coordenador de Agentes | `main` (raiz do repo, sessão dedicada — não escreve feature) | Integração entre agentes, merges, detecção de colisão antes de virar problema | Ativo |
-| *(sem dono identificado)* | `claude/clever-davinci-f426d7` (worktree `.claude/worktrees/clever-davinci-f426d7`) | Aparenta ser uma sessão antiga do CRM (motor de fluxo/extração) | **Órfão** — HEAD (`a07f125`, 17/08) já está inteiro em `main`, 0 commit à frente / 56 atrás. Tem trabalho **não commitado** — ver aviso de 18/08 e pendência #2 |
+| Marketing | `worktree-pipeline-conteudo-marketing-nucleo` | Pipeline de conteúdo/blog, sites satélite, tráfego pago | Ativo — **núcleo do pipeline mesclado em `main` em 18/08/2026** pelo Coordenador (fast-forward, `e45536e`; 40 commits, 145 testes próprios). Worktree segue vivo pra Fase 2 (telas de admin), já escopada e documentada — spec técnica/plan ainda não escritas |
+| Vendas | `worktree-vendas-cadastro` (removido — mesclado e apagado em 18/08/2026) | Cadastro Cliente/Fornecedor/Serviço | Concluído (sub-frente Cadastro), mesclado em `main` |
+| Vendas — Contrato | `worktree-vendas-contrato` (criado em 18/08/2026, a partir de `dd404c9`) | Contrato, assinatura digital, financeiro da venda | Ativo — sub-frente nova, retomada como previsto quando a de Cadastro fechou |
+| Coordenador de Agentes | `main` (raiz do repo, sessão dedicada — não escreve feature) | Integração entre agentes, merges, detecção de colisão antes de virar problema, **ponte com o Luiz** | Ativo |
 | *(próximos: Financeiro, Operações, ...)* | — | — | Ainda não iniciado |
+
+> **Worktree órfão `clever-davinci-f426d7` — resolvido em 18/08/2026.** Era uma sessão antiga do CRM, sem nenhum commit exclusivo (`main` continha tudo). O único trabalho que só existia lá — o fix do extrator de nome — foi resgatado pelo CRM em `a9b0e73` depois deste quadro-branco registrar o achado. Worktree desregistrado e branch apagada pelo Coordenador. Sobrou resíduo físico em `.claude/worktrees/clever-davinci-f426d7/` e `.git/worktrees/` que o Windows/OneDrive não deixa apagar (mesmo sintoma do `vendas-cadastro`) — **inofensivo**, e desde `e55fbbd` nem test nem lint enxergam mais esse caminho. Se o Luiz quiser limpar o disco, é só apagar as pastas manualmente com o OneDrive pausado.
 
 **Ao começar um agente novo:** adicione uma linha aqui antes de começar a trabalhar de verdade — nome, worktree/branch (peça pro Luiz criar se ainda não existir), escopo em 1 linha.
 
 ---
 
 ## 2. Migrations em uso (evita a colisão de timestamp que já aconteceu uma vez)
+
+> 🚫 **REGRA DURA — nenhum agente roda migration no Supabase. Definida pelo Luiz em 18/08/2026, vale pra todos, sem exceção.**
+> Isto **substitui** a antiga regra de "raio de impacto" (que ainda permitia `supabase db push` autônomo quando a migration era aditiva e restrita ao próprio módulo). O fluxo agora é:
+> 1. O agente **escreve o arquivo `.sql`** em `supabase/migrations/`, com o timestamp já reservado na tabela abaixo.
+> 2. O agente **avisa o Coordenador** — deixando uma linha na tabela com status `Aguardando envio ao Luiz` e um recado na seção 3 (o que a migration faz, se é destrutiva, do que ela depende).
+> 3. O **Coordenador** entrega o arquivo ao Luiz, com link, e explica em uma linha o que ele vai rodar.
+> 4. O **Luiz** roda no SQL Editor do Supabase e avisa. Só então o status vira `Aplicado`.
+>
+> **Ninguém executa `supabase db push`, `psql`, REST direto, nem qualquer outro caminho que escreva no banco de produção.** Se seu código depende de uma coluna que ainda não foi aplicada, ele fica esperando — não crie a coluna por conta própria "só pra destravar o teste". Se achar que seu caso é exceção, pergunte pelo Coordenador em vez de decidir sozinho.
 
 Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela e adicione uma linha reservando seu timestamp** antes de escrever o arquivo — não depois. Timestamp é `YYYYMMDDHHMMSS` (14 dígitos), igual ao padrão já usado no projeto.
 
@@ -32,10 +43,10 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817070000` | `20260817070000_modulo_marketing_nucleo.sql` | Marketing | Aplicado via `supabase db push` |
 | `20260817070001` | `20260817070001_persona_malala_config.sql` | CRM | Aplicado (renomeado de `070000` em 18/08/2026 pra resolver a colisão acima) |
 | `20260817120000` | `20260817120000_selo_risco_esfriar.sql` | CRM | Aplicado |
-| `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | Aplicado (renomeado de `120000` em 18/08/2026 pelo próprio Vendas, mesmo padrão da colisão acima — rótulo interno da migration continua "034", só o arquivo/timestamp mudou) |
-| `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | Mesclada em `main`, **ainda não aplicada no Supabase** — pendente do Luiz rodar manualmente |
-| `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | Mesclada em `main`, **ainda não aplicada no Supabase** — pendente do Luiz rodar manualmente |
-| `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`), mas **ainda não mesclada em `main`** — vive só no worktree de Marketing. Registrada aqui pelo Coordenador em 18/08/2026: o Marketing criou a migration sem reservar a linha nesta tabela (a branch dele é anterior à criação deste documento, então não foi descuido de leitura) |
+| `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | Mesclada em `main`, **enviada ao Luiz pelo Coordenador em 18/08/2026** — aguardando ele rodar no SQL Editor (2ª das 3). O "Aplicado" que constava aqui antes se referia ao **rename** de `120000`→`120001` (feito pra resolver a 2ª colisão de timestamp), não à execução no banco — corrigido pelo Coordenador porque a redação induzia a erro. Rótulo interno da migration continua "034" |
+| `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | Mesclada em `main`, **enviada ao Luiz pelo Coordenador em 18/08/2026** — aguardando ele rodar no SQL Editor (1ª das 3, roda nesta ordem) |
+| `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | Mesclada em `main`, **enviada ao Luiz pelo Coordenador em 18/08/2026** — aguardando ele rodar no SQL Editor (3ª das 3) |
+| `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
@@ -44,6 +55,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 (Coordenador) — Marketing mesclado em `main`, débito de test/lint fechado, worktree órfão removido.** Executado com autorização direta do Luiz, no formato "sincroniza → testa → fast-forward" (o mesmo que Vendas usou):
+  1. `git merge main` dentro do worktree de Marketing → validação **lá dentro** com o código dos dois juntos: **19 arquivos / 168 testes verdes** (145 do Marketing + 23 que vieram de `main`), lint limpo. O build não rodou no worktree porque o `node_modules` dele tem o pacote `next` incompleto (symlink pnpm sem `dist/bin`) — **não reinstalei dependências no ambiente de outro agente**; o build foi validado na raiz logo após o merge.
+  2. `git merge --ff-only` em `main` (`e45536e`) — fast-forward puro, `main` só andou pra frente, sem merge commit e sem conflito, como a simulação previa.
+  3. `pnpm install` na raiz (o merge trouxe `sanitize-html` novo no `package.json`; sem isso o build quebra em `src/lib/marketing/sanitizar-html.ts`) → **build verde**, com `/api/cron/marketing-pipeline`, `/admin/vendas/nova` e `/admin/fornecedores` na mesma árvore. **Se o seu worktree acusar "Cannot resolve 'sanitize-html'" depois de sincronizar com `main`, rode `pnpm install` — é isso.**
+  4. Débito do vitest fechado (`e55fbbd`) — e ele era **maior do que o registrado**: o `eslint` da raiz tinha exatamente o mesmo problema e ninguém tinha notado. Rodando lint da raiz apareciam **99 problemas (59 erros)**, e a separação por caminho mostrou: **100% vindos de dentro de `.claude/worktrees/`, zero do código de `main`**. Agora `vitest.config.mts` e `eslint.config.mjs` ignoram `.claude/**`. **Consequência prática pra todo mundo: rodar `pnpm test` e `pnpm lint` da raiz de `main` voltou a ser confiável** — o que aparecer ali agora é problema de verdade.
 
 - **18/08/2026 (Coordenador) — varredura inicial de estado, 4 achados:**
   1. **`main` não é enviada pro GitHub desde 16/08:** `origin/main` está em `e6a2683` (16/08, 22h) e `main` local está **71 commits à frente** (push seria fast-forward, sem divergência). Ou seja, todo o trabalho de CRM do dia 17 e o módulo Vendas inteiro existem só na máquina do Luiz — GitHub e Vercel não têm nada disso. Não é colisão entre agentes, mas é risco de perda de trabalho e vale decisão dele (pendência #4).
@@ -61,16 +78,35 @@ Espaço pra qualquer agente deixar um recado pros outros — algo que criou que 
 
 ## 4. Decisões pendentes do Luiz (cross-cutting, não é de um agente só decidir)
 
-| # | Pergunta | Levantada por | Data |
-|---|---|---|---|
-| 1 | Plano de merge dos worktrees pra `main`: cada um vira PR separado, ou existe uma etapa de integração antes de cada merge? | CRM/Marketing (durante a colisão de migration) | 18/08/2026 |
-| 2 | O worktree `claude/clever-davinci-f426d7` pode ser removido? **Parte (a) já resolvida:** CRM resgatou o fix (`a9b0e73`, 18/08/2026) — patch aplicado limpo em `main`, teste novo verde junto com os outros 116. Falta só (b): confirmar que não sobrou mais nada de exclusivo no worktree (checado: só esses 2 arquivos estavam modificados, nada mais) e então remover o worktree + a branch. | Coordenador (parte a resolvida por CRM) | 18/08/2026 |
-| 3 | Fechar o débito técnico do vitest (`exclude: ["**/.claude/**"]` no `vitest.config.mts` que vem do Marketing) logo depois do merge? É mudança de config compartilhada, não de módulo — cabe no papel do Coordenador, mas afeta todo mundo | Coordenador (débito registrado por Vendas) | 18/08/2026 |
-| 4 | `main` local está 71 commits à frente de `origin/main` (nada enviado ao GitHub desde 16/08 — CRM do dia 17 e Vendas inteiro só existem na máquina). Isso é intencional (segurar o deploy da Vercel até as migrations rodarem) ou é esquecimento? Se for pra enviar, quando — antes ou depois do merge de Marketing? | Coordenador | 18/08/2026 |
+> ⚠️ **Mudança de processo (18/08/2026, definida pelo Luiz):** a partir de agora **o Coordenador é a ponte com o Luiz**. Os agentes de módulo não precisam mais esperar por ele diretamente — registram aqui, e o Coordenador leva, cobra e traz a resposta de volta pro documento. O Luiz é acionado quando é decisão dele de verdade (dinheiro, produção, escopo, algo irreversível), não pra cada detalhe.
 
-**Como usar:** qualquer agente que se deparar com uma decisão que atravessa mais de um módulo registra aqui em vez de decidir sozinho ou adivinhar — mesmo padrão que o Marketing já seguiu corretamente ("essa é uma decisão do Luiz, não vou inventar resposta por ele").
+| # | Pergunta | Levantada por | Data | Status |
+|---|---|---|---|---|
+| 1 | Plano de merge dos worktrees pra `main`: cada um vira PR separado, ou existe uma etapa de integração antes de cada merge? | CRM/Marketing | 18/08/2026 | ✅ **Fechada.** O Luiz escolheu o fluxo **"sincroniza → testa → fast-forward"**, executado pelo Coordenador: (1) o agente termina a frente na própria branch; (2) o Coordenador faz `git merge main` **dentro do worktree** e roda test/lint/build **lá**, com o código dos dois juntos; (3) só com tudo verde, `git merge --ff-only` em `main`. Sem PR. `main` nunca recebe código que não passou por essa etapa. |
+| 2 | Remover o worktree órfão `claude/clever-davinci-f426d7`? | Coordenador | 18/08/2026 | ✅ **Fechada.** Fix resgatado pelo CRM (`a9b0e73`); worktree desregistrado e branch apagada pelo Coordenador. Resíduo físico em disco é inofensivo (ver nota na seção 1). |
+| 3 | Fechar o débito de `test`/`lint` varrendo `.claude/worktrees`? | Coordenador (débito de Vendas) | 18/08/2026 | ✅ **Fechada.** Feito em `e55fbbd`, nos dois lados (vitest **e** eslint). |
+| 4 | `main` local 71 commits à frente de `origin/main` — enviar pro GitHub? | Coordenador | 18/08/2026 | ✅ **Fechada.** O Luiz autorizou enviar **depois** do merge do Marketing. |
+| 5 | As 3 migrations de Vendas (`110000`, `120001`, `130000`) continuam sem rodar no Supabase. O código de `/admin/vendas/nova` e `/admin/fornecedores` está em `main` e **não funciona até elas rodarem** | Coordenador | 18/08/2026 | 🔶 **Com o Luiz** — arquivos entregues pelo Coordenador em 18/08/2026, aguardando ele rodar no SQL Editor (na ordem) e avisar |
 
-**Nota (18/08/2026):** o Luiz já deu um sinal parcial da pendência #1 — autorizou Vendas a mesclar direto em `main` sem esperar o Coordenador existir, enquanto a infraestrutura ainda estava sendo montada. Isso não fecha a pendência (Marketing ainda não mesclou, e a pergunta de fundo — se cada worktree vira PR/merge independente ou se passa por uma etapa de integração — continua em aberto pros próximos agentes), mas mostra que "merge direto quando a branch está pronta e sem conflito" é uma opção aceitável enquanto o Coordenador não estiver rodando.
+**Como usar:** qualquer agente que se deparar com uma decisão que atravessa mais de um módulo registra aqui em vez de decidir sozinho ou adivinhar. O Coordenador leva ao Luiz e traz a resposta pra cá.
+
+---
+
+## 4.1 Instruções vivas do Coordenador (leia antes de começar a trabalhar)
+
+> Esta seção é onde o Coordenador deixa recado direto pra cada agente. Se tem seu nome aqui, é pra você. Quando cumprir, marque como feito na própria linha (não apague — o histórico serve pra próxima sessão entender o que já rolou).
+
+**Pra todos os agentes:**
+1. **Migration nunca é rodada por você.** Escreve o `.sql`, reserva o timestamp na tabela da seção 2 com status `Aguardando envio ao Luiz`, e deixa um recado na seção 3 dizendo o que ela faz. O Coordenador leva pro Luiz. Regra dura, sem exceção — detalhe completo no topo da seção 2.
+2. **Sincronize com `main` antes de começar** — ela andou muito em 18/08 (Vendas + Marketing + fixes do CRM). Depois de sincronizar, **rode `pnpm install`**: `main` ganhou `sanitize-html` como dependência nova e sem isso o build quebra.
+3. **`pnpm test` e `pnpm lint` da raiz voltaram a ser confiáveis** (`e55fbbd` fez os dois ignorarem `.claude/**`). Falha que aparecer agora é de verdade — não descarte como "é do worktree do outro".
+4. **O projeto usa `pnpm`, não `npm`.** Apareceu um `package-lock.json` solto no worktree `vendas-contrato` — se foi `npm install` sem querer, apague o arquivo e use `pnpm install`; dois lockfiles no mesmo repo dão divergência de versão difícil de rastrear depois.
+
+**Marketing** — seu núcleo está em `main` desde 18/08 (`e45536e`), 168 testes verdes na árvore integrada. Pra Fase 2 (telas de admin): seu worktree continua válido, é só sincronizar. E quando escrever a spec/plan, registre aqui a intenção **antes** de criar tabela nova — a Fase 2 vai encostar em `configuracoes` e em Storage, que são compartilhados.
+
+**Vendas — Contrato** — worktree novo registrado. Duas coisas antes de avançar: (a) as 3 migrations da sub-frente Cadastro **ainda não rodaram no banco** — se o Contrato depender de `fornecedores`/`pessoa_documentos`, você está construindo sobre tabela que ainda não existe em produção; (b) assinatura digital (Assinafy) e financeiro (Asaas) são integrações pagas — **não contrate, não configure conta, não gaste crédito**; desenhe a integração e registre aqui pro Coordenador levar ao Luiz.
+
+**CRM** — obrigado pelo resgate rápido do fix do extrator (`a9b0e73`); foi exatamente o uso pretendido do quadro-branco. Você trabalha direto em `main`, então é quem mais pode atrapalhar os outros sem querer: **avise aqui antes** de mexer em `src/lib/supabase/database.types.ts`, em `configuracoes`, ou em qualquer coisa sob `src/app/admin/(shell)/` — os três são território comum. E o `database.types.ts` que está em `main` hoje foi gerado em 17/08 pelo Marketing: **não tem as tabelas de Vendas** (`fornecedores`, `pessoa_documentos`). Regenerar (`pnpm db:types`) só faz sentido depois que o Luiz rodar as migrations pendentes — até lá, o arquivo está defasado de propósito.
 
 ---
 
@@ -79,4 +115,5 @@ Espaço pra qualquer agente deixar um recado pros outros — algo que criou que 
 - **Sincronize com `main` antes de começar uma sessão de trabalho relevante** (merge ou rebase, o que for seu padrão) — evita revisar/construir em cima de uma base desatualizada, que deixa o merge final mais arriscado.
 - **Commits pequenos e frequentes**, cada um numa unidade de trabalho que faz sentido isolada — facilita tanto o merge quanto a leitura deste documento por outro agente.
 - **Qualquer sessão consegue inspecionar as outras diretamente** — todos os worktrees vivem debaixo do mesmo repositório (`.claude/worktrees/<nome>`), então `git -C .claude/worktrees/<nome> log/status/diff` funciona de qualquer lugar, sem precisar trocar de branch. Use isso antes de perguntar ao Luiz algo que dá pra conferir sozinho.
-- **O Coordenador de Agentes é quem executa merges/integração** entre os worktrees, uma vez que o Luiz definir o plano (pendência #1 acima) — os agentes de módulo continuam trabalhando na própria branch normalmente até lá.
+- **O Coordenador de Agentes é quem executa merges/integração** entre os worktrees, no fluxo "sincroniza → testa → fast-forward" fechado com o Luiz em 18/08/2026 (ver pendência #1, já resolvida). Quando sua frente estiver pronta, **não mescle sozinho em `main`** — avise aqui e o Coordenador faz, validando a combinação antes.
+- **O Coordenador é a ponte com o Luiz.** Dúvida cross-cutting, integração paga, migration pra rodar, decisão de escopo: registre na seção 4 e siga trabalhando no que não depende da resposta. Ele leva, cobra e traz de volta.
