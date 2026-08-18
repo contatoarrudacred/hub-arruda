@@ -313,6 +313,7 @@
     margin-bottom: 2px;
   }
   .respostas .fala { white-space: pre-wrap; }
+  .respostas li.doCoord { background: var(--surface-2); border-left-color: var(--linha-forte); }
 
   /* ---------- grade de agentes ---------- */
 
@@ -518,8 +519,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 13h05",
- "commit": "854910a",
+ "atualizado": "18/08/2026 · 13h20",
+ "commit": "db803fe",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -574,18 +575,28 @@
   {
    "id": "cripto-transversal",
    "prazo": "agora",
-   "prazoRot": "❌ Decisão",
+   "prazoRot": "🔄 Respondido",
    "titulo": "Criptografia de credenciais: transversal ou por módulo?",
-   "corpo": "Vi na spec do Marketing que ele vai criar a criptografia dentro de <code>src/lib/marketing/</code>. Está bem feita — mas o Vendas vai precisar da mesma coisa pra Assinafy/Asaas e o CRM já guarda credencial de WhatsApp. Se cada um fizer a sua, viram três formatos e três chaves. <b>Recomendo transversal</b> (<code>src/lib/seguranca/</code>), e eu conduzo com o Marketing sem você precisar acompanhar. Só preciso do seu sim.",
+   "corpo": "Você perguntou por que não seguir só com env.local, como sempre. Conferi e você tem razão pra quase tudo — veja minha resposta abaixo. A pergunta que sobra pra você é curta: <b>quantos sites satélite você pretende ter?</b> Se for só um, não fazemos nada disso agora.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 12h51",
+     "texto": "nao entendi a necessidade disso! até esses momentos todas as api keys ou informações secretas estão no env.local - confere? por que não continuamos da mesma forma, sempre que precisar de uma chave nova você me pede e eu incluo lá."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 13h20",
+     "texto": "Confere, e você está certo — eu exagerei. Conferi o .env.local: as 12 chaves são todas uma por serviço (Anthropic, Resend, Supabase, Zapster, OpenAI, cron). Pra esse tipo, env é o padrão certo e não muda nada. Errei ao usar Assinafy/Asaas como argumento: são uma conta da empresa cada, env resolve — retiro essa parte.\n\nSobra um caso só: a senha do WordPress é uma POR SITE cadastrado, não uma por sistema. Como propriedades_digitais é uma tela de CRUD (você cadastra site satélite novo pela interface), guardar em env significaria WORDPRESS_SENHA_site2, _site3... com redeploy e você no meio a cada cadastro — contra o princípio das seções 8.8/8.9 do plano mestre.\n\nE tem saída ainda mais simples: se hoje existe só um site, o fallback genérico em env que o Marketing já projetou resolve, e dá pra adiar a criptografia até você querer o segundo. Me diz quantos sites você pretende ter e eu fecho isso sem te consultar de novo."
+    }
+   ]
   },
   {
    "id": "chave-credenciais",
-   "prazo": "logo",
-   "prazoRot": "⚠️ Quando der",
+   "prazo": "depois",
+   "prazoRot": "🕓 Só se precisar",
    "titulo": "Gerar a chave de criptografia das credenciais",
-   "corpo": "O Marketing vai guardar a senha do WordPress cifrada no banco, e o Vendas vai precisar do mesmo pra Assinafy e Asaas. Isso depende de uma chave secreta que só você deve criar — gere com entropia de verdade (<code>openssl rand -base64 32</code>), nunca uma frase digitada à mão, e guarde num lugar seguro: <b>se ela se perder, as credenciais salvas viram lixo irrecuperável</b>. Precisa ficar na Vercel e no seu .env.local. Só me diga quando estiver feito — não me mande a chave, nem por aqui nem pelo chat.",
+   "corpo": "<b>Suspenso até a pergunta acima ser respondida.</b> Se ficar tudo em env.local (ou se houver só um site), essa chave não precisa existir. Só volta pra sua lista se a gente for mesmo guardar credencial por propriedade no banco.",
    "acoes": [],
    "respostas": []
   },
@@ -766,7 +777,7 @@
   "titulo": "Quem está esperando por quem",
   "paragrafos": [
    "<b>Vendas → CRM · aguardando.</b> O bot precisa capturar parcelas, valores e vencimentos do fechamento — hoje só salva <code>\"avista\"</code> ou <code>\"parcelado\"</code>. O pedido tinha ficado preso dentro do worktree do Vendas e o CRM não conseguia enxergar; trouxe pra main às 12h40 e respondi a ele. O Vendas <b>não está parado</b>: segue com a tela de Fechamento de Venda.",
-   "<b>Coordenador → Marketing · aguardando.</b> Criptografia de credenciais deveria nascer transversal, não dentro do módulo. Não bloqueia a Fase 2 dele.",
+   "<b>Coordenador → Marketing · em revisão.</b> Eu tinha pedido pra ele mover a criptografia de credenciais pra um módulo transversal. O Luiz questionou a necessidade e estava certo em boa parte — o argumento encolheu pra um caso só (senha de WordPress por site cadastrado). Avisei o Marketing pra <b>não mover nada</b> até isso fechar.",
    "<b>A regra nova que fecha esse buraco:</b> recado só existe quando chega na main; ninguém para esperando resposta (registra, segue pelo caminho alternativo, migra depois); quem recebe responde na mesma sessão, nem que seja \"visto\"; e eu passo a varrer os worktrees em vez de esperar alguém reclamar."
   ]
  }
@@ -843,7 +854,7 @@
     if (t.respostas && t.respostas.length) {
       h += '<ul class="respostas">';
       t.respostas.forEach(function (r) {
-        h += "<li><span class=\"autor\">Luiz · " + esc(r.quando) + '</span><span class="fala">' + esc(r.texto) + "</span></li>";
+        h += "<li" + (r.autor === "coordenador" ? ' class="doCoord"' : "") + "><span class=\"autor\">" + esc(r.autor === "coordenador" ? "Coordenador" : "Luiz") + " · " + esc(r.quando) + '</span><span class="fala">' + esc(r.texto) + "</span></li>";
       });
       h += "</ul>";
     }

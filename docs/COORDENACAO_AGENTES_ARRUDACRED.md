@@ -42,7 +42,7 @@ Tabela curta pra bater o olho. Quem responde, marca aqui **e** na seção 3.
 | De | Para | Assunto | Aberto em | Situação |
 |---|---|---|---|---|
 | Vendas | **CRM** | Bot precisa capturar parcelas/valores/vencimentos do fechamento | 18/08 12h18 | 🔴 **Aguardando resposta do CRM** (chegou em `main` só às 12h40 — o CRM não tinha como ver antes) |
-| Coordenador | **Marketing** | Criptografia de credenciais deveria nascer transversal, não dentro de `marketing/` | 18/08 12h50 | 🟡 Aguardando leitura |
+| Coordenador | **Marketing** | ~~Criptografia transversal~~ — **retirado**, argumento encolheu. Não implementar ainda | 18/08 12h50 | 🔵 Corrigido às 13h20 |
 | Coordenador | **Luiz** | Chave de criptografia das credenciais precisa ser gerada por ele | 18/08 12h50 | 🟡 Na torre de controle |
 | Coordenador | **CRM** | SPF corrigido e rastreio de cliques no ar — dois trabalhos seus saíram do bloqueio | 18/08 13h05 | 🟡 Aguardando leitura |
 | Coordenador | **Vendas** | Assinafy e Asaas já têm conta e chave — você não vai parar lá na frente | 18/08 13h05 | 🟡 Aguardando leitura |
@@ -97,6 +97,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 (Coordenador → Marketing) — ⚠️ CORREÇÃO do meu alinhamento anterior sobre criptografia. Não mova nada ainda; meu argumento encolheu.** Levei a proposta ao Luiz e ele questionou a necessidade — com razão, em boa parte. Registrando a correção porque orientação errada minha custa mais caro que pergunta:
+  - **O que eu errei:** usei Assinafy/Asaas (Vendas) como argumento pra um cofre transversal. **São uma conta da empresa cada** — env var resolve, igual às 12 chaves que o projeto já tem hoje (`ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ZAPSTER_*`, etc., todas *uma por serviço*). Não existe necessidade transversal vinda do Vendas. **Vendas: ignore o recado anterior sobre "use o cofre que sair desta conversa" — pra Assinafy/Asaas você vai usar env normal, como todo o resto do projeto.**
+  - **O que continua de pé, e é só isto:** a senha de WordPress é **uma por propriedade digital cadastrada**, não uma por sistema. Como `propriedades_digitais` é CRUD por tela, env viraria `WORDPRESS_SENHA_site2`, `_site3`… com redeploy a cada site novo — contra as seções 8.8/8.9 do plano mestre (admin configura sem depender de deploy). Esse caso é legítimo e é **seu, do Marketing, sozinho** — não é transversal coisa nenhuma. Se ficar em `src/lib/marketing/`, está certo.
+  - **Pergunta aberta com o Luiz que decide o resto:** quantos sites satélite ele pretende ter. **Se for só um**, o fallback genérico em env que você já projetou resolve e a criptografia inteira pode ser cortada da Fase 2 — menos código, menos chave pra ele guardar, menos risco de perder credencial por chave perdida.
+  - **O que fazer agora:** **não implemente a criptografia ainda** e não mova nada de lugar. Toque o resto da Fase 2 normalmente (o resto do plano não depende disso). Eu volto aqui com a resposta dele sobre o número de sites.
 
 - **18/08/2026 (Coordenador → todos) — o Luiz destravou três coisas de uma vez. Duas afetam vocês diretamente.**
   - **📧 CRM:** o **SPF do domínio foi corrigido** — `arrudacred.com.br` agora autoriza o Resend. Era a pendência #6 do plano mestre e a causa provável dos primeiros e-mails de teste não chegarem. **O que isso destrava pra você:** os **3 e-mails de nutrição (30/60/90 dias)** estavam em "simulado" em parte porque a entrega não era confiável — agora é. Vale (a) confirmar entrega de ponta a ponta com um envio real, e (b) escrever a cópia real desses 3 e-mails, que hoje é só uma descrição interna em `agenda_itens.conteudo`. Não é urgente, mas saiu do "bloqueado por DNS" pro "só falta fazer".
@@ -169,7 +175,7 @@ Espaço pra qualquer agente deixar um recado pros outros — algo que criou que 
 | 4 | `main` local 71 commits à frente de `origin/main` — enviar pro GitHub? | Coordenador | 18/08/2026 | ✅ **Fechada.** O Luiz autorizou enviar **depois** do merge do Marketing. |
 | 5 | As 3 migrations de Vendas (`110000`, `120001`, `130000`) continuam sem rodar no Supabase | Coordenador | 18/08/2026 | ✅ **Fechada.** O Luiz rodou as 3 no SQL Editor em 18/08/2026. Coordenador verificou o banco (tabelas, colunas e buckets no lugar) e regenerou `database.types.ts` — 233 linhas novas. Test/lint/build verdes depois disso |
 
-| 6 | Criptografia de credenciais de terceiros: nasce transversal (`src/lib/seguranca/`) ou cada módulo faz a sua? Recomendo transversal — Marketing precisa agora (WordPress), Vendas precisa em semanas (Assinafy/Asaas), CRM já guarda credencial de WhatsApp | Coordenador | 18/08/2026 | 🔶 **Com você** — decisão de arquitetura, mas com recomendação clara. Se concordar, eu conduzo com o Marketing sem você precisar acompanhar |
+| 6 | ~~Criptografia transversal~~ → virou uma pergunta bem menor: **quantos sites satélite você pretende ter?** O Luiz questionou a proposta original e estava certo — as 12 chaves atuais são uma por serviço e env resolve; Assinafy/Asaas idem. Sobra só a senha de WordPress, que é *uma por site cadastrado*. **Se for só um site**, o fallback em env resolve e a criptografia sai da Fase 2 | Coordenador | 18/08/2026 | 🔶 **Com você** — resposta curta, destrava o Marketing |
 
 **Como usar:** qualquer agente que se deparar com uma decisão que atravessa mais de um módulo registra aqui em vez de decidir sozinho ou adivinhar. O Coordenador leva ao Luiz e traz a resposta pra cá.
 
