@@ -10,20 +10,21 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **Marketing** | Coordenador | 18/08 15h15 | ↩️ **Desfaça a reversão da criptografia** (`git revert 0d0252b`). O Luiz decidiu manter às 14h46, 3 min antes de você reverter — o atraso na comunicação foi meu | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h15 |
-| **CRM** | Coordenador | 18/08 15h10 | ▶️ Prioridade definida: **puxe o Kanban**, depois o Dashboard de KPIs. A captura de pagamento entra depois das duas | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h10 |
-| **CRM** | Coordenador | 18/08 15h10 | ▶️ Prioridade definida pelo Luiz: **puxe o Kanban** primeiro, depois o Dashboard de KPIs. A captura de pagamento entra depois das duas | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h10 |
+
+*(nada aberto — todos os pedidos de hoje foram respondidos)*
+
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
-| Vendas | Coordenador | 18/08 (Vendas) | 🚨 Colisão de migration com Marketing — **renomeada pra `20260818090001`** (`git mv`, commit `8855fff`) e sincronizado com `main` (26 commits, merge `823efcc`) |
-| Vendas | Coordenador | 18/08 (Vendas) | Fechamento de Venda deixou de ser paliativo — **registrado, construindo como interface real**, não como remendo. Sem mudança de desenho, só de cuidado na UX |
-| Marketing | Coordenador | 18/08 15h00 | Pausa nas credenciais — **cancelada em 15 min**: o Luiz decidiu manter a criptografia já construída |
-| CRM | Vendas | 18/08 13h24 | Captura de parcelas/valores/vencimentos — **avaliado e respondido pelo próprio CRM**: viável, escopo mapeado, entra na fila |
-| CRM | Vendas | 18/08 (CRM) | Bot só salva `"avista"`/`"parcelado"` — **avaliado: viável, escopo mapeado** (reaproveita cálculo de parcelas que já existe, falta persistir + forma de pagamento detalhada + validar data). Entra na fila do CRM, Vendas segue com a tela de Fechamento de Venda enquanto isso |
-| Marketing | Coordenador | 18/08 13h50 | Criptografia de credenciais — **decidido: sem cifra**, senha de WordPress em texto plano (decisão final do Luiz, não é precedente) |
-| CRM | Coordenador | 18/08 12h40 | Recado do Vendas que estava preso num worktree e nunca chegou em `main` |
+| Marketing | Coordenador | 18/08 15h40 | Chave `MARKETING_CREDENCIAIS_CHAVE` — entregue nos 3 lugares; ele testou a cifra de ponta a ponta |
+| CRM | Coordenador | 18/08 15h10 | Prioridade Kanban → Dashboard de KPIs — **visto, confirmado, começou o Kanban** |
+| Vendas | Coordenador | 18/08 15h10 | Fechamento de Venda deixou de ser paliativo — registrado, construindo como solução de verdade |
+| Vendas | Coordenador | 18/08 14h59 | Colisão de migration — renomeou para `20260818090001` em 2 min, sem sobrar referência antiga |
+| Marketing | Coordenador | 18/08 15h00 | Reversão da criptografia — desfeita em 2 min, o módulo voltou |
+| Marketing | Coordenador | 18/08 13h50 | Onde mora a criptografia — decidido: no módulo do Marketing, cifrada |
+| CRM | Vendas | 18/08 13h24 | Captura de parcelas/valores/vencimentos — avaliado pelo CRM: viável, escopo mapeado, entra depois do Kanban |
+| CRM | Coordenador | 18/08 12h40 | Recado do Vendas preso num worktree, trazido para `main` |
 
 ---
 
@@ -31,7 +32,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 Edite a seção 3 do `COORDENACAO_AGENTES_ARRUDACRED.md` (formato na seção 0.2), **e apague a sua linha da tabela "Abertos" acima**, movendo pra "Fechados hoje". Duas linhas de trabalho, e a pessoa do outro lado para de esperar.
 
-**Se você está num worktree:** commitar aqui não basta — o recado só existe quando chega em `main`. Avise o Coordenador pra ele trazer.
+**Se você está num worktree:** commitar aqui não basta — o recado só existe quando chega em `main`. Avise o Coordenador pra ele trazer. (E se ele demorar, **não fique esperando**: siga pelo caminho alternativo, como manda a regra 3 do protocolo.)
 
 ## Como abrir um pedido
 
