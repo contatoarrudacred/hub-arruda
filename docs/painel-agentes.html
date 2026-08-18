@@ -518,8 +518,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 12h45",
- "commit": "c4b3a11",
+ "atualizado": "18/08/2026 · 12h55",
+ "commit": "6e9ee2d",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -572,6 +572,24 @@
    "respostas": []
   },
   {
+   "id": "cripto-transversal",
+   "prazo": "agora",
+   "prazoRot": "❌ Decisão",
+   "titulo": "Criptografia de credenciais: transversal ou por módulo?",
+   "corpo": "Vi na spec do Marketing que ele vai criar a criptografia dentro de <code>src/lib/marketing/</code>. Está bem feita — mas o Vendas vai precisar da mesma coisa pra Assinafy/Asaas e o CRM já guarda credencial de WhatsApp. Se cada um fizer a sua, viram três formatos e três chaves. <b>Recomendo transversal</b> (<code>src/lib/seguranca/</code>), e eu conduzo com o Marketing sem você precisar acompanhar. Só preciso do seu sim.",
+   "acoes": [],
+   "respostas": []
+  },
+  {
+   "id": "chave-credenciais",
+   "prazo": "logo",
+   "prazoRot": "⚠️ Quando der",
+   "titulo": "Gerar a chave de criptografia das credenciais",
+   "corpo": "O Marketing vai guardar a senha do WordPress cifrada no banco, e o Vendas vai precisar do mesmo pra Assinafy e Asaas. Isso depende de uma chave secreta que só você deve criar — gere com entropia de verdade (<code>openssl rand -base64 32</code>), nunca uma frase digitada à mão, e guarde num lugar seguro: <b>se ela se perder, as credenciais salvas viram lixo irrecuperável</b>. Precisa ficar na Vercel e no seu .env.local. Só me diga quando estiver feito — não me mande a chave, nem por aqui nem pelo chat.",
+   "acoes": [],
+   "respostas": []
+  },
+  {
    "id": "spf-resend",
    "prazo": "logo",
    "prazoRot": "⚠️ Quando der",
@@ -619,10 +637,11 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Nada pendente no momento — os três agentes estão desbloqueados e a main está sincronizada com o GitHub."
+    "Escreveu o <b>protocolo de comunicação</b> entre agentes — regra nova pra ninguém mais ficar parado esperando recado que não chegou.",
+    "Alinhou com o Marketing, antes de ele começar a construir, que a criptografia de credenciais precisa nascer transversal e não dentro do módulo dele."
    ],
-   "proxima": "➡️ Acompanhar a resposta do CRM ao pedido do Vendas, e sincronizar os worktrees de novo quando a main andar.",
-   "proximaExtra": "Manter esta torre atualizada conforme as coisas mudarem.",
+   "proxima": "➡️ Cobrar a resposta do CRM ao pedido do Vendas, e a do Marketing sobre a criptografia.",
+   "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
     "✅ Fechou o débito de test/lint varrerem os worktrees dos outros — e achou que o problema também existia no lint, com 99 falsos positivos",
@@ -630,7 +649,9 @@
     "✅ Regenerou os tipos do banco depois das suas migrations",
     "✅ Descobriu que o recado do Vendas nunca chegou ao CRM (estava preso num worktree) e trouxe pra main",
     "✅ Consertou o worktree do Marketing, onde o next estava quebrado e o build nunca rodou",
-    "✅ Resolveu 2 conflitos no quadro-branco sem perder recado de ninguém"
+    "✅ Resolveu 2 conflitos no quadro-branco sem perder recado de ninguém",
+    "✅ Escreveu o protocolo de comunicação e a caixa de entrada de pedidos abertos",
+    "✅ Leu a spec da Fase 2 do Marketing por conta própria e achou um problema de arquitetura antes de virar código"
    ],
    "dims": null
   },
@@ -668,8 +689,8 @@
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ rodando"
+    "tipo": "cuidado",
+    "texto": "⚠️ tem recado meu"
    },
    "agora": [
     "Spec e plano da Fase 2 (telas de admin) <b>escritos e commitados</b> — e já registrou no quadro-branco, antes de criar tabela, quais migrations vai precisar.",
@@ -687,6 +708,11 @@
    "dims": {
     "plan": 95,
     "prod": 45
+   },
+   "alerta": {
+    "nivel": "leve",
+    "sinal": "⚠️",
+    "texto": "Deixei um alinhamento pra ele antes de começar a construir: a <b>criptografia de credenciais</b> que ele projetou está boa, mas nasce dentro de <code>src/lib/marketing/</code> — e o Vendas vai precisar da mesma coisa. Não trava a Fase 2; é pra combinar o lugar antes de existirem duas versões."
    }
   },
   {
@@ -718,12 +744,12 @@
   }
  ],
  "dependencia": {
-  "rota": "⚠️ Vendas → CRM · entregue, aguardando resposta",
-  "titulo": "O bot precisa capturar o fechamento inteiro da venda",
+  "rota": "⚠️ 2 pedidos abertos · caixa de entrada",
+  "titulo": "Quem está esperando por quem",
   "paragrafos": [
-   "Hoje o motor de fluxo salva a forma de pagamento como duas opções fechadas — <code>\"avista\"</code> ou <code>\"parcelado\"</code>. Não guarda quantas parcelas, valor de cada uma, datas de vencimento, nem a forma detalhada (boleto, cartão, voucher). O Vendas conferiu isso no código antes de pedir, não é suposição.",
-   "Sem esses dados não dá pra gerar contrato e tabela de vencimentos direto do que foi vendido. O pedido é do território do CRM, por isso o Vendas registrou em vez de sair mexendo no fluxo dos outros — que é exatamente o comportamento que a gente quer.",
-   "<b>Onde está:</b> o pedido tinha sido escrito às 12h18 <em>dentro do worktree do Vendas</em> e por isso nunca chegou ao CRM, que lê a main — ele inclusive avisou que não achou nada endereçado a ele. Trouxe pra main às 12h40 e respondi a ele no quadro-branco. Agora é com o CRM. Enquanto isso o Vendas segue com a tela de Fechamento de Venda, que já está na spec dele."
+   "<b>Vendas → CRM · aguardando.</b> O bot precisa capturar parcelas, valores e vencimentos do fechamento — hoje só salva <code>\"avista\"</code> ou <code>\"parcelado\"</code>. O pedido tinha ficado preso dentro do worktree do Vendas e o CRM não conseguia enxergar; trouxe pra main às 12h40 e respondi a ele. O Vendas <b>não está parado</b>: segue com a tela de Fechamento de Venda.",
+   "<b>Coordenador → Marketing · aguardando.</b> Criptografia de credenciais deveria nascer transversal, não dentro do módulo. Não bloqueia a Fase 2 dele.",
+   "<b>A regra nova que fecha esse buraco:</b> recado só existe quando chega na main; ninguém para esperando resposta (registra, segue pelo caminho alternativo, migra depois); quem recebe responde na mesma sessão, nem que seja \"visto\"; e eu passo a varrer os worktrees em vez de esperar alguém reclamar."
   ]
  }
 }
