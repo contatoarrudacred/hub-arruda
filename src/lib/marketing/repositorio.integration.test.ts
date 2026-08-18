@@ -102,6 +102,40 @@ describe("selecionarProximaPautaPendente", () => {
     expect(selecionada?.status).toBe("em_producao");
   });
 
+  it("incrementa tentativas ao fazer reclaim, alimentando o circuit breaker de max_tentativas", async () => {
+    // O circuit breaker do pipeline (propriedade.maxTentativas, checado em processar-pauta.ts)
+    // só funciona se `tentativas` refletir de verdade quantas vezes a pauta foi tentada — incluindo
+    // reclaims. Sem isto, uma pauta que sempre mata a função de cron seria reclaimed pra sempre,
+    // sem nunca ser bloqueada. Aqui simulamos uma pauta já com 2 tentativas (maxTentativas padrão
+    // é 3) travada há mais de 10min; após o reclaim, tentativas deve virar 3 — o que já seria
+    // suficiente pra processar-pauta.ts bloqueá-la no próximo ciclo, em vez de reprocessar.
+    const { matrizId } = await criarPropriedadeDeTeste();
+    const supabase = createAdminClient();
+    const maisDe10MinAtras = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+
+    const { data: pautaInserida } = await supabase
+      .from("pautas")
+      .insert({
+        matriz_conteudo_id: matrizId,
+        palavra_chave_principal: "pauta travada com tentativas",
+        angulo: "informacional_direto",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 2,
+        atualizado_em: maisDe10MinAtras,
+      })
+      .select("id")
+      .single();
+
+    const selecionada = await selecionarProximaPautaPendente(matrizId);
+
+    expect(selecionada?.id).toBe(pautaInserida!.id);
+    expect(selecionada?.tentativas).toBe(3);
+
+    const { data: atualizada } = await supabase.from("pautas").select("tentativas").eq("id", pautaInserida!.id).single();
+    expect(atualizada?.tentativas).toBe(3);
+  });
+
   it("não faz reclaim de pauta em_producao recente", async () => {
     const { matrizId } = await criarPropriedadeDeTeste();
     const supabase = createAdminClient();

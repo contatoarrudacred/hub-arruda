@@ -81,7 +81,22 @@ export async function selecionarProximaPautaPendente(matrizConteudoId: string): 
   if (erroTravada) throw new Error(`Falha ao selecionar pauta travada para reclaim: ${erroTravada.message}`);
   if (!travada) return null;
 
-  return mapearPauta(travada);
+  // Reclaim conta como tentativa — sem isto, uma pauta que sempre mata a função (ex.: host de
+  // WordPress que sempre dá timeout) seria re-selecionada a cada 10min pra sempre, com tentativas
+  // congelado, nunca batendo em propriedade.maxTentativas (o circuit breaker do pipeline) e
+  // queimando tokens da Anthropic indefinidamente. Select-then-update (não atômico) é o mesmo
+  // padrão já usado em registrarReprovacaoPauta logo acima — aceitável porque o lock por matriz
+  // no cron garante no máximo um processo mexendo nesta pauta por vez.
+  const tentativasIncrementadas = travada.tentativas + 1;
+  const { error: erroIncrementoReclaim } = await supabase
+    .from("pautas")
+    .update({ tentativas: tentativasIncrementadas })
+    .eq("id", travada.id);
+  if (erroIncrementoReclaim) {
+    throw new Error(`Falha ao incrementar tentativas da pauta travada ${travada.id} durante reclaim: ${erroIncrementoReclaim.message}`);
+  }
+
+  return mapearPauta({ ...travada, tentativas: tentativasIncrementadas });
 }
 
 export async function carregarPropriedade(propriedadeId: string): Promise<PropriedadeCarregada> {
