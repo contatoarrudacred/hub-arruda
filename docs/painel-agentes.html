@@ -213,6 +213,18 @@
     font-size: 11px;
     color: var(--texto-suave);
   }
+  .luiz > header .cab-dir {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .luiz > header .ver-feitos {
+    background: transparent;
+    border-color: var(--linha-forte);
+    color: var(--texto-suave);
+  }
+  .luiz > header .ver-feitos:hover { border-color: var(--ouro); color: var(--ouro); }
 
   .tarefas { list-style: none; margin: 0; padding: 0; }
   .tarefas > li {
@@ -223,6 +235,9 @@
     border-bottom: 1px solid var(--linha);
   }
   .tarefas > li:last-child { border-bottom: 0; }
+  /* `display: grid` acima vence o [hidden] do navegador — sem esta linha,
+     esconder um item não funcionaria. */
+  .tarefas > li[hidden] { display: none; }
   .tarefas .quando {
     font-family: var(--mono);
     font-size: 10px;
@@ -939,7 +954,8 @@
     var fechavel = !!t.concluida;
     var nResp = (t.respostas || []).length;
 
-    var h = '<li class="' + (t.concluida ? "concluida" : "") + '" data-tarefa="' + esc(t.id) + '">';
+    var h = '<li class="' + (t.concluida ? "concluida" : "") + '" data-tarefa="' + esc(t.id) + '"' +
+            (t.concluida ? " hidden" : "") + ">";
     h += '<span class="quando ' + t.prazo + '">' + esc(t.prazoRot) + "</span>";
 
     if (fechavel) {
@@ -1005,8 +1021,18 @@
 
     h += '<div class="aviso-ro" id="aviso-ro" hidden>⚠️ Esta visualização está em modo leitura — dá pra acompanhar tudo, mas o botão de responder não vai gravar. Me responda pelo chat mesmo.</div>';
 
+    var nFeitos = dados.tarefas.filter(function (t) { return t.concluida; }).length;
+    var nAbertos = dados.tarefas.length - nFeitos;
+
     h += '<section class="luiz" aria-labelledby="tit-luiz">' +
-         '<header><h2 id="tit-luiz">Sua vez, Luiz</h2><span class="nota">o que só você pode fazer</span></header>' +
+         '<header><h2 id="tit-luiz">Sua vez, Luiz</h2>' +
+         '<span class="cab-dir">' +
+         '<span class="nota">' + (nAbertos ? nAbertos + (nAbertos === 1 ? " item aberto" : " itens abertos") : "nada pendente 🎉") + '</span>';
+    if (nFeitos) {
+      h += '<button class="botao ver-feitos" type="button" aria-expanded="false">▸ ' +
+           nFeitos + " já " + (nFeitos === 1 ? "resolvido" : "resolvidos") + "</button>";
+    }
+    h += "</span></header>" +
          '<ul class="tarefas">';
     dados.tarefas.forEach(function (t) { h += tarefaHTML(t); });
     h += "</ul></section>";
@@ -1135,6 +1161,18 @@
   document.addEventListener("click", function (ev) {
     var alvo = ev.target.closest ? ev.target.closest("button.botao") : null;
     if (!alvo) return;
+
+    // mostrar/esconder o histórico de itens já resolvidos
+    if (alvo.classList.contains("ver-feitos")) {
+      var feitos = document.querySelectorAll('.tarefas > li.concluida');
+      var vaiMostrar = alvo.getAttribute("aria-expanded") !== "true";
+      for (var i = 0; i < feitos.length; i++) feitos[i].hidden = !vaiMostrar;
+      alvo.setAttribute("aria-expanded", vaiMostrar ? "true" : "false");
+      alvo.textContent = (vaiMostrar ? "▾ esconder " : "▸ ") + feitos.length +
+        (vaiMostrar ? " resolvidos" : " já " + (feitos.length === 1 ? "resolvido" : "resolvidos"));
+      return;
+    }
+
     var id = alvo.getAttribute("data-alvo");
     if (!id) return;
 
