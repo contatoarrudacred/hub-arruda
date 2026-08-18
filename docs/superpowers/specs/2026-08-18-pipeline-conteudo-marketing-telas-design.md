@@ -44,12 +44,12 @@ Ver `MODULO_MARKETING_CONTEUDO_ARRUDACRED.md` seção 7 para a decisão de escop
 
 Nenhum destes exige mudança nas tabelas já existentes (`pautas`, `posts`, `matrizes_conteudo`, `checklist_qa_itens` ficam como estão) — só em `propriedades_digitais` e uma tabela nova.
 
-### 3.1 Credenciais de canal — nova coluna em `propriedades_digitais` (texto plano, decisão do Luiz — ver seção 4)
+### 3.1 Credenciais de canal cifradas — nova coluna em `propriedades_digitais`
 
 ```sql
 alter table propriedades_digitais add column credenciais_canais jsonb not null default '{}'::jsonb;
 comment on column propriedades_digitais.credenciais_canais is
-  'Credenciais de canal por propriedade, em texto plano (decisão do Luiz, 18/08/2026 — não é precedente pra outros segredos). Formato: {"wordpress": {"usuario": "...", "senha": "..."}}. Fallback: se a propriedade não tiver entrada aqui, credenciaisWordPressDaPropriedade (processar-pauta.ts) continua caindo pra WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico) — não quebra o que já está em produção.';
+  'Credenciais de canal por propriedade, cifradas — nunca texto plano. Formato: {"wordpress": {"usuario": "...", "senha_cifrada": "<base64 iv+authTag+ciphertext>"}}. Cifrado/decifrado por src/lib/marketing/criptografia.ts usando MARKETING_CREDENCIAIS_CHAVE (env). Fallback: propriedade sem entrada aqui continua usando WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico).';
 ```
 
 ### 3.2 Cota diária e janela de publicação — dentro de `config_pipeline` (sem migração)
@@ -103,17 +103,46 @@ alter publication supabase_realtime add table pautas_execucao_log;
 
 ---
 
-## 4. Credenciais de canal — decisão final: texto plano, sem criptografia (revisado 18/08/2026)
+## 4. Criptografia de credenciais — decisão final: mantida (18/08/2026, revisada duas vezes no mesmo dia)
 
-**Mudança de decisão:** esta seção originalmente especificava um módulo de criptografia (AES-256-GCM via `node:crypto`, chave em `MARKETING_CREDENCIAIS_CHAVE`). O Luiz revisou e decidiu não exigir esse nível de segurança para este caso específico — palavras dele: *"esse nível de segurança não é necessário NESTE CASO em especial (não serve como base para outros casos). pode manter a senha sem cifra no banco de dados"*. **Isto não é precedente** — vale só para a senha de WordPress de site satélite (pior caso: alguém publica indevidamente num blog), nunca para API keys de terceiro (Asaas/Assinafy), tokens de WhatsApp, chave de IA ou dado de cliente, que continuam em variável de ambiente.
+**Histórico da decisão, registrado porque ela mudou de direção duas vezes:** (1) desenho original desta spec já era criptografado; (2) às 13h02 o Luiz decidiu que não precisava de cifra para este caso específico, e o Marketing chegou a reverter o código (construído 7 commits atrás de `main`, sem ver ainda a decisão); (3) às 14h46, depois de o Coordenador trazer o fato de que o módulo **já estava construído, testado e revisado** quando a decisão de 13h02 foi tomada, o Luiz reviu com essa informação nova — *"uma vez criada, pode manter"* — e a decisão final passou a ser **manter a criptografia**. Lição registrada no quadro de coordenação: decisão sobre custo futuro nem sempre continua valendo quando o custo já foi pago.
 
-`propriedades_digitais.credenciais_canais` guarda a senha em texto plano: `{"wordpress": {"usuario": "...", "senha": "..."}}`. Não existe `src/lib/marketing/criptografia.ts`, não existe `MARKETING_CREDENCIAIS_CHAVE`, não existe `scryptSync`.
+Módulo `src/lib/marketing/criptografia.ts` — sem dependência nova, usa `node:crypto` (AES-256-GCM, já disponível no runtime Node/Vercel):
 
-**Duas proteções continuam valendo, e não são criptografia:**
-1. **Fluxo na tela de Propriedades Digitais:** o campo de senha é sempre um `<input type="password">` vazio (nunca pré-preenchido com o valor salvo). Salvar com o campo vazio mantém a credencial já existente inalterada; preencher substitui. A tela mostra só um indicador "✓ configurada" / "✗ não configurada" ao lado de cada canal, nunca o valor em si.
-2. **RLS em `propriedades_digitais`** — já ativa desde a migration do núcleo (`admin_acesso_total ... to authenticated`), é o que impede a senha de sair do banco à toa agora que não está cifrada.
+```typescript
+// src/lib/marketing/criptografia.ts
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 
-**No pipeline (`processar-pauta.ts`):** `credenciaisWordPressDaPropriedade` passa a, antes de cair no fallback de env genérico, checar `propriedade.credenciaisCanais?.wordpress` e usar `usuario`/`senha` diretamente — decisão de ordem: banco primeiro, env var genérico como fallback (mantém propriedades já configuradas por env funcionando sem migração de dado).
+function obterChave(): Buffer {
+  const segredo = process.env.MARKETING_CREDENCIAIS_CHAVE;
+  if (!segredo) throw new Error("MARKETING_CREDENCIAIS_CHAVE não configurada.");
+  return scryptSync(segredo, "marketing-credenciais-salt", 32); // deriva 32 bytes fixos de um segredo de qualquer tamanho
+}
+
+export function cifrar(textoPlano: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", obterChave(), iv);
+  const cifrado = Buffer.concat([cipher.update(textoPlano, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, cifrado]).toString("base64");
+}
+
+export function decifrar(valorCifrado: string): string {
+  const dados = Buffer.from(valorCifrado, "base64");
+  const iv = dados.subarray(0, 12);
+  const authTag = dados.subarray(12, 28);
+  const cifrado = dados.subarray(28);
+  const decipher = createDecipheriv("aes-256-gcm", obterChave(), iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(cifrado), decipher.final()]).toString("utf8");
+}
+```
+
+**Fluxo na tela de Propriedades Digitais:** o campo de senha é sempre um `<input type="password">` vazio (nunca pré-preenchido com o valor salvo — nem decifrado nem cifrado trafega de volta pro client). Salvar com o campo vazio mantém a credencial já existente inalterada; preencher substitui. A tela mostra só um indicador "✓ configurada" / "✗ não configurada" ao lado de cada canal, nunca o valor.
+
+**No pipeline (`processar-pauta.ts`):** `credenciaisWordPressDaPropriedade` passa a, antes de cair no fallback de env genérico, checar `propriedade.credenciaisCanais?.wordpress` e chamar `decifrar(senha_cifrada)` — decisão de ordem: banco cifrado primeiro, env var genérico como fallback (mantém propriedades já configuradas por env funcionando sem migração de dado).
+
+**Ação pendente do Luiz:** gerar `MARKETING_CREDENCIAIS_CHAVE` com `openssl rand -base64 32` e configurar em `.env.local` + Vercel. Até ele confirmar, o fallback genérico (`WORDPRESS_USUARIO`/`WORDPRESS_SENHA_APP`) segura o que já roda em produção — a Fase 2 não fica bloqueada esperando essa env.
 
 ---
 
@@ -200,7 +229,7 @@ Carga inicial (antes da assinatura pegar eventos novos) vem do `page.tsx` (Serve
 
 ## 8. Segurança
 
-- Credenciais em texto plano no banco, por decisão explícita do Luiz não-precedente (seção 4) — campo de senha na UI é sempre write-only e nunca retorna o valor salvo pro caller/client; RLS em `propriedades_digitais` é a proteção real de acesso agora que não há cifra.
+- Credenciais cifradas em repouso (seção 4) — chave só via `MARKETING_CREDENCIAIS_CHAVE` (`process.env`), nunca no banco/repositório. Campo de senha na UI é sempre write-only.
 - RLS/auditoria em `pautas_execucao_log` seguem o mesmo padrão (`admin_acesso_total` + `fn_auditoria_log`) das demais tabelas do módulo — sem política nova a desenhar.
 - Realtime do Supabase respeita RLS por padrão (subscrição só entrega linhas que a policy permitiria ler) — como a policy já é `using (true)` pra usuário autenticado, não há ajuste extra necessário além de a rota já exigir login (mesma proteção do resto do `/admin`).
 
@@ -208,7 +237,7 @@ Carga inicial (antes da assinatura pegar eventos novos) vem do `page.tsx` (Serve
 
 ## 9. Plano de testes
 
-- **Credenciais de canal:** unitário — `salvarCredencialCanal` grava texto plano; senha/usuario vazios preservam o valor já salvo; caller nunca recebe a senha de volta, só `usuario` + `senhaConfigurada`.
+- **Criptografia:** unitário puro — cifrar/decifrar round-trip, decifrar com chave errada falha (authTag do GCM detecta), formato base64 estável.
 - **Gating de cota/janela:** unitário — `dentroDaJanela`/`cotaDiariaAtingida` com mocks de horário/contagem; `processarProximaPauta` retorna `fora_da_janela` sem chamar `selecionarPauta` quando aplicável.
 - **`registrarEtapa`:** unitário — sucesso grava `sucesso: true` + `concluido_em`; exceção grava `sucesso: false` + `detalhes` e repropaga o erro (não engole silenciosamente).
 - **Telas (CRUD):** mesmo padrão das telas existentes — sem teste de integração de UI nesta fase (o projeto não tem Playwright configurado pro admin ainda), validação server-side nas actions é o que garante corretude.

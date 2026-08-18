@@ -97,26 +97,9 @@ O que a migration faz (2-3 linhas), que não é destrutiva (só `alter table add
 
 ---
 
-### Task 2: Criptografia de credenciais — ~~construída~~ REVERTIDA por decisão do Luiz (18/08/2026)
+### Task 2: Criptografia de credenciais — MANTIDA (decisão final do Luiz, 18/08/2026, revisada duas vezes)
 
-**Status:** esta task foi implementada, revisada e aprovada (commits `d6c51b6..08f1a29` incluem o módulo) — mas o Luiz decidiu depois, em conversa com o Coordenador, que este nível de segurança não é necessário para a senha de WordPress especificamente (`COORDENACAO_AGENTES_ARRUDACRED.md` seção 3, 18/08/2026, 13h02: *"esse nível de segurança não é necessário NESTE CASO em especial... pode manter a senha sem cifra no banco de dados"*). **Isto não é precedente** — vale só pra esta credencial específica, nunca pra API keys de terceiro, tokens ou dado de cliente.
-
-**Task 2-R (reversão):**
-
-**Files:**
-- Delete: `src/lib/marketing/criptografia.ts`
-- Delete: `src/lib/marketing/criptografia.test.ts`
-- Modify: `src/lib/marketing/repositorio.ts` (`salvarCredencialCanal`/`mapearCredenciais`/tipo `CredencialCanalAdmin` em `tipos.ts` — trocar `senha_cifrada`/`cifrar`/`decifrar` por `senha` em texto plano)
-- Modify: `supabase/migrations/20260818090000_marketing_credenciais_e_log.sql` (ainda não enviada ao Luiz — `COMMENT ON COLUMN` atualizado pra refletir texto plano, sem custo trocar agora)
-
-**Interfaces:**
-- `salvarCredencialCanal(propriedadeId, canal, usuario, senhaPlana)` mantém a mesma assinatura pública — só para de chamar `cifrar`/`decifrar` internamente, grava `senha: senhaPlana` direto (mesma regra de não-regressão: `senhaPlana` vazia mantém a senha já salva).
-
-- [ ] **Step 1:** Apagar `criptografia.ts`/`criptografia.test.ts`.
-- [ ] **Step 2:** Em `repositorio.ts`: `salvarCredencialCanal` para de importar `cifrar`; grava `{ usuario, senha }` no jsonb (era `{ usuario, senha_cifrada }`); `mapearCredenciais`/`listarPropriedades` continuam **nunca** retornando a senha pro caller (só `usuario` + booleano `senhaConfigurada`) — essa proteção não muda. Atualizar `CredencialCanalAdmin` em `tipos.ts` (`senhaCifrada` → remover, não existe mais nesse nível).
-- [ ] **Step 3:** Atualizar os testes de `salvarCredencialCanal`/merge de credenciais em `repositorio.test.ts` pro novo formato (sem mock de `cifrar`).
-- [ ] **Step 4:** Atualizar o `COMMENT ON COLUMN propriedades_digitais.credenciais_canais` na migration da Task 1 pra `'Credenciais de canal por propriedade, em texto plano (decisão do Luiz, 18/08/2026 — não é precedente pra outros segredos). Formato: {"wordpress": {"usuario": "...", "senha": "..."}}. Fallback: propriedade sem entrada aqui continua usando WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (env genérico).'` — a migration ainda não foi enviada ao Luiz, então não há custo de alterar o arquivo agora.
-- [ ] **Step 5:** Rodar `pnpm test` completo, confirmar suíte verde, commitar.
+**Status:** construída, revisada e aprovada (commits `d6c51b6..08f1a29`). Às 13h02 o Luiz decidiu que não precisava de cifra pra esta credencial específica, e o módulo foi revertido (`Task 2-R`, commit `0d0252b`) — mas às 14h46, depois de o Coordenador levar o fato de que o módulo **já estava construído/testado/revisado** quando aquela decisão foi tomada, o Luiz reviu com a informação nova (*"uma vez criada, pode manter"*) e a reversão foi desfeita (`git revert 0d0252b`, commit `1442da7`). **Decisão final e definitiva: manter a criptografia.** Nada mais a fazer nesta task — `criptografia.ts`, seu uso em `salvarCredencialCanal` (Task 3) e o `COMMENT ON COLUMN` da migration (Task 1) já estão todos no estado cifrado correto após o revert. Fica registrado como lição de processo: decisão sobre custo futuro nem sempre continua valendo quando o custo já foi pago — trazer o fato de volta antes de desfazer no automático.
 
 ---
 
