@@ -1,6 +1,6 @@
 <title>Torre de Controle Arruda</title>
 
-<style>
+<style id="estilo">
   /* ------------------------------------------------------------------
      Paleta ancorada na identidade real do Hub Arruda: navy #141e33 e
      dourado #c8a55d, as mesmas cores da sidebar do /admin. Neutros com
@@ -28,10 +28,13 @@
     --ok:          #2f5c42;
     --ok-fundo:    #e4efe7;
 
+    --plan-barra:  #141e33;
+
     --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
     --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
 
     --sombra: 0 1px 2px rgba(20, 30, 51, .06), 0 6px 16px -8px rgba(20, 30, 51, .14);
+    --borda-topo: #141e33;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -55,6 +58,9 @@
       --atencao-fundo:#392d0e;
       --ok:          #8ed6a8;
       --ok-fundo:    #16321f;
+
+      --plan-barra:  #445271;
+      --borda-topo:  #445271;
 
       --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px -10px rgba(0, 0, 0, .55);
     }
@@ -80,6 +86,9 @@
     --atencao-fundo:#392d0e;
     --ok:          #8ed6a8;
     --ok-fundo:    #16321f;
+
+    --plan-barra:  #445271;
+    --borda-topo:  #445271;
 
     --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px -10px rgba(0, 0, 0, .55);
   }
@@ -114,12 +123,7 @@
     justify-content: space-between;
     gap: 14px 24px;
     padding-bottom: 18px;
-    border-bottom: 2px solid var(--navy);
-  }
-  :root[data-theme="dark"] .topo,
-  :root:not([data-theme="light"]) .topo { border-bottom-color: var(--linha-forte); }
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) .topo { border-bottom-color: var(--navy); }
+    border-bottom: 2px solid var(--borda-topo);
   }
 
   .topo h1 {
@@ -153,7 +157,7 @@
 
   .instrumentos {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 1px;
     background: var(--linha);
     border: 1px solid var(--linha);
@@ -177,16 +181,8 @@
     font-size: 15px;
     font-weight: 640;
     font-variant-numeric: tabular-nums;
-    display: flex;
-    align-items: center;
-    gap: 7px;
   }
   .instr .val.bom { color: var(--ok); }
-  .ponto {
-    width: 7px; height: 7px;
-    background: currentColor;
-    flex: none;
-  }
 
   /* ---------- caixa do Luiz ---------- */
 
@@ -217,20 +213,35 @@
     font-size: 11px;
     color: var(--texto-suave);
   }
+  .luiz > header .cab-dir {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .luiz > header .ver-feitos {
+    background: transparent;
+    border-color: var(--linha-forte);
+    color: var(--texto-suave);
+  }
+  .luiz > header .ver-feitos:hover { border-color: var(--ouro); color: var(--ouro); }
 
   .tarefas { list-style: none; margin: 0; padding: 0; }
   .tarefas > li {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 104px 1fr;
     gap: 4px 16px;
     padding: 13px 18px;
     border-bottom: 1px solid var(--linha);
   }
   .tarefas > li:last-child { border-bottom: 0; }
+  /* `display: grid` acima vence o [hidden] do navegador — sem esta linha,
+     esconder um item não funcionaria. */
+  .tarefas > li[hidden] { display: none; }
   .tarefas .quando {
     font-family: var(--mono);
     font-size: 10px;
-    letter-spacing: .09em;
+    letter-spacing: .08em;
     text-transform: uppercase;
     padding-top: 4px;
   }
@@ -253,8 +264,76 @@
     font-weight: 500;
   }
 
-  .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
-  a.botao {
+  /* itens concluídos vêm fechados — clicar abre. Ocupam uma linha só. */
+  .tarefas details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 1px 0;
+  }
+  .tarefas details > summary::-webkit-details-marker { display: none; }
+  .tarefas details > summary::before {
+    content: "▸";
+    font-size: 11px;
+    color: var(--texto-fraco);
+    flex: none;
+    transition: transform .12s ease;
+  }
+  .tarefas details[open] > summary::before { content: "▾"; }
+  .tarefas details > summary:hover .titulo { color: var(--texto-suave); }
+  .tarefas details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .tarefas details > summary .resumo {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--texto-fraco);
+    flex: none;
+  }
+  .tarefas details .detalhe { padding-top: 4px; }
+
+  /* "Início em" do bloco Fazendo agora */
+  .inicio {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--texto-fraco);
+    margin-top: 6px;
+    display: block;
+  }
+  .inicio b { color: var(--texto-suave); font-weight: 600; }
+
+  /* bloco "Já entregou" fechado por padrão, dentro do card do agente */
+  .bloco details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+  }
+  .bloco details > summary::-webkit-details-marker { display: none; }
+  .bloco details > summary::before { content: "▸"; letter-spacing: 0; }
+  .bloco details[open] > summary::before { content: "▾"; }
+  .bloco details > summary:hover { color: var(--ouro); }
+  .bloco details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .bloco details > ul { margin-top: 7px; }
+  .bloco details .qdo {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--texto-fraco);
+    white-space: nowrap;
+    margin-left: 6px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tarefas details > summary::before { transition: none; }
+  }
+
+  .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; align-items: center; }
+  a.botao, button.botao {
     display: inline-block;
     font-family: var(--mono);
     font-size: 11.5px;
@@ -264,9 +343,93 @@
     background: var(--surface-2);
     border: 1px solid var(--linha-forte);
     text-decoration: none;
+    cursor: pointer;
+    line-height: 1.5;
   }
-  a.botao:hover { border-color: var(--ouro); color: var(--ouro); }
-  a.botao:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+  a.botao:hover, button.botao:hover { border-color: var(--ouro); color: var(--ouro); }
+  a.botao:focus-visible, button.botao:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+  button.botao.principal {
+    border-color: var(--ouro);
+    background: var(--ouro-fundo);
+    color: var(--texto);
+    font-weight: 700;
+  }
+  button.botao[disabled] { opacity: .55; cursor: default; }
+
+  /* ---------- responder ---------- */
+
+  .responder { margin-top: 10px; }
+  .responder[hidden] { display: none; }
+  .responder textarea {
+    width: 100%;
+    min-height: 78px;
+    resize: vertical;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--texto);
+    background: var(--surface-2);
+    border: 1px solid var(--linha-forte);
+    padding: 9px 11px;
+  }
+  .responder textarea:focus-visible { outline: 2px solid var(--ouro); outline-offset: 1px; }
+  .responder .dica {
+    font-size: 12px;
+    color: var(--texto-fraco);
+    margin: 6px 0 0;
+  }
+
+  .respostas { list-style: none; margin: 9px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .respostas li {
+    background: var(--ouro-fundo);
+    border-left: 3px solid var(--ouro);
+    padding: 8px 12px;
+    font-size: 13.5px;
+  }
+  .respostas .autor {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--texto-suave);
+    display: block;
+    margin-bottom: 2px;
+  }
+  .respostas .fala { white-space: pre-wrap; }
+  .respostas li.doCoord { background: var(--surface-2); border-left-color: var(--linha-forte); }
+
+  /* relógio de espera — quem está parado esperando, e há quanto tempo */
+  .espera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    background: var(--atencao-fundo);
+    border: 1px solid var(--atencao);
+    border-left: 5px solid var(--atencao);
+    box-shadow: var(--sombra);
+    padding: 12px 16px;
+  }
+  .espera.frio { background: var(--trava-fundo); border-color: var(--trava); border-left-color: var(--trava); }
+  .espera .relogio {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--atencao);
+    flex: none;
+  }
+  .espera.frio .relogio { color: var(--trava); }
+  .espera .quem { font-size: 13.5px; line-height: 1.5; flex: 1 1 320px; }
+  .espera .quem b { font-weight: 700; }
+  .espera .acao {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--texto-suave);
+    border: 1px dashed var(--linha-forte);
+    padding: 4px 9px;
+    flex: none;
+  }
 
   /* ---------- grade de agentes ---------- */
 
@@ -300,6 +463,7 @@
     display: flex;
     flex-direction: column;
   }
+  .agente.eu { border-color: var(--ouro); border-width: 2px; }
   .agente > header {
     padding: 14px 16px 12px;
     border-bottom: 1px solid var(--linha);
@@ -329,7 +493,7 @@
   .chip {
     font-family: var(--mono);
     font-size: 10px;
-    letter-spacing: .08em;
+    letter-spacing: .06em;
     text-transform: uppercase;
     font-weight: 700;
     padding: 3px 8px;
@@ -337,12 +501,11 @@
     white-space: nowrap;
     flex: none;
   }
-  .chip.rodando  { color: var(--ok);      border-color: var(--ok);      background: var(--ok-fundo); }
+  .chip.rodando  { color: var(--ok);          border-color: var(--ok);          background: var(--ok-fundo); }
   .chip.parado   { color: var(--texto-suave); border-color: var(--linha-forte); background: var(--surface-2); }
-  .chip.travado  { color: var(--trava);   border-color: var(--trava);   background: var(--trava-fundo); }
-  .chip.cuidado  { color: var(--atencao); border-color: var(--atencao); background: var(--atencao-fundo); }
+  .chip.travado  { color: var(--trava);       border-color: var(--trava);       background: var(--trava-fundo); }
+  .chip.cuidado  { color: var(--atencao);     border-color: var(--atencao);     background: var(--atencao-fundo); }
 
-  /* faixa de alerta — o sinal visual de "tem algo travando" */
   .alerta {
     display: flex;
     gap: 10px;
@@ -355,17 +518,8 @@
     background: var(--atencao-fundo);
     border-left-color: var(--atencao);
   }
-  .alerta .sinal {
-    font-family: var(--mono);
-    font-weight: 800;
-    font-size: 13px;
-    color: var(--trava);
-    line-height: 1.35;
-    flex: none;
-  }
-  .alerta.leve .sinal { color: var(--atencao); }
+  .alerta .sinal { font-size: 15px; line-height: 1.3; flex: none; }
   .alerta .txt { font-size: 13px; line-height: 1.5; }
-  .alerta .txt b { font-weight: 700; }
 
   .corpo-agente {
     padding: 4px 16px 15px;
@@ -385,9 +539,10 @@
     margin-bottom: 5px;
   }
   .bloco p { margin: 0; font-size: 13.5px; color: var(--texto-suave); }
+  .bloco p + p { margin-top: 5px; }
   .bloco p.destaque { color: var(--texto); font-weight: 560; }
-  .bloco ul { margin: 0; padding-left: 17px; font-size: 13.5px; color: var(--texto-suave); }
-  .bloco ul li { margin-bottom: 3px; }
+  .bloco ul { margin: 0; padding-left: 4px; font-size: 13.5px; color: var(--texto-suave); list-style: none; }
+  .bloco ul li { margin-bottom: 4px; padding-left: 21px; text-indent: -21px; }
   .bloco ul li:last-child { margin-bottom: 0; }
   code {
     font-family: var(--mono);
@@ -397,7 +552,6 @@
     padding: 0 4px;
   }
 
-  /* barras das duas dimensões (convenção do plano mestre) */
   .dims { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
   .dim { display: grid; grid-template-columns: 84px 1fr 38px; align-items: center; gap: 10px; }
   .dim .nome {
@@ -407,13 +561,9 @@
     text-transform: uppercase;
     color: var(--texto-fraco);
   }
-  .trilho { height: 7px; background: var(--surface-2); border: 1px solid var(--linha); }
-  .barra { height: 100%; background: var(--linha-forte); }
-  .barra.plan { background: var(--navy); }
-  :root[data-theme="dark"] .barra.plan { background: var(--linha-forte); }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .barra.plan { background: var(--linha-forte); }
-  }
+  .trilho { height: 7px; background: var(--surface-2); border: 1px solid var(--linha); display: block; }
+  .barra { height: 100%; display: block; }
+  .barra.plan { background: var(--plan-barra); }
   .barra.prod { background: var(--ouro); }
   .dim .pct {
     font-family: var(--mono);
@@ -423,7 +573,7 @@
     color: var(--texto-suave);
   }
 
-  /* ---------- dependência entre agentes ---------- */
+  /* ---------- dependência ---------- */
 
   .dependencia {
     background: var(--surface);
@@ -460,6 +610,19 @@
   }
   .rodape .links { display: flex; flex-wrap: wrap; gap: 8px; }
 
+  .aviso-ro {
+    background: var(--atencao-fundo);
+    border: 1px solid var(--atencao);
+    color: var(--texto);
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  .aviso-ro[hidden] { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
   @media (max-width: 620px) {
     .wrap { padding: 20px 14px 48px; }
     .carimbo { text-align: left; }
@@ -468,295 +631,787 @@
   }
 </style>
 
-<div class="wrap">
+<div id="raiz"></div>
 
-  <header class="topo">
-    <div>
-      <h1>Torre de Controle <span class="marca">Arruda</span></h1>
-      <p class="sub">Quem está construindo o quê agora, o que já ficou pronto e onde alguém está esperando por alguém. Mantido pelo Coordenador de Agentes — não faz parte do sistema.</p>
-    </div>
-    <div class="carimbo">
-      <b>18/08/2026</b> · 12h30<br>
-      main em <b>97c612a</b><br>
-      agentes ativos: <b>4</b>
-    </div>
-  </header>
+<script id="dados" type="application/json">
+{
+ "atualizado": "18/08/2026 · 15h25",
+ "commit": "98b9804",
+ "instrumentos": [
+  {
+   "rot": "Testes",
+   "val": "✅ 168 verdes",
+   "bom": true
+  },
+  {
+   "rot": "Lint e build",
+   "val": "✅ limpos",
+   "bom": true
+  },
+  {
+   "rot": "Banco",
+   "val": "✅ em dia",
+   "bom": true
+  },
+  {
+   "rot": "GitHub",
+   "val": "✅ sincronizado",
+   "bom": true
+  },
+  {
+   "rot": "Migrations",
+   "val": "🚨 1 colisão",
+   "bom": false
+  },
+  {
+   "rot": "Agentes ativos",
+   "val": "🟢 3 mexendo agora",
+   "bom": true
+  }
+ ],
+ "tarefas": [
+  {
+   "id": "testar-telas-vendas",
+   "prazo": "agora",
+   "prazoRot": "❌ Agora",
+   "titulo": "Testar as duas telas de Vendas no navegador",
+   "corpo": "É o último passo pra considerar a sub-frente Cadastro em produção. Esse teste nunca foi feito de verdade — a construção rodou num worktree isolado, sem credencial real, e até hoje de manhã dependia das migrations. Cadastre um fornecedor e uma venda sem funil prévio, incluindo upload de documento, foto e a leitura por IA.",
+   "acoes": [
+    {
+     "texto": "/admin/fornecedores",
+     "url": "https://hub-arruda.vercel.app/admin/fornecedores"
+    },
+    {
+     "texto": "/admin/vendas/nova",
+     "url": "https://hub-arruda.vercel.app/admin/vendas/nova"
+    }
+   ],
+   "respostas": []
+  },
+  {
+   "id": "cripto-ja-feita",
+   "prazo": "feito",
+   "prazoRot": "✅ Mantida",
+   "titulo": "A criptografia já construída — mantida",
+   "corpo": "<b>Decidido: mantém.</b> O Marketing já pode retomar a parte de credenciais — cancelei a pausa que eu tinha pedido. Volta uma coisa pra sua lista logo abaixo: a chave de cifra.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 14h46",
+     "texto": "uma vez criada, pode manter"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h00",
+     "texto": "Fechado. Liberei o Marketing pra retomar — a pausa durou ~15 min e ele nem chegou a mexer. A senha vai cifrada no banco, como ele construiu.\n\nSó a chave volta pra você, porque sem ela o mecanismo não roda: openssl rand -base64 32, colar no .env.local e na Vercel como MARKETING_CREDENCIAIS_CHAVE. Não me mande o valor."
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "prioridade-crm",
+   "prazo": "feito",
+   "prazoRot": "✅ Decidido",
+   "titulo": "O que o CRM puxa — decidido",
+   "corpo": "<b>Kanban → Dashboard de KPIs</b>, como combinado em 16/08. A captura de pagamento que o Vendas pediu entra depois. Repassado aos dois — e avisei o Vendas de que, com isso, a tela de Fechamento de Venda deixa de ser paliativo.",
+   "acoes": [],
+   "respostas": [
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h10",
+     "texto": "Repassado. O CRM começa o Kanban.\n\nUm efeito que vale você saber: a tela de Fechamento de Venda que o Vendas ia construir era um paliativo até o bot passar a capturar parcelas e vencimentos. Como isso ficou pra depois do Kanban e do Dashboard, essa tela deixa de ser provisória e vira o caminho normal por um bom tempo. Avisei o Vendas pra construí-la com esse peso, não como remendo."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h10",
+     "texto": "Repassado. O CRM pega o Kanban.\n\nEfeito colateral que vale saber: a tela de Fechamento de Venda do Vendas era um paliativo até o bot capturar parcelas e vencimentos. Como isso ficou pra depois de duas frentes inteiras, ela deixa de ser provisória e vira o caminho normal por um bom tempo. Avisei ele pra construir com esse peso."
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "cripto-transversal",
+   "prazo": "feito",
+   "prazoRot": "✅ Decidido",
+   "titulo": "Criptografia de credenciais: onde mora?",
+   "corpo": "<b>Decidido:</b> você autorizou guardar a senha do WordPress no banco. O Marketing implementa <b>cifrada</b> (AES-256-GCM, como ele projetou), dentro do módulo dele — não transversal, já que o argumento do Vendas caiu. Assinafy, Asaas e todo o resto continuam em env.local, como sempre foi.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 12h51",
+     "texto": "nao entendi a necessidade disso! até esses momentos todas as api keys ou informações secretas estão no env.local - confere? por que não continuamos da mesma forma, sempre que precisar de uma chave nova você me pede e eu incluo lá."
+    },
+    {
+     "quando": "18/08 · 12h56",
+     "texto": "agente pode cadastrar no banco de dados a senha dos sites no wordpress, não tem problema - ok?"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 13h20",
+     "texto": "Confere, e você está certo — eu exagerei. As 12 chaves do .env.local são todas uma por serviço, e Assinafy/Asaas são uma conta da empresa cada: env resolve. Retiro o argumento que usava o Vendas. O único caso real é a senha de WordPress, que é uma POR SITE cadastrado."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 13h30",
+     "texto": "Sua autorização das 12h56 chegou antes desta explicação — mas ela decide do mesmo jeito, então segui com ela. Fechado assim: senha de WordPress vai pro banco, sempre CIFRADA (nunca texto plano), dentro de src/lib/marketing/. Marketing liberado pra implementar. Volta uma coisa pra sua lista: a chave de criptografia, logo abaixo — sem ela o mecanismo não funciona."
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "chave-credenciais",
+   "prazo": "agora",
+   "prazoRot": "❌ Agora",
+   "titulo": "Registrar a chave de criptografia — 3 lugares",
+   "corpo": "Você já gerou. Confirmei no código o nome exato: <code>MARKETING_CREDENCIAIS_CHAVE</code>. Precisa entrar em <b>três lugares</b> — os dois primeiros são obrigatórios, o terceiro é o que faz o Marketing conseguir testar. Passo a passo na minha resposta abaixo.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 13h02",
+     "texto": "esse nivel de segurança não é necessári aNESTE CASO em especial (nao serve como base para outros casos). pode manter a senha sem cifra no banco de dados - isso é um adecisão final, ok?"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 13h50",
+     "texto": "Ok, decisão final registrada e repassada ao Marketing — ele vai remover a criptografia do plano da Fase 2.\n\nUma linha só de risco, pra ficar no registro e não voltar como surpresa: em texto plano, quem tiver acesso ao banco ou a um backup lê a senha. Conferi um atenuante real: propriedades_digitais já tem RLS ligada com acesso só pra admin autenticado, então não fica exposta publicamente. E o pior caso é alguém publicar num blog satélite — não é dado de cliente, não é LGPD.\n\nDuas proteções que NÃO são cifra e vou manter, porque não custam nada e já estavam no plano dele: a senha nunca volta preenchida pro navegador (o campo aparece vazio e a tela só mostra 'configurada / não configurada'), e a tabela mantém RLS.\n\nGravei bem visível que isto vale só pra este caso e não vira precedente — API key de Asaas/Assinafy ou credencial de cliente seguem outro caminho."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h00",
+     "texto": "Este item foi cancelado às 13h50 e reaberto agora — sua decisão das 14h46 o trouxe de volta. Enquanto a chave não existir, o fallback em env segura o que já roda em produção, então nada quebra por esperar."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h25",
+     "texto": "Nome exato da variável (conferi no código, não é chute): MARKETING_CREDENCIAIS_CHAVE\n\n1) NA SUA MÁQUINA — arquivo .env.local na raiz do projeto. Abra e acrescente uma linha no fim:\nMARKETING_CREDENCIAIS_CHAVE=cole_aqui_a_chave\nSem aspas, sem espaço antes ou depois do =. Esse arquivo está no .gitignore, então não vai pro GitHub — conferi.\n\n2) NA VERCEL — painel do projeto hub-arruda > Settings > Environment Variables > Add New. Nome: MARKETING_CREDENCIAIS_CHAVE, valor: a chave. Marque os três ambientes (Production, Preview, Development). Importante: variável nova só passa a valer no PRÓXIMO deploy — depois de salvar, faça um redeploy, senão em produção ela não existe.\n\n3) NO WORKTREE DO MARKETING — ele tem um .env.local próprio, separado do seu, em .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local. Sem a chave lá, ele não consegue testar a cifra na branch dele. Mesma linha do passo 1.\n\nNÃO me mande o valor — nem aqui, nem pela torre, nem pelo chat. Só me diga 'pronto' e eu aviso o Marketing que pode usar.\n\nSe perder a chave depois de já ter senha cifrada salva: não dá pra recuperar. Você recadastra as senhas dos sites e segue. Guarde num gerenciador de senhas, não num arquivo de texto solto."
+    }
+   ],
+   "concluida": false
+  },
+  {
+   "id": "spf-resend",
+   "prazo": "feito",
+   "prazoRot": "✅ Resolvido",
+   "titulo": "SPF do domínio não autoriza o Resend",
+   "corpo": "O SPF do arrudacred.com.br agora autoriza o Resend. Avisei o CRM, que é o dono do envio de e-mail, pra ele confirmar a entrega de ponta a ponta e destravar os 3 e-mails de nutrição (30/60/90 dias) que estavam em modo simulado justamente porque a entrega não era confiável.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 12h43",
+     "texto": "feito"
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "zap-rastreio",
+   "prazo": "feito",
+   "prazoRot": "✅ Resolvido",
+   "titulo": "Publicar o rastreio de cliques do WhatsApp",
+   "corpo": "Subdomínio criado e testado. Conferi que a tabela <code>cliques_rastreio</code> já existe no banco, então o rastreio grava de verdade — a partir de agora dá pra saber de qual canal cada lead veio. Avisei CRM e Marketing: o dado de origem do lead passou a existir e pode entrar em relatório.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 12h44",
+     "texto": "criado e já testado"
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "assinafy-asaas",
+   "prazo": "feito",
+   "prazoRot": "✅ Respondido",
+   "titulo": "Decidir Assinafy e Asaas",
+   "corpo": "Você já tem conta e API key nas duas. Isso <b>adianta o Vendas</b> — avisei ele que não precisa parar quando chegar em assinatura e financeiro, só me pedir a chave na hora. E reforça a decisão de criptografia logo acima: essas API keys são exatamente o tipo de segredo que precisa de um cofre único no sistema, não de um por módulo.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 12h45",
+     "texto": "já temos conta e api key nas duas plataformas. quando chegar o momento é só me pedir"
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "migrations-vendas",
+   "prazo": "feito",
+   "prazoRot": "✅ Feito hoje",
+   "concluida": true,
+   "titulo": "Rodar as 3 migrations do módulo Vendas",
+   "corpo": "Conferido no banco: fornecedores, fornecedor_produtos e pessoa_documentos criadas, colunas novas em produtos, RLS em 12 tabelas do núcleo e os dois buckets de Storage com a visibilidade certa. Tipos regenerados e enviados.",
+   "acoes": [],
+   "respostas": []
+  }
+ ],
+ "agentes": [
+  {
+   "nome": "Coordenador",
+   "eu": true,
+   "branch": "main · integra, mescla e conversa com os outros — não escreve feature",
+   "chip": {
+    "tipo": "rodando",
+    "texto": "✅ rodando"
+   },
+   "agora": [
+    "Passei a você onde registrar a chave de criptografia (3 lugares — o worktree do Marketing tem .env.local próprio, é o que costuma passar batido).",
+    "Aguardando os dois recados urgentes serem lidos: o rename da migration do Vendas e a restauração da criptografia no Marketing."
+   ],
+   "proxima": "➡️ Confirmar o rename do Vendas, a restauração do Marketing, e avisar o Marketing quando a chave estiver nos três lugares.",
+   "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
+   "entregue": [
+    {
+     "t": "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
+     "q": "18/08 11h56"
+    },
+    {
+     "t": "✅ Fechou o débito de test/lint varrerem os worktrees — e achou o mesmo no lint, 99 falsos positivos",
+     "q": "18/08 12h05"
+    },
+    {
+     "t": "✅ Removeu o worktree órfão e enviou 119 commits parados na sua máquina",
+     "q": "18/08 12h10"
+    },
+    {
+     "t": "✅ Regenerou os tipos do banco depois das suas migrations",
+     "q": "18/08 12h20"
+    },
+    {
+     "t": "✅ Descobriu que o recado do Vendas nunca chegou ao CRM e trouxe pra main",
+     "q": "18/08 12h40"
+    },
+    {
+     "t": "✅ Consertou o worktree do Marketing, onde o next estava quebrado e o build nunca rodava",
+     "q": "18/08 12h42"
+    },
+    {
+     "t": "✅ Hook SessionStart + inbox: agente ativo vê na hora que alguém espera por ele",
+     "q": "18/08 13h07"
+    },
+    {
+     "t": "✅ Leu a spec da Fase 2 por conta própria e achou um problema de arquitetura antes de virar código",
+     "q": "18/08 12h50"
+    },
+    {
+     "t": "✅ Corrigiu a própria orientação depois do seu questionamento, antes de virar código",
+     "q": "18/08 13h20"
+    },
+    {
+     "t": "⚠️ Deixou esta torre desatualizada por ~1h — corrigido com apuração obrigatória antes de publicar",
+     "q": "18/08 14h45"
+    },
+    {
+     "t": "🚨 Detectou a 3ª colisão de migration antes de qualquer uma ser aplicada no banco",
+     "q": "18/08 15h15"
+    },
+    {
+     "t": "✅ Script passou a detectar colisão sozinho e a medir atividade por arquivo tocado, não por commit",
+     "q": "18/08 15h12"
+    }
+   ],
+   "dims": null,
+   "inicio": {
+    "iso": "2026-08-18T11:27:00-03:00",
+    "rotulo": "18/08 11h27",
+    "nota": "1º commit desta sessão"
+   }
+  },
+  {
+   "nome": "CRM",
+   "branch": "main · trabalha direto na raiz, sem worktree",
+   "chip": {
+    "tipo": "rodando",
+    "texto": "✅ tem direção"
+   },
+   "agora": [
+    "Fila vazia, mas <b>acabou de ganhar direção</b>: você confirmou Kanban → Dashboard. Ele pega o Kanban quando a sessão abrir."
+   ],
+   "proxima": "➡️ Construir o Kanban do funil comercial.",
+   "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
+   "entregue": [
+    {
+     "t": "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
+     "q": "13-14/08"
+    },
+    {
+     "t": "✅ Follow-up automático com cron e e-mail via Resend",
+     "q": "15/08"
+    },
+    {
+     "t": "✅ WhatsApp real via Zapster, funcionando de verdade",
+     "q": "16/08"
+    },
+    {
+     "t": "✅ Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints",
+     "q": "16-17/08"
+    },
+    {
+     "t": "✅ Resgatou o fix do extrator de nome perdido num worktree órfão",
+     "q": "18/08 11h54"
+    },
+    {
+     "t": "✅ Cobrou um recado que não tinha chegado, em vez de ficar parado",
+     "q": "18/08 12h34"
+    },
+    {
+     "t": "✅ Avaliou o pedido do Vendas no código e respondeu sozinho, pelo protocolo novo",
+     "q": "18/08 13h24"
+    }
+   ],
+   "dims": {
+    "plan": 95,
+    "prod": 70
+   },
+   "inicio": {
+    "iso": "2026-08-18T13:24:00-03:00",
+    "rotulo": "18/08 13h24",
+    "nota": "sem tarefa desde então; Kanban recém-priorizado"
+   }
+  },
+  {
+   "nome": "Marketing",
+   "branch": "worktree-pipeline-conteudo-marketing-nucleo",
+   "chip": {
+    "tipo": "cuidado",
+    "texto": "⚠️ retrabalho por minha culpa"
+   },
+   "agora": [
+    "<b>Trabalhando agora</b> — 12 commits próprios, 11 arquivos tocados nos últimos 30 min. Fase 2: configuração admin, cota diária, janela de publicação, log de execução."
+   ],
+   "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
+   "proximaExtra": "Criptografia <b>mantida</b> — pode retomar. A migration da Fase 2 ele escreve, mas <b>não roda</b>: vem pra mim e eu levo a você.",
+   "entregue": [
+    {
+     "t": "✅ Núcleo do pipeline: Estrategista, Escritor, Revisor e Agente de Links",
+     "q": "17-18/08"
+    },
+    {
+     "t": "✅ Publicação no WordPress com sanitização do HTML gerado pela IA",
+     "q": "17/08"
+    },
+    {
+     "t": "✅ Cron que processa a fila de pautas, com reclaim de pauta travada",
+     "q": "18/08"
+    },
+    {
+     "t": "✅ 145 testes próprios — mesclado na main",
+     "q": "18/08 11h56"
+    },
+    {
+     "t": "✅ Spec e plano da Fase 2, avisando a intenção antes de mexer em tabela compartilhada",
+     "q": "18/08 12h26"
+    },
+    {
+     "t": "✅ Cota diária, janela de publicação e log de execução do pipeline",
+     "q": "18/08 14h03-14h36"
+    }
+   ],
+   "dims": {
+    "plan": 95,
+    "prod": 45
+   },
+   "inicio": {
+    "iso": "2026-08-18T13:08:00-03:00",
+    "rotulo": "18/08 13h08",
+    "nota": "1º commit da Fase 2"
+   },
+   "alerta": {
+    "nivel": "leve",
+    "sinal": "↩️",
+    "texto": "Reverteu a criptografia às 14h49 seguindo minha instrução das 13h50 — <b>3 minutos depois de você decidir manter</b>, e eu só comuniquei às 15h00. Pedi que desfaça a reversão. <b>O retrabalho foi causado pelo meu atraso</b>, não por erro dele."
+   }
+  },
+  {
+   "nome": "Vendas — Contrato",
+   "branch": "worktree-vendas-contrato · aberto hoje",
+   "chip": {
+    "tipo": "travado",
+    "texto": "🚨 colisão de migration"
+   },
+   "alerta": {
+    "nivel": "grave",
+    "sinal": "🚨",
+    "texto": "Escreveu <code>20260818090000_vendas_contrato_nucleo.sql</code> — <b>mesmo timestamp que o Marketing</b>. Nenhuma foi aplicada no banco (ele respeitou a regra dura), então custa um <code>git mv</code>. Pedi que renomeie pra <code>090001</code> antes de mais commits. Está <b>24 commits atrás da main</b> — foi por isso que não viu a reserva."
+   },
+   "agora": [
+    "<b>Trabalhando a todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy. 5 commits próprios, o último às 14h53."
+   ],
+   "proxima": "➡️ Renomear a migration (colisão) e seguir com a tela de Fechamento de Venda.",
+   "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
+   "entregue": [
+    {
+     "t": "✅ Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura por IA",
+     "q": "17-18/08"
+    },
+    {
+     "t": "✅ Mesclada na main, revisada em três rodadas",
+     "q": "18/08 11h20"
+    },
+    {
+     "t": "✅ Levantou e documentou a lacuna do fechamento da venda, com o código na mão",
+     "q": "18/08 12h18"
+    },
+    {
+     "t": "✅ Cálculo de parcelas, valor por extenso e repositório de templates de contrato",
+     "q": "18/08 14h52-14h53"
+    }
+   ],
+   "dims": {
+    "plan": 80,
+    "prod": 35
+   },
+   "inicio": {
+    "iso": "2026-08-18T14:20:00-03:00",
+    "rotulo": "18/08 ~14h20",
+    "nota": "retomou a sub-frente Contrato"
+   }
+  }
+ ],
+ "dependencia": {
+  "rota": "🚨 2 recados urgentes · Coordenador → Vendas e Marketing",
+  "titulo": "Duas coisas para consertar hoje",
+  "paragrafos": [
+   "<b>Colisão de migration.</b> Vendas e Marketing escreveram <code>20260818090000</code> com conteúdos diferentes. Terceira vez no projeto — e a primeira detectada <b>antes</b> de qualquer uma chegar ao banco, porque os dois respeitaram a regra de não rodar migration. Custa um rename.",
+   "<b>Retrabalho no Marketing, causado por mim.</b> Ele reverteu a criptografia às 14h49 obedecendo o que eu tinha dito às 13h50; você já tinha decidido manter às 14h46. Pedi que desfaça.",
+   "<b>O que os dois casos têm em comum:</b> agente trabalhando em base velha. O Vendas está 24 commits atrás, o Marketing estava 7 quando construiu a criptografia. O hook resolve quem <i>abre</i> sessão; não resolve quem já está com ela aberta há horas. É a próxima coisa a atacar."
+  ]
+ },
+ "esperas": [
+  {
+   "tempo": "🚨",
+   "frio": true,
+   "texto": "<b>Colisão de migration</b> entre Vendas e Marketing (mesmo <code>20260818090000</code>) e a <b>reversão da criptografia</b> que o Marketing precisa desfazer. Os dois estão com sessão aberta, então o hook não dispara — <b>um toque em cada conversa resolve</b>. Nenhuma das duas migrations foi ao banco, então nada está perdido.",
+   "acao": "avisar Vendas e Marketing"
+  }
+ ]
+}
+</script>
 
-  <section class="instrumentos" aria-label="Estado geral do projeto">
-    <div class="instr">
-      <span class="rot">Testes</span>
-      <span class="val bom"><i class="ponto"></i>168 verdes</span>
-    </div>
-    <div class="instr">
-      <span class="rot">Lint e build</span>
-      <span class="val bom"><i class="ponto"></i>limpos</span>
-    </div>
-    <div class="instr">
-      <span class="rot">Banco</span>
-      <span class="val bom"><i class="ponto"></i>em dia</span>
-    </div>
-    <div class="instr">
-      <span class="rot">GitHub</span>
-      <span class="val bom"><i class="ponto"></i>sincronizado</span>
-    </div>
-    <div class="instr">
-      <span class="rot">Migrations</span>
-      <span class="val">39 aplicadas</span>
-    </div>
-    <div class="instr">
-      <span class="rot">Worktrees</span>
-      <span class="val">2 abertos</span>
-    </div>
-  </section>
+<script id="app">
+(function () {
+  "use strict";
 
-  <section class="luiz" aria-labelledby="tit-luiz">
-    <header>
-      <h2 id="tit-luiz">Sua vez, Luiz</h2>
-      <span class="nota">o que só você pode fazer</span>
-    </header>
-    <ul class="tarefas">
-      <li>
-        <span class="quando agora">Agora</span>
-        <div>
-          <div class="titulo">Testar as duas telas de Vendas no navegador</div>
-          <p class="corpo">É o último passo pra considerar a sub-frente Cadastro em produção. Esse teste nunca foi feito de verdade — a construção rodou num worktree isolado, sem credencial real, e até hoje de manhã dependia das migrations. Cadastre um fornecedor e uma venda sem funil prévio, incluindo upload de documento, foto e a leitura por IA. O que aparecer de errado, me traz que eu levo pro agente certo.</p>
-          <div class="acoes">
-            <a class="botao" href="https://hub-arruda.vercel.app/admin/fornecedores" target="_blank" rel="noopener">/admin/fornecedores</a>
-            <a class="botao" href="https://hub-arruda.vercel.app/admin/vendas/nova" target="_blank" rel="noopener">/admin/vendas/nova</a>
-          </div>
-        </div>
-      </li>
-      <li>
-        <span class="quando logo">Quando der</span>
-        <div>
-          <div class="titulo">SPF do domínio não autoriza o Resend</div>
-          <p class="corpo">O <code>arrudacred.com.br</code> hoje autoriza só a Hostinger. É a causa provável dos primeiros e-mails de teste não chegarem — e afeta tanto o e-mail de boas-vindas quanto a nutrição de 30/60/90 dias. Ação no painel de DNS do registrador, fora do código.</p>
-        </div>
-      </li>
-      <li>
-        <span class="quando logo">Quando der</span>
-        <div>
-          <div class="titulo">Publicar o rastreio de cliques do WhatsApp</div>
-          <p class="corpo">Código pronto e parado: falta criar o subdomínio <code>zap.arrudacred.com.br</code> na Hostinger e subir o <code>hostinger-zap/index.php</code>. Sem isso, não dá pra saber de qual canal o lead veio. Não bloqueia ninguém — só continua não medindo.</p>
-        </div>
-      </li>
-      <li>
-        <span class="quando depois">Vai chegar</span>
-        <div>
-          <div class="titulo">Decidir Assinafy e Asaas</div>
-          <p class="corpo">O Vendas vai encostar em assinatura digital e financeiro em breve. São integrações pagas — instruí ele a desenhar e parar antes de contratar ou gastar crédito. Quando chegar lá, eu trago a pergunta pronta.</p>
-        </div>
-      </li>
-      <li class="concluida">
-        <span class="quando feito">Feito hoje</span>
-        <div>
-          <div class="titulo">Rodar as 3 migrations do módulo Vendas</div>
-          <p class="corpo">Conferido no banco: <code>fornecedores</code>, <code>fornecedor_produtos</code> e <code>pessoa_documentos</code> criadas, colunas novas em <code>produtos</code>, RLS em 12 tabelas do núcleo e os dois buckets de Storage com a visibilidade certa. Tipos regenerados e enviados.</p>
-        </div>
-      </li>
-    </ul>
-  </section>
+  var dados = JSON.parse(document.getElementById("dados").textContent);
+  var podeEscrever = null; // null = ainda não sabemos
 
-  <div class="secao-rot">Agentes</div>
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
 
-  <div class="grade">
+  // Alguns textos são autorais e contêm <b>/<code>/<em> de propósito.
+  // Eles vêm dos dados que eu (Coordenador) escrevo, nunca de digitação do Luiz —
+  // o que ele digita passa sempre por esc().
+  function rico(s) { return String(s); }
 
-    <!-- CRM -->
-    <article class="agente">
-      <header>
-        <div class="linha1">
-          <h3>CRM</h3>
-          <span class="chip parado">sem commit desde 11h54</span>
-        </div>
-        <span class="branch">main · trabalha direto na raiz, sem worktree</span>
-      </header>
-      <div class="corpo-agente">
-        <div class="bloco">
-          <div class="rot">Já entregou</div>
-          <ul>
-            <li>Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta</li>
-            <li>WhatsApp real via Zapster, funcionando de verdade</li>
-            <li>Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints</li>
-            <li>Follow-up automático com cron, e-mail via Resend</li>
-            <li>Hoje: resgatou o fix do extrator de nome que estava perdido num worktree órfão</li>
-          </ul>
-        </div>
-        <div class="bloco">
-          <div class="rot">Fazendo agora</div>
-          <p>Nada em curso desde as 11h54. A última coisa que fez foi justamente o resgate do fix, depois de ler o pedido no quadro-branco.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Próxima tarefa</div>
-          <p class="destaque">Responder ao pedido do Vendas sobre capturar o detalhe do fechamento da venda.</p>
-          <p>Depois disso, a ordem combinada com você em 16/08 segue: Kanban → Dashboard de KPIs.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Evolução do módulo</div>
-          <div class="dims">
-            <div class="dim">
-              <span class="nome">Planejam.</span>
-              <span class="trilho"><span class="barra plan" style="width:95%"></span></span>
-              <span class="pct">95%</span>
-            </div>
-            <div class="dim">
-              <span class="nome">Produção</span>
-              <span class="trilho"><span class="barra prod" style="width:70%"></span></span>
-              <span class="pct">70%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
+  // "há 1h40" a partir de um ISO — calculado no navegador, então continua certo
+  // sem eu republicar. Omite se der resultado impossível (relógio fora de hora).
+  function decorrido(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) return "";
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 0 || min > 60 * 24 * 60) return "";
+    if (min < 60) return "há " + min + " min";
+    var h = Math.floor(min / 60);
+    if (h < 48) return "há " + h + "h" + (min % 60 ? String(min % 60).padStart(2, "0") : "");
+    return "há " + Math.floor(h / 24) + " dias";
+  }
 
-    <!-- MARKETING -->
-    <article class="agente">
-      <header>
-        <div class="linha1">
-          <h3>Marketing</h3>
-          <span class="chip cuidado">precisa sincronizar</span>
-        </div>
-        <span class="branch">worktree-pipeline-conteudo-marketing-nucleo</span>
-      </header>
-      <div class="alerta leve">
-        <span class="sinal">!</span>
-        <span class="txt">O worktree está <b>3 commits atrás da main</b> e ainda não rodou <code>pnpm install</code>. Se ele continuar escrevendo código sem sincronizar, vai construir sobre uma base velha e o próximo merge fica mais arriscado. <b>Já deixei a instrução no quadro-branco</b> — resolvo isso em seguida.</span>
-      </div>
-      <div class="corpo-agente">
-        <div class="bloco">
-          <div class="rot">Já entregou</div>
-          <ul>
-            <li>Núcleo do pipeline de conteúdo: Estrategista, Escritor, Revisor e Agente de Links</li>
-            <li>Publicação no WordPress com sanitização do HTML gerado pela IA</li>
-            <li>Cron que processa a fila de pautas, com reclaim de pauta travada</li>
-            <li>145 testes próprios — <b>mesclado na main hoje</b></li>
-          </ul>
-        </div>
-        <div class="bloco">
-          <div class="rot">Fazendo agora</div>
-          <p>Escrevendo a spec da Fase 2 — as telas de admin do módulo. O arquivo existe no worktree mas ainda não foi commitado.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Próxima tarefa</div>
-          <p class="destaque">Fechar spec e plano da Fase 2, e construir as telas de Produção de Conteúdo e Configurações do Marketing.</p>
-          <p>Pedi que ele registre no quadro-branco <em>antes</em> de criar tabela nova: a Fase 2 encosta em <code>configuracoes</code> e no Storage, que são compartilhados com os outros módulos.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Evolução do módulo</div>
-          <div class="dims">
-            <div class="dim">
-              <span class="nome">Planejam.</span>
-              <span class="trilho"><span class="barra plan" style="width:85%"></span></span>
-              <span class="pct">85%</span>
-            </div>
-            <div class="dim">
-              <span class="nome">Produção</span>
-              <span class="trilho"><span class="barra prod" style="width:45%"></span></span>
-              <span class="pct">45%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
+  function barras(dims) {
+    if (!dims) return "";
+    return '<div class="bloco"><div class="rot">Evolução do módulo</div><div class="dims">' +
+      '<div class="dim"><span class="nome">Planejam.</span><span class="trilho"><span class="barra plan" style="width:' + dims.plan + '%"></span></span><span class="pct">' + dims.plan + '%</span></div>' +
+      '<div class="dim"><span class="nome">Produção</span><span class="trilho"><span class="barra prod" style="width:' + dims.prod + '%"></span></span><span class="pct">' + dims.prod + '%</span></div>' +
+      '</div></div>';
+  }
 
-    <!-- VENDAS -->
-    <article class="agente">
-      <header>
-        <div class="linha1">
-          <h3>Vendas — Contrato</h3>
-          <span class="chip rodando">rodando</span>
-        </div>
-        <span class="branch">worktree-vendas-contrato · aberto hoje</span>
-      </header>
-      <div class="alerta">
-        <span class="sinal">■</span>
-        <span class="txt">Está <b>esperando o CRM</b> pra ter os dados completos do fechamento da venda. <b>Não está parado</b>: combinou com você construir uma tela de Fechamento de Venda como solução imediata. Vira travamento de verdade só se o CRM não responder e o paliativo não der conta.</span>
-      </div>
-      <div class="corpo-agente">
-        <div class="bloco">
-          <div class="rot">Já entregou</div>
-          <ul>
-            <li>Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura de documento por IA</li>
-            <li>Mesclada na main, revisada em três rodadas, e com as migrations rodadas hoje</li>
-            <li>Hoje: levantou e documentou a lacuna do fechamento da venda, com o código na mão</li>
-          </ul>
-        </div>
-        <div class="bloco">
-          <div class="rot">Fazendo agora</div>
-          <p>Abriu a sub-frente Contrato e mapeou o que falta pra gerar contrato: hoje o bot só salva <code>"avista"</code> ou <code>"parcelado"</code>, sem parcelas, valores nem vencimentos.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Próxima tarefa</div>
-          <p class="destaque">Construir a tela de Fechamento de Venda — parcelas, valores e datas de vencimento.</p>
-          <p>Depois: contrato, assinatura digital e financeiro da venda. As duas últimas dependem da sua decisão sobre Assinafy e Asaas.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Evolução do módulo</div>
-          <div class="dims">
-            <div class="dim">
-              <span class="nome">Planejam.</span>
-              <span class="trilho"><span class="barra plan" style="width:80%"></span></span>
-              <span class="pct">80%</span>
-            </div>
-            <div class="dim">
-              <span class="nome">Produção</span>
-              <span class="trilho"><span class="barra prod" style="width:35%"></span></span>
-              <span class="pct">35%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
+  function agenteHTML(a) {
+    var h = '<article class="agente' + (a.eu ? " eu" : "") + '">';
+    h += '<header><div class="linha1"><h3>' + esc(a.nome) + '</h3>' +
+         '<span class="chip ' + a.chip.tipo + '">' + esc(a.chip.texto) + '</span></div>' +
+         '<span class="branch">' + esc(a.branch) + '</span></header>';
 
-    <!-- COORDENADOR -->
-    <article class="agente">
-      <header>
-        <div class="linha1">
-          <h3>Coordenador</h3>
-          <span class="chip rodando">rodando</span>
-        </div>
-        <span class="branch">main · integra e conversa com os outros, não escreve feature</span>
-      </header>
-      <div class="corpo-agente">
-        <div class="bloco">
-          <div class="rot">Já entregou (hoje)</div>
-          <ul>
-            <li>Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward</li>
-            <li>Fechou o débito de <code>test</code>/<code>lint</code> varrerem os worktrees dos outros — e descobriu que o problema também existia no lint, com 99 falsos positivos</li>
-            <li>Removeu o worktree órfão e enviou 119 commits parados pro GitHub</li>
-            <li>Regenerou os tipos do banco depois das suas migrations</li>
-          </ul>
-        </div>
-        <div class="bloco">
-          <div class="rot">Fazendo agora</div>
-          <p>Repassando o pedido do Vendas ao CRM e mantendo o quadro-branco em dia — é por ele que os agentes se falam.</p>
-        </div>
-        <div class="bloco">
-          <div class="rot">Próxima tarefa</div>
-          <p class="destaque">Sincronizar o worktree do Marketing com a main antes que ele avance mais.</p>
-          <p>E manter esta página atualizada conforme as coisas andarem.</p>
-        </div>
-      </div>
-    </article>
+    if (a.alerta) {
+      h += '<div class="alerta' + (a.alerta.nivel === "leve" ? " leve" : "") + '">' +
+           '<span class="sinal">' + a.alerta.sinal + '</span>' +
+           '<span class="txt">' + rico(a.alerta.texto) + '</span></div>';
+    }
 
-  </div>
+    h += '<div class="corpo-agente">';
 
-  <div class="secao-rot">Um esperando o outro</div>
+    h += '<div class="bloco"><div class="rot">🔄 Fazendo agora</div>';
+    a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
+    if (a.inicio) {
+      var dec = a.inicio.iso ? decorrido(a.inicio.iso) : "";
+      h += '<span class="inicio">Início em: <b>' + esc(a.inicio.rotulo) + "</b>" +
+           (dec ? " (" + dec + ")" : "") +
+           (a.inicio.nota ? " · " + esc(a.inicio.nota) : "") + "</span>";
+    }
+    h += "</div>";
 
-  <section class="dependencia">
-    <div class="rota">Vendas → CRM · aguardando resposta</div>
-    <h3>O bot precisa capturar o fechamento inteiro da venda</h3>
-    <p>Hoje o motor de fluxo salva a forma de pagamento como duas opções fechadas — <code>"avista"</code> ou <code>"parcelado"</code>. Não guarda quantas parcelas, valor de cada uma, datas de vencimento, nem a forma detalhada (boleto, cartão, voucher). O Vendas conferiu isso no código antes de pedir, não é suposição.</p>
-    <p>Sem esses dados não dá pra gerar contrato e tabela de vencimentos direto do que foi vendido. O pedido é claramente do território do CRM, por isso o Vendas registrou em vez de sair mexendo no fluxo dos outros — que é exatamente o comportamento que a gente quer.</p>
-    <p><b>Onde está:</b> pedido registrado no quadro-branco às 12h18, aguardando o CRM responder ali mesmo, nem que seja "visto, entra na fila". Enquanto isso o Vendas segue com a tela de Fechamento de Venda e migra pros dados do CRM quando existirem.</p>
-  </section>
+    h += '<div class="bloco"><div class="rot">Próxima tarefa</div>' +
+         '<p class="destaque">' + rico(a.proxima) + "</p>";
+    if (a.proximaExtra) h += "<p>" + rico(a.proximaExtra) + "</p>";
+    h += "</div>";
 
-  <footer class="rodape">
-    <span>As barras de evolução são leitura minha, não medição automática — planejamento pelo que está documentado, produção pelo que roda de verdade.</span>
-    <span class="links">
-      <a class="botao" href="https://github.com/contatoarrudacred/hub-arruda" target="_blank" rel="noopener">repositório</a>
-      <a class="botao" href="https://supabase.com/dashboard/project/mzvaqjhalynaceecnayt/sql/new" target="_blank" rel="noopener">SQL Editor</a>
-      <a class="botao" href="https://hub-arruda.vercel.app" target="_blank" rel="noopener">app</a>
-    </span>
-  </footer>
+    // fechado por padrão: o card mostra o presente, o histórico fica a um clique
+    h += '<div class="bloco"><details><summary>Já entregou · ' + a.entregue.length + "</summary><ul>";
+    a.entregue.forEach(function (i) {
+      var texto = typeof i === "string" ? i : i.t;
+      var quando = typeof i === "string" ? "" : i.q;
+      h += "<li>" + rico(texto) + (quando ? '<span class="qdo">' + esc(quando) + "</span>" : "") + "</li>";
+    });
+    h += "</ul></details></div>";
 
-</div>
+    h += barras(a.dims);
+    h += "</div></article>";
+    return h;
+  }
+
+  function tarefaHTML(t) {
+    // Item concluído vem fechado (<details>): a lista fica curta e o histórico
+    // continua a um clique. Item aberto continua sempre visível.
+    var fechavel = !!t.concluida;
+    var nResp = (t.respostas || []).length;
+
+    var h = '<li class="' + (t.concluida ? "concluida" : "") + '" data-tarefa="' + esc(t.id) + '"' +
+            (t.concluida ? " hidden" : "") + ">";
+    h += '<span class="quando ' + t.prazo + '">' + esc(t.prazoRot) + "</span>";
+
+    if (fechavel) {
+      h += "<details><summary><span class=\"titulo\">" + esc(t.titulo) + "</span>";
+      if (nResp) h += '<span class="resumo">' + nResp + (nResp === 1 ? " resposta" : " respostas") + "</span>";
+      h += '</summary><div class="detalhe">';
+    } else {
+      h += "<div>";
+      h += '<div class="titulo">' + esc(t.titulo) + "</div>";
+    }
+    h += '<p class="corpo">' + rico(t.corpo) + "</p>";
+
+    if (t.respostas && t.respostas.length) {
+      h += '<ul class="respostas">';
+      t.respostas.forEach(function (r) {
+        h += "<li" + (r.autor === "coordenador" ? ' class="doCoord"' : "") + "><span class=\"autor\">" + esc(r.autor === "coordenador" ? "Coordenador" : "Luiz") + " · " + esc(r.quando) + '</span><span class="fala">' + esc(r.texto) + "</span></li>";
+      });
+      h += "</ul>";
+    }
+
+    h += '<div class="acoes">';
+    (t.acoes || []).forEach(function (a) {
+      h += '<a class="botao" href="' + esc(a.url) + '" target="_blank" rel="noopener">' + esc(a.texto) + "</a>";
+    });
+    h += '<button class="botao abrir" type="button" data-alvo="' + esc(t.id) + '">💬 Responder</button>';
+    h += "</div>";
+
+    h += '<div class="responder" id="resp-' + esc(t.id) + '" hidden>';
+    h += '<textarea placeholder="Escreva pro Coordenador… (ex.: já rodei, deu erro no upload)" aria-label="Resposta sobre: ' + esc(t.titulo) + '"></textarea>';
+    h += '<div class="acoes">';
+    h += '<button class="botao principal enviar" type="button" data-alvo="' + esc(t.id) + '">Enviar pro Coordenador</button>';
+    h += '<button class="botao cancelar" type="button" data-alvo="' + esc(t.id) + '">Cancelar</button>';
+    h += "</div>";
+    h += '<p class="dica">Sua resposta fica registrada aqui no item e chega pro Coordenador com a referência da tarefa.</p>';
+    h += "</div>";
+
+    h += fechavel ? "</div></details></li>" : "</div></li>";
+    return h;
+  }
+
+  function corpoHTML() {
+    var h = '<div class="wrap">';
+
+    h += '<header class="topo"><div>' +
+         '<h1>Torre de Controle <span class="marca">Arruda</span></h1>' +
+         '<p class="sub">Quem está construindo o quê agora, o que já ficou pronto e onde alguém está esperando por alguém. Mantido pelo Coordenador de Agentes — não faz parte do sistema.</p>' +
+         "</div>" +
+         '<div class="carimbo"><b>' + esc(dados.atualizado) + "</b><br>main em <b>" + esc(dados.commit) + "</b><br>agentes ativos: <b>" + dados.agentes.length + "</b></div>" +
+         "</header>";
+
+    h += '<section class="instrumentos" aria-label="Estado geral do projeto">';
+    dados.instrumentos.forEach(function (i) {
+      h += '<div class="instr"><span class="rot">' + esc(i.rot) + '</span><span class="val' + (i.bom ? " bom" : "") + '">' + esc(i.val) + "</span></div>";
+    });
+    h += "</section>";
+
+    (dados.esperas || []).forEach(function (e) {
+      h += '<div class="espera' + (e.frio ? " frio" : "") + '">' +
+           '<span class="relogio">' + esc(e.tempo) + '</span>' +
+           '<span class="quem">' + rico(e.texto) + '</span>' +
+           '<span class="acao">' + esc(e.acao) + '</span></div>';
+    });
+
+    h += '<div class="aviso-ro" id="aviso-ro" hidden>⚠️ Esta visualização está em modo leitura — dá pra acompanhar tudo, mas o botão de responder não vai gravar. Me responda pelo chat mesmo.</div>';
+
+    var nFeitos = dados.tarefas.filter(function (t) { return t.concluida; }).length;
+    var nAbertos = dados.tarefas.length - nFeitos;
+
+    h += '<section class="luiz" aria-labelledby="tit-luiz">' +
+         '<header><h2 id="tit-luiz">Sua vez, Luiz</h2>' +
+         '<span class="cab-dir">' +
+         '<span class="nota">' + (nAbertos ? nAbertos + (nAbertos === 1 ? " item aberto" : " itens abertos") : "nada pendente 🎉") + '</span>';
+    if (nFeitos) {
+      h += '<button class="botao ver-feitos" type="button" aria-expanded="false">▸ ' +
+           nFeitos + " já " + (nFeitos === 1 ? "resolvido" : "resolvidos") + "</button>";
+    }
+    h += "</span></header>" +
+         '<ul class="tarefas">';
+    dados.tarefas.forEach(function (t) { h += tarefaHTML(t); });
+    h += "</ul></section>";
+
+    h += '<div class="secao-rot">Agentes</div><div class="grade">';
+    dados.agentes.forEach(function (a) { h += agenteHTML(a); });
+    h += "</div>";
+
+    var d = dados.dependencia;
+    h += '<div class="secao-rot">Um esperando o outro</div>' +
+         '<section class="dependencia"><div class="rota">' + esc(d.rota) + "</div>" +
+         "<h3>" + esc(d.titulo) + "</h3>";
+    d.paragrafos.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
+    h += "</section>";
+
+    h += '<footer class="rodape">' +
+         "<span>Esta página se atualiza sozinha: quando eu republico, toda janela aberta recarrega — não precisa botão de atualizar nem recarregar na mão. As barras de evolução são leitura minha, não medição automática.</span>" +
+         '<span class="links">' +
+         '<a class="botao" href="https://github.com/contatoarrudacred/hub-arruda" target="_blank" rel="noopener">repositório</a>' +
+         '<a class="botao" href="https://supabase.com/dashboard/project/mzvaqjhalynaceecnayt/sql/new" target="_blank" rel="noopener">SQL Editor</a>' +
+         '<a class="botao" href="https://hub-arruda.vercel.app" target="_blank" rel="noopener">app</a>' +
+         "</span></footer>";
+
+    h += "</div>";
+    return h;
+  }
+
+  function render() {
+    document.getElementById("raiz").innerHTML = corpoHTML();
+    if (podeEscrever === false) {
+      var av = document.getElementById("aviso-ro");
+      if (av) av.hidden = false;
+    }
+  }
+
+  // Página completa de substituição — exigida pelo publish(): documento
+  // inteiro, começando por doctype. Estilo e script saem das próprias tags
+  // (conteúdo autoral, não o DOM vivo), e os dados vão serializados com o
+  // estado novo.
+  function paginaCompleta() {
+    var css = document.getElementById("estilo").textContent;
+    var app = document.getElementById("app").textContent;
+    var json = JSON.stringify(dados, null, 1).replace(/<\//g, "<\\/");
+    return "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n" +
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
+      "<title>Torre de Controle Arruda</title>\n" +
+      "<style id=\"estilo\">" + css + "</style>\n</head>\n<body>\n" +
+      "<div id=\"raiz\"></div>\n" +
+      "<script id=\"dados\" type=\"application/json\">\n" + json + "\n<\/script>\n" +
+      "<script id=\"app\">" + app + "<\/script>\n</body>\n</html>";
+  }
+
+  function agora() {
+    var d = new Date();
+    var p = function (n) { return n < 10 ? "0" + n : "" + n; };
+    return p(d.getDate()) + "/" + p(d.getMonth() + 1) + " · " + p(d.getHours()) + "h" + p(d.getMinutes());
+  }
+
+  function acharTarefa(id) {
+    for (var i = 0; i < dados.tarefas.length; i++) {
+      if (dados.tarefas[i].id === id) return dados.tarefas[i];
+    }
+    return null;
+  }
+
+  function marcarErro(id, msg) {
+    var caixa = document.getElementById("resp-" + id);
+    if (!caixa) return;
+    var dica = caixa.querySelector(".dica");
+    if (dica) dica.textContent = msg;
+  }
+
+  async function enviar(id) {
+    var caixa = document.getElementById("resp-" + id);
+    var ta = caixa.querySelector("textarea");
+    var texto = ta.value.trim();
+    if (!texto) { ta.focus(); return; }
+
+    var btn = caixa.querySelector(".enviar");
+    btn.disabled = true;
+    btn.textContent = "Enviando…";
+
+    var api = null;
+    try { api = await window.claude.use("artifact"); } catch (e) { api = null; }
+
+    if (!api) {
+      podeEscrever = false;
+      btn.disabled = false;
+      btn.textContent = "Enviar pro Coordenador";
+      marcarErro(id, "⚠️ Não consegui gravar daqui (visualização em modo leitura). Copie o texto e me mande pelo chat.");
+      var av = document.getElementById("aviso-ro");
+      if (av) av.hidden = false;
+      return;
+    }
+
+    var tarefa = acharTarefa(id);
+    tarefa.respostas = tarefa.respostas || [];
+    tarefa.respostas.push({ quando: agora(), texto: texto });
+
+    try {
+      await api.publish(paginaCompleta());
+      // Publicou: a própria view recarrega na versão nova.
+    } catch (err) {
+      var code = err && err.code ? err.code : "upstream_error";
+      if (code === "conflict") {
+        // Rotina: outra versão entrou antes. A view já está recarregando.
+        return;
+      }
+      // Desfaz o otimismo e explica.
+      tarefa.respostas.pop();
+      btn.disabled = false;
+      btn.textContent = "Enviar pro Coordenador";
+      if (code === "not_writer" || code === "not_granted" || code === "capability_disabled" || code === "not_declared") {
+        podeEscrever = false;
+        var av2 = document.getElementById("aviso-ro");
+        if (av2) av2.hidden = false;
+        marcarErro(id, "⚠️ Esta visualização é só leitura. Copie o texto e me mande pelo chat.");
+      } else if (code === "rate_limited") {
+        marcarErro(id, "⏳ Muitas respostas seguidas. Espere alguns segundos e tente de novo.");
+      } else {
+        marcarErro(id, "⚠️ Não consegui gravar agora. Tente de novo em instantes — se insistir, me mande pelo chat.");
+      }
+    }
+  }
+
+  document.addEventListener("click", function (ev) {
+    var alvo = ev.target.closest ? ev.target.closest("button.botao") : null;
+    if (!alvo) return;
+
+    // mostrar/esconder o histórico de itens já resolvidos
+    if (alvo.classList.contains("ver-feitos")) {
+      var feitos = document.querySelectorAll('.tarefas > li.concluida');
+      var vaiMostrar = alvo.getAttribute("aria-expanded") !== "true";
+      for (var i = 0; i < feitos.length; i++) feitos[i].hidden = !vaiMostrar;
+      alvo.setAttribute("aria-expanded", vaiMostrar ? "true" : "false");
+      alvo.textContent = (vaiMostrar ? "▾ esconder " : "▸ ") + feitos.length +
+        (vaiMostrar ? " resolvidos" : " já " + (feitos.length === 1 ? "resolvido" : "resolvidos"));
+      return;
+    }
+
+    var id = alvo.getAttribute("data-alvo");
+    if (!id) return;
+
+    if (alvo.classList.contains("abrir")) {
+      var caixa = document.getElementById("resp-" + id);
+      caixa.hidden = !caixa.hidden;
+      if (!caixa.hidden) caixa.querySelector("textarea").focus();
+    } else if (alvo.classList.contains("cancelar")) {
+      var c = document.getElementById("resp-" + id);
+      c.querySelector("textarea").value = "";
+      c.hidden = true;
+    } else if (alvo.classList.contains("enviar")) {
+      enviar(id);
+    }
+  });
+
+  render();
+})();
+</script>
