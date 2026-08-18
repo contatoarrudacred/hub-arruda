@@ -1,6 +1,6 @@
 # Status — Coordenador
 
-tarefa: Montar o mecanismo de status declarado pelos agentes
-desde: 2026-08-18T17:40:00-03:00
-proxima: Levar as 2 migrations novas ao Luiz; manter a torre pelo dado declarado
+tarefa: Torre gerada por apuração (não mais digitada) + migrations confirmadas no banco
+desde: 2026-08-18T18:15:00-03:00
+proxima: Varredura periódica; levar ao Luiz o que aparecer
 bloqueio:
