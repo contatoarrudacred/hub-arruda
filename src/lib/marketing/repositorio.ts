@@ -591,6 +591,12 @@ export async function excluirItemChecklist(itemId: string): Promise<void> {
  * `propriedadeId` filtra via join com matrizes_conteudo (pautas não tem propriedade_id direto,
  * só matriz_conteudo_id) — `!inner` porque o filtro por coluna do recurso embutido
  * (`matrizes_conteudo.propriedade_id`) só funciona no PostgREST quando o embed é inner join.
+ *
+ * Nota (18/08/2026): o parâmetro `propriedadeId`/o embed acima só foram testados com mock do
+ * Supabase (regra dura de migration — nenhum agente aplica schema em produção) e hoje não têm
+ * nenhum caller real (a tela de Fila de Pautas, Task 10 da Fase 2, contorna isso cruzando pautas
+ * com `listarMatrizes` no client em vez de usar este filtro). Não presumir que este caminho está
+ * verificado contra o Postgrest real antes de reaproveitá-lo — validar manualmente primeiro.
  */
 export async function listarPautasPorStatus(status?: StatusPauta, propriedadeId?: string): Promise<PautaCarregada[]> {
   const supabase = createAdminClient();
