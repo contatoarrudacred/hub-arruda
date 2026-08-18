@@ -291,6 +291,43 @@
     flex: none;
   }
   .tarefas details .detalhe { padding-top: 4px; }
+
+  /* "Início em" do bloco Fazendo agora */
+  .inicio {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--texto-fraco);
+    margin-top: 6px;
+    display: block;
+  }
+  .inicio b { color: var(--texto-suave); font-weight: 600; }
+
+  /* bloco "Já entregou" fechado por padrão, dentro do card do agente */
+  .bloco details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--texto-fraco);
+  }
+  .bloco details > summary::-webkit-details-marker { display: none; }
+  .bloco details > summary::before { content: "▸"; letter-spacing: 0; }
+  .bloco details[open] > summary::before { content: "▾"; }
+  .bloco details > summary:hover { color: var(--ouro); }
+  .bloco details > summary:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
+  .bloco details > ul { margin-top: 7px; }
+  .bloco details .qdo {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--texto-fraco);
+    white-space: nowrap;
+    margin-left: 6px;
+  }
   @media (prefers-reduced-motion: reduce) {
     .tarefas details > summary::before { transition: none; }
   }
@@ -598,8 +635,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 13h50",
- "commit": "11c4b98",
+ "atualizado": "18/08/2026 · 15h25",
+ "commit": "98b9804",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -622,13 +659,13 @@
    "bom": true
   },
   {
-   "rot": "Worktrees",
-   "val": "✅ 2 em dia",
-   "bom": true
+   "rot": "Migrations",
+   "val": "🚨 1 colisão",
+   "bom": false
   },
   {
-   "rot": "Bloqueios",
-   "val": "✅ nenhum",
+   "rot": "Agentes ativos",
+   "val": "🟢 3 mexendo agora",
    "bom": true
   }
  ],
@@ -650,6 +687,47 @@
     }
    ],
    "respostas": []
+  },
+  {
+   "id": "cripto-ja-feita",
+   "prazo": "feito",
+   "prazoRot": "✅ Mantida",
+   "titulo": "A criptografia já construída — mantida",
+   "corpo": "<b>Decidido: mantém.</b> O Marketing já pode retomar a parte de credenciais — cancelei a pausa que eu tinha pedido. Volta uma coisa pra sua lista logo abaixo: a chave de cifra.",
+   "acoes": [],
+   "respostas": [
+    {
+     "quando": "18/08 · 14h46",
+     "texto": "uma vez criada, pode manter"
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h00",
+     "texto": "Fechado. Liberei o Marketing pra retomar — a pausa durou ~15 min e ele nem chegou a mexer. A senha vai cifrada no banco, como ele construiu.\n\nSó a chave volta pra você, porque sem ela o mecanismo não roda: openssl rand -base64 32, colar no .env.local e na Vercel como MARKETING_CREDENCIAIS_CHAVE. Não me mande o valor."
+    }
+   ],
+   "concluida": true
+  },
+  {
+   "id": "prioridade-crm",
+   "prazo": "feito",
+   "prazoRot": "✅ Decidido",
+   "titulo": "O que o CRM puxa — decidido",
+   "corpo": "<b>Kanban → Dashboard de KPIs</b>, como combinado em 16/08. A captura de pagamento que o Vendas pediu entra depois. Repassado aos dois — e avisei o Vendas de que, com isso, a tela de Fechamento de Venda deixa de ser paliativo.",
+   "acoes": [],
+   "respostas": [
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h10",
+     "texto": "Repassado. O CRM começa o Kanban.\n\nUm efeito que vale você saber: a tela de Fechamento de Venda que o Vendas ia construir era um paliativo até o bot passar a capturar parcelas e vencimentos. Como isso ficou pra depois do Kanban e do Dashboard, essa tela deixa de ser provisória e vira o caminho normal por um bom tempo. Avisei o Vendas pra construí-la com esse peso, não como remendo."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h10",
+     "texto": "Repassado. O CRM pega o Kanban.\n\nEfeito colateral que vale saber: a tela de Fechamento de Venda do Vendas era um paliativo até o bot capturar parcelas e vencimentos. Como isso ficou pra depois de duas frentes inteiras, ela deixa de ser provisória e vira o caminho normal por um bom tempo. Avisei ele pra construir com esse peso."
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "cripto-transversal",
@@ -682,10 +760,10 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "feito",
-   "prazoRot": "✅ Cancelada",
-   "titulo": "Gerar a chave de criptografia — não precisa mais",
-   "corpo": "<b>Saiu da sua lista.</b> Você decidiu manter a senha do WordPress sem cifra no banco, então não existe chave pra gerar nem pra guardar. Menos uma coisa pra você, e menos código pro Marketing.",
+   "prazo": "agora",
+   "prazoRot": "❌ Agora",
+   "titulo": "Registrar a chave de criptografia — 3 lugares",
+   "corpo": "Você já gerou. Confirmei no código o nome exato: <code>MARKETING_CREDENCIAIS_CHAVE</code>. Precisa entrar em <b>três lugares</b> — os dois primeiros são obrigatórios, o terceiro é o que faz o Marketing conseguir testar. Passo a passo na minha resposta abaixo.",
    "acoes": [],
    "respostas": [
     {
@@ -696,9 +774,19 @@
      "autor": "coordenador",
      "quando": "18/08 · 13h50",
      "texto": "Ok, decisão final registrada e repassada ao Marketing — ele vai remover a criptografia do plano da Fase 2.\n\nUma linha só de risco, pra ficar no registro e não voltar como surpresa: em texto plano, quem tiver acesso ao banco ou a um backup lê a senha. Conferi um atenuante real: propriedades_digitais já tem RLS ligada com acesso só pra admin autenticado, então não fica exposta publicamente. E o pior caso é alguém publicar num blog satélite — não é dado de cliente, não é LGPD.\n\nDuas proteções que NÃO são cifra e vou manter, porque não custam nada e já estavam no plano dele: a senha nunca volta preenchida pro navegador (o campo aparece vazio e a tela só mostra 'configurada / não configurada'), e a tabela mantém RLS.\n\nGravei bem visível que isto vale só pra este caso e não vira precedente — API key de Asaas/Assinafy ou credencial de cliente seguem outro caminho."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h00",
+     "texto": "Este item foi cancelado às 13h50 e reaberto agora — sua decisão das 14h46 o trouxe de volta. Enquanto a chave não existir, o fallback em env segura o que já roda em produção, então nada quebra por esperar."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h25",
+     "texto": "Nome exato da variável (conferi no código, não é chute): MARKETING_CREDENCIAIS_CHAVE\n\n1) NA SUA MÁQUINA — arquivo .env.local na raiz do projeto. Abra e acrescente uma linha no fim:\nMARKETING_CREDENCIAIS_CHAVE=cole_aqui_a_chave\nSem aspas, sem espaço antes ou depois do =. Esse arquivo está no .gitignore, então não vai pro GitHub — conferi.\n\n2) NA VERCEL — painel do projeto hub-arruda > Settings > Environment Variables > Add New. Nome: MARKETING_CREDENCIAIS_CHAVE, valor: a chave. Marque os três ambientes (Production, Preview, Development). Importante: variável nova só passa a valer no PRÓXIMO deploy — depois de salvar, faça um redeploy, senão em produção ela não existe.\n\n3) NO WORKTREE DO MARKETING — ele tem um .env.local próprio, separado do seu, em .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local. Sem a chave lá, ele não consegue testar a cifra na branch dele. Mesma linha do passo 1.\n\nNÃO me mande o valor — nem aqui, nem pela torre, nem pelo chat. Só me diga 'pronto' e eu aviso o Marketing que pode usar.\n\nSe perder a chave depois de já ter senha cifrada salva: não dá pra recuperar. Você recadastra as senhas dos sites e segue. Guarde num gerenciador de senhas, não num arquivo de texto solto."
     }
    ],
-   "concluida": true
+   "concluida": false
   },
   {
    "id": "spf-resend",
@@ -766,123 +854,234 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Repassou ao Marketing a decisão de manter a senha do WordPress sem cifra, com o limite registrado pra não virar precedente."
+    "Passei a você onde registrar a chave de criptografia (3 lugares — o worktree do Marketing tem .env.local próprio, é o que costuma passar batido).",
+    "Aguardando os dois recados urgentes serem lidos: o rename da migration do Vendas e a restauração da criptografia no Marketing."
    ],
-   "proxima": "➡️ Esperar você abrir a sessão do CRM e testar as telas de Vendas — são as duas únicas coisas pendentes.",
+   "proxima": "➡️ Confirmar o rename do Vendas, a restauração do Marketing, e avisar o Marketing quando a chave estiver nos três lugares.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
-    "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
-    "✅ Fechou o débito de test/lint varrerem os worktrees dos outros — e achou que o problema também existia no lint, com 99 falsos positivos",
-    "✅ Removeu o worktree órfão e enviou 119 commits que estavam parados na sua máquina",
-    "✅ Regenerou os tipos do banco depois das suas migrations",
-    "✅ Descobriu que o recado do Vendas nunca chegou ao CRM (estava preso num worktree) e trouxe pra main",
-    "✅ Consertou o worktree do Marketing, onde o next estava quebrado e o build nunca rodou",
-    "✅ Resolveu 2 conflitos no quadro-branco sem perder recado de ninguém",
-    "✅ Escreveu o protocolo de comunicação e a caixa de entrada de pedidos abertos",
-    "✅ Leu a spec da Fase 2 do Marketing por conta própria e achou um problema de arquitetura antes de virar código",
-    "✅ Levou uma proposta própria ao Luiz, ouviu o questionamento e corrigiu a orientação dada aos agentes antes de virar código",
-    "✅ Hook SessionStart + docs/INBOX_AGENTES.md: agente ativo passa a ver na hora que alguém espera por ele"
+    {
+     "t": "✅ Mesclou o Marketing na main pelo fluxo sincroniza → testa → fast-forward",
+     "q": "18/08 11h56"
+    },
+    {
+     "t": "✅ Fechou o débito de test/lint varrerem os worktrees — e achou o mesmo no lint, 99 falsos positivos",
+     "q": "18/08 12h05"
+    },
+    {
+     "t": "✅ Removeu o worktree órfão e enviou 119 commits parados na sua máquina",
+     "q": "18/08 12h10"
+    },
+    {
+     "t": "✅ Regenerou os tipos do banco depois das suas migrations",
+     "q": "18/08 12h20"
+    },
+    {
+     "t": "✅ Descobriu que o recado do Vendas nunca chegou ao CRM e trouxe pra main",
+     "q": "18/08 12h40"
+    },
+    {
+     "t": "✅ Consertou o worktree do Marketing, onde o next estava quebrado e o build nunca rodava",
+     "q": "18/08 12h42"
+    },
+    {
+     "t": "✅ Hook SessionStart + inbox: agente ativo vê na hora que alguém espera por ele",
+     "q": "18/08 13h07"
+    },
+    {
+     "t": "✅ Leu a spec da Fase 2 por conta própria e achou um problema de arquitetura antes de virar código",
+     "q": "18/08 12h50"
+    },
+    {
+     "t": "✅ Corrigiu a própria orientação depois do seu questionamento, antes de virar código",
+     "q": "18/08 13h20"
+    },
+    {
+     "t": "⚠️ Deixou esta torre desatualizada por ~1h — corrigido com apuração obrigatória antes de publicar",
+     "q": "18/08 14h45"
+    },
+    {
+     "t": "🚨 Detectou a 3ª colisão de migration antes de qualquer uma ser aplicada no banco",
+     "q": "18/08 15h15"
+    },
+    {
+     "t": "✅ Script passou a detectar colisão sozinho e a medir atividade por arquivo tocado, não por commit",
+     "q": "18/08 15h12"
+    }
    ],
-   "dims": null
+   "dims": null,
+   "inicio": {
+    "iso": "2026-08-18T11:27:00-03:00",
+    "rotulo": "18/08 11h27",
+    "nota": "1º commit desta sessão"
+   }
   },
   {
    "nome": "CRM",
    "branch": "main · trabalha direto na raiz, sem worktree",
    "chip": {
-    "tipo": "cuidado",
-    "texto": "⚠️ bola com ele"
+    "tipo": "rodando",
+    "texto": "✅ tem direção"
    },
    "agora": [
-    "Sinalizou no quadro-branco que não encontrou a mensagem do Vendas — e estava certo. Aguardando ele reler agora que o recado chegou."
+    "Fila vazia, mas <b>acabou de ganhar direção</b>: você confirmou Kanban → Dashboard. Ele pega o Kanban quando a sessão abrir."
    ],
-   "proxima": "➡️ Responder ao pedido do Vendas sobre capturar o detalhe do fechamento da venda (parcelas, valores, vencimentos).",
-   "proximaExtra": "Depois disso, a ordem combinada com você em 16/08 segue: Kanban → Dashboard de KPIs.",
+   "proxima": "➡️ Construir o Kanban do funil comercial.",
+   "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
    "entregue": [
-    "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
-    "✅ WhatsApp real via Zapster, funcionando de verdade",
-    "✅ Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints",
-    "✅ Follow-up automático com cron e e-mail via Resend",
-    "✅ Hoje: resgatou o fix do extrator de nome que estava perdido num worktree órfão",
-    "✅ Hoje: cobrou um recado que não tinha chegado, em vez de ficar parado sem dizer nada"
+    {
+     "t": "✅ Motor de fluxo cobrindo o script de Limpeza de Nome ponta a ponta",
+     "q": "13-14/08"
+    },
+    {
+     "t": "✅ Follow-up automático com cron e e-mail via Resend",
+     "q": "15/08"
+    },
+    {
+     "t": "✅ WhatsApp real via Zapster, funcionando de verdade",
+     "q": "16/08"
+    },
+    {
+     "t": "✅ Tela de Atendimento (blocos A, B e B2) e interpretação por IA nos checkpoints",
+     "q": "16-17/08"
+    },
+    {
+     "t": "✅ Resgatou o fix do extrator de nome perdido num worktree órfão",
+     "q": "18/08 11h54"
+    },
+    {
+     "t": "✅ Cobrou um recado que não tinha chegado, em vez de ficar parado",
+     "q": "18/08 12h34"
+    },
+    {
+     "t": "✅ Avaliou o pedido do Vendas no código e respondeu sozinho, pelo protocolo novo",
+     "q": "18/08 13h24"
+    }
    ],
    "dims": {
     "plan": 95,
     "prod": 70
    },
-   "alerta": {
-    "nivel": "leve",
-    "sinal": "⚠️",
-    "texto": "Estava esperando um recado que <b>nunca tinha chegado nele</b> — o pedido do Vendas foi escrito dentro de outro worktree e não estava na main, então o CRM não tinha como ver. <b>Corrigido:</b> o pedido está na main desde 12h40. Agora a bola está com ele."
+   "inicio": {
+    "iso": "2026-08-18T13:24:00-03:00",
+    "rotulo": "18/08 13h24",
+    "nota": "sem tarefa desde então; Kanban recém-priorizado"
    }
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ liberado"
+    "tipo": "cuidado",
+    "texto": "⚠️ retrabalho por minha culpa"
    },
    "agora": [
-    "Spec e plano da Fase 2 (telas de admin) <b>escritos e commitados</b> — e já registrou no quadro-branco, antes de criar tabela, quais migrations vai precisar.",
-    "Worktree sincronizado com a main e com o build funcionando pela primeira vez."
+    "<b>Trabalhando agora</b> — 12 commits próprios, 11 arquivos tocados nos últimos 30 min. Fase 2: configuração admin, cota diária, janela de publicação, log de execução."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
-   "proximaExtra": "Criptografia <b>liberada</b> pelo Luiz — fica dentro do módulo dele, cifrada. As migrations da Fase 2 ele escreve, mas <b>não roda</b>: vêm pra mim e eu te trago.",
+   "proximaExtra": "Criptografia <b>mantida</b> — pode retomar. A migration da Fase 2 ele escreve, mas <b>não roda</b>: vem pra mim e eu levo a você.",
    "entregue": [
-    "✅ Núcleo do pipeline de conteúdo: Estrategista, Escritor, Revisor e Agente de Links",
-    "✅ Publicação no WordPress com sanitização do HTML gerado pela IA",
-    "✅ Cron que processa a fila de pautas, com reclaim de pauta travada",
-    "✅ 145 testes próprios — mesclado na main hoje",
-    "✅ Hoje: fechou spec e plano da Fase 2 e avisou a intenção antes de mexer em tabela compartilhada"
+    {
+     "t": "✅ Núcleo do pipeline: Estrategista, Escritor, Revisor e Agente de Links",
+     "q": "17-18/08"
+    },
+    {
+     "t": "✅ Publicação no WordPress com sanitização do HTML gerado pela IA",
+     "q": "17/08"
+    },
+    {
+     "t": "✅ Cron que processa a fila de pautas, com reclaim de pauta travada",
+     "q": "18/08"
+    },
+    {
+     "t": "✅ 145 testes próprios — mesclado na main",
+     "q": "18/08 11h56"
+    },
+    {
+     "t": "✅ Spec e plano da Fase 2, avisando a intenção antes de mexer em tabela compartilhada",
+     "q": "18/08 12h26"
+    },
+    {
+     "t": "✅ Cota diária, janela de publicação e log de execução do pipeline",
+     "q": "18/08 14h03-14h36"
+    }
    ],
    "dims": {
     "plan": 95,
     "prod": 45
+   },
+   "inicio": {
+    "iso": "2026-08-18T13:08:00-03:00",
+    "rotulo": "18/08 13h08",
+    "nota": "1º commit da Fase 2"
+   },
+   "alerta": {
+    "nivel": "leve",
+    "sinal": "↩️",
+    "texto": "Reverteu a criptografia às 14h49 seguindo minha instrução das 13h50 — <b>3 minutos depois de você decidir manter</b>, e eu só comuniquei às 15h00. Pedi que desfaça a reversão. <b>O retrabalho foi causado pelo meu atraso</b>, não por erro dele."
    }
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "rodando",
-    "texto": "✅ rodando"
+    "tipo": "travado",
+    "texto": "🚨 colisão de migration"
    },
    "alerta": {
     "nivel": "grave",
-    "sinal": "❌",
-    "texto": "Está <b>esperando o CRM</b> pra ter os dados completos do fechamento da venda. <b>Não está parado</b>: combinou com você construir uma tela de Fechamento de Venda como solução imediata. Vira travamento de verdade só se o CRM não responder e o paliativo não der conta."
+    "sinal": "🚨",
+    "texto": "Escreveu <code>20260818090000_vendas_contrato_nucleo.sql</code> — <b>mesmo timestamp que o Marketing</b>. Nenhuma foi aplicada no banco (ele respeitou a regra dura), então custa um <code>git mv</code>. Pedi que renomeie pra <code>090001</code> antes de mais commits. Está <b>24 commits atrás da main</b> — foi por isso que não viu a reserva."
    },
    "agora": [
-    "Abriu a sub-frente Contrato e mapeou o que falta pra gerar contrato: hoje o bot só salva <code>\"avista\"</code> ou <code>\"parcelado\"</code>, sem parcelas, valores nem vencimentos."
+    "<b>Trabalhando a todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy. 5 commits próprios, o último às 14h53."
    ],
-   "proxima": "➡️ Construir a tela de Fechamento de Venda — parcelas, valores e datas de vencimento.",
-   "proximaExtra": "Depois: contrato, assinatura digital e financeiro da venda. As duas últimas dependem da sua decisão sobre Assinafy e Asaas.",
+   "proxima": "➡️ Renomear a migration (colisão) e seguir com a tela de Fechamento de Venda.",
+   "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
    "entregue": [
-    "✅ Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura de documento por IA",
-    "✅ Mesclada na main, revisada em três rodadas, com as migrations rodadas hoje",
-    "✅ Hoje: levantou e documentou a lacuna do fechamento da venda, com o código na mão"
+    {
+     "t": "✅ Sub-frente Cadastro inteira: Fornecedor e Cliente, endereço por CEP, upload de documento e foto, leitura por IA",
+     "q": "17-18/08"
+    },
+    {
+     "t": "✅ Mesclada na main, revisada em três rodadas",
+     "q": "18/08 11h20"
+    },
+    {
+     "t": "✅ Levantou e documentou a lacuna do fechamento da venda, com o código na mão",
+     "q": "18/08 12h18"
+    },
+    {
+     "t": "✅ Cálculo de parcelas, valor por extenso e repositório de templates de contrato",
+     "q": "18/08 14h52-14h53"
+    }
    ],
    "dims": {
     "plan": 80,
     "prod": 35
+   },
+   "inicio": {
+    "iso": "2026-08-18T14:20:00-03:00",
+    "rotulo": "18/08 ~14h20",
+    "nota": "retomou a sub-frente Contrato"
    }
   }
  ],
  "dependencia": {
-  "rota": "⚠️ 1 pedido aberto · caixa de entrada",
-  "titulo": "Quem está esperando por quem",
+  "rota": "🚨 2 recados urgentes · Coordenador → Vendas e Marketing",
+  "titulo": "Duas coisas para consertar hoje",
   "paragrafos": [
-   "<b>Vendas → CRM · aguardando.</b> O bot precisa capturar parcelas, valores e vencimentos do fechamento — hoje só salva <code>\"avista\"</code> ou <code>\"parcelado\"</code>. O pedido tinha ficado preso dentro do worktree do Vendas e o CRM não conseguia enxergar; trouxe pra main às 12h40 e respondi a ele. O Vendas <b>não está parado</b>: segue com a tela de Fechamento de Venda.",
-   "<b>Coordenador → Marketing · ✅ resolvido.</b> A criptografia fica no módulo do Marketing mesmo, cifrada no banco — o Luiz autorizou guardar a senha de WordPress lá. Meu argumento de cofre transversal estava exagerado e foi retirado: Assinafy, Asaas e as outras 12 chaves seguem em env.local.",
-   "<b>A regra nova que fecha esse buraco:</b> recado só existe quando chega na main; ninguém para esperando resposta (registra, segue pelo caminho alternativo, migra depois); quem recebe responde na mesma sessão, nem que seja \"visto\"; e eu passo a varrer os worktrees em vez de esperar alguém reclamar."
+   "<b>Colisão de migration.</b> Vendas e Marketing escreveram <code>20260818090000</code> com conteúdos diferentes. Terceira vez no projeto — e a primeira detectada <b>antes</b> de qualquer uma chegar ao banco, porque os dois respeitaram a regra de não rodar migration. Custa um rename.",
+   "<b>Retrabalho no Marketing, causado por mim.</b> Ele reverteu a criptografia às 14h49 obedecendo o que eu tinha dito às 13h50; você já tinha decidido manter às 14h46. Pedi que desfaça.",
+   "<b>O que os dois casos têm em comum:</b> agente trabalhando em base velha. O Vendas está 24 commits atrás, o Marketing estava 7 quando construiu a criptografia. O hook resolve quem <i>abre</i> sessão; não resolve quem já está com ela aberta há horas. É a próxima coisa a atacar."
   ]
  },
  "esperas": [
   {
-   "tempo": "1h32",
+   "tempo": "🚨",
    "frio": true,
-   "texto": "O <b>CRM</b> tem um pedido do Vendas esperando desde as 12h18 e a sessão dele não roda desde 12h34. <b>Nenhum arquivo alcança um agente que não está aberto</b> — quando você abrir a sessão do CRM, o hook novo mostra o pedido no primeiro segundo. Não é urgente: o Vendas seguiu pelo caminho alternativo.",
-   "acao": "abrir a sessão do CRM"
+   "texto": "<b>Colisão de migration</b> entre Vendas e Marketing (mesmo <code>20260818090000</code>) e a <b>reversão da criptografia</b> que o Marketing precisa desfazer. Os dois estão com sessão aberta, então o hook não dispara — <b>um toque em cada conversa resolve</b>. Nenhuma das duas migrations foi ao banco, então nada está perdido.",
+   "acao": "avisar Vendas e Marketing"
   }
  ]
 }
@@ -908,6 +1107,19 @@
   // o que ele digita passa sempre por esc().
   function rico(s) { return String(s); }
 
+  // "há 1h40" a partir de um ISO — calculado no navegador, então continua certo
+  // sem eu republicar. Omite se der resultado impossível (relógio fora de hora).
+  function decorrido(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) return "";
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 0 || min > 60 * 24 * 60) return "";
+    if (min < 60) return "há " + min + " min";
+    var h = Math.floor(min / 60);
+    if (h < 48) return "há " + h + "h" + (min % 60 ? String(min % 60).padStart(2, "0") : "");
+    return "há " + Math.floor(h / 24) + " dias";
+  }
+
   function barras(dims) {
     if (!dims) return "";
     return '<div class="bloco"><div class="rot">Evolução do módulo</div><div class="dims">' +
@@ -932,6 +1144,12 @@
 
     h += '<div class="bloco"><div class="rot">🔄 Fazendo agora</div>';
     a.agora.forEach(function (p) { h += "<p>" + rico(p) + "</p>"; });
+    if (a.inicio) {
+      var dec = a.inicio.iso ? decorrido(a.inicio.iso) : "";
+      h += '<span class="inicio">Início em: <b>' + esc(a.inicio.rotulo) + "</b>" +
+           (dec ? " (" + dec + ")" : "") +
+           (a.inicio.nota ? " · " + esc(a.inicio.nota) : "") + "</span>";
+    }
     h += "</div>";
 
     h += '<div class="bloco"><div class="rot">Próxima tarefa</div>' +
@@ -939,9 +1157,14 @@
     if (a.proximaExtra) h += "<p>" + rico(a.proximaExtra) + "</p>";
     h += "</div>";
 
-    h += '<div class="bloco"><div class="rot">Já entregou</div><ul>';
-    a.entregue.forEach(function (i) { h += "<li>" + rico(i) + "</li>"; });
-    h += "</ul></div>";
+    // fechado por padrão: o card mostra o presente, o histórico fica a um clique
+    h += '<div class="bloco"><details><summary>Já entregou · ' + a.entregue.length + "</summary><ul>";
+    a.entregue.forEach(function (i) {
+      var texto = typeof i === "string" ? i : i.t;
+      var quando = typeof i === "string" ? "" : i.q;
+      h += "<li>" + rico(texto) + (quando ? '<span class="qdo">' + esc(quando) + "</span>" : "") + "</li>";
+    });
+    h += "</ul></details></div>";
 
     h += barras(a.dims);
     h += "</div></article>";

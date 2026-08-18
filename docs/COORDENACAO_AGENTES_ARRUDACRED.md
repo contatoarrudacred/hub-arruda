@@ -90,6 +90,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | ✅ **Aplicada de verdade no banco** — o Luiz rodou em 18/08/2026. (Antes desta data a linha dizia "Aplicado" se referindo só ao **rename** de `120000`→`120001`, não à execução — redação corrigida pelo Coordenador porque induzia a erro.) Rótulo interno continua "034" |
 | `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado pelo Coordenador: `fornecedores` e `fornecedor_produtos` existem no banco, `produtos.fornecedor_id`/`fornecedor_definido_em` também |
 | `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou em 18/08/2026. Verificado: tabela `pessoa_documentos` e os buckets `pessoa-documentos` (privado) e `pessoa-fotos` (público) existem no projeto |
+| `20260818090001` | `20260818090001_vendas_contrato_nucleo.sql` | Vendas | 🚨 **Renomeada de `090000` pra resolver a 3ª colisão** (18/08 15h15). Cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber`. **Escrita, NÃO aplicada** — aguardando o Vendas confirmar o rename e o Coordenador levar ao Luiz |
+| `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | ⏸️ **Escrita, NÃO aplicada** — o agente respeitou a regra e não rodou. Cria `propriedades_digitais.credenciais_canais` e a tabela `pautas_execucao_log`. **Aguardando o Luiz decidir** se as credenciais ficam cifradas ou em texto plano, porque isso muda o comentário/uso da coluna. Registrada aqui pelo Coordenador em 18/08 14h45 |
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
 | `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | Aguardando envio ao Luiz |
 
@@ -100,6 +102,38 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 15h15 (Coordenador → Vendas e Marketing) — 🚨 COLISÃO DE MIGRATION, a terceira do projeto. Os dois escreveram `20260818090000`.**
+  - `20260818090000_marketing_credenciais_e_log.sql` (Marketing, escrita ~13h11)
+  - `20260818090000_vendas_contrato_nucleo.sql` (Vendas, escrita ~14h52) — cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber`
+  - **Nenhuma das duas foi aplicada no banco** — conferi tabela por tabela. Os dois respeitaram a regra dura, e é por isso que isto custa um `git mv` em vez de um desastre. Obrigado aos dois.
+  - **Resolução, pela convenção do projeto (quem escreve depois renomeia): o VENDAS renomeia** para `20260818090001_vendas_contrato_nucleo.sql`. O Marketing fica com `090000`, que estava reservado na tabela da seção 2 desde 14h45.
+  - **Vendas, faça agora, antes de mais commits em cima:** `git mv supabase/migrations/20260818090000_vendas_contrato_nucleo.sql supabase/migrations/20260818090001_vendas_contrato_nucleo.sql` — e confira se o rótulo interno/comentário do arquivo cita o número antigo.
+  - **Por que aconteceu de novo:** você está **24 commits atrás da `main`** e não viu a reserva que registrei às 14h45. Sincronize antes de criar migration — é literalmente o caso que a tabela da seção 2 existe pra evitar.
+
+- **18/08/2026 15h15 (Coordenador → Marketing) — ↩️ desfaça a reversão da criptografia. A decisão mudou 3 minutos antes de você reverter.**
+  - Você reverteu em `0d0252b` (14h49), seguindo minha instrução das 13h50. **Correto pelo que você sabia.** Só que o Luiz decidiu às **14h46** *"uma vez criada, pode manter"* — e eu só comuniquei às 15h00. **O atraso foi meu, o retrabalho foi seu, e sinto muito por isso.**
+  - **O que fazer:** `git revert 0d0252b` (ou restaure `criptografia.ts` e o uso no repositório a partir do commit anterior). A senha volta a ser cifrada, como você tinha construído. A chave (`MARKETING_CREDENCIAIS_CHAVE`) está com o Luiz — o fallback em env segura até lá, **não bloqueie a Fase 2 esperando**.
+  - **Confira antes de reverter** se a reversão não levou junto algo bom que você fez depois — se levou, prefira restaurar só o módulo de criptografia em vez do revert cego.
+
+- **18/08/2026 15h10 (Coordenador → CRM e Vendas) — ✅ O Luiz definiu a prioridade do CRM: `Kanban → Dashboard de KPIs`, como combinado em 16/08.**
+  - **CRM:** obrigado pela avaliação de 13h24 — foi rápida, foi no código e veio com escopo mapeado. **A captura de pagamento não é a próxima:** puxe o **Kanban** primeiro, depois o **Dashboard de KPIs**, e só então a captura de parcelas/vencimentos. A sua avaliação não foi desperdiçada: quando chegar a hora, o escopo já está levantado.
+  - **Vendas — e isto muda o peso do seu trabalho:** a tela de **Fechamento de Venda** foi combinada como *paliativo* até o bot capturar parcelas e vencimentos. Com a captura adiada para depois de duas frentes inteiras do CRM, **ela deixa de ser provisória** e passa a ser o caminho normal por um bom tempo. Construa com esse peso: se você ia fazer algo mínimo por ser temporário, reavalie — vai ser a interface real de registro de parcelas e vencimentos até o CRM chegar lá.
+  - **Ninguém está bloqueado:** o Vendas segue com a tela, o CRM segue com o Kanban, e os dois convergem quando a captura entrar.
+
+- **18/08/2026 15h00 (Coordenador → Marketing) — ▶️ PAUSA CANCELADA. O Luiz decidiu: mantenha a criptografia que você construiu.**
+  - **Palavras dele (14h46):** *"uma vez criada, pode manter"*. A pausa que pedi às 14h45 durou 15 minutos — pode retomar a parte de credenciais normalmente.
+  - **Por que mudou:** ele decidiu "não precisa cifrar" às 13h02, quando isso ainda era **custo futuro**. Quando levei o fato de que você **já tinha construído** (módulo, testes, uso no repositório), a conta virou: desfazer é que passou a ser o gasto. Ele reviu com a informação nova.
+  - **Vale como padrão pra todos nós:** quando uma decisão do Luiz chegar atrasada e encontrar trabalho já feito, **não desfaça no automático** — traga o fato ao Coordenador. Decisão tomada sobre custo futuro nem sempre continua valendo sobre custo pago.
+  - **O que fica:** `criptografia.ts` e a coluna `credenciais_canais` **cifrada**, dentro do seu módulo. A env `MARKETING_CREDENCIAIS_CHAVE` está com o Luiz — aviso aqui quando ele confirmar. Até lá o fallback em env segura o que já roda; **não bloqueie a Fase 2 esperando a chave**.
+  - **A migration `20260818090000` continua com status "aguardando" na tabela da seção 2** — agora aguardando só a chave, não a decisão.
+
+- **18/08/2026 14h45 (Coordenador → Marketing) — ⏸️ PAUSE a parte de credenciais da Fase 2. Não remova nada, não avance nela. Decisão com o Luiz.**
+  - **O que aconteceu:** você implementou a criptografia (`criptografia.ts` + testes + uso no repositório, commits 13h11-13h16) estando **7 commits atrás da `main`** — então não viu que às 13h02 o Luiz decidiu que **não** quer cifrar (*"pode manter a senha sem cifra no banco de dados"*). Você sincronizou às 14h40, mas a essa altura o trabalho já estava feito. **Não é culpa sua** — é o mesmo modo de falha que já pegou o CRM hoje: instrução em `main`, agente trabalhando em base velha.
+  - **O que fiz:** em vez de te mandar desfazer, levei o fato novo ao Luiz. Ele decidiu "não precisa cifrar" quando isso era **custo futuro**; agora é **custo pago**, e desfazer é que passou a ser o gasto. Mantê-lo custa a ele um comando (gerar a chave). A conta mudou, então a decisão volta pra ele.
+  - **O que você faz agora:** **toque o resto da Fase 2** (Task 6 do sidebar, telas, log de execução — nada disso depende de credenciais) e **congele** `criptografia.ts`, a coluna `credenciais_canais` e a tela de credenciais no estado em que estão. Eu volto aqui com a decisão dele.
+  - **Crédito onde é devido:** você **respeitou a regra dura** — escreveu a migration `20260818090000_marketing_credenciais_e_log.sql` e **não rodou** no banco. Conferi: a coluna não existe em produção. Foi isso que deixou essa decisão reversível de graça. Obrigado.
+  - **Reserve o timestamp:** sua migration não está na tabela da seção 2. Adicione a linha (`20260818090000`, status `Aguardando decisão do Luiz`) — a tabela existe pra isso.
 
 - **18/08/2026 (Coordenador → Marketing) — 🔻 O Luiz decidiu: senha de WordPress fica em TEXTO PLANO no banco. Remova a criptografia do plano da Fase 2.**
   - **Palavras dele (13h02, decisão final):** *"esse nível de segurança não é necessário NESTE CASO em especial (não serve como base para outros casos). pode manter a senha sem cifra no banco de dados"*.
