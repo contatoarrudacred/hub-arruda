@@ -100,6 +100,12 @@ describe("extração determinística da abertura", () => {
     expect(extrator("oi, sou luiz e quero limpar meu nome").nome).toBe("Luiz");
   });
 
+  it("não gruda o artigo antes do nome (bug real, 17/08/2026: 'sou a Renata' virou nome 'A Renata')", () => {
+    const extrator = criarExtratorAbertura();
+    expect(extrator("Oi, sou a Renata, quero limpar meu nome").nome).toBe("Renata");
+    expect(extrator("Oi, sou o Carlos, quero limpar meu nome").nome).toBe("Carlos");
+  });
+
   it("reconhece valor de dívida mencionado de cara, sem repetir a pergunta de faixa depois (achado real, 17/08/2026)", () => {
     // Antes desta correção, "sou joao, devo 10 mil e quero limpar meu nome" ignorava o "devo 10
     // mil" — a Malala perguntava a faixa de novo em ln_passo6, repetindo o que o lead já tinha dito.

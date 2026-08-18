@@ -18,8 +18,13 @@ import type { DadosConversa } from "./tipos";
 // reproduzido ao tentar deixar tudo case-insensitive). Efeito colateral aceito: nome composto todo
 // em minúsculo ("meu nome é luiz silva") só captura o primeiro nome — melhor capturar de menos do
 // que capturar errado.
+// Artigo/pronome solto que pode vir entre o verbo e o nome de verdade ("sou A Renata", "sou O
+// Carlos") — sem isso o regex captura o artigo grudado no nome (bug real, 17/08/2026: "sou a
+// Renata" virou nome "A Renata", e a saudação seguinte saiu "Oi A, bom dia!").
+const ARTIGO_SOLTO = "(?:[aA]|[oO]|[eE]u)\\s+";
+
 const PADROES_NOME = [
-  /\b[Ss]ou\s+([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
+  new RegExp(`\\b[Ss]ou\\s+(?:${ARTIGO_SOLTO})?([A-Za-zÀ-ÿ][\\wà-ÿ]*(?:\\s+[A-ZÀ-Ý][\\wà-ÿ]*){0,3})`),
   /\b[Mm]e\s+[Cc]hamo\s+([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
   /\b[Mm]eu\s+[Nn]ome\s+[ée]\s+([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
   /\b[Aa]qui\s+[ée]\s+(?:o|a)?\s*([A-Za-zÀ-ÿ][\wà-ÿ]*(?:\s+[A-ZÀ-Ý][\wà-ÿ]*){0,3})/,
