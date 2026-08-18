@@ -1,7 +1,7 @@
 // src/lib/marketing/repositorio.test.ts
 // Testes UNITÁRIOS — createAdminClient é mockado (vi.mock), nada bate no banco real. Ver
 // repositorio.integration.test.ts para os testes que batem no Supabase remoto de verdade.
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   carregarPersona,
@@ -22,14 +22,9 @@ import {
   salvarPersona,
   salvarPropriedade,
 } from "./repositorio";
-import { decifrar } from "./criptografia";
 import type { PersonaFormulario } from "./tipos";
 
 vi.mock("@/lib/supabase/admin");
-
-beforeAll(() => {
-  process.env.MARKETING_CREDENCIAIS_CHAVE = "chave-de-teste-nao-usar-em-producao";
-});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -182,7 +177,7 @@ describe("listarPropriedades", () => {
             tipo_cms: "wordpress",
             ativo: true,
             config_pipeline: { max_tentativas: 5, posts_por_dia: 3, janela_publicacao: { inicio: "08:00", fim: "20:00" } },
-            credenciais_canais: { wordpress: { usuario: "admin", senha_cifrada: "abc123" } },
+            credenciais_canais: { wordpress: { usuario: "admin", senha: "abc123" } },
           },
         ],
         error: null,
@@ -350,7 +345,7 @@ describe("salvarPropriedade", () => {
 });
 
 describe("salvarCredencialCanal", () => {
-  it("cifra a senha e grava usuário + senha_cifrada quando não há credencial anterior", async () => {
+  it("grava usuário + senha em texto plano quando não há credencial anterior", async () => {
     let payloadGravado: Record<string, unknown> | undefined;
     const supabaseFalso = { from: vi.fn() };
     let chamada = 0;
@@ -369,13 +364,13 @@ describe("salvarCredencialCanal", () => {
 
     await salvarCredencialCanal("prop-1", "wordpress", "admin", "minha-senha-secreta");
 
-    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha_cifrada: string }>;
+    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha: string }>;
     expect(credenciais.wordpress.usuario).toBe("admin");
-    expect(decifrar(credenciais.wordpress.senha_cifrada)).toBe("minha-senha-secreta");
+    expect(credenciais.wordpress.senha).toBe("minha-senha-secreta");
   });
 
-  // Step 2 do brief: não-regressão — senhaPlana vazia não pode sobrescrever a senha_cifrada já salva.
-  it("com senhaPlana vazia, mantém a senha_cifrada já salva e só atualiza o usuário se enviado", async () => {
+  // Step 2 do brief: não-regressão — senhaPlana vazia não pode sobrescrever a senha já salva.
+  it("com senhaPlana vazia, mantém a senha já salva e só atualiza o usuário se enviado", async () => {
     let payloadGravado: Record<string, unknown> | undefined;
     const supabaseFalso = { from: vi.fn() };
     let chamada = 0;
@@ -383,7 +378,7 @@ describe("salvarCredencialCanal", () => {
       chamada += 1;
       if (chamada === 1) {
         return criarQueryFalsa({
-          data: { credenciais_canais: { wordpress: { usuario: "admin-antigo", senha_cifrada: "CIFRADO-JA-SALVO" } } },
+          data: { credenciais_canais: { wordpress: { usuario: "admin-antigo", senha: "JA-SALVA" } } },
           error: null,
         });
       }
@@ -399,8 +394,8 @@ describe("salvarCredencialCanal", () => {
 
     await salvarCredencialCanal("prop-1", "wordpress", "admin-novo", "");
 
-    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha_cifrada: string }>;
-    expect(credenciais.wordpress.senha_cifrada).toBe("CIFRADO-JA-SALVO");
+    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha: string }>;
+    expect(credenciais.wordpress.senha).toBe("JA-SALVA");
     expect(credenciais.wordpress.usuario).toBe("admin-novo");
   });
 
@@ -414,7 +409,7 @@ describe("salvarCredencialCanal", () => {
       chamada += 1;
       if (chamada === 1) {
         return criarQueryFalsa({
-          data: { credenciais_canais: { wordpress: { usuario: "admin-antigo", senha_cifrada: "CIFRADO-ANTIGO" } } },
+          data: { credenciais_canais: { wordpress: { usuario: "admin-antigo", senha: "ANTIGA" } } },
           error: null,
         });
       }
@@ -430,9 +425,9 @@ describe("salvarCredencialCanal", () => {
 
     await salvarCredencialCanal("prop-1", "wordpress", "", "senha-nova");
 
-    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha_cifrada: string }>;
+    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha: string }>;
     expect(credenciais.wordpress.usuario).toBe("admin-antigo");
-    expect(decifrar(credenciais.wordpress.senha_cifrada)).toBe("senha-nova");
+    expect(credenciais.wordpress.senha).toBe("senha-nova");
   });
 
   it("preserva credenciais de outros canais ao salvar uma", async () => {
@@ -443,7 +438,7 @@ describe("salvarCredencialCanal", () => {
       chamada += 1;
       if (chamada === 1) {
         return criarQueryFalsa({
-          data: { credenciais_canais: { gmb: { usuario: "conta-gmb", senha_cifrada: "CIFRADO-GMB" } } },
+          data: { credenciais_canais: { gmb: { usuario: "conta-gmb", senha: "SENHA-GMB" } } },
           error: null,
         });
       }
@@ -459,8 +454,8 @@ describe("salvarCredencialCanal", () => {
 
     await salvarCredencialCanal("prop-1", "wordpress", "admin", "senha-nova");
 
-    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha_cifrada: string }>;
-    expect(credenciais.gmb).toEqual({ usuario: "conta-gmb", senha_cifrada: "CIFRADO-GMB" });
+    const credenciais = payloadGravado?.credenciais_canais as Record<string, { usuario: string; senha: string }>;
+    expect(credenciais.gmb).toEqual({ usuario: "conta-gmb", senha: "SENHA-GMB" });
   });
 
   it("lança erro claro quando a propriedade não é encontrada", async () => {
