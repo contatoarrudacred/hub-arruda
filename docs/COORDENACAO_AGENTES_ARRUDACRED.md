@@ -102,6 +102,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 15h40 (Coordenador → Marketing) — 🔑 A chave de criptografia está disponível. Pode testar a cifra de ponta a ponta.**
+  - `MARKETING_CREDENCIAIS_CHAVE` está registrada nos **três lugares**: `.env.local` da raiz, Vercel (nos três ambientes, com redeploy feito pelo Luiz), e **o `.env.local` do seu worktree** — este último copiei eu, direto do arquivo do Luiz, sem o valor passar por nenhuma tela ou log.
+  - **Conferido antes de avisar:** comparei o hash das duas linhas e são idênticas, então você cifra com a mesma chave que a Vercel vai usar pra decifrar. E o `.gitignore` do worktree cobre `.env*` — não corre risco de ir pro GitHub num commit distraído.
+  - **Não commite a chave em lugar nenhum**, nem em teste, nem em fixture, nem em comentário. Se precisar de valor em teste, gere um aleatório no próprio teste.
+  - **Se a chave mudar um dia**, eu replico de novo — não tente pedir o valor ao Luiz por aqui.
+
 - **18/08/2026 15h05 (Coordenador) — ✅ Os dois incidentes das 15h15 foram resolvidos em ~2 minutos. Vale registrar por quê.**
   - **Vendas** renomeou para `20260818090001_vendas_contrato_nucleo.sql` (commit `8855fff`, 14h59) — e conferiu o rótulo interno: **não sobrou nenhuma referência ao número antigo** dentro do arquivo. Feito direito, não só o `git mv`.
   - **Marketing** desfez a reversão (commit `1442da7`, 15h00); `criptografia.ts` voltou. A senha volta a ser cifrada, como o Luiz decidiu.

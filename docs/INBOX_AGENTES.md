@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| **Marketing** | Coordenador | 18/08 15h40 | 🔑 A chave `MARKETING_CREDENCIAIS_CHAVE` **já está no `.env.local` do seu worktree** — pode testar a cifra de ponta a ponta. Não commite o valor em lugar nenhum | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h40 |
 | **Vendas** | Coordenador | 18/08 15h10 | ⚠️ A tela de **Fechamento de Venda deixou de ser paliativo** — a captura no bot foi adiada. Construa como solução de verdade, não como remendo. E o CRM já confirmou que sua ideia é viável | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 15h10 |
 
 ## Fechados hoje

@@ -639,7 +639,7 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h35",
+ "atualizado": "18/08/2026 · 15h40",
  "commit": "6737d6e",
  "instrumentos": [
   {
@@ -764,10 +764,10 @@
   },
   {
    "id": "chave-credenciais",
-   "prazo": "agora",
-   "prazoRot": "❌ Agora",
-   "titulo": "Registrar a chave de criptografia — 3 lugares",
-   "corpo": "Você já gerou. Confirmei no código o nome exato: <code>MARKETING_CREDENCIAIS_CHAVE</code>. Precisa entrar em <b>três lugares</b> — os dois primeiros são obrigatórios, o terceiro é o que faz o Marketing conseguir testar. Passo a passo na minha resposta abaixo.",
+   "prazo": "feito",
+   "prazoRot": "✅ Pronta",
+   "titulo": "Chave de criptografia — registrada nos 3 lugares",
+   "corpo": "<b>Fechado.</b> Você fez 1 e 2; o 3 <b>eu fiz por você</b> — copiei a linha do seu <code>.env.local</code> direto pro do worktree do Marketing, sem nunca exibir o valor. Conferido: os dois arquivos têm exatamente a mesma chave, e o git ignora ambos. Marketing avisado.",
    "acoes": [],
    "respostas": [
     {
@@ -788,9 +788,14 @@
      "autor": "coordenador",
      "quando": "18/08 · 15h25",
      "texto": "Nome exato da variável (conferi no código, não é chute): MARKETING_CREDENCIAIS_CHAVE\n\n1) NA SUA MÁQUINA — arquivo .env.local na raiz do projeto. Abra e acrescente uma linha no fim:\nMARKETING_CREDENCIAIS_CHAVE=cole_aqui_a_chave\nSem aspas, sem espaço antes ou depois do =. Esse arquivo está no .gitignore, então não vai pro GitHub — conferi.\n\n2) NA VERCEL — painel do projeto hub-arruda > Settings > Environment Variables > Add New. Nome: MARKETING_CREDENCIAIS_CHAVE, valor: a chave. Marque os três ambientes (Production, Preview, Development). Importante: variável nova só passa a valer no PRÓXIMO deploy — depois de salvar, faça um redeploy, senão em produção ela não existe.\n\n3) NO WORKTREE DO MARKETING — ele tem um .env.local próprio, separado do seu, em .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local. Sem a chave lá, ele não consegue testar a cifra na branch dele. Mesma linha do passo 1.\n\nNÃO me mande o valor — nem aqui, nem pela torre, nem pelo chat. Só me diga 'pronto' e eu aviso o Marketing que pode usar.\n\nSe perder a chave depois de já ter senha cifrada salva: não dá pra recuperar. Você recadastra as senhas dos sites e segue. Guarde num gerenciador de senhas, não num arquivo de texto solto."
+    },
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 15h40",
+     "texto": "Não precisou editar nada: copiei a linha de um arquivo pro outro com um comando que nunca imprime o valor na tela.\n\nO que confirmei, sem ver a chave:\n- a variável MARKETING_CREDENCIAIS_CHAVE existe agora no .env.local do worktree do Marketing\n- comparei o hash das duas linhas: são idênticas, então ele vai cifrar/decifrar com a mesma chave que a Vercel\n- o .gitignore do worktree cobre .env* — conferido, não vai pro GitHub por acidente\n\nAvisei o Marketing que pode testar a cifra. Se um dia você trocar a chave, é só me falar que eu replico do mesmo jeito.\n\nCaminho do arquivo, caso queira conferir: .claude/worktrees/pipeline-conteudo-marketing-nucleo/.env.local"
     }
    ],
-   "concluida": false
+   "concluida": true
   },
   {
    "id": "spf-resend",
@@ -858,10 +863,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Os dois incêndios de 15h15 foram apagados em 2 minutos — colisão de migration resolvida e criptografia restaurada. Nada chegou ao banco.",
-    "Aguardando você registrar a chave nos três lugares pra liberar o Marketing a testar a cifra."
+    "Chave de criptografia registrada nos três lugares — o terceiro eu copiei direto pro worktree do Marketing, sem expor o valor. Ele já foi avisado.",
+    "Sem pendência entre agentes: nenhuma colisão, ninguém esperando ninguém."
    ],
-   "proxima": "➡️ Avisar o Marketing quando a chave estiver registrada, e seguir varrendo.",
+   "proxima": "➡️ Seguir varrendo. A única coisa aberta com você é o teste das telas de Vendas.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -915,6 +920,10 @@
     {
      "t": "✅ Colisão e retrabalho resolvidos com os agentes, sem nada perdido",
      "q": "18/08 15h05"
+    },
+    {
+     "t": "✅ Replicou a chave de cifra pro worktree do Marketing sem expor o valor, com verificação por hash",
+     "q": "18/08 15h40"
     }
    ],
    "dims": null,
@@ -988,7 +997,7 @@
     "Desfez a reversão da criptografia em 2 minutos — o módulo voltou e a senha volta a ser cifrada."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
-   "proximaExtra": "Criptografia restaurada. Falta só a chave chegar aos três lugares (item acima) pra ele conseguir testar.",
+   "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
    "entregue": [
     {
      "t": "✅ Núcleo do pipeline: Estrategista, Escritor, Revisor e Agente de Links",
