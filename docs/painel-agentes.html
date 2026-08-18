@@ -635,7 +635,7 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h25",
+ "atualizado": "18/08/2026 · 15h30",
  "commit": "98b9804",
  "instrumentos": [
   {
@@ -660,8 +660,8 @@
   },
   {
    "rot": "Migrations",
-   "val": "🚨 1 colisão",
-   "bom": false
+   "val": "✅ sem colisão",
+   "bom": true
   },
   {
    "rot": "Agentes ativos",
@@ -854,10 +854,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Passei a você onde registrar a chave de criptografia (3 lugares — o worktree do Marketing tem .env.local próprio, é o que costuma passar batido).",
-    "Aguardando os dois recados urgentes serem lidos: o rename da migration do Vendas e a restauração da criptografia no Marketing."
+    "Os dois incêndios de 15h15 foram apagados em 2 minutos — colisão de migration resolvida e criptografia restaurada. Nada chegou ao banco.",
+    "Aguardando você registrar a chave nos três lugares pra liberar o Marketing a testar a cifra."
    ],
-   "proxima": "➡️ Confirmar o rename do Vendas, a restauração do Marketing, e avisar o Marketing quando a chave estiver nos três lugares.",
+   "proxima": "➡️ Avisar o Marketing quando a chave estiver registrada, e seguir varrendo.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -907,6 +907,10 @@
     {
      "t": "✅ Script passou a detectar colisão sozinho e a medir atividade por arquivo tocado, não por commit",
      "q": "18/08 15h12"
+    },
+    {
+     "t": "✅ Colisão e retrabalho resolvidos com os agentes, sem nada perdido",
+     "q": "18/08 15h05"
     }
    ],
    "dims": null,
@@ -972,14 +976,15 @@
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "cuidado",
-    "texto": "⚠️ retrabalho por minha culpa"
+    "tipo": "rodando",
+    "texto": "✅ rodando"
    },
    "agora": [
-    "<b>Trabalhando agora</b> — 12 commits próprios, 11 arquivos tocados nos últimos 30 min. Fase 2: configuração admin, cota diária, janela de publicação, log de execução."
+    "<b>Trabalhando na Fase 2</b>: configuração admin, cota diária, janela de publicação, log de execução do pipeline.",
+    "Desfez a reversão da criptografia em 2 minutos — o módulo voltou e a senha volta a ser cifrada."
    ],
    "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
-   "proximaExtra": "Criptografia <b>mantida</b> — pode retomar. A migration da Fase 2 ele escreve, mas <b>não roda</b>: vem pra mim e eu levo a você.",
+   "proximaExtra": "Criptografia restaurada. Falta só a chave chegar aos três lugares (item acima) pra ele conseguir testar.",
    "entregue": [
     {
      "t": "✅ Núcleo do pipeline: Estrategista, Escritor, Revisor e Agente de Links",
@@ -1004,6 +1009,10 @@
     {
      "t": "✅ Cota diária, janela de publicação e log de execução do pipeline",
      "q": "18/08 14h03-14h36"
+    },
+    {
+     "t": "✅ Restaurou a criptografia depois que a decisão mudou, sem reclamar do retrabalho",
+     "q": "18/08 15h00"
     }
    ],
    "dims": {
@@ -1014,29 +1023,20 @@
     "iso": "2026-08-18T13:08:00-03:00",
     "rotulo": "18/08 13h08",
     "nota": "1º commit da Fase 2"
-   },
-   "alerta": {
-    "nivel": "leve",
-    "sinal": "↩️",
-    "texto": "Reverteu a criptografia às 14h49 seguindo minha instrução das 13h50 — <b>3 minutos depois de você decidir manter</b>, e eu só comuniquei às 15h00. Pedi que desfaça a reversão. <b>O retrabalho foi causado pelo meu atraso</b>, não por erro dele."
    }
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "travado",
-    "texto": "🚨 colisão de migration"
-   },
-   "alerta": {
-    "nivel": "grave",
-    "sinal": "🚨",
-    "texto": "Escreveu <code>20260818090000_vendas_contrato_nucleo.sql</code> — <b>mesmo timestamp que o Marketing</b>. Nenhuma foi aplicada no banco (ele respeitou a regra dura), então custa um <code>git mv</code>. Pedi que renomeie pra <code>090001</code> antes de mais commits. Está <b>24 commits atrás da main</b> — foi por isso que não viu a reserva."
+    "tipo": "rodando",
+    "texto": "✅ rodando"
    },
    "agora": [
-    "<b>Trabalhando a todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy. 5 commits próprios, o último às 14h53."
+    "<b>A todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy.",
+    "Resolveu a colisão de migration em 2 minutos assim que você avisou — e conferiu o rótulo interno do arquivo, não só renomeou."
    ],
-   "proxima": "➡️ Renomear a migration (colisão) e seguir com a tela de Fechamento de Venda.",
+   "proxima": "➡️ Seguir com a tela de Fechamento de Venda, agora sabendo que ela não é mais provisória.",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
    "entregue": [
     {
@@ -1054,6 +1054,10 @@
     {
      "t": "✅ Cálculo de parcelas, valor por extenso e repositório de templates de contrato",
      "q": "18/08 14h52-14h53"
+    },
+    {
+     "t": "✅ Resolveu a colisão de migration renomeando para 090001, sem deixar referência antiga",
+     "q": "18/08 14h59"
     }
    ],
    "dims": {
@@ -1068,22 +1072,15 @@
   }
  ],
  "dependencia": {
-  "rota": "🚨 2 recados urgentes · Coordenador → Vendas e Marketing",
-  "titulo": "Duas coisas para consertar hoje",
+  "rota": "✅ nada aberto entre agentes",
+  "titulo": "Os dois incidentes foram resolvidos em 2 minutos",
   "paragrafos": [
-   "<b>Colisão de migration.</b> Vendas e Marketing escreveram <code>20260818090000</code> com conteúdos diferentes. Terceira vez no projeto — e a primeira detectada <b>antes</b> de qualquer uma chegar ao banco, porque os dois respeitaram a regra de não rodar migration. Custa um rename.",
-   "<b>Retrabalho no Marketing, causado por mim.</b> Ele reverteu a criptografia às 14h49 obedecendo o que eu tinha dito às 13h50; você já tinha decidido manter às 14h46. Pedi que desfaça.",
-   "<b>O que os dois casos têm em comum:</b> agente trabalhando em base velha. O Vendas está 24 commits atrás, o Marketing estava 7 quando construiu a criptografia. O hook resolve quem <i>abre</i> sessão; não resolve quem já está com ela aberta há horas. É a próxima coisa a atacar."
+   "<b>Colisão de migration:</b> o Vendas renomeou para <code>090001</code> e conferiu o rótulo interno do arquivo — não sobrou referência ao número antigo. <b>Custou zero</b> porque nenhuma das duas tinha ido ao banco: a regra de não rodar migration provou o valor dela hoje.",
+   "<b>Reversão da criptografia:</b> o Marketing desfez e o módulo voltou. O retrabalho foi causado pelo meu atraso em comunicar sua decisão, e ele resolveu sem reclamar.",
+   "<b>O que ainda não está resolvido:</b> os dois só souberam porque <b>você avisou em cada conversa</b>. O hook não alcança sessão que já está aberta — e é justamente o agente produtivo que fica horas com ela aberta. Enquanto isso não mudar, você continua sendo o carteiro dos casos urgentes. É a próxima coisa a atacar."
   ]
  },
- "esperas": [
-  {
-   "tempo": "🚨",
-   "frio": true,
-   "texto": "<b>Colisão de migration</b> entre Vendas e Marketing (mesmo <code>20260818090000</code>) e a <b>reversão da criptografia</b> que o Marketing precisa desfazer. Os dois estão com sessão aberta, então o hook não dispara — <b>um toque em cada conversa resolve</b>. Nenhuma das duas migrations foi ao banco, então nada está perdido.",
-   "acao": "avisar Vendas e Marketing"
-  }
- ]
+ "esperas": []
 }
 </script>
 

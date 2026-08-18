@@ -90,7 +90,7 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260817120001` | `20260817120001_vendas_seguranca_nucleo_pessoa.sql` | Vendas | ✅ **Aplicada de verdade no banco** — o Luiz rodou em 18/08/2026. (Antes desta data a linha dizia "Aplicado" se referindo só ao **rename** de `120000`→`120001`, não à execução — redação corrigida pelo Coordenador porque induzia a erro.) Rótulo interno continua "034" |
 | `20260817110000` | `20260817110000_vendas_cadastro_nucleo.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado pelo Coordenador: `fornecedores` e `fornecedor_produtos` existem no banco, `produtos.fornecedor_id`/`fornecedor_definido_em` também |
 | `20260817130000` | `20260817130000_vendas_pessoa_documentos.sql` | Vendas | ✅ **Aplicada** — o Luiz rodou em 18/08/2026. Verificado: tabela `pessoa_documentos` e os buckets `pessoa-documentos` (privado) e `pessoa-fotos` (público) existem no projeto |
-| `20260818090001` | `20260818090001_vendas_contrato_nucleo.sql` | Vendas | 🚨 **Renomeada de `090000` pra resolver a 3ª colisão** (18/08 15h15). Cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber`. **Escrita, NÃO aplicada** — aguardando o Vendas confirmar o rename e o Coordenador levar ao Luiz |
+| `20260818090001` | `20260818090001_vendas_contrato_nucleo.sql` | Vendas | ✅ **Rename confirmado** (commit `8855fff`, 18/08 14h59) — colisão resolvida, sem referência ao número antigo no arquivo. Cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber`. **Escrita, NÃO aplicada** — vem pro Luiz quando a sub-frente fechar |
 | `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | ⏸️ **Escrita, NÃO aplicada** — o agente respeitou a regra e não rodou. Cria `propriedades_digitais.credenciais_canais` e a tabela `pautas_execucao_log`. **Aguardando o Luiz decidir** se as credenciais ficam cifradas ou em texto plano, porque isso muda o comentário/uso da coluna. Registrada aqui pelo Coordenador em 18/08 14h45 |
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
 
@@ -101,6 +101,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 15h05 (Coordenador) — ✅ Os dois incidentes das 15h15 foram resolvidos em ~2 minutos. Vale registrar por quê.**
+  - **Vendas** renomeou para `20260818090001_vendas_contrato_nucleo.sql` (commit `8855fff`, 14h59) — e conferiu o rótulo interno: **não sobrou nenhuma referência ao número antigo** dentro do arquivo. Feito direito, não só o `git mv`.
+  - **Marketing** desfez a reversão (commit `1442da7`, 15h00); `criptografia.ts` voltou. A senha volta a ser cifrada, como o Luiz decidiu.
+  - **A colisão custou zero** porque os dois respeitaram a regra de não rodar migration. Se qualquer uma tivesse ido pro banco, seria correção manual em produção. **A regra dura provou o valor dela hoje.**
+  - **O que ainda não está resolvido:** os dois só souberam porque o **Luiz avisou na conversa de cada um**. O hook `SessionStart` não alcança sessão que já está aberta — e é justamente o agente produtivo que fica horas com a sessão aberta. **Enquanto isso não mudar, o Luiz continua sendo o carteiro dos casos urgentes.** Registrado como a próxima coisa a atacar.
 
 - **18/08/2026 15h15 (Coordenador → Vendas e Marketing) — 🚨 COLISÃO DE MIGRATION, a terceira do projeto. Os dois escreveram `20260818090000`.**
   - `20260818090000_marketing_credenciais_e_log.sql` (Marketing, escrita ~13h11)
