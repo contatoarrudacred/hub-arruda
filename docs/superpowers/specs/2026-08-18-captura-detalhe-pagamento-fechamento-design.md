@@ -86,17 +86,18 @@ O motor já tem esse formato pra checkpoints que precisam de negociação em vá
 
 ## 4. Persistência
 
-`conversas.dados.detalhe_pagamento` (jsonb, **sem migration** — mesmo campo genérico onde já mora `forma_pagamento` hoje):
+**Correção sobre a primeira versão deste documento:** `conversas.dados` é jsonb no banco, mas o motor nunca escreve objeto aninhado nele — o tipo `DadosConversa = Record<string, string>` (`tipos.ts`) só aceita string por chave. O padrão já estabelecido pra listas (`documentos_tipos`/`documentos_valores`, CSV em campos paralelos, mesma ordem/tamanho — ver `oportunidade-documentos.ts`) é o que este design segue, não um objeto `detalhe_pagamento` novo:
 
-```ts
-type DetalhePagamento = {
-  forma: "boleto_pix" | "cartao";
-  tipo: "avista" | "parcelado";
-  parcelas: Array<{ numero: number; valor: number; vencimento: string /* ISO date */ }>;
-};
-```
+| Campo em `dados` | Formato | Exemplo |
+|---|---|---|
+| `forma_pagamento` | `"avista"` \| `"parcelado"` (já existe, sem mudança) | `"parcelado"` |
+| `forma_pagamento_detalhe` | `"boleto_pix"` \| `"cartao"` (novo) | `"boleto_pix"` |
+| `data_primeira_parcela` | ISO date — **reaproveita o campo que já existe**, mas passa a guardar data normalizada/validada em vez de texto livre cru | `"2026-08-18"` |
+| `dia_ancora_parcelas` | `"1"` \| `"10"` \| `"20"` (novo, só quando `parcelado`) | `"10"` |
+| `parcelas_valores` | CSV, mesma ordem/tamanho de `parcelas_vencimentos` (novo) | `"500.00,500.00,500.00"` |
+| `parcelas_vencimentos` | CSV de datas ISO, mesma ordem/tamanho de `parcelas_valores` (novo) | `"2026-08-18,2026-09-10,2026-10-10"` |
 
-Decisão explícita (validada com o Luiz): jsonb genérico agora, não tabela dedicada — evita migration nova na fila do Luiz pra uma primeira versão. Se depois o Vendas precisar consultar isso via SQL de forma mais pesada (relatório, filtro), migra pra tabela própria (mesmo caminho que `oportunidade_documentos` já percorreu).
+Sem migration — todos os campos cabem no jsonb genérico já existente. Se depois o Vendas precisar consultar isso via SQL de forma mais pesada (relatório, filtro), migra pra tabela própria (mesmo caminho que `oportunidade_documentos` já percorreu).
 
 ## 5. Testes
 
