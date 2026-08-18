@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Worktrees dos outros agentes, aninhados fisicamente aqui dentro (.claude/worktrees/<nome>).
+    // Sem isto, o lint da raiz analisa o código das outras branches — 99 problemas que não são de
+    // `main` e que ninguém nesta branch pode corrigir. Mesmo motivo do exclude em vitest.config.mts.
+    ".claude/**",
   ]),
 ]);
 
