@@ -639,12 +639,12 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 15h40",
- "commit": "96b678b",
+ "atualizado": "18/08/2026 · 18h00",
+ "commit": "2475d4f",
  "instrumentos": [
   {
    "rot": "Testes",
-   "val": "✅ 168 verdes",
+   "val": "✅ 296 verdes",
    "bom": true
   },
   {
@@ -654,8 +654,8 @@
   },
   {
    "rot": "Banco",
-   "val": "✅ em dia",
-   "bom": true
+   "val": "⏳ 2 pendentes",
+   "bom": false
   },
   {
    "rot": "GitHub",
@@ -669,11 +669,35 @@
   },
   {
    "rot": "Agentes ativos",
-   "val": "🟢 3 mexendo agora",
+   "val": "🟢 3 rodando",
    "bom": true
   }
  ],
  "tarefas": [
+  {
+   "id": "migrations-2-novas",
+   "prazo": "agora",
+   "prazoRot": "❌ Agora",
+   "titulo": "Rodar 2 migrations no Supabase (Marketing + Vendas)",
+   "corpo": "As duas frentes que fecharam hoje escreveram migration e <b>pararam ali</b>, como manda a regra — nenhuma foi ao banco. Conferi tabela por tabela: <b>nada disso existe em produção ainda</b>. São <b>5 tabelas novas</b> (<code>pautas_execucao_log</code>, <code>contrato_templates</code>, <code>contratos</code>, <code>contrato_parcelas</code>, <code>comissoes_fornecedor_receber</code>) e <b>1 coluna</b> (<code>propriedades_digitais.credenciais_canais</code>). <b>100% aditivo</b> — nenhum drop, truncate ou delete. Consolidei as duas num arquivo só, na ordem: dá pra colar inteiro de uma vez.",
+   "acoes": [
+    {
+     "texto": "abrir o arquivo .sql",
+     "url": "https://github.com/contatoarrudacred/hub-arruda/blob/main/docs/migrations-pendentes-supabase.sql"
+    },
+    {
+     "texto": "SQL Editor do Supabase",
+     "url": "https://supabase.com/dashboard/project/mzvaqjhalynaceecnayt/sql/new"
+    }
+   ],
+   "respostas": [
+    {
+     "autor": "coordenador",
+     "quando": "18/08 · 18h00",
+     "texto": "Falha minha de processo: eu te falei destas migrations no chat e nunca coloquei aqui na torre — que é onde você olha. Item que só existe na conversa não existe. Agora está no topo da sua caixa, com link direto pro arquivo e pro SQL Editor.\n\nO que estas migrations destravam:\n- Marketing: a tela de credenciais por propriedade e o log de execução do pipeline (Fase 2, que mesclei hoje com 296 testes verdes)\n- Vendas: o núcleo de contrato — templates, contratos, parcelas e comissão de fornecedor\n\nDepois que você rodar, me avise: eu regenero o database.types.ts e confirmo tabela por tabela, como fiz com as 3 de Vendas hoje de manhã."
+    }
+   ]
+  },
   {
    "id": "testar-telas-vendas",
    "prazo": "agora",
@@ -863,10 +887,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "Chave de criptografia registrada nos três lugares — o terceiro eu copiei direto pro worktree do Marketing, sem expor o valor. Ele já foi avisado.",
-    "Sem pendência entre agentes: nenhuma colisão, ninguém esperando ninguém."
+    "Montei o mecanismo de status declarado — cada agente escreve o que está fazendo em <code>docs/status/</code> e eu leio direto do worktree, sem esperar merge. O CRM já declarou.",
+    "Consolidei as 2 migrations pendentes e coloquei na sua caixa (tinha ficado só no chat — erro meu)."
    ],
-   "proxima": "➡️ Seguir varrendo. A única coisa aberta com você é o teste das telas de Vendas.",
+   "proxima": "➡️ Confirmar as migrations depois que você rodar, e cobrar a declaração de status de Marketing e Vendas.",
    "proximaExtra": "Varredura proativa dos worktrees a cada rodada, em vez de esperar alguém reclamar.",
    "entregue": [
     {
@@ -924,6 +948,14 @@
     {
      "t": "✅ Replicou a chave de cifra pro worktree do Marketing sem expor o valor, com verificação por hash",
      "q": "18/08 15h40"
+    },
+    {
+     "t": "✅ Mesclou a Fase 2 do Marketing (13 tasks) e destravou o Vendas, que estava parado há 2h30",
+     "q": "18/08 17h40"
+    },
+    {
+     "t": "✅ Trocou adivinhação por declaração: agentes reportam status e eu leio direto do worktree",
+     "q": "18/08 17h50"
     }
    ],
    "dims": null,
@@ -993,10 +1025,10 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "<b>Trabalhando na Fase 2</b>: configuração admin, cota diária, janela de publicação, log de execução do pipeline.",
-    "Desfez a reversão da criptografia em 2 minutos — o módulo voltou e a senha volta a ser cifrada."
+    "<b>Fase 2 concluída e mesclada em main</b> — 13 tasks, cifra testada de ponta a ponta com a chave real, 296 testes verdes na árvore integrada.",
+    "Ainda não declarou status em <code>docs/status/marketing.md</code> — o arquivo já está no worktree dele."
    ],
-   "proxima": "➡️ Construir as telas de Produção de Conteúdo e Configurações do Marketing, seguindo o plano que acabou de fechar.",
+   "proxima": "➡️ Aguardando as migrations rodarem pra validar a tela de credenciais em produção.",
    "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
    "entregue": [
     {
@@ -1026,6 +1058,10 @@
     {
      "t": "✅ Restaurou a criptografia depois que a decisão mudou, sem reclamar do retrabalho",
      "q": "18/08 15h00"
+    },
+    {
+     "t": "✅ Fase 2 inteira: telas de admin, cota diária, janela de publicação, log de execução, credenciais cifradas",
+     "q": "18/08 17h02"
     }
    ],
    "dims": {
@@ -1033,9 +1069,9 @@
     "prod": 45
    },
    "inicio": {
-    "iso": "2026-08-18T13:08:00-03:00",
-    "rotulo": "18/08 13h08",
-    "nota": "1º commit da Fase 2"
+    "iso": "2026-08-18T17:02:00-03:00",
+    "rotulo": "18/08 17h02",
+    "nota": "último commit: Fase 2 completa"
    }
   },
   {
@@ -1046,8 +1082,8 @@
     "texto": "✅ rodando"
    },
    "agora": [
-    "<b>A todo vapor</b>: cálculo de parcelas, valor por extenso, repositório de templates de contrato, e leu a referência da API da Assinafy.",
-    "Resolveu a colisão de migration em 2 minutos assim que você avisou — e conferiu o rótulo interno do arquivo, não só renomeou."
+    "Construindo o núcleo de contrato: templates, contratos, parcelas e comissão de fornecedor — a migration já está escrita e aguarda o Luiz rodar.",
+    "Ainda não declarou status; o worktree dele estava 35 commits atrás e nem tinha a pasta <code>docs/status/</code> — sincronizei."
    ],
    "proxima": "➡️ Seguir com a tela de Fechamento de Venda, agora sabendo que ela não é mais provisória.",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
@@ -1078,9 +1114,9 @@
     "prod": 35
    },
    "inicio": {
-    "iso": "2026-08-18T14:20:00-03:00",
-    "rotulo": "18/08 ~14h20",
-    "nota": "retomou a sub-frente Contrato"
+    "iso": "2026-08-18T15:03:00-03:00",
+    "rotulo": "18/08 15h03",
+    "nota": "último commit próprio"
    }
   }
  ],
@@ -1093,7 +1129,14 @@
    "<b>O que ainda não está resolvido:</b> os dois só souberam porque <b>você avisou em cada conversa</b>. O hook não alcança sessão que já está aberta — e é justamente o agente produtivo que fica horas com ela aberta. Enquanto isso não mudar, você continua sendo o carteiro dos casos urgentes. É a próxima coisa a atacar."
   ]
  },
- "esperas": []
+ "esperas": [
+  {
+   "tempo": "🗄️",
+   "frio": false,
+   "texto": "<b>2 migrations aguardando você</b> — o Marketing e o Vendas fecharam frentes hoje e as duas pararam antes do banco, como a regra manda. É o que falta pra Fase 2 do Marketing e o núcleo de Contrato existirem em produção. Arquivo pronto, 100% aditivo.",
+   "acao": "rodar no SQL Editor"
+  }
+ ]
 }
 </script>
 
