@@ -7,6 +7,8 @@
 > **Como usar este documento:** este é o índice-mestre do projeto. Toda decisão relevante tomada em qualquer conversa sobre o sistema deve ser resumida e adicionada aqui (ou em um dos documentos filhos referenciados abaixo). Isso existe justamente para que o contexto do projeto não se perca quando a conversa/memória local ficar longa demais — comece qualquer nova sessão de trabalho no projeto lendo este arquivo primeiro.
 >
 > **Convenção de progresso (12/08/2026):** progresso de qualquer módulo/documento se mede em **duas dimensões separadas, nunca uma só** — **Planejamento** (o quanto já foi discutido/documentado) e **Produção** (o quanto já foi de fato construído em código/infraestrutura). Um módulo com planejamento em 90% ainda está em **0% de produção** se nenhuma linha de código foi escrita — nunca resumir as duas coisas num único "% concluído". Ver `mindmap_projeto_arrudacred.html` para o mapa visual com as duas barras por item.
+>
+> ⚠️ **Trabalho em múltiplos agentes/worktrees (18/08/2026):** o projeto passou a ser tocado por vários agentes de IA em paralelo, cada um numa branch/worktree própria (CRM, Marketing, Vendas — e outros a caminho, ex.: Financeiro, Operações). **Antes de começar qualquer sessão de trabalho, leia também `COORDENACAO_AGENTES_ARRUDACRED.md`** — é o quadro-branco compartilhado entre todos os agentes (registro de quem está fazendo o quê, reserva de timestamp de migration pra evitar colisão, avisos de sinergia entre módulos, decisões cross-cutting pendentes do Luiz). Nasceu depois de um incidente real: dois agentes diferentes criaram migrations com timestamp idêntico, sem nenhum canal pra se avisar.
 
 ---
 
@@ -208,6 +210,7 @@ AGENDA_POS_VENDA_ARRUDACRED.md            ← régua de relacionamento pós-cont
 MODULO_MARKETING_CONTEUDO_ARRUDACRED.md   ← pipeline de conteúdo/blog multi-site + campanha de indicação de clientes
 PARCEIROS_AFILIADOS_ARRUDACRED.md         ← parceiros (revenda) e afiliados (comissão)
 SEGURANCA_E_AUDITORIA_ARRUDACRED.md       ← segurança externa + trilha de auditoria interna
+COORDENACAO_AGENTES_ARRUDACRED.md         ← quadro-branco entre agentes/worktrees (CRM/Marketing/Vendas/...) — ler antes de qualquer sessão
 KICKOFF_CLAUDE_CODE.md                    ← notas históricas do kickoff do projeto (estável, raramente muda)
 ```
 
@@ -505,6 +508,25 @@ Luiz pediu explicitamente que objeções vivam no banco, não em arquivo de text
 >
 > **Onde fica o código:** `github.com/contatoarrudacred/hub-arruda`, branch `main`. Histórico de commits no git é a fonte definitiva do que mudou passo a passo — esta seção é o resumo em prosa pra não precisar ler diff nenhum pra se situar.
 
+### ✅ Módulo Vendas — sub-frente Cadastro, construída, revisada e mesclada em `main` (17-18/08/2026), pendente de teste manual
+
+Primeira sub-frente do módulo Vendas (spec: `superpowers/specs/2026-08-17-modulo-vendas-design.md`, plano: `superpowers/plans/2026-08-17-vendas-cadastro.md`) — cadastro de Fornecedor e Cliente com endereço (CEP-primeiro via ViaCEP), upload de documento com tipo identificado, leitura de documento por IA (Claude, visão, só pré-preenche) e foto da pessoa, além da criação de Oportunidade "sem funil prévio". Construída via subagent-driven-development num worktree isolado (19 tasks, cada uma com implementação + revisão de código independente; 3 tasks passaram por 1 rodada de correção após a revisão achar problema real — condição de corrida na busca de pessoa, tratamento de erro de rede, captura de exceção nas actions de upload).
+
+**Duas rodadas de revisão adicionais, além das 19 por task (achado real: revisão só-por-task não pega convenção aprendida num fix round que não se propagou pro código irmão com a mesma forma):**
+- **Revisão de branch inteira** (modelo mais capaz, olhando os 26 commits juntos): achou 6 problemas reais que nenhuma revisão por task tinha pego — exceção de repositório vazando sem tratamento nas duas telas, exclusão de documento não apagando o arquivo do Storage (LGPD), condição de corrida + fechamento obsoleto no campo de CEP (`CampoEndereco`, componente compartilhado pelas duas telas), papel `fornecedor` nunca gravado em `pessoa_papeis` (mecanismo que a spec depende para escopo por empresa), duplo-clique sem guard nos dois botões de salvar, e reforço defensivo de RLS em 6 tabelas núcleo adicionais (`pessoas`, `oportunidades`, `conversas`, `usuarios_sistema`, `fluxos`, `etapas_fluxo` — provavelmente já cobertas pelo RLS automático do Supabase em tabela nova, mas `enable row level security` é idempotente, então reforçar não custa nada). Corrigidos num fix wave único e re-revisados.
+- **Revisão de follow-up** (2 resíduos que a rerevisão do fix wave achou e que não puderam entrar em mais uma rodada pela própria regra do processo): `resolverOuCriarPessoa` ainda lançava exceção fora do try/catch em um ponto de cada tela; `excluirDocumentoPessoa` apagava a linha do banco antes de confirmar a exclusão no Storage (ordem seguraria mais o dado). Luiz decidiu corrigir antes de mesclar — corrigido e revisado, aprovado.
+
+**Construído (20 commits na branch `worktree-vendas-cadastro`, mesclada em `main` em 18/08/2026 via merge local — sem PR, seguindo o padrão já usado no projeto):**
+- 3 migrations novas (033-035): núcleo de cadastro (`produtos.tipo` ganha `subcontratado`/`comissionado`, tabelas `fornecedores`/`fornecedor_produtos`), fecha lacuna de RLS+auditoria em 6 tabelas núcleo de Pessoa/Papel que nunca tiveram + reforço defensivo em mais 6 tabelas núcleo, `pessoa_documentos` + buckets de Storage (`pessoa-documentos` privado, `pessoa-fotos` público)
+- Módulo novo `src/lib/vendas/` (documento, máscaras, pessoas, endereço, fornecedores, clientes, pessoa-documentos, pessoa-fotos, leitura-documento-ia) e `src/components/vendas/` (leitor de documento por IA, campo de endereço, uploads — componentes compartilhados entre as duas telas)
+- Telas `/admin/fornecedores` e `/admin/vendas/nova`, completas (máscara, endereço, upload, IA, foto), com item de navegação "Vendas" no sidebar
+
+**Pendente — ação manual de Luiz antes de considerar em produção:**
+1. Rodar as 3 migrations novas, nessa ordem, no SQL Editor do Supabase: `20260817110000_vendas_cadastro_nucleo.sql`, `20260817120000_vendas_seguranca_nucleo_pessoa.sql`, `20260817130000_vendas_pessoa_documentos.sql`
+2. Testar as duas telas de verdade no navegador (cadastro de fornecedor e de venda sem funil prévio, incluindo upload de documento/foto e leitura por IA) — **ainda não foi possível fazer esse teste**: a construção rodou num worktree isolado sem `.env.local` com credenciais reais, e o teste de verdade também depende das migrations acima já estarem rodadas. Ajustes encontrados nesse teste entram direto em `main` (sem worktree novo — só a construção grande usou isolamento, por segurança durante a automação multi-agente).
+
+**Fora de escopo desta sub-frente** (registrado na spec, seção 7): módulo Operação, contas a pagar a fornecedor, régua de cobrança, agenda pós-venda, portal do cliente, split payment de afiliado — todos ficam pra frentes futuras.
+
 ### Stack técnica confirmada (13/08/2026)
 - **Next.js 16** (App Router, TypeScript, Tailwind, pnpm) na Vercel
 - **Supabase**: Postgres + **Supabase Auth** (login do admin — substituiu a ideia original de `senha_hash` próprio em `usuarios_sistema`) + Storage (mídia) — acesso via `service_role` no backend
@@ -704,6 +726,59 @@ Perguntas em aberto pra quando for desenhar de verdade: quais KPIs entram em cad
 - ~~Motor de disparo de follow-up~~ — construído em 15/08/2026, ver seção "Fase 6" acima.
 - ~~Integração real de WhatsApp~~ — Fase 7, funcionando em produção desde 16/08/2026, ver seção acima.
 - Integração real Assinafy/Asaas (Malala para antes disso no MVP1, é manual)
+
+---
+
+## 12. Módulo Vendas — Detalhamento (planejamento fechado da sub-frente Cadastro, construção em andamento)
+
+> 📄 Spec completa: `superpowers/specs/2026-08-17-modulo-vendas-design.md`. Plano de implementação da sub-frente Cadastro: `superpowers/plans/2026-08-17-vendas-cadastro.md`. Status de produção: seção 11 acima.
+> Esta seção é sobre **Planejamento** (ver convenção de duas dimensões, seção 0) — o que foi decidido e por quê. O que já foi de fato construído fica em seção 11.
+
+### 12.1 Fronteiras do módulo (por que Vendas é separado de CRM/Operação)
+
+Vendas cobre o processo comercial do **fechamento** (a partir de "Dados para Contrato" no Kanban do CRM, seção 8) até a **entrega pro módulo Operação** (execução do serviço vendido, seção 1.5 — ainda não desenhado). Não é um sistema paralelo ao CRM: reaproveita o núcleo Pessoa/Papel (`MODELAGEM_DADOS_ARRUDACRED.md`) e a entidade `oportunidades` já existentes — **sem entidade nova de "venda"**, a própria Oportunidade carrega o processo do início ao fim, virando handoff pra Operação no final.
+
+**Duas formas de uma venda começar:**
+1. Avançando pelo funil normal do CRM (lead → triagem → qualificação → negociação → fechamento).
+2. Direto no fechamento, sem funil prévio (venda fechada por telefone/presencial) — cria a Oportunidade já na subetapa `dados_contrato`, pulando as etapas que não existiram.
+
+### 12.2 Os 3 modelos de receita de um Serviço (Produto) — decidido 17/08/2026
+
+Descoberta durante o levantamento: "produto próprio vs. terceiro" (seção 8.8) não é granular o suficiente pro módulo Vendas — existem 3 modelos de negócio reais, cada um com fluxo de dinheiro e de handoff diferente. `produtos.tipo` passou a ter 3 valores:
+
+| Tipo | Quem fatura o cliente | Passa por Contrato/Assinatura/Pagamento? | Handoff pra Operação? | Financeiro |
+|---|---|---|---|---|
+| `proprio` | ArrudaCred | Sim, completo | Sim | Só receita |
+| `subcontratado` | ArrudaCred | Sim, completo | Sim | Receita agora; despesa ao fornecedor só quando a OS for enviada a ele (Operação, futuro) |
+| `comissionado` | Fornecedor/administradora (fora do sistema) | Não | Não | Comissão a receber do fornecedor, com agenda de vencimento configurável |
+
+Exemplos: Limpeza de Nome/Score/Bacen = `proprio`. Consórcio, crédito/empréstimo/financiamento = `comissionado`. Um serviço vendido pela ArrudaCred mas executado por terceiro = `subcontratado`.
+
+### 12.3 Sub-frentes planejadas (ordem de construção)
+
+1. **Cadastro** (Cliente/Fornecedor/Serviço, endereço, upload de documento, foto, leitura por IA) — ✅ construída, ver seção 11.
+2. **Contrato** (geração automática de PDF com template editável, valor por extenso, tabela de vencimentos, 2 assinantes via Assinafy) — planejada na spec, ainda não iniciada.
+3. **Assinatura digital** (integração real Assinafy, webhook) — planejada, ainda não iniciada.
+4. **Financeiro da venda** (cobrança real via Asaas, comissão a receber pro modelo `comissionado`, handoff pra Operação) — planejada, ainda não iniciada.
+
+### 12.4 Convenções de cadastro de Pessoa — decidido 17/08/2026 (vale pra qualquer tela que cadastra Pessoa, não só Vendas)
+
+- **Texto sempre em caixa alta, exceto e-mail** — nome/endereço salvos em maiúsculo; documento/whatsapp (só dígitos) e campos de `check constraint` (ex.: categoria de fornecedor) ficam de fora.
+- **Máscaras de input padrão** — CPF/CNPJ, CEP, telefone formatados na tela, dado salvo sempre normalizado.
+- **Endereço sempre CEP-primeiro** — autopreenche logradouro/bairro/cidade/UF via ViaCEP (API pública, sem custo); campos autopreenchidos continuam editáveis; UF é select fechado (27 estados + DF), não texto livre.
+- **CPF/CNPJ sempre validados** (dígito verificador) antes de aceitar o cadastro.
+- **Upload de documento com tipo identificado** — cliente/fornecedor podem anexar documentos (RG, CNH, comprovante de residência, contrato social, etc.), cada upload exige escolher o tipo. Bucket privado (`pessoa-documentos`, LGPD), URL assinada só na leitura.
+- **Leitura de documento por IA, sempre opcional e nunca automática** — upload/colagem de imagem(ns) ou PDF → Claude (visão, Haiku) extrai nome/documento/endereço → só pré-preenche o formulário, nunca salva sozinho (mesmo princípio do lema do projeto, seção 0).
+- **Foto da pessoa** — reaproveita `pessoa_fotos` (tabela já existente pra foto de perfil do WhatsApp na Tela de Atendimento, seção 8) — mesmo formato, bucket público (`pessoa-fotos`).
+
+### 12.5 O que fica fora desta sub-frente (registrado pra não esquecer)
+
+Módulo Operação inteiro (inclusive o schema de `ordens_servico`), contas a pagar a fornecedor, régua de cobrança de parcelas em atraso (`REGUA_COBRANCA_ARRUDACRED.md`, Financeiro), agenda de comunicação pós-venda (`AGENDA_POS_VENDA_ARRUDACRED.md`), portal do cliente, split payment de afiliado via Asaas — todos ficam pra frentes futuras, com o modelo de dados desta sub-frente já pensado pra não exigir redesenho quando chegar a vez (detalhe completo na spec, seção 7).
+
+### 12.6 Achados cruzados durante a construção (fora do escopo estrito de Vendas, registrados pra decisão futura)
+
+- **Migração de dado existente:** `produtos.tipo = 'terceiro'` foi migrado para `'comissionado'` por padrão (única correspondência conhecida até 17/08/2026 — Consórcio, Crédito). Se algum produto "terceiro" for na real `subcontratado`, precisa ser corrigido manualmente depois de rodar a migration.
+- **Lacuna de segurança fechada, não específica de Vendas:** `pessoa_papeis`, `pessoa_representantes`, `enderecos`, `entidades_legais`, `identidades_canal`, `unidades_negocio` nunca tinham RLS nem trigger de auditoria (`SEGURANCA_E_AUDITORIA_ARRUDACRED.md` seção 2.6, gap conhecido) — Vendas foi a primeira frente a escrever nessas tabelas via cliente autenticado, então a migration desta sub-frente fechou a lacuna. Reforço defensivo adicional (idempotente, não é um gap confirmado) também foi aplicado a `pessoas`/`oportunidades`/`conversas`/`usuarios_sistema`/`fluxos`/`etapas_fluxo`.
 
 ---
 

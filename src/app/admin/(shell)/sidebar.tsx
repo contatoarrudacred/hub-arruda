@@ -41,7 +41,11 @@ const MODULOS: Modulo[] = [
     chave: "vendas",
     rotulo: "Vendas",
     icone: "💰",
-    itens: [{ tipo: "em_breve", rotulo: "Dashboard", icone: "📊" }],
+    itens: [
+      { tipo: "em_breve", rotulo: "Dashboard", icone: "📊" },
+      { tipo: "link", rotulo: "Nova venda", href: "/admin/vendas/nova", icone: "🧾" },
+      { tipo: "link", rotulo: "Fornecedores", href: "/admin/fornecedores", icone: "🏭" },
+    ],
   },
   {
     chave: "marketing",
