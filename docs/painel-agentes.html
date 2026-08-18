@@ -518,8 +518,8 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 12h55",
- "commit": "6e9ee2d",
+ "atualizado": "18/08/2026 · 13h05",
+ "commit": "854910a",
  "instrumentos": [
   {
    "rot": "Testes",
@@ -591,30 +591,48 @@
   },
   {
    "id": "spf-resend",
-   "prazo": "logo",
-   "prazoRot": "⚠️ Quando der",
+   "prazo": "feito",
+   "prazoRot": "✅ Resolvido",
    "titulo": "SPF do domínio não autoriza o Resend",
-   "corpo": "O arrudacred.com.br hoje autoriza só a Hostinger. É a causa provável dos primeiros e-mails de teste não chegarem — e afeta tanto o e-mail de boas-vindas quanto a nutrição de 30/60/90 dias. Ação no painel de DNS do registrador, fora do código.",
+   "corpo": "O SPF do arrudacred.com.br agora autoriza o Resend. Avisei o CRM, que é o dono do envio de e-mail, pra ele confirmar a entrega de ponta a ponta e destravar os 3 e-mails de nutrição (30/60/90 dias) que estavam em modo simulado justamente porque a entrega não era confiável.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 12h43",
+     "texto": "feito"
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "zap-rastreio",
-   "prazo": "logo",
-   "prazoRot": "⚠️ Quando der",
+   "prazo": "feito",
+   "prazoRot": "✅ Resolvido",
    "titulo": "Publicar o rastreio de cliques do WhatsApp",
-   "corpo": "Código pronto e parado: falta criar o subdomínio zap.arrudacred.com.br na Hostinger e subir o hostinger-zap/index.php. Sem isso, não dá pra saber de qual canal o lead veio. Não bloqueia ninguém — só continua não medindo.",
+   "corpo": "Subdomínio criado e testado. Conferi que a tabela <code>cliques_rastreio</code> já existe no banco, então o rastreio grava de verdade — a partir de agora dá pra saber de qual canal cada lead veio. Avisei CRM e Marketing: o dado de origem do lead passou a existir e pode entrar em relatório.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 12h44",
+     "texto": "criado e já testado"
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "assinafy-asaas",
-   "prazo": "depois",
-   "prazoRot": "🕓 Vai chegar",
+   "prazo": "feito",
+   "prazoRot": "✅ Respondido",
    "titulo": "Decidir Assinafy e Asaas",
-   "corpo": "O Vendas vai encostar em assinatura digital e financeiro em breve. São integrações pagas — instruí ele a desenhar e parar antes de contratar ou gastar crédito. Quando chegar lá, eu trago a pergunta pronta.",
+   "corpo": "Você já tem conta e API key nas duas. Isso <b>adianta o Vendas</b> — avisei ele que não precisa parar quando chegar em assinatura e financeiro, só me pedir a chave na hora. E reforça a decisão de criptografia logo acima: essas API keys são exatamente o tipo de segredo que precisa de um cofre único no sistema, não de um por módulo.",
    "acoes": [],
-   "respostas": []
+   "respostas": [
+    {
+     "quando": "18/08 · 12h45",
+     "texto": "já temos conta e api key nas duas plataformas. quando chegar o momento é só me pedir"
+    }
+   ],
+   "concluida": true
   },
   {
    "id": "migrations-vendas",
@@ -886,7 +904,7 @@
     h += "</section>";
 
     h += '<footer class="rodape">' +
-         "<span>As barras de evolução são leitura minha, não medição automática — planejamento pelo que está documentado, produção pelo que roda de verdade.</span>" +
+         "<span>Esta página se atualiza sozinha: quando eu republico, toda janela aberta recarrega — não precisa botão de atualizar nem recarregar na mão. As barras de evolução são leitura minha, não medição automática.</span>" +
          '<span class="links">' +
          '<a class="botao" href="https://github.com/contatoarrudacred/hub-arruda" target="_blank" rel="noopener">repositório</a>' +
          '<a class="botao" href="https://supabase.com/dashboard/project/mzvaqjhalynaceecnayt/sql/new" target="_blank" rel="noopener">SQL Editor</a>' +

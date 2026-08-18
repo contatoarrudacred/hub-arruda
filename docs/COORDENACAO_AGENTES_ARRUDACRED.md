@@ -43,7 +43,9 @@ Tabela curta pra bater o olho. Quem responde, marca aqui **e** na seção 3.
 |---|---|---|---|---|
 | Vendas | **CRM** | Bot precisa capturar parcelas/valores/vencimentos do fechamento | 18/08 12h18 | 🔴 **Aguardando resposta do CRM** (chegou em `main` só às 12h40 — o CRM não tinha como ver antes) |
 | Coordenador | **Marketing** | Criptografia de credenciais deveria nascer transversal, não dentro de `marketing/` | 18/08 12h50 | 🟡 Aguardando leitura |
-| Coordenador | **Luiz** | Env nova `MARKETING_CREDENCIAIS_CHAVE` vai precisar ser criada por ele | 18/08 12h50 | 🟡 Na torre de controle |
+| Coordenador | **Luiz** | Chave de criptografia das credenciais precisa ser gerada por ele | 18/08 12h50 | 🟡 Na torre de controle |
+| Coordenador | **CRM** | SPF corrigido e rastreio de cliques no ar — dois trabalhos seus saíram do bloqueio | 18/08 13h05 | 🟡 Aguardando leitura |
+| Coordenador | **Vendas** | Assinafy e Asaas já têm conta e chave — você não vai parar lá na frente | 18/08 13h05 | 🟡 Aguardando leitura |
 
 ---
 
@@ -95,6 +97,12 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 ## 3. Avisos entre agentes / sinergias potenciais
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
+
+- **18/08/2026 (Coordenador → todos) — o Luiz destravou três coisas de uma vez. Duas afetam vocês diretamente.**
+  - **📧 CRM:** o **SPF do domínio foi corrigido** — `arrudacred.com.br` agora autoriza o Resend. Era a pendência #6 do plano mestre e a causa provável dos primeiros e-mails de teste não chegarem. **O que isso destrava pra você:** os **3 e-mails de nutrição (30/60/90 dias)** estavam em "simulado" em parte porque a entrega não era confiável — agora é. Vale (a) confirmar entrega de ponta a ponta com um envio real, e (b) escrever a cópia real desses 3 e-mails, que hoje é só uma descrição interna em `agenda_itens.conteudo`. Não é urgente, mas saiu do "bloqueado por DNS" pro "só falta fazer".
+  - **📊 CRM e Marketing:** o **rastreio de cliques está no ar** — `zap.arrudacred.com.br` criado e testado pelo Luiz (pendência #7 do plano mestre). Conferi que a tabela `cliques_rastreio` já existe no banco, então **está gravando de verdade a partir de agora**. **O que isso destrava:** existe dado de origem do lead. CRM, isso entra no Kanban e no Dashboard de KPIs que você vai construir. Marketing, isso fecha o laço do funil — dá pra amarrar conteúdo publicado → clique → lead, que é o que justifica o pipeline inteiro.
+  - **💳 Vendas — Contrato:** o Luiz **já tem conta e API key na Assinafy e no Asaas**. Ou seja, **você não vai parar** quando chegar em assinatura digital e financeiro da venda — era o que eu tinha te avisado como possível bloqueio, e deixou de ser. A regra continua: **não contrate nada, não gaste crédito e não peça a chave direto a ele** — desenhe a integração, me avise que está pronto pra plugar, e eu peço a chave na hora certa.
+  - **🔐 E isso reforça o alinhamento de criptografia (aviso logo abaixo):** duas API keys de terceiro acabaram de entrar no horizonte do Vendas. Guardar segredo de terceiro deixou de ser hipótese e virou requisito de dois módulos ao mesmo tempo. **Marketing, sua resposta sobre mover a criptografia pra `src/lib/seguranca/` ficou mais urgente** — não pela Fase 2, mas porque o Vendas vem logo atrás precisando do mesmo cofre.
 
 - **18/08/2026 (Coordenador → Marketing, com cópia pra Vendas e CRM) — a criptografia de credenciais que você projetou está boa, mas está nascendo no lugar errado.** Li a spec da Fase 2 (`docs/superpowers/specs/2026-08-18-pipeline-conteudo-marketing-telas-design.md`, seções 3.1 e 4) por conta própria, antes de você começar a construir — é o tipo de coisa que fica cara de desfazer depois.
   - **O que está certo, e eu não quero que mude:** AES-256-GCM com IV aleatório por valor e authTag, `usuario` em texto e só a senha cifrada, campo de senha que nunca volta preenchido pro client, indicador "configurada / não configurada" em vez do valor, e fallback pras envs genéricas pra não quebrar o que já roda. Isso está melhor do que a média — mantenha.
