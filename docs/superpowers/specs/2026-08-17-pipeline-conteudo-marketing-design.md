@@ -27,51 +27,61 @@ Reprovação em qualquer um dos dois gates significa **regenerar e reavaliar em 
 
 ## 3. Arquitetura
 
-### 3.1 Orquestração — Vercel Workflow SDK
+### 3.1 Orquestração — fila simples no Supabase (revisado 17/08/2026, substitui o Vercel Workflow SDK)
 
-Escolhido em vez de eve (framework de agentes mais amplo, dependência nova) ou cron+fila manual no Supabase (reimplementaria retry/durabilidade que o Workflow SDK já dá pronto). O pipeline é uma sequência fixa de passos com loops de retry — não uma conversa aberta — encaixa bem no modelo de step functions duráveis.
+**Decisão revertida:** a primeira versão desta spec escolhia o Vercel Workflow SDK. Na implementação (Task 8), o empacotamento de steps do SDK (via esbuild, dependência transitiva `builtin-modules`) esbarrou numa incompatibilidade com Node 24 (`ERR_IMPORT_ATTRIBUTE_MISSING`) sem correção viável sem mexer na versão de Node do projeto/Vercel — mudança que afetaria todos os módulos já em produção (atendimento, WhatsApp), não só o Marketing. Luiz decidiu (17/08/2026) migrar pra fila simples no Supabase, reaproveitando o mesmo padrão **já validado em produção** pelo cron de follow-up do WhatsApp (`src/lib/motor-fluxo/motor-followup.ts` / `dispararItemFollowup`): sem dependência nova, sem risco de versão de Node, "terreno conhecido".
+
+**O insight que simplifica tudo:** os repositórios da Task 3 (`selecionarProximaPautaPendente`, `marcarPautaEmProducao`, `registrarReprovacaoPauta`, `marcarPautaBloqueada`) já foram desenhados de forma orientada a estado/status desde o início — nenhum deles é específico do Workflow SDK. `registrarReprovacaoPauta` já devolve a pauta pro status `pendente` (incrementando `tentativas`), então o **próximo ciclo do cron naturalmente re-seleciona a mesma pauta pra nova tentativa** — não precisa de uma máquina de estados nova nem coluna `etapa_atual`. Cada execução do cron processa **uma tentativa completa** (gerar → revisar → publicar) de uma pauta por matriz, não o loop inteiro de até 3 tentativas de uma vez — isso mantém cada execução curta (bem dentro do limite de tempo de função), ao custo de o pipeline avançar "tentativa por tentativa, tick por tick do cron" em vez de tudo numa chamada só.
 
 ```typescript
-// src/lib/marketing/workflows/gerar-publicar-conteudo.ts
-export async function gerarPublicarConteudoWorkflow(matrizId: string) {
-  "use workflow";
+// src/lib/marketing/processar-pauta.ts
+export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
+  const propriedade = await carregarPropriedade(propriedadeId);
+  const pauta = await selecionarPauta(matrizConteudoId); // Estrategista: seleciona + marca em_producao
+  if (!pauta) return { status: "sem_pauta" as const };
 
-  let pauta = await selecionarProximaPauta(matrizId);
-  let tentativas = 0;
-  const maxTentativas = await obterMaxTentativas(matrizId);
-
-  while (tentativas < maxTentativas) {
-    const rascunho = await gerarConteudo(pauta);
-    const revisao = await revisarConteudo(rascunho, pauta.propriedade_id);
-
-    if (!revisao.aprovado) {
-      tentativas++;
-      pauta = { ...pauta, motivo_ultima_reprovacao: revisao.motivo };
-      continue; // volta pro estágio 1, nada foi publicado
-    }
-
-    const publicado = await publicarWordPress(rascunho, pauta.propriedade_id);
-    const distribuicao = await distribuirEAprovar(publicado, pauta.propriedade_id);
-
-    if (!distribuicao.aprovado) {
-      tentativas++;
-      pauta = { ...pauta, motivo_ultima_reprovacao: distribuicao.motivo };
-      continue;
-    }
-
-    return { status: "publicado", url: publicado.url, canais: distribuicao.canais };
+  if (pauta.tentativas >= propriedade.maxTentativas) {
+    await marcarPautaBloqueada(pauta.id, pauta.motivoUltimaReprovacao ?? "Limite de tentativas esgotado.");
+    return { status: "bloqueada" as const, pautaId: pauta.id };
   }
 
-  await marcarPautaBloqueada(pauta.id, pauta.motivo_ultima_reprovacao);
-  return { status: "bloqueada", pautaId: pauta.id };
+  const checklist = await carregarChecklistAtivo(propriedadeId);
+  const conteudo = await gerarConteudo(pauta, checklist);
+  const revisao = await revisarConteudo(conteudo, checklist);
+
+  if (!revisao.aprovado) {
+    await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+    return { status: "reprovado" as const, pautaId: pauta.id }; // próximo tick do cron tenta de novo
+  }
+
+  const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
+  const adaptador = criarAdaptadorWordPress(propriedade.urlBase);
+  const rascunho = await adaptador.criarRascunho({
+    titulo: conteudo.titulo, corpoHtml: conteudo.conteudoHtml, slug: conteudo.slug,
+    metaTitle: conteudo.metaTitle, metaDescription: conteudo.metaDescription,
+  });
+  const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
+  if (!verificacao.ok) {
+    await atualizarStatusPost(post.id, "falhou");
+    await registrarReprovacaoPauta(pauta.id, verificacao.detalhes ?? "Rascunho não conforme no WordPress.");
+    return { status: "reprovado" as const, pautaId: pauta.id };
+  }
+
+  const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+  await atualizarStatusPost(post.id, "publicado", {
+    canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
+    publicadoEm: new Date().toISOString(),
+  });
+  await marcarPautaPublicada(pauta.id);
+  return { status: "publicado" as const, url: publicado.urlPublicada };
 }
 ```
 
-Cada função chamada (`selecionarProximaPauta`, `gerarConteudo`, `revisarConteudo`, `publicarWordPress`, `distribuirEAprovar`, `marcarPautaBloqueada`) é um `"use step"` — acesso completo a Node.js/npm, resultado persistido e retryable automaticamente. O corpo acima é só orquestração, roda no sandbox do workflow.
+Função comum, sem `"use step"`/`"use workflow"`, testável diretamente sem nenhum empacotamento — mocka os repositórios/adaptador com `vi.spyOn`, igual às Tasks 3-7.
 
-### 3.2 Gatilho — cron-job.org (não Vercel Cron)
+### 3.2 Gatilho — cron-job.org (sem mudança de infraestrutura)
 
-Vercel Hobby só libera cron nativo 1x/dia (rejeita deploy com frequência maior) — mesmo motivo pelo qual o cron de follow-up já migrou pro cron-job.org (`src/app/api/cron/followups/route.ts`).
+Mesmo padrão de `src/app/api/cron/followups/route.ts` — cron-job.org bate na rota (Vercel Hobby não libera cron nativo com frequência > 1x/dia), protegida por `CRON_SECRET`.
 
 ```typescript
 // src/app/api/cron/marketing-pipeline/route.ts
@@ -87,28 +97,28 @@ export async function GET(request: Request) {
     .select("id, propriedade_id")
     .eq("ativo", true);
 
-  const disparados: string[] = [];
+  const resultados: Record<string, string> = {};
   for (const matriz of matrizes ?? []) {
     // Lock por matriz — não um lock global como o do followup, matrizes rodam em paralelo
     const { data: obtido } = await supabase.rpc("fn_tentar_lock_cron", {
       p_id: `marketing-pipeline-${matriz.id}`,
-      p_duracao_segundos: 1800, // gerar+revisar+publicar+distribuir pode levar minutos
+      p_duracao_segundos: 240, // uma tentativa completa (gerar+revisar+publicar) — bem mais curto que o loop inteiro
     });
     if (!obtido) continue;
 
     try {
-      await start(gerarPublicarConteudoWorkflow, [matriz.id]);
-      disparados.push(matriz.id);
+      const resultado = await processarProximaPauta(matriz.id, matriz.propriedade_id);
+      resultados[matriz.id] = resultado.status;
     } finally {
       await supabase.rpc("fn_liberar_lock_cron", { p_id: `marketing-pipeline-${matriz.id}` });
     }
   }
 
-  return Response.json({ disparados });
+  return Response.json({ resultados });
 }
 ```
 
-Reaproveita `cron_locks`/`fn_tentar_lock_cron`/`fn_liberar_lock_cron` já existentes — só muda o `p_id` pra ser por matriz em vez de fixo. `start()` só retorna o `runId` (não espera o workflow terminar) — o lock protege contra duas execuções do cron disparando a mesma matriz de novo antes da anterior sair do estágio de geração/revisão, mas o workflow em si roda em background depois de disparado.
+Reaproveita `cron_locks`/`fn_tentar_lock_cron`/`fn_liberar_lock_cron` já existentes — só o `p_id` muda pra ser por matriz. Diferença central em relação à v1 desta spec: a rota agora `await`s o processamento inteiro de uma tentativa (síncrono, dentro da mesma invocação de função) — não dispara nada em background. Isso é seguro porque cada tentativa é curta (uma chamada de geração + uma de revisão + no máximo uma publicação), bem dentro do limite de execução de função da Vercel.
 
 ### 3.3 Adaptadores de canal
 
@@ -162,11 +172,11 @@ O documento irmão já descreve as entidades completas (seção 2, com os campos
 
 | Situação | Tratamento |
 |---|---|
-| Geração/revisão reprova o rascunho | `RetryableError` implícito no loop do workflow — regenera com o motivo, incrementa tentativa |
-| API de canal externo falha (rate limit, timeout) | `RetryableError` com `retryAfter`, o Workflow SDK re-executa o step |
-| API de canal externo rejeita definitivamente (credencial inválida, conta suspensa) | `FatalError` — não adianta tentar de novo; marca a propriedade/canal com alerta no painel de custo/status, segue sem aquele canal específico (não trava os outros) |
-| Circuit breaker esgotado (`max_tentativas`) | Pauta marcada, workflow encerra normalmente (não é erro do sistema) |
-| Duas execuções do cron sobrepostas na mesma matriz | Lock por `matriz_conteudo_id` evita duplicidade |
+| Geração/revisão reprova o rascunho | `registrarReprovacaoPauta` volta o status pra `pendente` + incrementa `tentativas` — o próximo tick do cron re-seleciona a mesma pauta e tenta de novo |
+| API de canal externo falha (rate limit, timeout) | Exceção sobe, a tentativa deste tick falha sem marcar reprovação — a pauta continua `em_producao`/`pendente` conforme o ponto da falha, próximo tick tenta de novo naturalmente |
+| API de canal externo rejeita definitivamente (credencial inválida, conta suspensa) | Mesmo caminho da reprovação por enquanto (registra motivo, conta como tentativa) — não há distinção fina entre erro transiente/definitivo no MVP deste pipeline, aceito como simplificação |
+| Circuit breaker esgotado (`max_tentativas`) | `marcarPautaBloqueada` — pauta sai da fila, cron segue pra próxima no próximo tick |
+| Duas execuções do cron sobrepostas na mesma matriz | Lock por `matriz_conteudo_id` evita duplicidade (mesmo mecanismo de sempre) |
 
 ---
 
@@ -180,8 +190,8 @@ O documento irmão já descreve as entidades completas (seção 2, com os campos
 
 ## 7. Plano de testes
 
-- **Unitário:** funções de step isoladas (seleção de pauta, geração de conteúdo, validação de checklist, adaptadores de canal com API mockada) — sem o plugin do Workflow SDK, `"use step"`/`"use workflow"` são no-op fora do compilador.
-- **Integração (`@workflow/vitest`):** o workflow completo, incluindo o loop de retry — usar `waitForHook`/`waitForSleep` se algum estágio precisar de espera; testar cenário de reprovação (verifica que regenera em vez de publicar) e cenário de esgotamento do circuit breaker.
+- **Unitário:** `processarProximaPauta` é uma função comum — testável direto com `vi.spyOn` nos repositórios/Estrategista/Escritor/Revisor/adaptador WordPress, sem nenhum plugin/empacotamento especial. Cenários: publica quando aprovado de primeira; reprova sem publicar (revisão ou WordPress); bloqueia quando `tentativas >= maxTentativas` antes mesmo de gerar.
+- **Rota de cron:** mock do Supabase (`rpc` do lock) + mock de `processarProximaPauta`, mesmo padrão de teste já usado em `src/app/api/cron/followups/route.ts` se existir um, ou o padrão xUnit simples já usado nas Tasks 1-7.
 - **Custo:** o documento irmão já registra que este pipeline consome muito mais tokens que o atendimento comercial (artigos de 1.800+ palavras várias vezes ao dia) — instrumentar custo real desde o primeiro mês (painel de custo, seção 7 do documento irmão), não só depois que virar problema.
 
 ---
@@ -190,4 +200,4 @@ O documento irmão já descreve as entidades completas (seção 2, com os campos
 
 - Definir `max_tentativas` padrão (proposta: 3) e se cada propriedade pode sobrescrever livremente ou se existe um teto global
 - Schema exato do JSON em `POSTS.canais` por tipo de canal (resumo+CTA vs. republicação com canonical têm campos diferentes) — detalhar no plano de implementação
-- Confirmar limites de tempo de execução do Workflow SDK em Vercel Hobby (o projeto está em Hobby hoje) — pode exigir Pro Trial como já aconteceu com o cron de follow-up
+- **Cadência do cron-job.org:** com uma tentativa por tick, o intervalo entre execuções (a definir por Luiz no painel do cron-job.org) determina quanto tempo leva pra uma pauta ir de pendente a publicada em caso de reprovações — não é mais instantâneo dentro de uma chamada só, é gradual entre ticks. Aceitável pra este caso de uso (conteúdo de blog, não é latência crítica), mas vale deixar claro.
