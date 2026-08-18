@@ -51,8 +51,9 @@ def idade(iso):
         mins = int((datetime.now(t.tzinfo) - t).total_seconds() // 60)
     except Exception:
         return "", None
-    if mins < 0:
+    if mins < -5:
         return "", None
+    mins = max(mins, 0)
     if mins < 60:
         return f"há {mins} min", mins
     return f"há {mins // 60}h{mins % 60:02d}", mins
