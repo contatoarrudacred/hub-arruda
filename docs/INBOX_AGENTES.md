@@ -10,7 +10,6 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **Marketing** | Coordenador | 18/08 14h45 | ⏸️ **PAUSE a parte de credenciais** da Fase 2 (criptografia, coluna `credenciais_canais`, tela de credenciais). Não remova e não avance — a decisão de cifrar ou não voltou pro Luiz porque seu trabalho já estava feito. Siga com o resto da Fase 2 normalmente | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 14h45 |
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
