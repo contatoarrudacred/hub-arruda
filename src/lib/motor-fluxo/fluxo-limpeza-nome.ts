@@ -619,18 +619,16 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
+    // Conteúdo real (mensagem de confirmação de pagamento) gerado em tempo de execução por
+    // criarResolverMensagensDinamicas — varia por valores/vencimentos calculados.
     codigo: "ln_passo16_1",
     ordem: 24,
-    campoSalvo: "data_primeira_parcela",
+    campoSalvo: "detalhe_pagamento_confirmado_bruto",
     conteudo: {
       codigo: "ln_passo16_1",
-      mensagens: [
-        t(
-          "Perfeito! Só preciso confirmar uma coisa: qual a melhor data pra você pra realizar o pagamento da primeira parcela? O processo só dá entrada depois que o pagamento for confirmado, viu?",
-        ),
-      ],
+      mensagens: [t("(mensagem de confirmação de pagamento gerada dinamicamente)")],
       aguarda_resposta: true,
-      tipo_resposta: "texto_livre",
+      tipo_resposta: "negociacao_pagamento",
       proximo_codigo: "ln_passo17a",
       kanban_subetapa: KANBAN_NEGOCIACAO_DUVIDAS,
     },

@@ -480,3 +480,99 @@ describe("checkpoint opcional (opcional_apos_tentativas, PLANO_MESTRE seção 8.
     expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo4");
   });
 });
+
+describe("negociacao_pagamento", () => {
+  const dadosBase: DadosConversa = {
+    forma_pagamento: "parcelado",
+    forma_pagamento_detalhe: "boleto_pix",
+    data_primeira_parcela: "2026-08-18",
+    dia_ancora_parcelas: "10",
+    parcelas_valores: "640.00,640.00,640.00,640.00,640.00,640.00",
+    parcelas_vencimentos: "2026-08-18,2026-09-10,2026-10-10,2026-11-10,2026-12-10,2027-01-10",
+  };
+
+  it("confirmado: grava o composto final em campoSalvo e avanca", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo16_1"],
+      etapasPorCodigo,
+      dados: dadosBase,
+      respostaLead: "confirmo",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarNegociacaoPagamento: async () => ({ status: "confirmado" }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.naoReconhecido).toBe(false);
+    expect(resultado.dadosNovos.detalhe_pagamento_confirmado_bruto).toBe(
+      "boleto_pix|2026-08-18|10|640.00,640.00,640.00,640.00,640.00,640.00|2026-08-18,2026-09-10,2026-10-10,2026-11-10,2026-12-10,2027-01-10",
+    );
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("ln_passo17a");
+  });
+
+  it("ajuste_valido: persiste o ajuste, permanece no checkpoint", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo16_1"],
+      etapasPorCodigo,
+      dados: dadosBase,
+      respostaLead: "pode ser no cartão?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarNegociacaoPagamento: async () => ({
+        status: "ajuste_valido",
+        formaPagamento: "cartao",
+        dataPrimeiraParcela: "2026-08-18",
+        diaAncora: 10,
+        mensagemConfirmando: "Combinado, ajustei pra cartão!",
+      }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("ln_passo16_1");
+    expect(resultado.naoReconhecido).toBe(true);
+    expect(resultado.dadosNovos.forma_pagamento_detalhe).toBe("cartao");
+    expect(resultado.dadosNovos.parcelas_vencimentos).toBe(dadosBase.parcelas_vencimentos);
+    expect(txt(resultado.mensagens[0])).toBe("Combinado, ajustei pra cartão!");
+  });
+
+  it("ajuste_valido com nova data: recalcula parcelas_vencimentos a partir da nova 1a parcela", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo16_1"],
+      etapasPorCodigo,
+      dados: dadosBase,
+      respostaLead: "posso pagar a primeira daqui a 10 dias?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarNegociacaoPagamento: async () => ({
+        status: "ajuste_valido",
+        formaPagamento: "boleto_pix",
+        dataPrimeiraParcela: "2026-08-28",
+        diaAncora: 10,
+        mensagemConfirmando: "Fechado, dia 28!",
+      }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.dadosNovos.data_primeira_parcela).toBe("2026-08-28");
+    const vencimentos = resultado.dadosNovos.parcelas_vencimentos?.split(",");
+    expect(vencimentos?.[0]).toBe("2026-08-28");
+    expect(vencimentos?.[1]).toBe("2026-09-10");
+  });
+
+  it("negociando: manda a mensagem de negociacao, nao persiste nada, permanece no checkpoint", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo16_1"],
+      etapasPorCodigo,
+      dados: dadosBase,
+      respostaLead: "quero pagar dia 15 de cada mês",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarNegociacaoPagamento: async () => ({
+        status: "negociando",
+        mensagemNegociacao: "Só temos os dias 01, 10 ou 20 como opção — qual prefere?",
+      }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("ln_passo16_1");
+    expect(resultado.naoReconhecido).toBe(true);
+    expect(resultado.dadosNovos).toEqual({});
+    expect(txt(resultado.mensagens[0])).toBe("Só temos os dias 01, 10 ou 20 como opção — qual prefere?");
+  });
+});
