@@ -183,8 +183,14 @@ Todas nullable/aditivas — `pessoas` e `oportunidade_documentos` são núcleo c
 
 ## Task 6: Geração de PDF
 
-**Files:** Create `src/lib/vendas/geracao-pdf.ts`
-**Produz:** `gerarPdfContrato(html: string): Promise<Buffer>` via `puppeteer-core` + `@sparticuz/chromium`. Adicionar dependências ao `package.json`. **Simplificado em 18/08:** como `contrato_templates.conteudo_html` já é HTML de verdade (Task 1b/4), não existe mais etapa de conversão markdown→HTML — o HTML resolvido (placeholders já substituídos) vai direto pro Puppeteer. **Risco registrado, não bloqueia:** projeto está no plano Hobby da Vercel (sem `vercel.json` hoje) — validar tamanho/duração da function quando testar em preview real; pode exigir Pro depois. Upload do PDF resultante pro bucket `contratos` segue exatamente o padrão de `src/lib/vendas/pessoa-documentos.ts` (path `${contratoId}/${Date.now()}-contrato.pdf`, signed URL sob demanda).
+**Status: ✅ feito e testado de verdade (gerou PDF real, 44KB, magic bytes `%PDF-1.4`).**
+
+**Files:** `src/lib/vendas/geracao-pdf.ts`
+**Produz:** `gerarPdfContrato(html: string): Promise<Buffer>`, `uploadPdfContrato`, `gerarUrlAssinadaContrato`.
+
+**Achado real durante o teste, vale registrar pra qualquer frente futura que precise de headless browser:** `@sparticuz/chromium` **não roda no Windows** (`spawn .../chromium ENOENT` — o binário é compilado só pra Linux serverless). Resolvido com split: `process.env.VERCEL` setada → `puppeteer-core` + `@sparticuz/chromium` (produção); senão → pacote `puppeteer` completo (novo devDependency, baixa Chromium compatível com o SO via `npx puppeteer browsers install chrome`, já feito neste worktree). Sem isso não dava pra testar em dev local no Windows.
+
+**Simplificado em 18/08:** como `contrato_templates.conteudo_html` já é HTML de verdade (Task 1b/4), não existe mais etapa de conversão markdown→HTML — o HTML resolvido vai direto pro Puppeteer. **Risco ainda registrado, não bloqueia:** projeto está no plano Hobby da Vercel (sem `vercel.json` hoje) — validar tamanho/duração da function quando testar em preview real; pode exigir Pro depois (isso só é testável em deploy real, não localmente). Upload do PDF resultante pro bucket `contratos` segue exatamente o padrão de `src/lib/vendas/pessoa-documentos.ts` (path `${contratoId}/${Date.now()}-contrato.pdf`, signed URL sob demanda).
 
 ## Task 6a: Editor HTML rico (TipTap) — componente compartilhado
 
