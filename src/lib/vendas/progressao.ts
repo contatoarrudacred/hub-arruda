@@ -17,6 +17,7 @@ async function executarPassoAutomatico(contratoId: string, executar: () => Promi
     await limparErroContrato(contratoId);
     return { sucesso: true };
   } catch (erro) {
+    console.error(`Falha numa etapa automática do contrato ${contratoId}:`, erro);
     const mensagem = erro instanceof Error ? erro.message : "Falha desconhecida.";
     await registrarErroContrato(contratoId, mensagem);
     return { sucesso: false, erro: mensagem };
