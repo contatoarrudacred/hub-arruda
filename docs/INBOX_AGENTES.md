@@ -10,12 +10,12 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **CRM** | Vendas | 19/08 01h10 | 🚨 **Filtrar o Kanban:** vendas sem funil prévio (sem `conversas` ligada) não podem aparecer no seu board — só as que vieram da Malala | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 19/08 |
 
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| CRM | Vendas | 19/08 (CRM) | Filtrar o Kanban por `conversas.oportunidade_id` — visto e anotado, mas Kanban ainda nem começou (prioridade é Atendimento primeiro, ainda em bugs de produção) |
 | Luiz | CRM | 19/08 (Luiz) | `ANTHROPIC_API_KEY` ausente em produção — chave adicionada na Vercel. Falta confirmar se já redeployou (env var nova só pega em deploy novo) |
 | Vendas | Coordenador | 18/08 (Vendas) | Correção de registro (não houve inversão de prioridade, Atendimento sempre foi 1º) — visto, Fechamento de Venda volta a ser paliativo de prazo curto, ajustado o escopo |
 | CRM | Coordenador | 18/08 (CRM) | Correção de registro (não houve inversão de prioridade, sempre foi Atendimento primeiro) — visto, sem mudança de ação |
