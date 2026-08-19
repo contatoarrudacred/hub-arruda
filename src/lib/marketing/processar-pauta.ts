@@ -11,7 +11,10 @@ import { gerarConteudo } from "./escritor";
 import { revisarConteudo } from "./revisor";
 import { criarAdaptadorWordPress, type CredenciaisWordPress } from "./canais/wordpress";
 import { decifrar } from "./criptografia";
+import { gerarCapa } from "./imagens/capa";
+import { gerarImagensSecundarias, type ImagemSecundaria } from "./imagens/secundarias";
 import { inserirLinksInternos } from "./links";
+import { montarSchemaArticle, montarSchemaOrganization } from "./schema-estruturado";
 import { sanitizarConteudoHtml } from "./sanitizar-html";
 import {
   atualizarStatusPost,
@@ -27,7 +30,7 @@ import {
   registrarReprovacaoPauta,
   salvarRascunho,
 } from "./repositorio";
-import type { JanelaPublicacao, PropriedadeCarregada } from "./tipos";
+import type { ConteudoGerado, JanelaPublicacao, PautaCarregada, PersonaCarregada, PropriedadeCarregada, UsageTokens } from "./tipos";
 
 const FUSO_SAO_PAULO = "America/Sao_Paulo";
 
@@ -110,6 +113,236 @@ export function credenciaisWordPressDaPropriedade(propriedade: PropriedadeCarreg
   };
 }
 
+// ---------------------------------------------------------------------------
+// Geração + upload de imagens (Task 10, Fase 4a+4b, 19/08/2026) — conecta capa.ts (Task 7),
+// secundarias.ts (Task 8) e wordpress.ts/enviarMidia (Task 9) na sequência real do pipeline. Roda
+// depois de "sanitizar" e antes de "publicar" (spec seção 4.7): só com o HTML final fechado é que
+// faz sentido gerar imagens sobre ele. Sequência corrigida em relação à ordem literal do brief
+// ("sanitizar → gerarCapa → gerarImagensSecundarias → montarSchemaArticle → enviarMidia →
+// criarRascunho"): montarSchemaArticle só pode rodar DEPOIS de enviarMidia, porque o campo `image`
+// do schema precisa de uma URL pública de verdade — gerarCapa/gerarImagensSecundarias devolvem
+// data URLs (base64) da OpenAI, inúteis pra um crawler dentro de um JSON-LD.
+// ---------------------------------------------------------------------------
+
+function mensagemErro(erro: unknown): string {
+  return erro instanceof Error ? erro.message : "Erro desconhecido.";
+}
+
+// Mesmo princípio de escaparHtml em links.ts (repetido aqui, não extraído: links.ts escapa texto
+// dentro de <li>/<a>, este escapa dentro de atributo `alt`/`figcaption` — mesmo conjunto de
+// caracteres perigosos, contextos de uso diferentes o bastante pra não forçar um util
+// cross-arquivo por 5 linhas).
+function escaparAtributoHtml(texto: string): string {
+  return texto
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function somarUsageTokens(a: UsageTokens, b: UsageTokens): UsageTokens {
+  return { inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens };
+}
+
+/**
+ * Heurística de inserção das imagens secundárias no HTML (subtlety #2 do brief da Task 10 — nem a
+ * spec nem nenhum código existente definem um mecanismo pra isso; `posicaoAposSecao` é texto livre
+ * gerado pelo Claude na Etapa 1 de secundarias.ts, ex.: "depois da seção que explica os documentos
+ * necessários", não uma posição de DOM precisa).
+ *
+ * Estratégia escolhida: casa `posicaoAposSecao` contra o texto de cada `<h2>` do HTML por
+ * sobreposição de palavras significativas (>=4 letras, sem acento/pontuação/HTML) — a seção cujo
+ * título tem mais palavras em comum "ganha", e a imagem entra no FIM daquela seção (imediatamente
+ * antes do próximo `<h2>`, ou no fim do documento se for a última seção — não logo após a
+ * abertura do heading, que inseriria a imagem antes do próprio parágrafo introdutório da seção).
+ *
+ * Fallback documentado: sem nenhuma palavra em comum com nenhum `<h2>` (post sem H2, ou
+ * `posicaoAposSecao` genérico demais pra casar), a imagem é anexada ao final do corpo do artigo —
+ * resultado aceitável e não uma falha: a imagem não é perdida, só não fica na seção mais precisa.
+ * Nunca lança.
+ */
+function normalizarTexto(texto: string): string {
+  return texto
+    .replace(/<[^>]+>/g, " ")
+    .normalize("NFD")
+    // Remove marcas diacríticas combinantes (acentos) depois do normalize("NFD") — intervalo
+    // Unicode U+0300-U+036F ("Combining Diacritical Marks"), escrito como escape pra não depender
+    // de caracteres não-imprimíveis literais no arquivo-fonte.
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ");
+}
+
+function palavrasSignificativas(textoNormalizado: string): string[] {
+  return textoNormalizado.split(/\s+/).filter((palavra) => palavra.length >= 4);
+}
+
+type SecaoHtml = { fim: number; palavras: string[] };
+
+function extrairSecoesH2(html: string): SecaoHtml[] {
+  const regexH2 = /<h2[^>]*>([\s\S]*?)<\/h2>/gi;
+  const posicoes: { titulo: string; inicioTag: number }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regexH2.exec(html)) !== null) {
+    posicoes.push({ titulo: match[1], inicioTag: match.index });
+  }
+  return posicoes.map((posicao, indice) => ({
+    // Fim da seção = início da próxima tag <h2> (ou fim do documento, na última seção) — não o
+    // fim da própria tag <h2> desta seção, que colocaria a imagem antes do parágrafo introdutório.
+    fim: indice + 1 < posicoes.length ? posicoes[indice + 1].inicioTag : html.length,
+    palavras: palavrasSignificativas(normalizarTexto(posicao.titulo)),
+  }));
+}
+
+function encontrarPosicaoInsercao(html: string, posicaoSugerida: string): number | null {
+  const secoes = extrairSecoesH2(html);
+  const palavrasAlvo = new Set(palavrasSignificativas(normalizarTexto(posicaoSugerida)));
+  if (secoes.length === 0 || palavrasAlvo.size === 0) return null;
+
+  let melhorIndice = -1;
+  let melhorPontuacao = 0;
+  secoes.forEach((secao, indice) => {
+    const pontuacao = secao.palavras.filter((palavra) => palavrasAlvo.has(palavra)).length;
+    if (pontuacao > melhorPontuacao) {
+      melhorPontuacao = pontuacao;
+      melhorIndice = indice;
+    }
+  });
+
+  return melhorIndice >= 0 ? secoes[melhorIndice].fim : null;
+}
+
+function inserirImagensSecundariasNoHtml(html: string, imagens: ImagemSecundaria[]): string {
+  return imagens.reduce((htmlAtual, imagem) => {
+    const figura = `\n<figure><img src="${imagem.url}" alt="${escaparAtributoHtml(imagem.alt)}"><figcaption>${escaparAtributoHtml(imagem.legenda)}</figcaption></figure>\n`;
+    const posicao = encontrarPosicaoInsercao(htmlAtual, imagem.posicaoAposSecao);
+    return posicao !== null ? `${htmlAtual.slice(0, posicao)}${figura}${htmlAtual.slice(posicao)}` : `${htmlAtual}${figura}`;
+  }, html);
+}
+
+type ResultadoGeracaoImagens = {
+  corpoHtmlFinal: string;
+  capaMediaId: string | undefined;
+  imagemDestaqueUrl: string | null;
+  imagemDestaqueAlt: string | null;
+  imagemDestaqueSlug: string | null;
+  imagensSecundariasPersistir: ImagemSecundaria[];
+  usage: UsageTokens;
+  detalhesLog: string | undefined;
+};
+
+/**
+ * Sequência real desta task (corrigida em relação à ordem literal do brief, ver comentário de
+ * cabeçalho da seção): gerarCapa + gerarImagensSecundarias (data URLs) → enviarMidia de cada uma
+ * que teve sucesso (URL pública de verdade, cada upload com try/catch PRÓPRIO — uma falha de
+ * upload não pode derrubar as outras imagens nem a publicação) → SÓ ENTÃO montarSchemaArticle
+ * (precisa da URL pública da capa, não da data URL) + montarSchemaOrganization → embute
+ * secundárias (heurística acima) + os dois blocos de schema no HTML sanitizado.
+ *
+ * Global Constraint (plano mestre): esta função NUNCA lança. `gerarCapa`/`gerarImagensSecundarias`
+ * já não lançam por contrato próprio (Tasks 7/8); `enviarMidia` (Task 9) lança de propósito em
+ * falha de rede/API, então cada chamada tem seu próprio try/catch; o try/catch externo cobre
+ * qualquer falha inesperada fora desses pontos conhecidos (bug na montagem do schema, na inserção
+ * no HTML) — degrada pro HTML sanitizado sem nenhuma imagem/schema, nunca propaga pro chamador.
+ */
+async function gerarEEmbutirImagens(
+  pauta: PautaCarregada,
+  conteudo: ConteudoGerado,
+  persona: PersonaCarregada | null,
+  propriedade: PropriedadeCarregada,
+  corpoHtmlSanitizado: string,
+  adaptador: ReturnType<typeof criarAdaptadorWordPress>,
+): Promise<ResultadoGeracaoImagens> {
+  let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
+  const detalhes: string[] = [];
+
+  try {
+    const capa = await gerarCapa(pauta, conteudo, persona);
+    usage = somarUsageTokens(usage, capa.usage);
+
+    const secundarias = await gerarImagensSecundarias(conteudo);
+    usage = somarUsageTokens(usage, secundarias.usage);
+
+    let capaMediaId: string | undefined;
+    let capaUrlPublica: string | null = null;
+    if (capa.resultado) {
+      try {
+        const midia = await adaptador.enviarMidia(capa.resultado.url, `${capa.resultado.slug}.png`, capa.resultado.alt);
+        capaMediaId = midia.idRemoto;
+        capaUrlPublica = midia.url;
+      } catch (erro) {
+        detalhes.push(`capa: upload ao WordPress falhou (${mensagemErro(erro)})`);
+      }
+    } else {
+      detalhes.push("capa: geração não produziu resultado (reprovada ou falha de infra — degradação aceitável)");
+    }
+
+    const secundariasEmbutidas: ImagemSecundaria[] = [];
+    for (let indice = 0; indice < secundarias.resultado.length; indice++) {
+      const imagem = secundarias.resultado[indice];
+      try {
+        const midia = await adaptador.enviarMidia(imagem.url, `${imagem.slug}.png`, imagem.alt);
+        secundariasEmbutidas.push({ ...imagem, url: midia.url });
+      } catch (erro) {
+        detalhes.push(`imagem secundária ${indice + 1} (${imagem.slug}): upload ao WordPress falhou (${mensagemErro(erro)})`);
+      }
+    }
+    if (secundarias.resultado.length === 0) {
+      detalhes.push("secundárias: nenhuma oportunidade aprovada nesta geração (resultado válido/esperado, não é falha)");
+    }
+
+    // datePublished/dateModified: o instante real de publicação no WordPress só acontece depois
+    // deste passo (etapa "publicar", mais adiante) — usa "agora" pras duas datas, o mais próximo
+    // possível do momento real sem reestruturar o pipeline pra saber a hora exata do WordPress
+    // antes de sequer ter enviado a requisição de criação do rascunho.
+    const agora = new Date();
+    const schemaArticle = montarSchemaArticle(
+      { titulo: conteudo.titulo, slug: conteudo.slug, urlBase: propriedade.urlBase, imagemDestaqueUrl: capaUrlPublica },
+      { autoria: propriedade.autoria, nome: propriedade.nome, urlBase: propriedade.urlBase },
+      { publicadoEm: agora, atualizadoEm: agora },
+    );
+    // Emite TAMBÉM um bloco Organization avulso, além do objeto Organization já aninhado em
+    // `publisher` dentro do Article (schema-estruturado.ts, montarSchemaArticle) — decisão
+    // deliberada (subtlety #1 do brief da Task 10): múltiplos blocos JSON-LD co-localizados
+    // descrevendo entidades sobrepostas são válidos e comuns em schema.org, e reforçam o sinal de
+    // E-E-A-T da Organization como entidade própria (não só como propriedade aninhada de outro
+    // tipo) — não é redundância acidental, é a escolha deliberada de robustez que o comentário de
+    // cabeçalho de schema-estruturado.ts deixou em aberto pra esta task decidir.
+    const schemaOrganization = montarSchemaOrganization({ nome: propriedade.nome, urlBase: propriedade.urlBase });
+
+    const htmlComSecundarias = inserirImagensSecundariasNoHtml(corpoHtmlSanitizado, secundariasEmbutidas);
+    const corpoHtmlFinal = `${htmlComSecundarias}\n${schemaArticle}\n${schemaOrganization}`;
+
+    // alt/slug só acompanham a URL quando o upload de fato teve sucesso (capaUrlPublica !== null)
+    // — não basta gerarCapa ter produzido um resultado: se o upload falhou, persistir alt/slug sem
+    // URL deixaria um metadado órfão (referência a uma imagem que não existe em lugar nenhum
+    // público). Upload falho é tratado exatamente como "sem capa" pra tudo que vem depois, ver
+    // subtlety #1 do brief da Task 10.
+    return {
+      corpoHtmlFinal,
+      capaMediaId,
+      imagemDestaqueUrl: capaUrlPublica,
+      imagemDestaqueAlt: capaUrlPublica ? (capa.resultado?.alt ?? null) : null,
+      imagemDestaqueSlug: capaUrlPublica ? (capa.resultado?.slug ?? null) : null,
+      imagensSecundariasPersistir: secundariasEmbutidas,
+      usage,
+      detalhesLog: detalhes.length > 0 ? detalhes.join(" | ") : undefined,
+    };
+  } catch (erro) {
+    detalhes.push(`falha inesperada na geração/montagem de imagens (${mensagemErro(erro)})`);
+    return {
+      corpoHtmlFinal: corpoHtmlSanitizado,
+      capaMediaId: undefined,
+      imagemDestaqueUrl: null,
+      imagemDestaqueAlt: null,
+      imagemDestaqueSlug: null,
+      imagensSecundariasPersistir: [],
+      usage,
+      detalhesLog: detalhes.join(" | "),
+    };
+  }
+}
+
 export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
   const propriedade = await carregarPropriedade(propriedadeId);
 
@@ -189,6 +422,26 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     );
     const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
 
+    // Adaptador criado aqui (não mais dentro da etapa "publicar") porque a etapa "gerar_imagens"
+    // (Task 10) já precisa dele pra chamar enviarMidia antes de chegar em "publicar" — mesma
+    // instância reaproveitada nas duas etapas, credenciais decifradas uma única vez.
+    const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedade));
+
+    // Etapa "gerar_imagens" (Task 10, Fase 4a+4b) — capa + imagens secundárias + upload WordPress
+    // + schema Article/Organization embutidos no HTML, entre "sanitizar" e "publicar" (spec seção
+    // 4.7). gerarEEmbutirImagens NUNCA lança (Global Constraint do plano mestre: falha de imagem
+    // não pode bloquear a publicação do texto) — por isso esta etapa sempre é registrada como
+    // sucesso: true; extrairDetalhes grava o que faltou/degradou (capa reprovada, upload que
+    // falhou, zero secundárias aprovadas) na mesma coluna `detalhes` que as outras etapas usam pra
+    // rejeição de negócio, pra não ficar indistinguível de execução perfeita no log.
+    const resultadoImagens = await registrarEtapa(
+      pauta.id,
+      "gerar_imagens",
+      () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+      (r) => r.detalhesLog,
+    );
+
     // Etapa "publicar" envolve criar rascunho + verificar + aprovar/publicar como uma unidade só.
     // Decisão desta task: uma rejeição de negócio (verificacao.ok === false) não é uma exceção
     // técnica — não lança, só retorna um resultado discriminado (mesma escolha de design aplicada
@@ -201,14 +454,20 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       pauta.id,
       "publicar",
       async () => {
-        const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedade));
-        const rascunho = await adaptador.criarRascunho({
-          titulo: conteudo.titulo,
-          corpoHtml: corpoHtmlSanitizado,
-          slug: conteudo.slug,
-          metaTitle: conteudo.metaTitle,
-          metaDescription: conteudo.metaDescription,
-        });
+        // corpoHtml e imagemDestacadaId (Task 10) vêm do resultado de "gerar_imagens" — HTML com
+        // imagens secundárias + schema já embutidos, e o id de mídia da capa já enviada ao
+        // WordPress (undefined quando a capa não gerou/não subiu, e criarRascunho trata isso como
+        // "sem imagem destacada", ver canais/wordpress.ts).
+        const rascunho = await adaptador.criarRascunho(
+          {
+            titulo: conteudo.titulo,
+            corpoHtml: resultadoImagens.corpoHtmlFinal,
+            slug: conteudo.slug,
+            metaTitle: conteudo.metaTitle,
+            metaDescription: conteudo.metaDescription,
+          },
+          resultadoImagens.capaMediaId,
+        );
 
         const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
         if (!verificacao.ok) {
@@ -260,13 +519,23 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         return;
       }
 
-      // Metadados do post local (canais/publicado_em/HTML final) são secundários — a pauta já está
-      // marcada como publicada acima, então uma falha aqui não reabre risco de duplicidade. Só logamos.
+      // Metadados do post local (canais/publicado_em/HTML final/imagens, Task 10) são secundários —
+      // a pauta já está marcada como publicada acima, então uma falha aqui não reabre risco de
+      // duplicidade. Só logamos. conteudoHtml é resultadoImagens.corpoHtmlFinal (não mais
+      // corpoHtmlSanitizado puro): o que de fato foi publicado, com imagens secundárias + schema
+      // Article/Organization já embutidos. Campos de imagem `?? undefined`: ResultadoGeracaoImagens
+      // usa `null` pra "sem capa" (mesma convenção do resto do módulo, ver PautaCarregada.
+      // ultimoRascunho), atualizarStatusPost usa `undefined` pra "não escrever essa coluna" —
+      // conversão explícita nas bordas entre os dois contratos.
       try {
         await atualizarStatusPost(post.id, "publicado", {
           canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
           publicadoEm: new Date().toISOString(),
-          conteudoHtml: corpoHtmlSanitizado,
+          conteudoHtml: resultadoImagens.corpoHtmlFinal,
+          imagemDestaqueUrl: resultadoImagens.imagemDestaqueUrl ?? undefined,
+          imagemDestaqueAlt: resultadoImagens.imagemDestaqueAlt ?? undefined,
+          imagemDestaqueSlug: resultadoImagens.imagemDestaqueSlug ?? undefined,
+          imagensSecundarias: resultadoImagens.imagensSecundariasPersistir,
         });
       } catch (erroAtualizarPost) {
         console.error(

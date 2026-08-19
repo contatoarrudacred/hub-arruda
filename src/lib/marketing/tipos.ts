@@ -284,6 +284,11 @@ export type EtapaLog =
   | "revisar"
   | "inserir_links"
   | "sanitizar"
+  // Fase 4a+4b, Task 10 (19/08/2026) — capa + imagens secundárias + upload WordPress + schema
+  // Article/Organization, entre "sanitizar" e "publicar" (spec seção 4.7). Nunca marca sucesso:
+  // false por uma imagem que não gerou/não subiu (Global Constraint: imagem nunca bloqueia
+  // publicação) — só por um erro de infraestrutura de verdade fora dos try/catch internos.
+  | "gerar_imagens"
   | "publicar"
   | "registrar_resultado";
 

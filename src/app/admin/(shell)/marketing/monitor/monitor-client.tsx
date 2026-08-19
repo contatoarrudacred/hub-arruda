@@ -11,6 +11,9 @@ const NOME_ETAPA: Record<EtapaLog, string> = {
   revisar: "Revisando (Revisor)",
   inserir_links: "Inserindo links internos",
   sanitizar: "Sanitizando HTML",
+  // Fase 4a+4b, Task 10 (19/08/2026) — capa + imagens secundárias + upload WordPress + schema
+  // Article/Organization, ver processar-pauta.ts.
+  gerar_imagens: "Gerando imagens (capa + secundárias)",
   publicar: "Publicando",
   registrar_resultado: "Registrando resultado",
 };

@@ -7,10 +7,19 @@ import * as revisor from "./revisor";
 import * as repositorio from "./repositorio";
 import { criarAdaptadorWordPress } from "./canais/wordpress";
 import { cifrar } from "./criptografia";
+import { gerarCapa } from "./imagens/capa";
+import { gerarImagensSecundarias } from "./imagens/secundarias";
 import { inserirLinksInternos } from "./links";
 
 vi.mock("./canais/wordpress");
 vi.mock("./links");
+// Task 10 (Fase 4a+4b) — mesmo padrão de auto-mock já usado acima pra canais/wordpress e links:
+// capa.ts/secundarias.ts fazem chamadas reais à Anthropic/OpenAI ("server-only", cliente próprio)
+// que não devem rodar em teste unitário. schema-estruturado.ts NÃO é mockado de propósito — são
+// funções puras (sem I/O), a suíte roda a implementação real e verifica o HTML/JSON-LD produzido
+// de verdade, cobertura mais forte do que mockar o schema também.
+vi.mock("./imagens/capa");
+vi.mock("./imagens/secundarias");
 
 const pautaFalsa = {
   id: "pauta-1",
@@ -203,6 +212,11 @@ describe("processarProximaPauta", () => {
   beforeEach(() => {
     vi.spyOn(repositorio, "salvarRascunho").mockResolvedValue(undefined);
     vi.spyOn(repositorio, "carregarPostsRecentes").mockResolvedValue([]);
+    // Task 10 — default "sem imagem nenhuma" (mesmo comportamento de antes desta task existir):
+    // capa reprovada/sem resultado, zero secundárias aprovadas. Testes dedicados de imagem
+    // (describe "gerar_imagens (Task 10)" abaixo) sobrescrevem com seus próprios resultados.
+    vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 } });
+    vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 } });
   });
 
   afterEach(() => {
@@ -289,8 +303,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
-      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
-      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      // Task 10: enviarMidia é chamado quando gerarCapa/gerarImagensSecundarias produzem
+      // resultado (default do beforeEach acima é "sem imagem nenhuma", então não é chamado nos
+      // testes que não sobrescrevem esses mocks) — vi.fn() sem implementação basta aqui.
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
@@ -308,6 +323,7 @@ describe("processarProximaPauta", () => {
       "revisar",
       "inserir_links",
       "sanitizar",
+      "gerar_imagens",
       "publicar",
       "registrar_resultado",
     ]);
@@ -369,8 +385,9 @@ describe("processarProximaPauta", () => {
     espiarRegistrarEtapa();
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
-      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
-      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      // Task 10: enviarMidia é chamado quando gerarCapa/gerarImagensSecundarias produzem
+      // resultado (default do beforeEach acima é "sem imagem nenhuma", então não é chamado nos
+      // testes que não sobrescrevem esses mocks) — vi.fn() sem implementação basta aqui.
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
@@ -424,8 +441,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
-      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
-      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      // Task 10: enviarMidia é chamado quando gerarCapa/gerarImagensSecundarias produzem
+      // resultado (default do beforeEach acima é "sem imagem nenhuma", então não é chamado nos
+      // testes que não sobrescrevem esses mocks) — vi.fn() sem implementação basta aqui.
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
@@ -450,6 +468,7 @@ describe("processarProximaPauta", () => {
       "revisar",
       "inserir_links",
       "sanitizar",
+      "gerar_imagens",
       "publicar",
       "registrar_resultado",
     ]);
@@ -496,8 +515,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
-      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
-      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      // Task 10: enviarMidia é chamado quando gerarCapa/gerarImagensSecundarias produzem
+      // resultado (default do beforeEach acima é "sem imagem nenhuma", então não é chamado nos
+      // testes que não sobrescrevem esses mocks) — vi.fn() sem implementação basta aqui.
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
@@ -522,6 +542,7 @@ describe("processarProximaPauta", () => {
       "revisar",
       "inserir_links",
       "sanitizar",
+      "gerar_imagens",
       "publicar",
       "registrar_resultado",
     ]);
@@ -570,8 +591,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
-      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
-      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      // Task 10: enviarMidia é chamado quando gerarCapa/gerarImagensSecundarias produzem
+      // resultado (default do beforeEach acima é "sem imagem nenhuma", então não é chamado nos
+      // testes que não sobrescrevem esses mocks) — vi.fn() sem implementação basta aqui.
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: false, detalhes: "Rascunho sem conteúdo renderizado." }),
       aprovarPublicar: vi.fn(),
@@ -585,7 +607,15 @@ describe("processarProximaPauta", () => {
     expect(atualizarStatusPostSpy).toHaveBeenCalledWith("post-1", "falhou");
     expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Rascunho sem conteúdo renderizado.");
     expect(marcarPublicadaSpy).not.toHaveBeenCalled();
-    expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar", "inserir_links", "sanitizar", "publicar"]);
+    expect(etapasChamadas).toEqual([
+      "buscar_checklist",
+      "gerar_conteudo",
+      "revisar",
+      "inserir_links",
+      "sanitizar",
+      "gerar_imagens",
+      "publicar",
+    ]);
     // Important #1 da revisão: a linha de log da etapa "publicar" precisa carregar o motivo da
     // rejeição em `detalhes`, mesmo sucesso: true (rejeição de negócio, não exceção técnica) —
     // senão fica indistinguível de uma publicação real pra quem lê pautas_execucao_log.
@@ -751,5 +781,252 @@ describe("processarProximaPauta", () => {
     // registrarEtapa (real) marcaria sucesso: false; aqui só confirmamos que ela foi de fato
     // invocada antes de propagar o erro pro catch externo.
     expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo"]);
+  });
+
+  // Task 10 (Fase 4a+4b, 19/08/2026) — conecta gerarCapa (Task 7), gerarImagensSecundarias (Task
+  // 8), enviarMidia (Task 9) e montarSchemaArticle/montarSchemaOrganization (Task 5) na sequência
+  // real do pipeline. Sequência exercitada aqui: capa/secundárias geradas (data URLs) → upload de
+  // cada uma que teve sucesso (URL pública) → schema montado com a URL pública da capa → HTML
+  // final com secundárias embutidas + schema, publicado com featured_media = id da capa enviada.
+  describe("gerar_imagens (Task 10) — sequenciamento de capa, secundárias, upload e schema", () => {
+    const CONTEUDO_COM_H2 = {
+      titulo: "Como Limpar o Nome no Serasa",
+      conteudoHtml:
+        "<h1>Como Limpar o Nome no Serasa</h1><h2>Documentos necessários</h2><p>Leve RG e CPF.</p><h2>Passo a passo</h2><p>Ligue para a central.</p>",
+      metaTitle: "Como Limpar Nome no Serasa",
+      metaDescription: "Guia completo.",
+      slug: "como-limpar-nome-serasa",
+    };
+
+    // Sem tipo explícito no parâmetro (mesmo padrão dos `adaptadorFalso` inline já usados no resto
+    // deste arquivo, ver "publica quando a revisão aprova de primeira" acima) — uma anotação
+    // nomeada baseada em `ReturnType<typeof vi.fn>` perde a tipagem contextual que faz os mocks
+    // (sem generics próprios) baterem estruturalmente com a assinatura real de
+    // criarAdaptadorWordPress (achado desta task: a versão anotada não compilava).
+    // Base comum aos 4 cenários desta seção — mesmos mocks de "publica quando a revisão aprova de
+    // primeira" acima, parametrizado só pelo adaptador (cada teste tem seu próprio enviarMidia).
+    function configurarCenarioBase(adaptadorFalso: ReturnType<typeof criarAdaptadorWordPress>) {
+      vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+      vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+      vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+      vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+        resultado: CONTEUDO_COM_H2,
+        usage: { inputTokens: 1000, outputTokens: 2000 },
+      });
+      vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+        resultado: {
+          aprovado: true,
+          score: 92,
+          motivo: null,
+          precisaoFactualAdequada: true,
+          fontesEspecificas: true,
+          originalidadeAdequada: true,
+        },
+        usage: { inputTokens: 500, outputTokens: 50 },
+      });
+      vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+      vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+      vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+      vi.mocked(inserirLinksInternos).mockResolvedValue(CONTEUDO_COM_H2.conteudoHtml);
+      vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+    }
+
+    it("capa e imagem secundária aprovadas: schema com image, HTML com figure, imagemDestacadaId chega em criarRascunho, posts row com todos os campos de imagem", async () => {
+      const enviarMidia = vi.fn().mockImplementation(async (_imagemUrl: string, nomeArquivo: string) => {
+        if (nomeArquivo.startsWith("capa-serasa")) {
+          return { idRemoto: "media-capa", url: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png" };
+        }
+        return { idRemoto: "media-sec-1", url: "https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png" };
+      });
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia,
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.mocked(gerarCapa).mockResolvedValue({
+        resultado: {
+          url: "data:image/png;base64,AAAA",
+          alt: "Pessoa aliviada olhando boletos organizados",
+          slug: "capa-serasa",
+          titulo: "Capa Serasa",
+        },
+        usage: { inputTokens: 800, outputTokens: 400 },
+      });
+      vi.mocked(gerarImagensSecundarias).mockResolvedValue({
+        resultado: [
+          {
+            url: "data:image/png;base64,BBBB",
+            alt: "Lista dos documentos necessários",
+            slug: "doc-necessarios",
+            titulo: "Documentos necessários",
+            legenda: "RG e CPF em mãos antes de ligar.",
+            posicaoAposSecao: "depois da seção sobre documentos necessários",
+          },
+        ],
+        usage: { inputTokens: 600, outputTokens: 300 },
+      });
+      const { etapasChamadas, tokensExtraidos } = espiarRegistrarEtapa();
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      expect(etapasChamadas).toContain("gerar_imagens");
+      expect(enviarMidia).toHaveBeenCalledWith("data:image/png;base64,AAAA", "capa-serasa.png", "Pessoa aliviada olhando boletos organizados");
+      expect(enviarMidia).toHaveBeenCalledWith("data:image/png;base64,BBBB", "doc-necessarios.png", "Lista dos documentos necessários");
+      expect(criarRascunho).toHaveBeenCalledWith(expect.objectContaining({ slug: "como-limpar-nome-serasa" }), "media-capa");
+
+      const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
+      // Imagem secundária embutida como <figure> com a URL PÚBLICA (pós-upload), não a data URL.
+      expect(corpoHtmlPublicado).toContain('<img src="https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png"');
+      expect(corpoHtmlPublicado).toContain("<figcaption>RG e CPF em mãos antes de ligar.</figcaption>");
+      // Schema Article usa a URL pública da capa (não a data URL); Organization avulso também
+      // presente (subtlety #1 do brief da Task 10: decisão deliberada de emitir os dois blocos).
+      expect(corpoHtmlPublicado).toContain('"image":"https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"');
+      expect(corpoHtmlPublicado).toContain('"@type":"Article"');
+      expect(corpoHtmlPublicado).toContain('"@type":"Organization"');
+
+      expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({
+          imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png",
+          imagemDestaqueAlt: "Pessoa aliviada olhando boletos organizados",
+          imagemDestaqueSlug: "capa-serasa",
+          imagensSecundarias: [
+            {
+              url: "https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png",
+              alt: "Lista dos documentos necessários",
+              slug: "doc-necessarios",
+              titulo: "Documentos necessários",
+              legenda: "RG e CPF em mãos antes de ligar.",
+              posicaoAposSecao: "depois da seção sobre documentos necessários",
+            },
+          ],
+        }),
+      );
+      // Painel de custo (spec seção 6): usage de capa+secundárias soma na etapa gerar_imagens.
+      expect(tokensExtraidos.gerar_imagens).toEqual({ tokensEntrada: 1400, tokensSaida: 700 });
+    });
+
+    it("capa não gerada (null): publica sem imagem destacada, schema sem campo image, nada lança", async () => {
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia: vi.fn(),
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 100, outputTokens: 50 } });
+      vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 } });
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      expect(adaptadorFalso.enviarMidia).not.toHaveBeenCalled();
+      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined);
+      const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
+      expect(corpoHtmlPublicado).not.toContain('"image":');
+      expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({
+          imagemDestaqueUrl: undefined,
+          imagemDestaqueAlt: undefined,
+          imagemDestaqueSlug: undefined,
+          imagensSecundarias: [],
+        }),
+      );
+    });
+
+    it("uma imagem secundária falha no upload: a que teve sucesso aparece no HTML final, a que falhou é descartada silenciosamente, nada lança", async () => {
+      const enviarMidia = vi.fn().mockImplementation(async (_imagemUrl: string, nomeArquivo: string) => {
+        if (nomeArquivo.startsWith("doc-necessarios")) {
+          return { idRemoto: "media-sec-1", url: "https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png" };
+        }
+        throw new Error("WordPress REST API respondeu 500 em /media");
+      });
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia,
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 } });
+      vi.mocked(gerarImagensSecundarias).mockResolvedValue({
+        resultado: [
+          {
+            url: "data:image/png;base64,BBBB",
+            alt: "Lista dos documentos necessários",
+            slug: "doc-necessarios",
+            titulo: "Documentos necessários",
+            legenda: "RG e CPF em mãos antes de ligar.",
+            posicaoAposSecao: "depois da seção sobre documentos necessários",
+          },
+          {
+            url: "data:image/png;base64,CCCC",
+            alt: "Fluxo do passo a passo",
+            slug: "passo-a-passo",
+            titulo: "Passo a passo",
+            legenda: "Ligue e siga as instruções.",
+            posicaoAposSecao: "depois da seção passo a passo",
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+      const { detalhesExtraidos } = espiarRegistrarEtapa();
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
+      expect(corpoHtmlPublicado).toContain("<figcaption>RG e CPF em mãos antes de ligar.</figcaption>");
+      expect(corpoHtmlPublicado).not.toContain("<figcaption>Ligue e siga as instruções.</figcaption>");
+      expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({
+          imagensSecundarias: [expect.objectContaining({ slug: "doc-necessarios" })],
+        }),
+      );
+      // Falha real precisa ficar distinguível no log, não só "sucesso perfeito" (brief da Task 10).
+      expect(detalhesExtraidos.gerar_imagens).toContain("passo-a-passo");
+    });
+
+    it("upload da capa (enviarMidia) lança: tratado como 'sem capa', publica normalmente sem lançar", async () => {
+      const enviarMidia = vi.fn().mockRejectedValue(new Error("WordPress REST API respondeu 500 em /media"));
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia,
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.mocked(gerarCapa).mockResolvedValue({
+        resultado: { url: "data:image/png;base64,AAAA", alt: "Alt capa", slug: "capa-serasa", titulo: "Capa Serasa" },
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+      vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 } });
+      const { detalhesExtraidos } = espiarRegistrarEtapa();
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined);
+      const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
+      expect(corpoHtmlPublicado).not.toContain('"image":');
+      expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({ imagemDestaqueUrl: undefined, imagemDestaqueAlt: undefined, imagemDestaqueSlug: undefined }),
+      );
+      expect(detalhesExtraidos.gerar_imagens).toContain("upload ao WordPress falhou");
+    });
   });
 });

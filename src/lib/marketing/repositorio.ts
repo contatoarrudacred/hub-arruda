@@ -32,6 +32,11 @@ import type {
   StatusPost,
   TipoConteudo,
 } from "./tipos";
+// Tipo da imagem secundária (Fase 4b, Task 8) importado do próprio orquestrador em vez de
+// duplicado aqui — reaproveita a mesma forma que processar-pauta.ts (Task 10) já recebe de
+// gerarImagensSecundarias, sem uma segunda definição que possa divergir. Sem ciclo de import:
+// imagens/secundarias.ts só importa de "../tipos", nunca deste arquivo.
+import type { ImagemSecundaria } from "./imagens/secundarias";
 
 // persona_id incluído (Fase 3, Task 5) — gap deixado pela Task 4: criarPautaDePersona já gravava
 // a coluna no insert, mas nenhum consumidor de PautaCarregada a selecionava/mapeava de volta, então
@@ -387,10 +392,41 @@ export async function carregarPostsPublicadosDaPropriedade(
     .slice(0, MAXIMO_RELACIONADOS);
 }
 
+/**
+ * Formato do jsonb `posts.imagens_secundarias` (migration 20260819110000, Fase 4b) — snake_case,
+ * mesma convenção de RascunhoBruto/AutoriaBruta acima (gravado direto, sem passar pelo PostgREST).
+ */
+function mapearImagemSecundariaBruta(imagem: ImagemSecundaria): Record<string, string> {
+  return {
+    url: imagem.url,
+    alt: imagem.alt,
+    slug: imagem.slug,
+    titulo: imagem.titulo,
+    legenda: imagem.legenda,
+    posicao_apos_secao: imagem.posicaoAposSecao,
+  };
+}
+
+/**
+ * Estendida na Task 10 (Fase 4a+4b, 19/08/2026) com os 4 campos de imagem — extensão do `extra`
+ * já existente (padrão condicional-write) em vez de uma função nova dedicada: é chamada exatamente
+ * no ponto certo do fluxo (depois de publicar de verdade), com o mesmo formato "grava só o que
+ * veio preenchido" que já serve pra canais/publicadoEm/conteudoHtml. `imagensSecundarias: []` é um
+ * resultado válido e comum (ver ImagemSecundaria/gerarImagensSecundarias) — a checagem usa
+ * `!== undefined`, não truthy, pra não pular a escrita de um array vazio explícito.
+ */
 export async function atualizarStatusPost(
   postId: string,
   status: StatusPost,
-  extra?: { canais?: Record<string, unknown>; publicadoEm?: string; conteudoHtml?: string },
+  extra?: {
+    canais?: Record<string, unknown>;
+    publicadoEm?: string;
+    conteudoHtml?: string;
+    imagemDestaqueUrl?: string;
+    imagemDestaqueAlt?: string;
+    imagemDestaqueSlug?: string;
+    imagensSecundarias?: ImagemSecundaria[];
+  },
 ): Promise<void> {
   const supabase = createAdminClient();
   const { error } = await supabase
@@ -399,10 +435,17 @@ export async function atualizarStatusPost(
       status,
       ...(extra?.canais ? { canais: extra.canais } : {}),
       ...(extra?.publicadoEm ? { publicado_em: extra.publicadoEm } : {}),
-      // Grava o HTML final de verdade publicado (com links internos + sanitização já aplicados) —
-      // sem isto, posts.conteudo_html ficava com a saída crua do Escritor, diferente do que
-      // realmente está no ar no WordPress (auditoria/republicação futura leriam um documento errado).
+      // Grava o HTML final de verdade publicado (com links internos + sanitização + imagens
+      // secundárias + schema Article/Organization já embutidos, Task 10) — sem isto, posts.
+      // conteudo_html ficava desatualizado em relação ao que realmente está no ar no WordPress
+      // (auditoria/republicação futura leriam um documento errado).
       ...(extra?.conteudoHtml ? { conteudo_html: extra.conteudoHtml } : {}),
+      ...(extra?.imagemDestaqueUrl ? { imagem_destaque_url: extra.imagemDestaqueUrl } : {}),
+      ...(extra?.imagemDestaqueAlt ? { imagem_destaque_alt: extra.imagemDestaqueAlt } : {}),
+      ...(extra?.imagemDestaqueSlug ? { imagem_destaque_slug: extra.imagemDestaqueSlug } : {}),
+      ...(extra?.imagensSecundarias !== undefined
+        ? { imagens_secundarias: extra.imagensSecundarias.map(mapearImagemSecundariaBruta) }
+        : {}),
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", postId);
