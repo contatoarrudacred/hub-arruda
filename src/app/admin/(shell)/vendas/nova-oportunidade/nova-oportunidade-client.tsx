@@ -134,6 +134,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [avisoDocumentoIA, setAvisoDocumentoIA] = useState<string | null>(null);
 
   /** Devolve o pessoaId resolvido (ou null) — não só atualiza estado. Necessário pra quem chama
    * (ex.: o Leitor de Documento IA) poder agir imediatamente com o resultado, sem depender de ler
@@ -366,21 +367,49 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Quem assina o contrato</h2>
         <LeitorDocumentoIA
           onDadosExtraidos={async (dados, arquivosLidos) => {
-            // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
-            // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso do
-            // leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que acabou de
-            // ser preenchido aqui (achado real da revisão final da branch).
-            const pessoaIdResolvido = dados.documento ? await aoDigitarDocumento(dados.documento) : pessoaId;
-            if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
-            setEndereco((atual) => ({
-              ...atual,
-              cep: dados.cep || atual.cep,
-              logradouro: dados.logradouro || atual.logradouro,
-              numero: dados.numero || atual.numero,
-              bairro: dados.bairro || atual.bairro,
-              cidade: dados.cidade || atual.cidade,
-              uf: dados.uf || atual.uf,
-            }));
+            setAvisoDocumentoIA(null);
+            const ehComprovanteResidencia = dados.tipoDocumento === "comprovante_residencia";
+
+            // Comprovante de residência costuma estar em nome de outra pessoa da família (cônjuge,
+            // pai/mãe) mesmo quando o endereço é mesmo do cliente — nesse caso NÃO mexe em
+            // nome/documento (só o endereço vale), pra não trocar a identidade de quem está sendo
+            // cadastrado. Pedido explícito do Luiz, achado testando em produção.
+            let pessoaIdResolvido = pessoaId;
+            if (!ehComprovanteResidencia) {
+              // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
+              // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso do
+              // leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que acabou de
+              // ser preenchido aqui (achado real da revisão final da branch).
+              if (dados.documento) pessoaIdResolvido = await aoDigitarDocumento(dados.documento);
+              if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
+            }
+
+            const temEnderecoExtraido = [dados.cep, dados.logradouro, dados.bairro, dados.cidade].some((v) => v);
+            if (temEnderecoExtraido) {
+              const preencherEndereco = (atual: ValorEndereco): ValorEndereco => ({
+                ...atual,
+                cep: dados.cep || atual.cep,
+                logradouro: dados.logradouro || atual.logradouro,
+                numero: dados.numero || atual.numero,
+                bairro: dados.bairro || atual.bairro,
+                cidade: dados.cidade || atual.cidade,
+                uf: dados.uf || atual.uf,
+              });
+              // Numa venda PJ o endereço da EMPRESA não é mais coletado (ver caixa "Dados da
+              // Empresa" abaixo) — o endereço extraído só faz sentido pro representante legal, a
+              // pessoa física de verdade nesse fluxo.
+              if (ehPj) {
+                setEnderecoRepresentante(preencherEndereco);
+              } else {
+                setEndereco(preencherEndereco);
+              }
+            }
+
+            if (ehComprovanteResidencia) {
+              setAvisoDocumentoIA(
+                "Endereço preenchido a partir do comprovante de residência enviado. Comprovantes às vezes estão em nome de outra pessoa da família (cônjuge, pai/mãe) — confira se o endereço corresponde mesmo a quem está sendo cadastrado.",
+              );
+            }
 
             // Salva os arquivos lidos junto com o cadastro, classificados pela própria IA — só
             // quando a pessoa já é conhecida nesse momento (pessoa nova ainda não tem id; o aviso na
@@ -392,51 +421,79 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
             }
           }}
         />
-        <label className={rotulo}>CPF/CNPJ</label>
-        <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
-        {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
-        {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Pessoa já cadastrada — dados carregados.</p>}
-        <label className={rotulo}>Nome completo / Razão social</label>
-        <input
-          className={campo}
-          value={dadosContrato.nome}
-          onChange={(e) => setDadosContrato({ ...dadosContrato, nome: e.target.value })}
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className={rotulo}>RG</label>
-            <input className={campo} value={dadosContrato.rg} onChange={(e) => setDadosContrato({ ...dadosContrato, rg: e.target.value })} />
-          </div>
-          <div>
-            <label className={rotulo}>Estado civil</label>
+        {avisoDocumentoIA && (
+          <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            ⚠ {avisoDocumentoIA}
+          </p>
+        )}
+
+        {ehPj ? (
+          <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Dados da Empresa</h3>
+            <label className={rotulo}>CNPJ</label>
+            <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
+            {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
+            {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Empresa já cadastrada — dados carregados.</p>}
+            <label className={rotulo}>Razão Social</label>
             <input
               className={campo}
-              value={dadosContrato.estadoCivil}
-              onChange={(e) => setDadosContrato({ ...dadosContrato, estadoCivil: e.target.value })}
+              value={dadosContrato.nome}
+              onChange={(e) => setDadosContrato({ ...dadosContrato, nome: e.target.value })}
             />
           </div>
-          <div>
-            <label className={rotulo}>Profissão</label>
+        ) : (
+          <>
+            <label className={rotulo}>CPF/CNPJ</label>
+            <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
+            {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
+            {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Pessoa já cadastrada — dados carregados.</p>}
+            <label className={rotulo}>Nome completo</label>
             <input
               className={campo}
-              value={dadosContrato.profissao}
-              onChange={(e) => setDadosContrato({ ...dadosContrato, profissao: e.target.value })}
+              value={dadosContrato.nome}
+              onChange={(e) => setDadosContrato({ ...dadosContrato, nome: e.target.value })}
             />
-          </div>
-          <div>
-            <label className={rotulo}>E-mail</label>
-            <input className={campo} value={dadosContrato.email} onChange={(e) => setDadosContrato({ ...dadosContrato, email: e.target.value })} />
-          </div>
-          <div>
-            <label className={rotulo}>WhatsApp</label>
-            <input
-              className={campo}
-              value={dadosContrato.whatsapp}
-              onChange={(e) => setDadosContrato({ ...dadosContrato, whatsapp: e.target.value })}
-            />
-          </div>
-        </div>
-        <CampoEndereco value={endereco} onChange={setEndereco} />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={rotulo}>RG</label>
+                <input className={campo} value={dadosContrato.rg} onChange={(e) => setDadosContrato({ ...dadosContrato, rg: e.target.value })} />
+              </div>
+              <div>
+                <label className={rotulo}>Estado civil</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.estadoCivil}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, estadoCivil: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>Profissão</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.profissao}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, profissao: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>E-mail</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.email}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, email: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>WhatsApp</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.whatsapp}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, whatsapp: e.target.value })}
+                />
+              </div>
+            </div>
+            <CampoEndereco value={endereco} onChange={setEndereco} />
+          </>
+        )}
 
         {ehPj && (
           <div className="space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
