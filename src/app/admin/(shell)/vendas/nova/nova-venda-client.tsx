@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
@@ -82,6 +83,12 @@ export function NovaVendaClient({ produtos }: { produtos: Produto[] }) {
         </p>
         <UploadFotoPessoa pessoaId={resultado.pessoaId} />
         <UploadDocumentosPessoa pessoaId={resultado.pessoaId} />
+        <Link
+          href={`/admin/vendas/${resultado.oportunidadeId}`}
+          className="inline-block rounded-full bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900"
+        >
+          Continuar pra gerar o contrato →
+        </Link>
       </div>
     );
   }
