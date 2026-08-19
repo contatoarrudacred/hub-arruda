@@ -166,7 +166,7 @@ Todas nullable/aditivas — `pessoas` e `oportunidade_documentos` são núcleo c
 - `{{dados_cliente}}` — bloco HTML já pronto (montado por quem chama, não por `resolverPlaceholders`) com os dados do signatário principal:
   - **PF:** Nome completo, CPF, RG, Estado Civil, Profissão, E-mail, Fone/WhatsApp, Endereço.
   - **PJ:** Razão Social, CNPJ, e os mesmos 8 campos acima **do representante legal** (via `pessoa_representantes`, que é uma `pessoas` PF normal).
-- `{{lista_documentos}}` — repete o mesmo bloco `dados_cliente` pra **cada documento do pacote** (`oportunidade_documentos`, quando > 1), resolvendo cada um contra uma `pessoas` real via `oportunidade_documentos.pessoa_id` (Task 1b). Vazio quando não é pacote.
+- `{{lista_documentos}}` — **simplificado em 18/08 (decisão de escopo do Luiz — "trabalhar com o que temos"):** não é mais o bloco completo repetido. Só temos dado completo (RG/estado civil/profissão/endereço) de quem assina e é o responsável financeiro — os demais CPF/CNPJ cobertos pelo contrato (o pacote, normalmente 1 ou 2, pode ser N) só têm documento + nome/razão social (`oportunidade_documentos.nome_razao_social`, Task 1b). `{{lista_documentos}}` é uma tabela simples de 2 colunas com isso. Vazio quando não é pacote (0 ou 1 documento).
 - `{{valor_total}}` (moeda BRL) / `{{valor_total_extenso}}` — calculados aqui dentro, via `valorPorExtenso` (Task 2), como já estava.
 - `{{tabela_vencimentos}}` — `<table>` HTML de verdade agora (não markdown): colunas Nº / Vencimento / Valor / Forma de Pagamento (mesma forma em toda linha, vem de `contratos.metodo_pagamento`).
 - `{{forma_pagamento}}` — texto simples (ex. "Parcelado em 3x, Boleto/Pix").
@@ -224,17 +224,16 @@ Mesmo padrão `page.tsx`/`actions.ts`/`*-client.tsx`. Client usa `EditorHtmlCont
 
 ## Task 8: Tela de Fechamento de Venda
 
-**⚠️ Correção de escopo (Coordenador, 18/08 17h45): volta a ser paliativo de prazo CURTO — o CRM já assumiu a captura de pagamento como prioridade 1 do Atendimento, antes do Kanban (não depois de duas frentes inteiras, como dito antes). Não superdimensionar: construir funcional, sem investir em polimento que não sobrevive à convergência com o bot.**
+**Status: ✅ feito.** Correção de escopo do Coordenador (18/08 17h45: "volta a ser paliativo de prazo curto, não superdimensionar") respeitada — tela em página única, sem wizard/multi-step, sem polimento além do funcional.
 
-**Files:**
-- Create: `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/page.tsx` + `actions.ts` + `fechamento-client.tsx`
+**Files:** `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/{page.tsx,actions.ts,fechamento-client.tsx}` + novos `src/lib/vendas/oportunidades.ts` (busca oportunidade + pacote + `detalhe_pagamento` do CRM) e `src/lib/vendas/pessoa-representantes.ts` (sem nenhuma cobertura no projeto antes desta task).
 
-Mesmo padrão de `page.tsx`(Server Component)/`actions.ts`(`"use server"`)/`*-client.tsx` já usado em `vendas/nova/`.
-
-- **Caminho CRM:** lê `conversas.dados.detalhe_pagamento` (formato exato, spec do CRM seção 4: `{ forma: "boleto_pix"|"cartao", tipo: "avista"|"parcelado", parcelas: [{numero, valor, vencimento}] }`). Quando existir, é **só exibir e confirmar** — os dados já vêm calculados pela mesma regra de âncora, não precisa recalcular. Mapeamento: `detalhe_pagamento.tipo` → `contratos.forma_pagamento`, `detalhe_pagamento.forma` → `contratos.metodo_pagamento`, `detalhe_pagamento.parcelas` → direto pra `criarContrato({ ..., parcelas })`.
-- **Caminho venda sem funil prévio (ou `detalhe_pagamento` ainda não existir):** admin escolhe forma/método/data da 1ª parcela/dia-âncora, tela usa `calcularParcelasContrato` (Task 3) pra montar o preview da tabela de vencimentos.
-- **Dados exigidos pro contrato (adicionado em 18/08, não é sobre pagamento — não conflita com a correção de escopo):** antes de gerar, a tela confere se a Pessoa signatária (e o representante legal, quando PJ) já tem RG/Estado Civil/Profissão/Endereço preenchidos (Task 1b). Se faltar, formulário simples pra completar — reaproveita `CampoEndereco` (já existe, sub-frente Cadastro) pro endereço; RG/Estado Civil/Profissão são 3 campos de texto novos, sem componente especial. Quando é pacote (`oportunidade_documentos` com mais de 1 linha), repete a checagem pra cada documento, resolvendo/criando a Pessoa por CPF/CNPJ via `resolverOuCriarPessoa` (já existe) e gravando `oportunidade_documentos.pessoa_id`.
-- Validação: soma das parcelas confirmadas == `valor_total`. Ao confirmar, chama `criarContrato` (Task 5), gera PDF (Task 6) e sobe status pra `gerado`.
+- **Caminho CRM:** lê `conversas.dados.detalhe_pagamento` de forma defensiva (campo ainda não implementado do lado do CRM, spec `2026-08-18-captura-detalhe-pagamento-fechamento-design.md` — a leitura já está pronta pra quando existir). Quando existir, é só exibir e confirmar.
+- **Caminho manual:** admin escolhe forma/método/data da 1ª parcela/dia-âncora, `calcularParcelasContrato` (Task 3) monta as parcelas.
+- **Dados do signatário:** RG/Estado Civil/Profissão (campos de texto novos) + `CampoEndereco` (reaproveitado). PJ busca/cria o representante legal por CPF (reaproveita `resolverOuCriarPessoa`) e vincula via `pessoa_representantes` (`definirRepresentante`, novo).
+- **Pacote (⚠️ simplificado em 18/08, decisão do Luiz — "trabalhar com o que temos"):** lista editável de documento+nome, sem tentar resolver/criar uma Pessoa completa pra cada um — só grava em `oportunidade_documentos.documento`/`nome_razao_social` (`salvarDocumentosPacote`, substitui tudo a cada salvamento, sem diff parcial).
+- Validação: soma das parcelas == `valor_total`. Ao confirmar: salva pessoa/endereço/representante/pacote, resolve parcelas, monta os blocos HTML, `criarContrato` (Task 5), `gerarPdfContrato` (Task 6), sobe pro Storage, status `gerado`.
+- **Testado no navegador** (rota temporária isolada, sem Supabase — mesma limitação de ambiente já registrada): caminho PF e PJ renderizam certo, toggle parcelado, adicionar/remover documento do pacote — tudo sem erro de console. **Não testado ponta a ponta** (o clique em "Gerar contrato" de verdade) — exige banco real, fica pra quando as migrations rodarem.
 
 ---
 
