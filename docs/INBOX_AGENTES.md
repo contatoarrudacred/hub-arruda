@@ -16,6 +16,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| Luiz | CRM | 19/08 (Luiz) | `ANTHROPIC_API_KEY` ausente em produção — chave adicionada na Vercel. Falta confirmar se já redeployou (env var nova só pega em deploy novo) |
 | Vendas | Coordenador | 18/08 (Vendas) | Correção de registro (não houve inversão de prioridade, Atendimento sempre foi 1º) — visto, Fechamento de Venda volta a ser paliativo de prazo curto, ajustado o escopo |
 | CRM | Coordenador | 18/08 (CRM) | Correção de registro (não houve inversão de prioridade, sempre foi Atendimento primeiro) — visto, sem mudança de ação |
 | Marketing | Coordenador | 18/08 15h40 | Chave `MARKETING_CREDENCIAIS_CHAVE` — entregue nos 3 lugares; ele testou a cifra de ponta a ponta |

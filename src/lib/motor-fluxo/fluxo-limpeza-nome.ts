@@ -26,6 +26,7 @@ import {
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
   formatarDataBr,
+  formatarMenuFaixas,
   formatarReais,
   type ParcelaTier,
   montarPropostaAltoValorSelfService,
@@ -886,13 +887,6 @@ function obterValorRestricao(dados: DadosConversa): number | null {
 // Passos 6/12) já previa isso como "pergunta dinâmica conforme tipo capturado" — nunca foi ligado.
 // ---------------------------------------------------------------------------
 
-/** "neste CPF" / "neste CNPJ" / "nestes documentos" — usado em ln_passo6. */
-function fraseNesteDocumento(dados: DadosConversa): string {
-  if (dados.tipo_documento === "cnpj") return "neste CNPJ";
-  if (dados.tipo_documento === "cpf_e_cnpj") return "nestes documentos";
-  return "neste CPF";
-}
-
 /** "do CPF limpo" / "do CNPJ limpo" / "dos documentos limpos" — usado em ln_passo12. */
 function fraseNecessidadeDocumentoLimpo(dados: DadosConversa): string {
   if (dados.tipo_documento === "cnpj") return "do CNPJ limpo";
@@ -925,15 +919,14 @@ export function criarResolverMensagensDinamicas(
     }
 
     if (codigo === "ln_passo6") {
-      const tiposLista = (dados.documentos_tipos ?? "").split(",").filter(Boolean);
-      const maisDeUm = tiposLista.length > 1;
-      const referenciaDocumentos = maisDeUm
-        ? "de cada documento:\n" + tiposLista.map((tipo, i) => `${i + 1}. ${tipo.toUpperCase()}`).join("\n")
-        : `${fraseNesteDocumento(dados)}`;
-
+      // Menu fechado (correção 18/08/2026, Luiz) — cabeçalho fixo + lista de faixas gerada do
+      // banco (formatarMenuFaixas, regras-limpeza-nome.ts — mesmo texto que o interpretador usa
+      // pra saber o que cada número significa). A mensagem de confirmação ("Só confirmando...")
+      // e a negociação por documento (se o lead não confirmar) são geradas pelo interpretador
+      // especializado (interpretar-faixas-documentos.ts), não aqui.
       return [
         t(
-          `👉 Pra eu te passar o preço certo${maisDeUm ? " de cada documento" : ""}, preciso saber a faixa aproximada do valor das restrições ${referenciaDocumentos}\n\nPode ser um valor aproximado, ou "não sei" ${maisDeUm ? "pra qualquer um deles" : ""} — nesse caso, posso te oferecer uma consulta oficial nos 4 órgãos (Serasa, SPC Brasil, SCPC Boa Vista e CENPROT) por R$ 39,00 por documento. Se preferir, você também consegue consultar de graça baixando os apps oficiais de cada órgão. 😊`,
+          `👉 *Em qual das faixas abaixo melhor se enquadra o valor das suas restrições atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n${formatarMenuFaixas(faixasPrecos)}`,
         ),
       ];
     }

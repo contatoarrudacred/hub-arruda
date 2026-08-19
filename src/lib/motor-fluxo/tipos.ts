@@ -217,7 +217,14 @@ export type ItemDocumentoPendente = { tipo: "cpf" | "cnpj" };
  */
 export type ResultadoInterpretacaoListaDocumentos =
   | { status: "completo"; itens: ItemDocumentoPendente[] }
-  | { status: "incompleto"; perguntaEsclarecimento: string }
+  /**
+   * `dadosParciais` (19/08/2026, Luiz: "corrigir tudo de forma global") — quando a IA propõe uma
+   * contagem específica pra confirmar (ex.: "1 CPF e 1 CNPJ, é isso?"), a pergunta em si precisa
+   * atravessar o turno em `dados`, senão o motor não tem como saber, na resposta seguinte ("sim"),
+   * o que exatamente está sendo confirmado — mesmo padrão de `dadosParciais` em
+   * `ResultadoInterpretacaoFaixasDocumentos`.
+   */
+  | { status: "incompleto"; perguntaEsclarecimento: string; dadosParciais?: DadosConversa }
   | { status: "nao_entendi" };
 
 export type InterpretadorListaDocumentos = (params: {
@@ -234,10 +241,18 @@ export type FaixaDocumentoCapturada = { tipo: "cpf" | "cnpj"; valorAproximado: n
  * filosofia de 3 saídas de `ResultadoInterpretacaoListaDocumentos`, mas aqui `itens` precisa ter
  * exatamente uma entrada pra CADA documento de `dados.documentos_tipos`, na mesma ordem — decisão
  * de Luiz (17/08/2026): uma pergunta só pra todos os documentos, não um checkpoint por documento.
+ *
+ * Reformulado 18/08/2026 (Luiz, menu fechado): o checkpoint agora tem 2 rodadas — o lead escolhe
+ * uma faixa do menu (assumida igual pra todos os documentos), a Malala confirma, e só marca
+ * "completo" depois da confirmação. `incompleto.dadosParciais` é como esse estado provisório
+ * atravessa o turno (mesmo problema/solução da negociação de pagamento: o interpretador só recebe
+ * `dados`, sem histórico de turnos — o motor precisa persistir o que já foi entendido).
  */
 export type ResultadoInterpretacaoFaixasDocumentos =
   | { status: "completo"; itens: FaixaDocumentoCapturada[] }
-  | { status: "incompleto"; perguntaEsclarecimento: string }
+  | { status: "incompleto"; perguntaEsclarecimento: string; dadosParciais?: DadosConversa }
+  /** Lead pediu a consulta oficial paga (R$39/documento) — escala pra atendimento humano em vez de continuar o automatizado. */
+  | { status: "escalar_consulta_paga"; mensagem: string }
   | { status: "nao_entendi" };
 
 export type InterpretadorFaixasDocumentos = (params: {

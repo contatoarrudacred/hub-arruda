@@ -51,3 +51,40 @@ export function validarRespostaFaixasDocumentos(
 
   return { status: "completo", itens };
 }
+
+// --- Menu fechado (correção 18/08/2026, Luiz) — 2 rodadas: escolha de faixa no menu, depois
+// confirmação. As 2 funções abaixo são as contrapartidas puras/testáveis das 2 chamadas de IA em
+// interpretar-faixas-documentos.ts (ferramentaEscolhaMenu/ferramentaConfirmacaoFaixa).
+
+export type RespostaBrutaEscolhaFaixaMenu = {
+  status: "faixa_escolhida" | "quer_consulta_paga" | "nao_entendi";
+  indice_faixa: number;
+};
+
+export type ResultadoEscolhaFaixaMenu =
+  | { tipo: "faixa_escolhida"; indice: number }
+  | { tipo: "quer_consulta_paga" }
+  | { tipo: "nao_entendi" };
+
+/** `indice_faixa` da IA é 1-based (mesma numeração do menu que o lead vê); o retorno já vem 0-based, pronto pra indexar a lista ordenada de faixas. */
+export function validarEscolhaFaixaMenu(bruta: RespostaBrutaEscolhaFaixaMenu, qtdFaixas: number): ResultadoEscolhaFaixaMenu {
+  if (bruta.status === "quer_consulta_paga") return { tipo: "quer_consulta_paga" };
+  if (bruta.status !== "faixa_escolhida") return { tipo: "nao_entendi" };
+
+  const indice = Number(bruta.indice_faixa);
+  if (!Number.isInteger(indice) || indice < 1 || indice > qtdFaixas) return { tipo: "nao_entendi" };
+  return { tipo: "faixa_escolhida", indice: indice - 1 };
+}
+
+export type RespostaBrutaConfirmacaoFaixa = {
+  status: "confirmado" | "quer_consulta_paga" | "nao_confirmado";
+};
+
+export type ResultadoConfirmacaoFaixa = "confirmado" | "quer_consulta_paga" | "nao_confirmado";
+
+/** Qualquer coisa que não seja explicitamente "confirmado" ou "quer_consulta_paga" vira "nao_confirmado" — defensivo, é o caminho que cai pra extração livre por documento, então não tem risco de assumir errado. */
+export function validarConfirmacaoFaixa(bruta: RespostaBrutaConfirmacaoFaixa): ResultadoConfirmacaoFaixa {
+  if (bruta.status === "confirmado") return "confirmado";
+  if (bruta.status === "quer_consulta_paga") return "quer_consulta_paga";
+  return "nao_confirmado";
+}
