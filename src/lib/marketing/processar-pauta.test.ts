@@ -289,6 +289,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
+      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     };
@@ -366,6 +369,9 @@ describe("processarProximaPauta", () => {
     espiarRegistrarEtapa();
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
+      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     };
@@ -418,6 +424,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
+      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     };
@@ -487,6 +496,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
+      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     };
@@ -558,6 +570,9 @@ describe("processarProximaPauta", () => {
 
     const adaptadorFalso = {
       criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      // enviarMidia (Task 9) não é chamado por processar-pauta.ts ainda (integração fica pra
+      // task futura) — presente só pra satisfazer o tipo de retorno de criarAdaptadorWordPress.
+      enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: false, detalhes: "Rascunho sem conteúdo renderizado." }),
       aprovarPublicar: vi.fn(),
     };
