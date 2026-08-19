@@ -41,6 +41,67 @@ export async function buscarPessoaPorDocumento(documento: string): Promise<Pesso
   };
 }
 
+export type PessoaCompleta = {
+  id: string;
+  tipoPessoa: "pf" | "pj";
+  nomeRazaoSocial: string;
+  documento: string;
+  email: string | null;
+  whatsapp: string | null;
+  rg: string | null;
+  estadoCivil: string | null;
+  profissao: string | null;
+};
+
+export async function buscarPessoaCompleta(pessoaId: string): Promise<PessoaCompleta | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pessoas")
+    .select("id, tipo_pessoa, nome_razao_social, documento, email, whatsapp, rg, estado_civil, profissao")
+    .eq("id", pessoaId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar pessoa: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    tipoPessoa: data.tipo_pessoa as "pf" | "pj",
+    nomeRazaoSocial: data.nome_razao_social,
+    documento: data.documento,
+    email: data.email,
+    whatsapp: data.whatsapp,
+    rg: data.rg,
+    estadoCivil: data.estado_civil,
+    profissao: data.profissao,
+  };
+}
+
+export type EntradaDadosContratoPessoa = {
+  email: string | null;
+  whatsapp: string | null;
+  rg: string | null;
+  estadoCivil: string | null;
+  profissao: string | null;
+};
+
+/** Atualiza os campos de uma Pessoa exigidos pelo contrato (Fechamento de Venda) — RG/estado
+ * civil/profissão só fazem sentido pra Pessoa Física (signatário PF, ou representante legal de
+ * uma PJ), mas a função não valida isso — quem chama decide quando usar. */
+export async function atualizarDadosContratoPessoa(pessoaId: string, entrada: EntradaDadosContratoPessoa): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("pessoas")
+    .update({
+      email: entrada.email,
+      whatsapp: entrada.whatsapp,
+      rg: entrada.rg,
+      estado_civil: entrada.estadoCivil,
+      profissao: entrada.profissao,
+    })
+    .eq("id", pessoaId);
+  if (error) throw new Error(`Falha ao atualizar dados da pessoa: ${error.message}`);
+}
+
 export type EntradaCriarPessoa = {
   nome: string;
   documento: string;
