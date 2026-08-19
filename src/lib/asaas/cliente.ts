@@ -55,7 +55,7 @@ export type EntradaCobranca = {
   description: string;
 };
 
-export type Cobranca = { id: string };
+export type Cobranca = { id: string; invoiceUrl: string };
 
 /**
  * Cria UMA cobrança individual. Decisão importante: **não usamos o `installmentCount`/
