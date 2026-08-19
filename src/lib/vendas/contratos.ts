@@ -10,10 +10,11 @@ export type MetodoPagamento = "boleto_pix" | "cartao";
 // oportunidades.etapa_kanban (kanban do CRM, tabela e dados diferentes, nunca lido daqui). Nos
 // marcos-chave o Vendas empurra uma atualização pontual pro etapa_kanban, nunca o contrário.
 export type StatusContrato =
-  | "contrato_gerado"
-  | "aguardando_assinatura"
-  | "assinado"
-  | "parcelas_emitidas"
+  | "nova_oportunidade"
+  | "emitindo_contrato"
+  | "envelopando_assinaturas"
+  | "aguardando_assinaturas"
+  | "gerando_financeiro"
   | "aguardando_pagamento"
   | "concluida"
   | "cancelada";

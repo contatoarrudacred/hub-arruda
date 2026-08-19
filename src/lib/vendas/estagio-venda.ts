@@ -1,14 +1,16 @@
 import type { StatusContrato } from "./contratos";
 
 /**
- * Colunas do Painel de Vendas (Kanban/lista) — SEM relação com src/lib/motor-fluxo/kanban.ts
- * (Kanban do CRM, quadro diferente, dados diferentes). Ordem = ordem de progressão da venda.
+ * Colunas do Kanban de Vendas — SEM relação com src/lib/motor-fluxo/kanban.ts (Kanban do CRM,
+ * quadro diferente, dados diferentes). Ordem = ordem de progressão da venda. Etapas 2/3/5 são
+ * automáticas (o sistema avança sozinho); 4/6 esperam ação humana confirmada por webhook.
  */
 export const ESTAGIOS_VENDA: { valor: StatusContrato; rotulo: string; cor: string }[] = [
-  { valor: "contrato_gerado", rotulo: "Emissão Contrato", cor: "#fb923c" },
-  { valor: "aguardando_assinatura", rotulo: "Assinatura", cor: "#fbbf24" },
-  { valor: "assinado", rotulo: "Assinado", cor: "#a3e635" },
-  { valor: "parcelas_emitidas", rotulo: "Emissão Parcelas", cor: "#38bdf8" },
+  { valor: "nova_oportunidade", rotulo: "Nova Oportunidade", cor: "#a78bfa" },
+  { valor: "emitindo_contrato", rotulo: "Emitindo Contrato", cor: "#fb923c" },
+  { valor: "envelopando_assinaturas", rotulo: "Envelopando Assinaturas", cor: "#fbbf24" },
+  { valor: "aguardando_assinaturas", rotulo: "Aguardando Assinaturas", cor: "#facc15" },
+  { valor: "gerando_financeiro", rotulo: "Gerando Financeiro", cor: "#38bdf8" },
   { valor: "aguardando_pagamento", rotulo: "Aguardando Pagamento", cor: "#818cf8" },
   { valor: "concluida", rotulo: "Concluída", cor: "#4ade80" },
   { valor: "cancelada", rotulo: "Cancelada", cor: "#f87171" },
