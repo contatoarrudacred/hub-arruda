@@ -112,6 +112,7 @@ export type EntradaCriarPessoa = {
 export async function criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: string }> {
   const documentoNormalizado = normalizarDocumento(entrada.documento);
   const tipoPessoa = tipoPessoaPorDocumento(documentoNormalizado);
+  console.log("[DEBUG criarPessoa] documento normalizado:", documentoNormalizado, "tipo:", tipoPessoa);
   if (!tipoPessoa) throw new Error("Documento inválido — não é um CPF nem CNPJ válido.");
 
   const supabase = await createClient();
@@ -126,7 +127,11 @@ export async function criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: st
     })
     .select("id")
     .single();
-  if (error) throw new Error(`Falha ao criar pessoa: ${error.message}`);
+  if (error) {
+    console.error("[DEBUG criarPessoa] erro do Supabase:", JSON.stringify(error));
+    throw new Error(`Falha ao criar pessoa: ${error.message}`);
+  }
+  console.log("[DEBUG criarPessoa] pessoa criada com id:", data.id);
   return { id: data.id };
 }
 
@@ -138,22 +143,28 @@ export type EntradaResolverOuCriarPessoa = {
 export type ResultadoResolverPessoa = { sucesso: true; pessoaId: string } | { sucesso: false; erro: string };
 
 export async function resolverOuCriarPessoa(entrada: EntradaResolverOuCriarPessoa): Promise<ResultadoResolverPessoa> {
+  console.log("[DEBUG resolverOuCriarPessoa] entrada:", JSON.stringify(entrada));
   if (entrada.pessoaId) {
+    console.log("[DEBUG resolverOuCriarPessoa] usando pessoaId existente:", entrada.pessoaId);
     return { sucesso: true, pessoaId: entrada.pessoaId };
   }
 
   if (!entrada.pessoaNova) {
+    console.log("[DEBUG resolverOuCriarPessoa] sem pessoaId nem pessoaNova — abortando");
     return { sucesso: false, erro: "Selecione ou cadastre uma Pessoa." };
   }
 
   if (!validarDocumento(entrada.pessoaNova.documento)) {
+    console.log("[DEBUG resolverOuCriarPessoa] documento invalido:", entrada.pessoaNova.documento);
     return { sucesso: false, erro: "CPF/CNPJ inválido." };
   }
   if (!entrada.pessoaNova.nome.trim()) {
+    console.log("[DEBUG resolverOuCriarPessoa] nome vazio");
     return { sucesso: false, erro: "Nome é obrigatório." };
   }
 
   const pessoaExistente = await buscarPessoaPorDocumento(entrada.pessoaNova.documento);
+  console.log("[DEBUG resolverOuCriarPessoa] pessoaExistente:", pessoaExistente ? pessoaExistente.id : null);
   if (pessoaExistente) {
     return { sucesso: true, pessoaId: pessoaExistente.id };
   }

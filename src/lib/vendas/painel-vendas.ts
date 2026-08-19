@@ -40,7 +40,11 @@ export async function listarVendas(): Promise<VendaResumo[]> {
       "id, oportunidade_id, status, motivo_cancelamento, valor_total, created_at, oportunidades(pessoas(nome_razao_social, documento), produtos(nome))",
     )
     .order("created_at", { ascending: false });
-  if (error) throw new Error(`Falha ao listar vendas: ${error.message}`);
+  if (error) {
+    console.error("[DEBUG listarVendas] erro do Supabase:", JSON.stringify(error));
+    throw new Error(`Falha ao listar vendas: ${error.message}`);
+  }
+  console.log("[DEBUG listarVendas] linhas encontradas em contratos:", data?.length ?? 0);
 
   return ((data ?? []) as unknown as LinhaVendaBruta[]).map((linha) => {
     const oportunidade = extrairOportunidade(linha.oportunidades);

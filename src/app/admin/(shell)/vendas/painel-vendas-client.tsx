@@ -133,11 +133,14 @@ function MenuAcoes({ venda, onMudou }: { venda: VendaResumo; onMudou: () => void
 }
 
 export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaResumo[] }) {
+  console.log("[DEBUG PainelVendasClient] vendasIniciais recebidas:", vendasIniciais.length, vendasIniciais);
   const [vendas, setVendas] = useState(vendasIniciais);
   const [visao, setVisao] = useState<"lista" | "kanban">("kanban");
 
   async function recarregar() {
-    setVendas(await listarVendasAction());
+    const recarregadas = await listarVendasAction();
+    console.log("[DEBUG PainelVendasClient] recarregar():", recarregadas.length, recarregadas);
+    setVendas(recarregadas);
   }
 
   const porEstagio = useMemo(() => {

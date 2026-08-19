@@ -47,29 +47,35 @@ export function NovaVendaClient({ produtos }: { produtos: Produto[] }) {
   async function criarVenda() {
     setErro(null);
     setCriando(true);
+    const entrada = {
+      pessoaId: pessoaEncontrada?.id ?? null,
+      pessoaNova: pessoaEncontrada ? null : { nome: nomeNovaPessoa, documento },
+      produtoId,
+      valorEstimado: valorEstimado ? Number(valorEstimado) : null,
+      endereco: endereco.cep
+        ? {
+            cep: endereco.cep,
+            logradouro: endereco.logradouro,
+            numero: endereco.numero,
+            complemento: endereco.complemento || null,
+            bairro: endereco.bairro,
+            cidade: endereco.cidade,
+            uf: endereco.uf,
+          }
+        : null,
+    };
+    console.log("[DEBUG nova-venda] enviando:", entrada);
     try {
-      const resultadoAction = await criarVendaSemFunilPrevioAction({
-        pessoaId: pessoaEncontrada?.id ?? null,
-        pessoaNova: pessoaEncontrada ? null : { nome: nomeNovaPessoa, documento },
-        produtoId,
-        valorEstimado: valorEstimado ? Number(valorEstimado) : null,
-        endereco: endereco.cep
-          ? {
-              cep: endereco.cep,
-              logradouro: endereco.logradouro,
-              numero: endereco.numero,
-              complemento: endereco.complemento || null,
-              bairro: endereco.bairro,
-              cidade: endereco.cidade,
-              uf: endereco.uf,
-            }
-          : null,
-      });
+      const resultadoAction = await criarVendaSemFunilPrevioAction(entrada);
+      console.log("[DEBUG nova-venda] resultado:", resultadoAction);
       if (!resultadoAction.sucesso) {
         setErro(resultadoAction.erro);
         return;
       }
       setResultado({ oportunidadeId: resultadoAction.oportunidadeId, pessoaId: resultadoAction.pessoaId });
+    } catch (erro) {
+      console.error("[DEBUG nova-venda] excecao na chamada da action:", erro);
+      setErro(erro instanceof Error ? erro.message : "Falha inesperada ao criar a venda.");
     } finally {
       setCriando(false);
     }

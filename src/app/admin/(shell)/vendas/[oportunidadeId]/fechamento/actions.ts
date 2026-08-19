@@ -125,14 +125,18 @@ async function montarPessoaContrato(pessoaId: string, endereco: EnderecoEntrada 
 }
 
 export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechamento): Promise<ResultadoConfirmarFechamento> {
+  console.log("[DEBUG confirmarFechamento] entrada recebida:", JSON.stringify(entrada));
   try {
     const oportunidade = await buscarOportunidadeParaFechamento(entrada.oportunidadeId);
+    console.log("[DEBUG confirmarFechamento] oportunidade:", JSON.stringify(oportunidade));
     if (!oportunidade) return { sucesso: false, erro: "Oportunidade não encontrada." };
 
     const template = await buscarTemplateAtivoPorProduto(oportunidade.produtoId);
+    console.log("[DEBUG confirmarFechamento] template encontrado:", template ? template.id : null);
     if (!template) return { sucesso: false, erro: `Nenhum template de contrato configurado pro produto "${oportunidade.produtoNome}".` };
 
     const pessoaArrudaCredId = await buscarPessoaArrudaCredSignatario();
+    console.log("[DEBUG confirmarFechamento] pessoaArrudaCredId:", pessoaArrudaCredId);
     if (!pessoaArrudaCredId) return { sucesso: false, erro: "Signatário da ArrudaCred não configurado (Configurações > contrato_arrudacred_signatario)." };
 
     // 1) Salva dados de contrato + endereço do signatário (e do representante, se PJ)
