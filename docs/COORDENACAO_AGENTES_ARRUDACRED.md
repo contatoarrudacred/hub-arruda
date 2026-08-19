@@ -119,7 +119,7 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
 | `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado por mim (leitura só, sem escrita): `propriedades_digitais.credenciais_canais` e a tabela `pautas_execucao_log` existem de verdade no banco. |
 | `20260818100000` | `20260818100000_personas_ricas.sql` | Marketing | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 19/08/2026. Verificado por mim (leitura só, sem escrita): tabela `personas` e coluna `pautas.persona_id` existem de verdade no banco |
-| `20260819100000` | `20260819100000_marketing_ultimo_rascunho.sql` | Marketing | Aguardando envio ao Luiz |
+| `20260819100000` | `20260819100000_marketing_ultimo_rascunho.sql` | Marketing | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 19/08/2026. Verificado por mim (leitura só, sem escrita): coluna `pautas.ultimo_rascunho` existe de verdade no banco |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
