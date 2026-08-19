@@ -206,6 +206,27 @@ export async function atualizarStatusContrato(
   if (error) throw new Error(`Falha ao atualizar status do contrato: ${error.message}`);
 }
 
+export async function atualizarParcelaAsaas(parcelaId: string, asaasPaymentId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contrato_parcelas").update({ asaas_payment_id: asaasPaymentId }).eq("id", parcelaId);
+  if (error) throw new Error(`Falha ao atualizar parcela com id da Asaas: ${error.message}`);
+}
+
+export async function marcarParcelaPaga(
+  asaasPaymentId: string,
+  pagoEm: string,
+): Promise<{ contratoId: string; numero: number } | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contrato_parcelas")
+    .update({ status: "pago", pago_em: pagoEm })
+    .eq("asaas_payment_id", asaasPaymentId)
+    .select("contrato_id, numero")
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao marcar parcela como paga: ${error.message}`);
+  return data ? { contratoId: data.contrato_id, numero: data.numero } : null;
+}
+
 export async function buscarPessoaArrudaCredSignatario(): Promise<string | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
