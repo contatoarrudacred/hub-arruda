@@ -14,11 +14,14 @@ export async function sincronizarEtapaKanban(oportunidadeId: string, etapaKanban
   if (error) throw new Error(`Falha ao sincronizar etapa_kanban: ${error.message}`);
 }
 
+export type TipoProduto = "proprio" | "subcontratado" | "comissionado";
+
 export type OportunidadeFechamento = {
   id: string;
   pessoaId: string;
   produtoId: string;
   produtoNome: string;
+  produtoTipo: TipoProduto;
   valorEstimado: number;
 };
 
@@ -26,20 +29,21 @@ export async function buscarOportunidadeParaFechamento(oportunidadeId: string): 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("oportunidades")
-    .select("id, pessoa_id, produto_id, valor_estimado, produtos(nome)")
+    .select("id, pessoa_id, produto_id, valor_estimado, produtos(nome, tipo)")
     .eq("id", oportunidadeId)
     .maybeSingle();
   if (error) throw new Error(`Falha ao buscar oportunidade: ${error.message}`);
   if (!data) return null;
 
-  const produto = data.produtos as unknown as { nome: string } | { nome: string }[] | null;
-  const produtoNome = Array.isArray(produto) ? produto[0]?.nome : produto?.nome;
+  const produto = data.produtos as unknown as { nome: string; tipo: TipoProduto } | { nome: string; tipo: TipoProduto }[] | null;
+  const produtoResolvido = Array.isArray(produto) ? produto[0] : produto;
 
   return {
     id: data.id,
     pessoaId: data.pessoa_id,
     produtoId: data.produto_id,
-    produtoNome: produtoNome ?? "",
+    produtoNome: produtoResolvido?.nome ?? "",
+    produtoTipo: produtoResolvido?.tipo ?? "proprio",
     valorEstimado: data.valor_estimado ?? 0,
   };
 }

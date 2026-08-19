@@ -83,6 +83,28 @@ export async function confirmarVendaComissionada(oportunidadeId: string, dataAss
   }
 }
 
+export type ComissaoFornecedor = { id: string; numero: number; valor: number; dataPrevista: string; status: "previsto" | "recebido"; recebidoEm: string | null };
+
+/** Parcelas de comissão de uma venda comissionada — usado pela tela de Detalhes da Venda. */
+export async function listarComissoesDaVenda(oportunidadeId: string): Promise<ComissaoFornecedor[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("comissoes_fornecedor_receber")
+    .select("id, numero, valor, data_prevista, status, recebido_em")
+    .eq("oportunidade_id", oportunidadeId)
+    .order("numero", { ascending: true });
+  if (error) throw new Error(`Falha ao listar comissões da venda: ${error.message}`);
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    numero: linha.numero,
+    valor: linha.valor,
+    dataPrevista: linha.data_prevista,
+    status: linha.status as "previsto" | "recebido",
+    recebidoEm: linha.recebido_em,
+  }));
+}
+
 /**
  * Marca uma parcela de comissão como recebida do fornecedor — ação manual do admin (não existe
  * webhook de fornecedor pra isso). Quando é a 1ª parcela, a venda avança pra `concluida` no Painel

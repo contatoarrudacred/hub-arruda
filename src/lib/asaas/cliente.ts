@@ -66,6 +66,15 @@ export type Cobranca = { id: string; invoiceUrl: string };
  * uma vez por parcela, com o valor/data exatos que já temos — sem depender do parcelamento nativo
  * deles pra nada além de existir a cobrança em si.
  */
+export type CobrancaStatus = Cobranca & { status: string };
+
+/** Consulta o status atual de uma cobrança já criada — usado pelo botão "Atualizar agora" da tela
+ * de Detalhes da Venda (decisão: banco/webhook é a fonte padrão, isso é só a checagem manual sob
+ * demanda, ver spec seção 3.6). */
+export async function buscarCobranca(paymentId: string): Promise<CobrancaStatus> {
+  return chamarApi<CobrancaStatus>(`/payments/${paymentId}`, { method: "GET" });
+}
+
 export async function criarCobranca(entrada: EntradaCobranca): Promise<Cobranca> {
   return chamarApi<Cobranca>("/payments", {
     method: "POST",

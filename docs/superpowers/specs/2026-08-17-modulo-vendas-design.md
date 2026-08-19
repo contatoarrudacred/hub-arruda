@@ -163,7 +163,13 @@ Vale pra **qualquer** tela que cadastra/edita uma Pessoa neste sistema (Forneced
 **Telas:**
 - **Painel de Vendas** (`/admin/vendas`) — lista ou Kanban (toggle), todas as vendas com estágio visível. Cada linha/card tem menu de ações: **Detalhes**, **Cancelar**, **Excluir** (Excluir é ação de admin — remove só o registro do Vendas, contrato+parcelas via cascade, nunca a Oportunidade/dado do CRM). Botão "Nova venda" abre `/admin/vendas/nova` (já existe).
 - **Confirmar venda** (`/admin/vendas/[oportunidadeId]/confirmar-comissionada`) — equivalente ao Fechamento de Venda, só que pro caminho comissionado: sem contrato/PDF, só pede a data em que o cliente assinou com o fornecedor e gera as parcelas de comissão (seção 3.4).
-- **Detalhes da Venda** (`/admin/vendas/[oportunidadeId]`) — visão completa da venda. Antes do contrato existir, permite editar (link pra `/fechamento`). Depois de gerado, mostra um **"Painel Interativo"** que muda de acordo com o estágio atual — nos estágios de assinatura/pagamento, é o retrato ao vivo do que a Assinafy/Asaas estão reportando (quem assinou, status da cobrança), não só um texto estático.
+- **Detalhes da Venda** (`/admin/vendas/[oportunidadeId]`) — visão completa da venda. Antes do registro existir, mostra link pra continuar (`/fechamento` ou `/confirmar-comissionada`, conforme `produtos.tipo`). Depois de existir, mostra um **"Painel Interativo"** que muda de acordo com o estágio atual:
+  - Fonte de dado é o banco (atualizado pelos webhooks), **não** a API ao vivo por padrão — decisão confirmada com o Luiz em 19/08/2026 (custo/latência de chamar Assinafy/Asaas a cada abertura de tela não compensa). Cada painel tem um botão **"Verificar agora"** que aí sim consulta a API na hora (`buscarDocumento` na Assinafy, `buscarCobranca` na Asaas) — é nesse momento que aparece o link individual de assinatura/cobrança (não fica persistido em nenhuma tabela, é sempre buscado fresco quando precisa reenviar).
+  - `aguardando_assinatura`: lista quem já assinou / falta assinar; reenvio (WhatsApp/e-mail/copiar link) só pro signatário cliente — o signatário da ArrudaCred não recebe reenvio por esses canais.
+  - `aguardando_pagamento`/`parcelas_emitidas`: tabela de parcelas com reenvio de link de pagamento (WhatsApp/e-mail/copiar) por parcela ainda não paga.
+  - Comissionado (`aguardando_pagamento`): tabela de `comissoes_fornecedor_receber` com botão **"Marcar recebida"** em vez de link — não há link de pagamento nesse caminho, quem paga é o fornecedor pra ArrudaCred.
+  - **Histórico**: timeline lida de `auditoria_log` (sem tabela nova) — um evento por avanço de estágio do contrato, parcela paga, comissão recebida.
+  - **Cancelar venda** duplicado aqui (mesma ação do Painel de Vendas).
 - Telas devem ser amigáveis, limpas, com tooltips ajudando a entender cada estágio — sem exigir que o usuário conheça o "por trás" do sistema pra usar.
 
 ---

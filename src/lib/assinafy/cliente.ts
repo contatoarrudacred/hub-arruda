@@ -31,17 +31,50 @@ async function chamarApi(caminho: string, opcoes: RequestInit = {}): Promise<unk
   return corpo;
 }
 
+export type AssinafySignatarioStatus = {
+  id: string;
+  nome: string;
+  email: string;
+  completo: boolean;
+  url: string | null;
+};
+
 export type AssinafyDocumento = {
   id: string;
   status: string;
   isClosed: boolean;
+  signatarios: AssinafySignatarioStatus[];
 };
+
+type SignerBruto = { id: string; full_name: string; email: string; completed?: boolean };
+type SigningUrlBruto = { signer_id: string; url: string };
+
+/**
+ * `assignment.summary.signers` (quem assinou) e `signing_urls` (link individual de cada um) só
+ * existem depois que a assinatura foi solicitada (solicitarAssinatura) — ausentes logo após o
+ * upload, por isso os dois vêm com fallback pra array vazio.
+ */
+function mapearSignatarios(bruto: Record<string, unknown>): AssinafySignatarioStatus[] {
+  const assignment = bruto.assignment as Record<string, unknown> | undefined;
+  const summary = assignment?.summary as { signers?: SignerBruto[] } | undefined;
+  const signers = summary?.signers ?? [];
+  const signingUrls = (bruto.signing_urls as SigningUrlBruto[] | undefined) ?? [];
+
+  return signers.map((signer) => ({
+    id: signer.id,
+    nome: signer.full_name,
+    email: signer.email,
+    completo: Boolean(signer.completed),
+    url: signingUrls.find((s) => s.signer_id === signer.id)?.url ?? null,
+  }));
+}
 
 function mapearDocumento(bruto: Record<string, unknown>): AssinafyDocumento {
   return {
     id: String(bruto.id),
     status: String(bruto.status),
     isClosed: Boolean(bruto.is_closed),
+    signatarios: mapearSignatarios(bruto),
   };
 }
 

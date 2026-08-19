@@ -129,6 +129,7 @@ export type Contrato = {
   parcelasQtd: number;
   valorTotal: number;
   assinafyDocumentId: string | null;
+  assinafyDocumentStatus: string | null;
   parcelas: ContratoParcela[];
 };
 
@@ -155,11 +156,12 @@ type LinhaContratoBruta = {
   parcelas_qtd: number;
   valor_total: number;
   assinafy_document_id: string | null;
+  assinafy_document_status: string | null;
   contrato_parcelas: LinhaContratoParcelaBruta[] | null;
 };
 
 const SELECT_CONTRATO =
-  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, assinafy_document_status, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
 
 function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
@@ -177,6 +179,7 @@ function mapearContrato(linha: LinhaContratoBruta): Contrato {
     parcelasQtd: linha.parcelas_qtd,
     valorTotal: linha.valor_total,
     assinafyDocumentId: linha.assinafy_document_id,
+    assinafyDocumentStatus: linha.assinafy_document_status,
     parcelas: (linha.contrato_parcelas ?? [])
       .map((parcela) => ({
         id: parcela.id,

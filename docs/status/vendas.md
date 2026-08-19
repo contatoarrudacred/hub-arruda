@@ -1,6 +1,6 @@
 # Status — Vendas
 
-tarefa: Task 16 fechada — venda comissionada agora aparece no Painel de Vendas (registro em contratos direto em aguardando_pagamento, sem estágio novo em lugar nenhum). Próximo: Detalhes da Venda + Painel Interativo.
-desde: 2026-08-19T03:10:00-03:00
-proxima: Detalhes da Venda + Painel Interativo (Task 17 de verificação fica pra depois, depende de credenciais reais)
-bloqueio: nenhum
+tarefa: Detalhes da Venda + Painel Interativo prontos (/admin/vendas/[oportunidadeId]) — status por estágio, verificação ao vivo na Assinafy/Asaas sob demanda, reenvio de link (WhatsApp/e-mail/copiar), timeline via auditoria_log, marcar comissão recebida, cancelar venda.
+desde: 2026-08-19T04:20:00-03:00
+proxima: Task 17 — verificação ponta a ponta com credenciais reais (Assinafy/Asaas), quando as contas existirem
+bloqueio: nenhum — ressalva: não consegui verificar a tela nova no navegador nesta sessão (portas 3000/3001 ocupadas por outras sessões, servidor de outra sessão não pegou as rotas novas); validado por tsc+eslint+vitest e revisão manual do código
