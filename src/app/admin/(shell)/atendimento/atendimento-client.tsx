@@ -599,6 +599,7 @@ export function AtendimentoClient({
   const [carregandoHistoricoFotos, setCarregandoHistoricoFotos] = useState(false);
   const [midiaEmTelaCheia, setMidiaEmTelaCheia] = useState<{ url: string; tipo: "imagem" | "video" } | null>(null);
   const [resetando, setResetando] = useState(false);
+  const [erroReset, setErroReset] = useState<string | null>(null);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
@@ -734,8 +735,16 @@ export function AtendimentoClient({
   async function confirmarReset() {
     if (!detalhe?.pessoaTelefone) return;
     setResetando(true);
-    await resetarConversaAction(detalhe.pessoaTelefone);
+    setErroReset(null);
+    const resultado = await resetarConversaAction(detalhe.pessoaTelefone);
     setResetando(false);
+    // Achado real (19/08/2026): esta chamada nunca checava o resultado — se o reset falhasse (ex.:
+    // violação de FK por causa de um contrato já gerado), o modal fechava do mesmo jeito, dando a
+    // impressão de que funcionou, mas a conversa continuava lá.
+    if (!resultado.sucesso) {
+      setErroReset(resultado.erro);
+      return;
+    }
     setConfirmandoReset(false);
     setConversaSelecionadaId(null);
     await recarregarLista();
@@ -1398,7 +1407,13 @@ export function AtendimentoClient({
                     else atribuirAtendente(conversaSelecionadaId, atendenteId);
                   }}
                 />
-                <MenuAcoesCabecalho telefone={detalhe.pessoaTelefone} onResetar={() => setConfirmandoReset(true)} />
+                <MenuAcoesCabecalho
+                  telefone={detalhe.pessoaTelefone}
+                  onResetar={() => {
+                    setErroReset(null);
+                    setConfirmandoReset(true);
+                  }}
+                />
               </div>
             </div>
 
@@ -1974,9 +1989,13 @@ export function AtendimentoClient({
             Apaga pessoa, oportunidade, conversa e mensagens desse número — ação irreversível. A
             próxima mensagem desse número no WhatsApp começa do zero.
           </p>
+          {erroReset && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{erroReset}</p>}
           <div className="mt-4 flex justify-end gap-2">
             <button
-              onClick={() => setConfirmandoReset(false)}
+              onClick={() => {
+                setErroReset(null);
+                setConfirmandoReset(false);
+              }}
               className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               Cancelar

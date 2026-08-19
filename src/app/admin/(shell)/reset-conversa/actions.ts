@@ -41,6 +41,35 @@ export async function resetarConversaAction(telefoneBruto: string): Promise<Resu
   if (erroPessoa) return { sucesso: false, erro: `Falha ao buscar pessoa: ${erroPessoa.message}` };
   if (!pessoa) return { sucesso: true, encontrado: false };
 
+  // Achado real (19/08/2026): desde que o núcleo de Contrato do Vendas entrou (migration 036,
+  // 18/08/2026), resetar um número que já chegou a gerar contrato (Fechamento de Venda/Nova
+  // Oportunidade) passou a falhar — `contratos.oportunidade_id`/`comissoes_fornecedor_receber.
+  // oportunidade_id` referenciam `oportunidades(id)` SEM cascade (correto pra dado real: um
+  // contrato não pode sumir só porque a oportunidade some por engano em outro lugar), então a
+  // cascata de `pessoas` → `oportunidades` (essa sim, com cascade) trava no meio do caminho.
+  // Como esta é uma ferramenta só de teste, apaga esses dependentes primeiro, escopados às
+  // oportunidades DESTA pessoa (nunca por pessoa_signatario_id/pessoa_arrudacred_signatario_id
+  // soltos — um contrato de outra pessoa poderia ter esta pessoa como representante legal ou
+  // como signatário da ArrudaCred, e apagar por esses campos arriscaria apagar contrato alheio).
+  // contrato_parcelas cascateia de contratos, não precisa mexer nela separado.
+  const { data: oportunidades, error: erroOportunidades } = await supabase
+    .from("oportunidades")
+    .select("id")
+    .eq("pessoa_id", pessoa.id);
+  if (erroOportunidades) return { sucesso: false, erro: `Falha ao buscar oportunidades: ${erroOportunidades.message}` };
+
+  const oportunidadeIds = (oportunidades ?? []).map((o) => o.id);
+  if (oportunidadeIds.length > 0) {
+    const { error: erroContratos } = await supabase.from("contratos").delete().in("oportunidade_id", oportunidadeIds);
+    if (erroContratos) return { sucesso: false, erro: `Falha ao apagar contratos: ${erroContratos.message}` };
+
+    const { error: erroComissoes } = await supabase
+      .from("comissoes_fornecedor_receber")
+      .delete()
+      .in("oportunidade_id", oportunidadeIds);
+    if (erroComissoes) return { sucesso: false, erro: `Falha ao apagar comissões: ${erroComissoes.message}` };
+  }
+
   const { error: erroPessoaDel } = await supabase.from("pessoas").delete().eq("id", pessoa.id);
   if (erroPessoaDel) return { sucesso: false, erro: `Falha ao apagar pessoa: ${erroPessoaDel.message}` };
 
