@@ -6,13 +6,29 @@ export type FormaPagamento = "avista" | "parcelado";
 // (docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md, seção 1) —
 // mesmas duas opções que o bot do CRM oferece via conversas.dados.detalhe_pagamento.forma.
 export type MetodoPagamento = "boleto_pix" | "cartao";
-export type StatusContrato = "gerado" | "enviado" | "assinado" | "recusado" | "cancelado";
+// Estágio da venda no Painel de Vendas (quadro-branco do Vendas) — SEM relação com
+// oportunidades.etapa_kanban (kanban do CRM, tabela e dados diferentes, nunca lido daqui). Nos
+// marcos-chave o Vendas empurra uma atualização pontual pro etapa_kanban, nunca o contrário.
+export type StatusContrato =
+  | "nova_oportunidade"
+  | "emitindo_contrato"
+  | "envelopando_assinaturas"
+  | "aguardando_assinaturas"
+  | "gerando_financeiro"
+  | "aguardando_pagamento"
+  | "concluida"
+  | "cancelada";
 
 export type EntradaCriarContrato = {
   oportunidadeId: string;
-  contratoTemplateId: string;
+  // Nullable de propósito: o contrato nasce mesmo que o produto ainda não tenha template
+  // configurado, ou que contrato_arrudacred_signatario não esteja definido em Configurações — o
+  // card aparece no Kanban imediatamente, e a falta de template/signatário vira um erro visível na
+  // etapa (via montarHtmlContrato/enviarContratoParaAssinatura, que já checam isso), não um bloqueio
+  // silencioso na hora de criar a Oportunidade.
+  contratoTemplateId: string | null;
   pessoaSignatarioId: string;
-  pessoaArrudaCredSignatarioId: string;
+  pessoaArrudaCredSignatarioId: string | null;
   fornecedorId: string | null;
   formaPagamento: FormaPagamento;
   metodoPagamento: MetodoPagamento;
@@ -22,8 +38,17 @@ export type EntradaCriarContrato = {
   // conversas.dados.detalhe_pagamento.parcelas quando a Oportunidade vem do funil do CRM (o CRM já
   // aplica a mesma regra de âncora, não precisa recalcular).
   parcelas: Parcela[];
+  // Só relevante quando metodoPagamento = "cartao" — quantidade de parcelas que o Checkout da
+  // Asaas deve oferecer (1-21). null pra boleto_pix (usa a quantidade real de `parcelas` acima).
+  maxParcelasCartao: number | null;
 };
 
+/**
+ * Insere o contrato + parcelas com todos os dados já coletados (signatário, forma de pagamento,
+ * parcelas) — nasce em `status = 'nova_oportunidade'`. Não gera PDF nem manda pra Assinafy: isso é
+ * responsabilidade de `progressao.ts` (`tentarEmitirContrato`), chamado por quem cria o contrato
+ * logo em seguida.
+ */
 export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ contratoId: string }> {
   const supabase = await createClient();
 
@@ -35,10 +60,11 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
       pessoa_signatario_id: entrada.pessoaSignatarioId,
       pessoa_arrudacred_signatario_id: entrada.pessoaArrudaCredSignatarioId,
       fornecedor_id: entrada.fornecedorId,
-      status: "gerado",
+      status: "nova_oportunidade",
       forma_pagamento: entrada.formaPagamento,
       metodo_pagamento: entrada.metodoPagamento,
       parcelas_qtd: entrada.parcelas.length,
+      max_parcelas_cartao: entrada.maxParcelasCartao,
       valor_total: entrada.valorTotal,
     })
     .select("id")
@@ -58,24 +84,74 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
   return { contratoId: contrato.id };
 }
 
+export type EntradaCriarContratoComissionado = {
+  oportunidadeId: string;
+  pessoaSignatarioId: string;
+  fornecedorId: string;
+  valorTotal: number;
+};
+
+/**
+ * Registro de venda pro Painel de Vendas de um produto comissionado — chamado por
+ * confirmarVendaComissionada (src/lib/vendas/comissoes.ts), que só roda depois que o fornecedor já
+ * aprovou a venda (não existe fase de espera a modelar aqui). Nasce direto em aguardando_pagamento,
+ * pulando as etapas automáticas do Kanban (emitindo_contrato/envelopando_assinaturas/
+ * gerando_financeiro) — não existe contrato com a ArrudaCred nesse tipo de produto, por isso contrato_template_id/
+ * pessoa_arrudacred_signatario_id/forma_pagamento/metodo_pagamento ficam null. Sem
+ * contrato_parcelas — o financeiro dessa venda é comissoes_fornecedor_receber.
+ */
+export async function criarContratoComissionado(entrada: EntradaCriarContratoComissionado): Promise<{ contratoId: string }> {
+  const supabase = await createClient();
+
+  const { data: contrato, error } = await supabase
+    .from("contratos")
+    .insert({
+      oportunidade_id: entrada.oportunidadeId,
+      pessoa_signatario_id: entrada.pessoaSignatarioId,
+      fornecedor_id: entrada.fornecedorId,
+      status: "aguardando_pagamento",
+      parcelas_qtd: 1,
+      valor_total: entrada.valorTotal,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`Falha ao criar registro de venda comissionada: ${error.message}`);
+
+  return { contratoId: contrato.id };
+}
+
 export type ContratoParcela = {
   id: string;
   numero: number;
   valor: number;
   vencimentoPrevisto: string;
   status: string;
+  asaasPaymentId: string | null;
 };
 
 export type Contrato = {
   id: string;
   oportunidadeId: string;
+  // Null pra venda comissionada (criarContratoComissionado) — não existe contrato/template/forma
+  // de pagamento com a ArrudaCred nesse caso, ver comentário da tabela na migration.
+  contratoTemplateId: string | null;
+  pessoaSignatarioId: string;
+  pessoaArrudaCredSignatarioId: string | null;
+  fornecedorId: string | null;
   status: StatusContrato;
+  motivoCancelamento: string | null;
   pdfUrl: string | null;
-  formaPagamento: FormaPagamento;
-  metodoPagamento: MetodoPagamento;
+  formaPagamento: FormaPagamento | null;
+  metodoPagamento: MetodoPagamento | null;
   parcelasQtd: number;
+  // Só preenchido quando metodoPagamento = "cartao" — quantidade de parcelas que o Checkout da
+  // Asaas deve oferecer. Distinto de parcelasQtd, que pra cartão fica sempre 1 (placeholder).
+  maxParcelasCartao: number | null;
   valorTotal: number;
   assinafyDocumentId: string | null;
+  assinafyDocumentStatus: string | null;
+  ultimoErro: string | null;
+  tentativasErro: number;
   parcelas: ContratoParcela[];
 };
 
@@ -85,45 +161,54 @@ type LinhaContratoParcelaBruta = {
   valor: number;
   vencimento_previsto: string;
   status: string;
+  asaas_payment_id: string | null;
 };
 
 type LinhaContratoBruta = {
   id: string;
   oportunidade_id: string;
+  contrato_template_id: string | null;
+  pessoa_signatario_id: string;
+  pessoa_arrudacred_signatario_id: string | null;
+  fornecedor_id: string | null;
   status: StatusContrato;
+  motivo_cancelamento: string | null;
   pdf_url: string | null;
-  forma_pagamento: FormaPagamento;
-  metodo_pagamento: MetodoPagamento;
+  forma_pagamento: FormaPagamento | null;
+  metodo_pagamento: MetodoPagamento | null;
   parcelas_qtd: number;
+  max_parcelas_cartao: number | null;
   valor_total: number;
   assinafy_document_id: string | null;
+  assinafy_document_status: string | null;
+  ultimo_erro: string | null;
+  tentativas_erro: number;
   contrato_parcelas: LinhaContratoParcelaBruta[] | null;
 };
 
-export async function buscarContratoPorOportunidade(oportunidadeId: string): Promise<Contrato | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("contratos")
-    .select(
-      "id, oportunidade_id, status, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, contrato_parcelas(id, numero, valor, vencimento_previsto, status)",
-    )
-    .eq("oportunidade_id", oportunidadeId)
-    .maybeSingle();
-  if (error) throw new Error(`Falha ao buscar contrato: ${error.message}`);
-  if (!data) return null;
+const SELECT_CONTRATO =
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, max_parcelas_cartao, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status, asaas_payment_id)";
 
-  const linha = data as unknown as LinhaContratoBruta;
-
+function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
     id: linha.id,
     oportunidadeId: linha.oportunidade_id,
+    contratoTemplateId: linha.contrato_template_id,
+    pessoaSignatarioId: linha.pessoa_signatario_id,
+    pessoaArrudaCredSignatarioId: linha.pessoa_arrudacred_signatario_id,
+    fornecedorId: linha.fornecedor_id,
     status: linha.status,
+    motivoCancelamento: linha.motivo_cancelamento,
     pdfUrl: linha.pdf_url,
     formaPagamento: linha.forma_pagamento,
     metodoPagamento: linha.metodo_pagamento,
     parcelasQtd: linha.parcelas_qtd,
+    maxParcelasCartao: linha.max_parcelas_cartao,
     valorTotal: linha.valor_total,
     assinafyDocumentId: linha.assinafy_document_id,
+    assinafyDocumentStatus: linha.assinafy_document_status,
+    ultimoErro: linha.ultimo_erro,
+    tentativasErro: linha.tentativas_erro,
     parcelas: (linha.contrato_parcelas ?? [])
       .map((parcela) => ({
         id: parcela.id,
@@ -131,15 +216,51 @@ export async function buscarContratoPorOportunidade(oportunidadeId: string): Pro
         valor: parcela.valor,
         vencimentoPrevisto: parcela.vencimento_previsto,
         status: parcela.status,
+        asaasPaymentId: parcela.asaas_payment_id,
       }))
       .sort((a, b) => a.numero - b.numero),
   };
 }
 
+export async function buscarContratoPorAssinafyDocumentId(assinafyDocumentId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contratos")
+    .select(SELECT_CONTRATO)
+    .eq("assinafy_document_id", assinafyDocumentId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato por documento Assinafy: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
+export async function buscarContratoPorOportunidade(oportunidadeId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contratos")
+    .select(SELECT_CONTRATO)
+    .eq("oportunidade_id", oportunidadeId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
+export async function buscarContratoPorId(contratoId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("contratos").select(SELECT_CONTRATO).eq("id", contratoId).maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
 export async function atualizarStatusContrato(
   id: string,
   status: StatusContrato,
-  extras?: { pdfUrl?: string; enviadoEm?: string; assinadoEm?: string; assinafyDocumentId?: string },
+  extras?: { pdfUrl?: string; enviadoEm?: string; assinadoEm?: string; assinafyDocumentId?: string; motivoCancelamento?: string },
 ): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase
@@ -150,9 +271,60 @@ export async function atualizarStatusContrato(
       ...(extras?.enviadoEm !== undefined ? { enviado_em: extras.enviadoEm } : {}),
       ...(extras?.assinadoEm !== undefined ? { assinado_em: extras.assinadoEm } : {}),
       ...(extras?.assinafyDocumentId !== undefined ? { assinafy_document_id: extras.assinafyDocumentId } : {}),
+      ...(extras?.motivoCancelamento !== undefined ? { motivo_cancelamento: extras.motivoCancelamento } : {}),
     })
     .eq("id", id);
   if (error) throw new Error(`Falha ao atualizar status do contrato: ${error.message}`);
+}
+
+/** Registra uma falha numa etapa automática — incrementa o contador de tentativas e salva a
+ * mensagem, pra aparecer no card do Kanban e na tela de Detalhes da Venda. */
+export async function registrarErroContrato(contratoId: string, mensagem: string): Promise<void> {
+  const supabase = await createClient();
+  const { data: atual, error: erroBusca } = await supabase
+    .from("contratos")
+    .select("tentativas_erro")
+    .eq("id", contratoId)
+    .single();
+  if (erroBusca) throw new Error(`Falha ao buscar contrato pra registrar erro: ${erroBusca.message}`);
+
+  const { error } = await supabase
+    .from("contratos")
+    .update({ ultimo_erro: mensagem, tentativas_erro: (atual.tentativas_erro ?? 0) + 1 })
+    .eq("id", contratoId);
+  if (error) throw new Error(`Falha ao registrar erro do contrato: ${error.message}`);
+}
+
+/** Limpa o erro e zera o contador — chamado quando uma etapa automática dá certo, ou quando
+ * alguém pede retentativa manual (dá mais 3 tentativas automáticas de novo). */
+export async function limparErroContrato(contratoId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("contratos")
+    .update({ ultimo_erro: null, tentativas_erro: 0 })
+    .eq("id", contratoId);
+  if (error) throw new Error(`Falha ao limpar erro do contrato: ${error.message}`);
+}
+
+export async function atualizarParcelaAsaas(parcelaId: string, asaasPaymentId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contrato_parcelas").update({ asaas_payment_id: asaasPaymentId }).eq("id", parcelaId);
+  if (error) throw new Error(`Falha ao atualizar parcela com id da Asaas: ${error.message}`);
+}
+
+export async function marcarParcelaPaga(
+  asaasPaymentId: string,
+  pagoEm: string,
+): Promise<{ contratoId: string; numero: number } | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contrato_parcelas")
+    .update({ status: "pago", pago_em: pagoEm })
+    .eq("asaas_payment_id", asaasPaymentId)
+    .select("contrato_id, numero")
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao marcar parcela como paga: ${error.message}`);
+  return data ? { contratoId: data.contrato_id, numero: data.numero } : null;
 }
 
 export async function buscarPessoaArrudaCredSignatario(): Promise<string | null> {
