@@ -59,6 +59,15 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
     // este bloco — nenhuma outra linha acima foi reordenada ou alterada.
     persona ? `Persona deste post — escreva na voz/vocabulário dela, respeitando o que ela não quer ouvir:\n${persona.conteudoCompleto}` : "",
     "",
+    // Achado do teste real de ponta a ponta da Fase 3 (19/08/2026): motivoUltimaReprovacao já
+    // existia em PautaCarregada desde o núcleo (Task 10), mas nunca era lido aqui — cada retry
+    // regenerava o texto às cegas, sem saber o que o Revisor apontou na tentativa anterior. Só
+    // entra no prompt quando existe motivo (pauta reprovada antes); primeira tentativa continua
+    // com o prompt idêntico ao de antes desta correção.
+    pauta.motivoUltimaReprovacao
+      ? `Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:\n${pauta.motivoUltimaReprovacao}`
+      : "",
+    "",
     "Use a ferramenta para registrar o resultado.",
   ];
   return linhas.filter(Boolean).join("\n");

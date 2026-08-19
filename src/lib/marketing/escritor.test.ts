@@ -150,6 +150,48 @@ describe("gerarConteudo", () => {
     expect(promptEnviado).toContain("Checklist de qualidade obrigatório — todo item precisa ser atendido:\n- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras");
   });
 
+  // Achado do teste real de ponta a ponta da Fase 3 (19/08/2026): motivoUltimaReprovacao existia
+  // em PautaCarregada desde o núcleo (Task 10) mas nunca era lido aqui — cada retry regenerava às
+  // cegas. Este teste confirma que, quando a pauta já tem um motivo de reprovação anterior, ele
+  // entra no prompt — aditivo, mesma posição/padrão do bloco de persona acima.
+  it("inclui o motivo da reprovação anterior no prompt quando a pauta já foi reprovada antes", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
+            conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
+            meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+            meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+      usage: { input_tokens: 1234, output_tokens: 5678 },
+    });
+    const pautaReprovadaAntes: PautaCarregada = {
+      ...pauta,
+      id: "pauta-3",
+      tentativas: 1,
+      motivoUltimaReprovacao: "Contagem de palavras insuficiente: só 1.200 de 1.800 exigidas.",
+    };
+
+    await gerarConteudo(pautaReprovadaAntes, checklist, null);
+
+    const argumentosChamada = mockCreate.mock.calls[0][0];
+    const promptEnviado = argumentosChamada.messages[0].content;
+    expect(promptEnviado).toContain(
+      "Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:\nContagem de palavras insuficiente: só 1.200 de 1.800 exigidas.",
+    );
+    expect(promptEnviado.indexOf("Contagem de palavras insuficiente")).toBeLessThan(
+      promptEnviado.indexOf("Use a ferramenta para registrar o resultado."),
+    );
+  });
+
   it("lança erro claro quando a resposta é truncada por limite de tokens", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-test";
     const clienteFalso = new Anthropic({ apiKey: "sk-test" });
