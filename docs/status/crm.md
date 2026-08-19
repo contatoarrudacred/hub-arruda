@@ -1,6 +1,6 @@
 # Status — CRM
 
-tarefa: Desenhar e escrever a spec de captura de detalhe de pagamento no fechamento (forma, parcelas, vencimentos) — pedido do Vendas, prioridade 1 do CRM antes do Kanban
-desde: 2026-08-18T18:10:33-03:00
-proxima: Revisão da spec com o Luiz, depois plano de implementação (motor de fluxo)
-bloqueio:
+tarefa: Captura de detalhe de pagamento — código pronto/testado/commitado, aguardando Luiz rodar o patch SQL pra verificar no simulador
+desde: 2026-08-18T20:45:00-03:00
+proxima: Verificação final no simulador, depois Kanban
+bloqueio: aguardando Luiz rodar supabase/patch_ln_passo16_1_negociacao_pagamento.sql

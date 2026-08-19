@@ -521,6 +521,17 @@
   .chip.parado   { color: var(--texto-suave); border-color: var(--linha-forte); background: var(--surface-2); }
   .chip.travado  { color: var(--trava);       border-color: var(--trava);       background: var(--trava-fundo); }
   .chip.cuidado  { color: var(--atencao);     border-color: var(--atencao);     background: var(--atencao-fundo); }
+  .carimbo .atualizar { margin-top: 8px; display: block; margin-left: auto; }
+  .pedido-att {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    line-height: 1.35;
+    max-width: 210px;
+    margin-left: auto;
+    color: var(--atencao);
+  }
+  .pedido-att.apagado { color: var(--texto-suave); opacity: .75; }
   .chip.aguardando { color: var(--atencao); border-color: var(--atencao); background: var(--atencao-fundo); font-weight: 700; }
 
   .alerta {
@@ -652,12 +663,12 @@
 
 <script id="dados" type="application/json">
 {
- "atualizado": "18/08/2026 · 19h29",
- "commit": "8c82b3e",
+ "atualizado": "18/08/2026 · 20h12",
+ "commit": "6431760",
  "instrumentos": [
   {
    "rot": "Testes",
-   "val": "✅ 303 verdes",
+   "val": "✅ 318 verdes",
    "bom": true
   },
   {
@@ -672,7 +683,7 @@
   },
   {
    "rot": "Agentes ativos",
-   "val": "🟢 1 na última hora",
+   "val": "🟢 4 na última hora",
    "bom": true
   },
   {
@@ -687,6 +698,24 @@
   }
  ],
  "tarefas": [
+  {
+   "id": "aguardando-marketing",
+   "respostas": [],
+   "prazo": "agora",
+   "prazoRot": "🟡 Esperando",
+   "concluida": false,
+   "titulo": "Marketing parou às 20h11 esperando sua resposta",
+   "corpo": "<b>O que ele te perguntou:</b><br><i>“…_digitais e cria a tabela pautas_execucao_log (log de execução do pipeline, com RLS/auditoria e Realtime habilitado). É só alter table add column e create table — nada destrutivo, não mexe em nenhuma tabela de outro módulo. Passo a passo: abre o SQL Editor do Supabase, cola o conteúdo do arquivo inteiro, roda. Me avisa quando terminar que eu atualizo o status da migration no quadro de coordenação.”</i><br><br>Responda aqui embaixo — eu entrego direto na conversa dele, e ele volta a trabalhar. Enquanto ninguém responder, ele fica parado."
+  },
+  {
+   "id": "aguardando-crm",
+   "respostas": [],
+   "prazo": "agora",
+   "prazoRot": "✅ Retomado",
+   "concluida": true,
+   "titulo": "CRM voltou a trabalhar",
+   "corpo": "<b>O que ele te perguntou:</b><br><i>“…tura-detalhe-pagamento-fechamento-design.md), já avisei o Vendas do formato de dados e da regra de vencimento no quadro de coordenação, e registrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).”</i><br><br>Responda aqui embaixo — eu entrego direto na conversa dele, e ele volta a trabalhar. Enquanto ninguém responder, ele fica parado."
+  },
   {
    "id": "migrations-2-novas",
    "prazo": "feito",
@@ -907,7 +936,7 @@
    "branch": "main · integra, mescla e conversa com os outros — não escreve feature",
    "chip": {
     "tipo": "rodando",
-    "texto": "🟢 trabalhando"
+    "texto": "🟢 TRABALHANDO"
    },
    "agora": [
     "Torre gerada por apuração (não mais digitada) + migrations confirmadas no banco <i>(declarado pelo próprio agente)</i>"
@@ -987,21 +1016,22 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T19:29:56-03:00",
-    "rotulo": "18/08 19:29"
-   }
+    "iso": "2026-08-18T20:11:59-03:00",
+    "rotulo": "18/08 20:11"
+   },
+   "estado": "TRABALHANDO"
   },
   {
    "nome": "CRM",
    "branch": "main · trabalha direto na raiz, sem worktree",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ sem sinal há 1h03"
+    "tipo": "rodando",
+    "texto": "🟢 TRABALHANDO"
    },
    "agora": [
-    "<b>Sem sinal de vida há 1h03.</b> A última coisa que ele declarou foi: <i>Desenhar e escrever a spec de captura de detalhe de pagamento no fechamento (forma, parcelas, vencimentos) — pedido do Vendas, prioridade 1 do CRM antes do Kanban</i> — mas não tocou em código desde então e não registrou fim de turno. Provavelmente a sessão foi fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+    "Implementar a captura de detalhe de pagamento (plano aprovado, execução inline task-by-task) <i>(declarado pelo próprio agente)</i>"
    ],
-   "proxima": "➡️ Revisão da spec com o Luiz, depois plano de implementação (motor de fluxo)",
+   "proxima": "➡️ Kanban (prioridade seguinte já registrada)",
    "proximaExtra": "Depois: Dashboard de KPIs. A captura de parcelas/vencimentos do Vendas entra <b>depois</b> das duas.",
    "entregue": [
     {
@@ -1038,25 +1068,27 @@
     "prod": 70
    },
    "inicio": {
-    "iso": "2026-08-18T18:10:33-03:00",
+    "iso": "2026-08-18T20:10:00-03:00",
     "rotulo": "",
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T18:26:35-03:00",
-    "rotulo": "18/08 18:26"
+    "iso": "2026-08-18T20:11:51-03:00",
+    "rotulo": "18/08 20:11"
    },
-   "inativo": true
+   "esperaDesde": "18h11",
+   "ultimaFala": "specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md), já avisei o Vendas do formato de dados e da regra de vencimento no quadro de coordenação, e registrei meu status em docs/status/crm.md. Dá uma olhada na spec quando puder — principalmente a seção 1 (regra de negócio) e a 2 (exemplos de mensagem), pra confirmar que capturei certo antes de eu passar pro plano de implementação (checkpoints, testes, etc.).",
+   "estado": "TRABALHANDO"
   },
   {
    "nome": "Marketing",
    "branch": "worktree-pipeline-conteudo-marketing-nucleo",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ sem sinal há 1h03"
+    "tipo": "aguardando",
+    "texto": "🟡 AGUARDANDO"
    },
    "agora": [
-    "<b>Sem sinal de vida há 1h03.</b> A última coisa que ele declarou foi: <i>Fase 2 (telas de admin) concluída e mesclada — sincronizando com main, aguardando definição da próxima frente com o Luiz</i> — mas não tocou em código desde então e não registrou fim de turno. Provavelmente a sessão foi fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+    "<b>Parou às 20h11 e está esperando sua resposta.</b> Não é lentidão — ele respondeu e não volta a se mexer até você falar com ele. O que te disse: <i>“…olumn e create table — nada destrutivo, não mexe em nenhuma tabela de outro módulo. Passo a passo: abre o SQL Editor do Supabase, cola o conteúdo do arquivo inteiro, roda. Me avisa quando terminar que eu atualizo o status da migration no quadro de coordenação.”</i>"
    ],
    "proxima": "➡️ A definir — candidatos: Construtor de Matriz de Conteúdo (personas via tela já resolvido, falta o agente de pesquisa de temas/ângulos), distribuição multi-canal (GMB/Instagram/Facebook/LinkedIn/Pinterest/Medium), ou aplicar a migration pendente (20260818090000) e validar o Monitor ao vivo",
    "proximaExtra": "Criptografia restaurada e <b>a chave já está no .env.local dele</b> — pode testar a cifra de ponta a ponta. A migration da Fase 2 ele escreve, mas não roda.",
@@ -1104,22 +1136,26 @@
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T18:26:35-03:00",
-    "rotulo": "18/08 18:26"
+    "iso": "2026-08-18T19:30:36-03:00",
+    "rotulo": "18/08 19:30"
    },
-   "inativo": true
+   "esperaDesde": "20h11",
+   "ultimaFala": "ada) em propriedades_digitais e cria a tabela pautas_execucao_log (log de execução do pipeline, com RLS/auditoria e Realtime habilitado). É só alter table add column e create table — nada destrutivo, não mexe em nenhuma tabela de outro módulo. Passo a passo: abre o SQL Editor do Supabase, cola o conteúdo do arquivo inteiro, roda. Me avisa quando terminar que eu atualizo o status da migration no quadro de coordenação.",
+   "estado": "AGUARDANDO",
+   "inativo": true,
+   "aguardandoLuiz": true
   },
   {
    "nome": "Vendas — Contrato",
    "branch": "worktree-vendas-contrato · aberto hoje",
    "chip": {
-    "tipo": "parado",
-    "texto": "⏸ sem sinal há 1h10"
+    "tipo": "rodando",
+    "texto": "🟢 TRABALHANDO"
    },
    "agora": [
-    "<b>Sem sinal de vida há 1h10.</b> A última coisa que ele declarou foi: <i>Sub-frente Contrato — geração de PDF do contrato (puppeteer-core + @sparticuz/chromium)</i> — mas não tocou em código desde então e não registrou fim de turno. Provavelmente a sessão foi fechada. Para retomar, é só mandar uma mensagem na conversa dele."
+    "Sub-frente Contrato — geração de PDF (Task 6) e editor HTML rico TipTap do template de contrato (Task 6a/6b, decisão nova do Luiz — editor não é markdown, é HTML rico com tabela/imagem/formatação) <i>(declarado pelo próprio agente)</i>"
    ],
-   "proxima": "➡️ Config do signatário ArrudaCred, depois tela de Fechamento de Venda (paliativo de prazo curto — CRM já assumiu a captura como prioridade 1, antes do Kanban — não superdimensionar)",
+   "proxima": "➡️ Task 7 (config signatário ArrudaCred), depois Task 8 (Fechamento de Venda — paliativo de prazo curto, mas agora também confere RG/estado civil/profissão/endereço do signatário antes de gerar contrato)",
    "proximaExtra": "A tela de Fechamento de Venda <b>não é mais remendo</b>: com a captura no bot adiada, ela é a forma de registrar parcelas e vencimentos por enquanto. Depois: contrato, assinatura e financeiro.",
    "entregue": [
     {
@@ -1148,32 +1184,35 @@
     "prod": 35
    },
    "inicio": {
-    "iso": "2026-08-18T18:16:19-03:00",
+    "iso": "2026-08-18T19:05:00-03:00",
     "rotulo": "",
     "nota": "nesta tarefa"
    },
    "ultimoSinal": {
-    "iso": "2026-08-18T18:19:55-03:00",
-    "rotulo": "18/08 18:19"
+    "iso": "2026-08-18T20:11:56-03:00",
+    "rotulo": "18/08 20:11"
    },
-   "inativo": true
+   "esperaDesde": "18h23",
+   "ultimaFala": "arkdown → HTML → PDF) — nesse caso, confere, sigo como está. 2. Você quer mudar o desenho: o admin edita HTML diretamente (não markdown) num editor de contrato dedicado, e o PDF é só a exportação desse HTML — nesse caso é uma decisão nova, muda o Task 4 (resolverPlaceholders, hoje pensado pra texto puro) e o Task 8, e eu preciso saber se você quer um editor rico (WYSIWYG) ou só um textarea de HTML cru. Qual das duas?",
+   "estado": "TRABALHANDO"
   }
  ],
  "dependencia": {
-  "rota": "🟡 aguardando você  ·  ⏸ sem sinal  ·  🟢 trabalhando",
-  "titulo": "A torre passou a saber a diferença entre 'trabalhando devagar' e 'esperando você'",
+  "rota": "🟢 TRABALHANDO  ·  🟡 AGUARDANDO  ·  ⏸ PARADO  ·  ❌ ERRO",
+  "titulo": "Quatro estados, e a resposta que você escreve aqui chega no agente",
   "paragrafos": [
-   "<b>O buraco:</b> o arquivo de status de cada agente só é escrito <b>enquanto ele roda</b>. Quando ele termina de responder e devolve a bola pra você, ninguém apaga o 'fazendo agora' — e esta página ficava repetindo por horas uma frase que já não descrevia nada. Foi o que você viu: três agentes parados, dois esperando instrução sua, e a torre dizendo que os três executavam uma tarefa havia mais de uma hora.",
-   "<b>O conserto:</b> instalei um gancho que dispara <b>no fim de cada turno</b> de cada agente e carimba a hora no arquivo de status dele. Não depende de o agente lembrar de nada. A partir daí a torre separa três situações: <b>🟢 trabalhando</b> (tocou código agora há pouco), <b>🟡 aguardando você</b> (encerrou o turno — não volta a se mexer sozinho) e <b>⏸ sem sinal</b> (sumiu sem carimbar, sessão provavelmente fechada).",
-   "<b>O que muda pra você:</b> quando alguém estiver te esperando, aparece um item na sua caixa dizendo <i>quem</i> e <i>pra quê</i> — em vez de você descobrir abrindo as três conversas. O carimbo de cada agente só nasce no próximo turno que ele rodar; até lá eles aparecem como <b>sem sinal</b>, que é a leitura honesta."
+   "<b>São quatro, e só quatro.</b> 🟢 <b>TRABALHANDO</b> — a última palavra da conversa foi sua, ele está com a bola. 🟡 <b>AGUARDANDO</b> — a última palavra foi dele: respondeu e não volta a se mexer até você falar. ⏸ <b>PARADO</b> — não há conversa recente, sessão fechada. ❌ <b>ERRO</b> — a conversa terminou em falha (limite de uso, queda de API); esperar não resolve.",
+   "<b>Como eu sei:</b> pela transcrição da conversa de cada um, não por commit nem por arquivo alterado. Só ela distingue <i>terminou</i> de <i>está esperando</i> — e ela responde isso mesmo com as sessões fechadas.",
+   "<b>O ciclo fechou:</b> cada agente em 🟡 vira um item na sua caixa com a pergunta dele à mostra e um campo de resposta. O que você escrever ali eu <b>entrego dentro da conversa dele</b> — ele recebe como se fosse você falando e volta a trabalhar. Antes você tinha que abrir as três conversas pra descobrir quem estava travado; agora a torre te diz quem e por quê, e a resposta sai daqui.",
+   "<b>O que ainda depende de você:</b> a decisão. Eu levo e trago recado, cobro, sincronizo e apuro — mas o que responder ao Vendas ou ao CRM continua sendo seu."
   ]
  },
  "esperas": [
   {
-   "tempo": "⏸",
+   "tempo": "🟡",
    "frio": false,
-   "acao": "abrir as conversas",
-   "texto": "<b>Nenhum agente está rodando.</b> Ninguém tocou em código há mais de 45 minutos. Alguns podem estar esperando uma instrução sua e outros podem ter tido a sessão fechada — a partir de agora a torre passa a distinguir os dois casos sozinha, no primeiro turno que cada um rodar. Enquanto as conversas estiverem fechadas, nada avança e esta página não muda."
+   "acao": "retomar a conversa",
+   "texto": "<b>1 agente está parado esperando você.</b> Cada um terminou de responder e não volta a se mexer sozinho — um agente só trabalha enquanto tem conversa aberta com você. O que cada um deixou na sua mão:<ul><li><b>Marketing</b> — parado desde <b>20h11</b>: <i>“…tabela de outro módulo. Passo a passo: abre o SQL Editor do Supabase, cola o conteúdo do arquivo inteiro, roda. Me avisa quando terminar que eu atualizo o status da migration no quadro de coordenação.”</i></li></ul>"
   }
  ]
 }
@@ -1333,7 +1372,7 @@
     h += '<button class="botao principal enviar" type="button" data-alvo="' + esc(t.id) + '">Enviar pro Coordenador</button>';
     h += '<button class="botao cancelar" type="button" data-alvo="' + esc(t.id) + '">Cancelar</button>';
     h += "</div>";
-    h += '<p class="dica">Sua resposta fica registrada aqui no item e chega pro Coordenador com a referência da tarefa.</p>';
+    h += '<p class="dica">Sua resposta fica registrada aqui e chega pro Coordenador com a referência do item. Se for pra um agente parado, ele entrega dentro da conversa dele — e o agente volta a trabalhar.</p>';
     h += "</div>";
 
     h += fechavel ? "</div></details></li>" : "</div></li>";
@@ -1347,7 +1386,12 @@
          '<h1>Torre de Controle <span class="marca">Arruda</span></h1>' +
          '<p class="sub">Quem está construindo o quê agora, o que já ficou pronto e onde alguém está esperando por alguém. Mantido pelo Coordenador de Agentes — não faz parte do sistema.</p>' +
          "</div>" +
-         '<div class="carimbo"><b>' + esc(dados.atualizado) + "</b><br>main em <b>" + esc(dados.commit) + "</b><br>agentes ativos: <b>" + dados.agentes.length + "</b></div>" +
+         '<div class="carimbo"><b>' + esc(dados.atualizado) + "</b><br>main em <b>" + esc(dados.commit) + "</b><br>agentes ativos: <b>" + dados.agentes.length + "</b>" +
+         '<button class="botao atualizar" id="btn-atualizar" title="Registra o pedido e chama o Coordenador. Ele reapura tudo (conversas, git, banco, testes) e republica esta pagina.">🔄 Atualizar</button>' +
+         (dados.pedidoAtualizacao
+            ? '<span class="pedido-att">⏳ pedido às <b>' + esc(dados.pedidoAtualizacao.quando) + '</b> — o Coordenador reapura na próxima volta dele</span>'
+            : '<span class="pedido-att apagado">o estado acima é do último apuramento</span>') +
+         "</div>" +
          "</header>";
 
     h += '<section class="instrumentos" aria-label="Estado geral do projeto">';
@@ -1416,6 +1460,30 @@
   // inteiro, começando por doctype. Estilo e script saem das próprias tags
   // (conteúdo autoral, não o DOM vivo), e os dados vão serializados com o
   // estado novo.
+  async function pedirAtualizacao(btn) {
+    // A página não enxerga a máquina do Luiz: não dá pra ler git, conversas ou
+    // banco daqui. O que o botão faz é registrar o pedido e republicar — a
+    // republicação avisa o Coordenador, que reapura tudo e publica de novo.
+    if (!podeEscrever) {
+      btn.textContent = "⚠️ modo leitura — me peça pelo chat";
+      btn.disabled = true;
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "⏳ pedindo...";
+    dados.pedidoAtualizacao = { quando: agora() };
+    try {
+      await api.publish(paginaCompleta());
+    } catch (err) {
+      delete dados.pedidoAtualizacao;
+      btn.disabled = false;
+      btn.textContent = "🔄 Atualizar";
+      var c = err && err.code ? err.code : "";
+      if (c === "conflict") return;          // já entrou versão nova; a view recarrega
+      btn.textContent = "⚠️ não consegui — me peça pelo chat";
+    }
+  }
+
   function paginaCompleta() {
     var css = document.getElementById("estilo").textContent;
     var app = document.getElementById("app").textContent;
@@ -1505,6 +1573,12 @@
   document.addEventListener("click", function (ev) {
     var alvo = ev.target.closest ? ev.target.closest("button.botao") : null;
     if (!alvo) return;
+
+    // pedir ao Coordenador que reapure e republique
+    if (alvo.classList.contains("atualizar")) {
+      pedirAtualizacao(alvo);
+      return;
+    }
 
     // mostrar/esconder o histórico de itens já resolvidos
     if (alvo.classList.contains("ver-feitos")) {

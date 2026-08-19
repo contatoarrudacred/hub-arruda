@@ -4,8 +4,10 @@
 // seção 8.9). Função pura (exceto o hook opcional de IA, que é assíncrono) — o Supabase entra só
 // na camada de repositório.
 
+import { expandirParcelas } from "./calculo-vencimentos-pagamento";
 import { extrairNomeDeResposta } from "./extracao";
 import { parseResposta } from "./parser";
+import type { ParcelaTier } from "./regras-limpeza-nome";
 import type {
   CalcularDadosDerivados,
   ConfigDelay,
@@ -342,6 +344,64 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     // "nao_entendi" deixa `reconhecido` null — cai no bloco genérico abaixo (repete a pergunta original).
   }
 
+  // "negociacao_pagamento" — confirmação/negociação natural do detalhe de pagamento no fechamento
+  // (spec: docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md). Ao
+  // contrário de lista_documentos/faixas_documentos, "ajuste_valido" PERSISTE o ajuste (dadosNovos
+  // não fica vazio) mesmo permanecendo no checkpoint — é assim que a negociação lembra o que já foi
+  // combinado na próxima rodada, já que o interpretador só recebe `dados` (sem histórico de turnos).
+  if (!reconhecido && conteudo.tipo_resposta === "negociacao_pagamento" && contexto.interpretarNegociacaoPagamento) {
+    const resultado = await contexto.interpretarNegociacaoPagamento({ etapaAtual, respostaLead, dados });
+    interpretadoPorIA = true;
+
+    if (resultado.status === "confirmado") {
+      const composto = [
+        dados.forma_pagamento_detalhe ?? "boleto_pix",
+        dados.data_primeira_parcela ?? "",
+        dados.dia_ancora_parcelas ?? "",
+        dados.parcelas_valores ?? "",
+        dados.parcelas_vencimentos ?? "",
+      ].join("|");
+      reconhecido = { valor: composto };
+      // cai pro bloco genérico abaixo, que grava em campoSalvo e segue pro próximo código
+    } else if (resultado.status === "ajuste_valido") {
+      const tiers: ParcelaTier[] = (dados.parcelas_valores ?? "")
+        .split(",")
+        .filter(Boolean)
+        .map((valor) => ({ quantidade: 1, valor: Number(valor) }));
+      const diaAncora = resultado.diaAncora ?? 10;
+      const parcelasRecalculadas = tiers.length > 0 ? expandirParcelas(tiers, resultado.dataPrimeiraParcela, diaAncora) : [];
+
+      const dadosAjustados: DadosConversa = {
+        forma_pagamento_detalhe: resultado.formaPagamento,
+        data_primeira_parcela: resultado.dataPrimeiraParcela,
+        parcelas_vencimentos: parcelasRecalculadas.map((p) => p.vencimento).join(","),
+      };
+      if (resultado.diaAncora !== null) dadosAjustados.dia_ancora_parcelas = String(resultado.diaAncora);
+
+      const retomada: MensagemEtapa = { tipo: "texto", texto: resultado.mensagemConfirmando };
+      return {
+        mensagens: [empacotar(substituirVariaveisMensagem(retomada, dados, variaveisGlobais), conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: dadosAjustados,
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA: true,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    } else {
+      const retomada: MensagemEtapa = { tipo: "texto", texto: resultado.mensagemNegociacao };
+      return {
+        mensagens: [empacotar(substituirVariaveisMensagem(retomada, dados, variaveisGlobais), conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: {},
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA: true,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    }
+  }
+
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarComIA) {
     reconhecido = await interpretarComIA({ etapaAtual, respostaLead, dados });
     interpretadoPorIA = reconhecido !== null;
@@ -357,7 +417,13 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     const desiste = conteudo.opcional_apos_tentativas != null && tentativas >= conteudo.opcional_apos_tentativas;
 
     if (!desiste) {
-      const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? undefined;
+      // Passa o contador já incrementado pro resolver dinâmico — sem isso, a 1ª retomada via
+      // resolverMensagensDinamicas via `dados` idêntico ao da entrada nova no checkpoint (o
+      // contador só é persistido em `dadosNovos` no final deste bloco), impossibilitando um
+      // checkpoint distinguir "primeira pergunta" de "retomada" (achado real, 18/08/2026 —
+      // abertura_email mostrava a justificativa do e-mail junto da pergunta, na 1ª vez).
+      const dadosComTentativas = { ...dados, [chaveTentativas]: String(tentativas) };
+      const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dadosComTentativas) ?? undefined;
       const retomada = substituirVariaveisMensagem(
         mensagemRetomada(conteudo, dinamicas ?? undefined),
         dados,
