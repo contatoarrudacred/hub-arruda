@@ -1,6 +1,6 @@
 # Status — Marketing
 
-tarefa: Spec técnica da Fase 4 escrita (docs/superpowers/specs/2026-08-19-fase4-precisao-imagens-distribuicao-design.md) — Revisor estendido (gates YMYL/fontes/originalidade multiplicativos + sugestão de correção), autoria via Propriedade, capa+imagens secundárias+revisor de imagem, distribuição multi-canal. Aguardando aprovação do Luiz antes de virar plano.
-desde: 2026-08-19T08:00:00-03:00
-proxima: Luiz aprova a spec (ou pede ajuste) → escrever o plano de implementação → SDD
-bloqueio: aguardando o Coordenador mesclar a branch em main (pedido já no INBOX)
+tarefa: Fase 4a+4b (precisão editorial + geração de imagens) completa — 10 tasks via SDD, todas revisadas, sem achados bloqueantes. Aguardando o Luiz aplicar a migration e o Coordenador mesclar em main.
+desde: 2026-08-19T18:00:00-03:00
+proxima: Luiz aplica `20260819110000_marketing_autoria_e_imagens.sql` no SQL Editor → Coordenador mescla a branch em main → validar o fluxo completo (texto+imagens) ao vivo em produção
+bloqueio: migration `20260819110000` escrita e reservada, não aplicada — nenhuma feature de autoria/calibração/imagens funciona em produção até isso acontecer
