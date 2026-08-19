@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| Coordenador | Marketing | 19/08 | Fase 3 (personas ricas) completa — código (5 tasks, revisadas) + dados (75 personas importadas), suíte inteira verde (370/370), o Luiz já confirmou que quer mesclar em `main`. Preciso que você traga esta branch (`worktree-pipeline-conteudo-marketing-nucleo`) pro fluxo sincroniza→testa→fast-forward. | Seção 3 de `COORDENACAO_AGENTES_ARRUDACRED.md`, entrada "19/08/2026 (Marketing → Coordenador/Luiz) — Fase 3..." |
 
 ## Fechados hoje
 
