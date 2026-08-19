@@ -298,8 +298,17 @@ export async function gerarCapa(
   pauta: PautaCarregada,
   conteudo: ConteudoGerado,
   persona: PersonaCarregada | null,
-): Promise<{ resultado: { url: string; alt: string; slug: string; titulo: string } | null; usage: UsageTokens }> {
+): Promise<{
+  resultado: { url: string; alt: string; slug: string; titulo: string } | null;
+  usage: UsageTokens;
+  custoUsdOpenAi: number;
+}> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
+  // Custo real da OpenAI (19/08/2026, pedido do Luiz) — antes desta mudança, `geracao.usage.custoUsd`
+  // era calculado a cada tentativa e simplesmente descartado (nunca chegava a lugar nenhum
+  // persistido). Soma TODA tentativa, aprovada ou não — o $ já foi gasto na chamada à API
+  // independente do resultado da revisão.
+  let custoUsdOpenAi = 0;
 
   try {
     // Etapas 1-4 — falha em qualquer uma delas (infra Claude, campo ausente) é uma falha de
@@ -323,8 +332,7 @@ export async function gerarCapa(
     let promptTentativa = etapa4.resultado.promptImagem;
     for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
       const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
-      // custoUsd da OpenAI não faz parte de UsageTokens (só tokens Anthropic) — não é acumulado
-      // aqui; ver observação no relatório da task sobre esse gap.
+      custoUsdOpenAi += geracao.usage.custoUsd;
 
       const revisao = await revisarImagem(geracao.url, conteudo.conteudoHtml);
       usage = somarUsage(usage, revisao.usage);
@@ -338,6 +346,7 @@ export async function gerarCapa(
             titulo: etapa4.resultado.titulo,
           },
           usage,
+          custoUsdOpenAi,
         };
       }
 
@@ -352,11 +361,11 @@ export async function gerarCapa(
     }
 
     // Limite de tentativas esgotado sem aprovação — degradação aceitável (Global Constraint).
-    return { resultado: null, usage };
+    return { resultado: null, usage, custoUsdOpenAi };
   } catch {
     // Qualquer falha de infraestrutura (Claude, OpenAI, revisor) em qualquer etapa — não derruba
     // o pipeline. Um post sem capa é um resultado aceitável; um post que falha de publicar por
     // causa da capa não é.
-    return { resultado: null, usage };
+    return { resultado: null, usage, custoUsdOpenAi };
   }
 }

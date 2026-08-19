@@ -103,13 +103,15 @@ describe("gerarCapa", () => {
       usage: { inputTokens: 200, outputTokens: 30 },
     });
 
-    const { resultado, usage } = await gerarCapa(pauta, conteudo, persona);
+    const { resultado, usage, custoUsdOpenAi } = await gerarCapa(pauta, conteudo, persona);
 
     expect(resultado).not.toBeNull();
     expect(resultado?.url).toBe("data:image/png;base64,aGVsbG8=");
     expect(resultado?.alt).toBe("Homem escondendo notificação de negativa de crédito no celular da família");
     expect(resultado?.slug).toBe("homem-escondendo-negativa-credito-familia");
     expect(resultado?.titulo).toBe("Homem escondendo negativa de crédito da família");
+    // Custo real da OpenAI (19/08/2026) — 1 tentativa de geração de imagem, $0.041.
+    expect(custoUsdOpenAi).toBe(0.041);
 
     // 4 chamadas Claude (resumo post, resumo persona, cruzamento, prompt final) contam pro usage.
     expect(usage.inputTokens).toBeGreaterThan(0);
@@ -169,11 +171,13 @@ describe("gerarCapa", () => {
         usage: { inputTokens: 10, outputTokens: 10 },
       });
 
-    const { resultado } = await gerarCapa(pauta, conteudo, persona);
+    const { resultado, custoUsdOpenAi } = await gerarCapa(pauta, conteudo, persona);
 
     expect(resultado).not.toBeNull();
     expect(resultado?.url).toBe("data:image/png;base64,segunda=");
     expect(geradorImagemOpenAI.gerarImagemOpenAI).toHaveBeenCalledTimes(2);
+    // Custo real da OpenAI soma as DUAS tentativas (a reprovada também custou $) — $0.082.
+    expect(custoUsdOpenAi).toBe(0.082);
 
     // A 2ª chamada de geração precisa incluir o motivo da reprovação no prompt.
     const promptSegundaTentativa = vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mock.calls[1][0];

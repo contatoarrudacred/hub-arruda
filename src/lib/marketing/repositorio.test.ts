@@ -1566,6 +1566,56 @@ describe("registrarEtapa", () => {
     const payload = (builderUpdate.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty("detalhes");
   });
+
+  // Custo em USD (19/08/2026, pedido do Luiz) — antes desta mudança o custo real de chamadas de
+  // IA (Anthropic via tokens, OpenAI via custo direto) era calculado em alguns lugares (ex.:
+  // gerador-imagem-openai.ts) mas nunca persistido, se perdia depois de calculado. Preço de
+  // claude-sonnet-5 usado no cálculo: $2/milhão tokens entrada, $10/milhão tokens saída.
+  it("calcula e persiste custo_usd a partir dos tokens quando um extrator de tokens é passado (sem custo adicional)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    // 1.000.000 tokens de entrada ($2) + 500.000 de saída ($5) = $7.
+    await registrarEtapa(
+      "pauta-1",
+      "gerar_conteudo",
+      async () => ({ usage: { inputTokens: 1_000_000, outputTokens: 500_000 } }),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+    );
+
+    expect(builderUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ custo_usd: 7 }));
+  });
+
+  it("soma custo adicional (ex.: OpenAI) ao custo de tokens quando extrairCustoAdicionalUsd é passado", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    // Tokens: 500.000 entrada ($1) + 100.000 saída ($1) = $2. Mais custo direto de imagem: $0.082
+    // (2 gerações OpenAI). Total esperado: $2.082.
+    await registrarEtapa(
+      "pauta-1",
+      "gerar_imagens",
+      async () => ({ usage: { inputTokens: 500_000, outputTokens: 100_000 }, custoUsdOpenAi: 0.082 }),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+      undefined,
+      (r) => r.custoUsdOpenAi,
+    );
+
+    expect(builderUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ custo_usd: 2.082 }));
+  });
+
+  it("não grava custo_usd quando nem tokens nem custo adicional são fornecidos (etapas sem custo de IA, ex.: sanitizar)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    await registrarEtapa("pauta-1", "sanitizar", async () => "<h1>...</h1>");
+
+    const payload = (builderUpdate.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("custo_usd");
+  });
 });
 
 describe("carregarResumoVisaoGeral", () => {

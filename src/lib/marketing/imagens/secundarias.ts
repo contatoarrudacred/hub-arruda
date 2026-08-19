@@ -388,8 +388,13 @@ export type ImagemSecundaria = {
  *   reprovação): isola só aquela candidata (não incluída no array final); as demais candidatas
  *   seguem seu próprio fluxo normalmente.
  */
-export async function gerarImagensSecundarias(conteudo: ConteudoGerado): Promise<{ resultado: ImagemSecundaria[]; usage: UsageTokens }> {
+export async function gerarImagensSecundarias(
+  conteudo: ConteudoGerado,
+): Promise<{ resultado: ImagemSecundaria[]; usage: UsageTokens; custoUsdOpenAi: number }> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
+  // Custo real da OpenAI (19/08/2026, pedido do Luiz) — mesma lógica de capa.ts: soma TODA
+  // tentativa de geração de imagem, aprovada ou não, de todas as candidatas.
+  let custoUsdOpenAi = 0;
   let candidatosAprovados: Candidato[] = [];
 
   try {
@@ -399,7 +404,7 @@ export async function gerarImagensSecundarias(conteudo: ConteudoGerado): Promise
   } catch {
     // Falha de infraestrutura (Claude) na identificação — degradação aceitável: post sem imagens
     // secundárias, não um post que falha de publicar.
-    return { resultado: [], usage };
+    return { resultado: [], usage, custoUsdOpenAi };
   }
 
   const resultado: ImagemSecundaria[] = [];
@@ -411,7 +416,7 @@ export async function gerarImagensSecundarias(conteudo: ConteudoGerado): Promise
 
       for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
         const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
-        // custoUsd da OpenAI não faz parte de UsageTokens — mesma observação de capa.ts.
+        custoUsdOpenAi += geracao.usage.custoUsd;
 
         const revisao = await revisarImagem(geracao.url, candidato.trechoFonteIntegral);
         usage = somarUsage(usage, revisao.usage);
@@ -447,5 +452,5 @@ export async function gerarImagensSecundarias(conteudo: ConteudoGerado): Promise
     }
   }
 
-  return { resultado, usage };
+  return { resultado, usage, custoUsdOpenAi };
 }

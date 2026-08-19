@@ -1219,13 +1219,35 @@ export async function carregarPostsRecentes(propriedadeId: string, limite: numbe
  * motivo da rejeição de negócio (ex. resultado.motivo) na mesma coluna `detalhes` que já é usada
  * pro erro técnico do branch de exceção logo abaixo. Retorno `undefined` = não escreve nada
  * (comportamento idêntico ao de antes deste parâmetro existir).
+ *
+ * `extrairCustoAdicionalUsd` (opcional, 19/08/2026, pedido do Luiz) — custo em USD que NÃO vem de
+ * tokens Anthropic (hoje só a etapa gerar_imagens usa: soma do `custoUsd` real de cada geração via
+ * OpenAI, que antes desta mudança era calculado e descartado, nunca persistido em lugar nenhum).
+ * `custo_usd` gravado na conclusão é sempre `calcularCustoUsdTokens(tokens) + custoAdicional`
+ * (custo de tokens é 0 quando `extrairTokens` não é passado) — alimenta o futuro módulo de
+ * governança de custo transversal (Plano Mestre seção 9); a tela/relatório fica pra depois, mas o
+ * dado precisa existir desde já, no momento em que a chamada de IA acontece.
  */
+const PRECO_USD_POR_MILHAO_TOKENS: Record<string, { entrada: number; saida: number }> = {
+  // claude-sonnet-5 é o único modelo usado em todo o pipeline hoje (Escritor, Revisor, Capa) —
+  // preço sourced na pesquisa de vendor da Fase 4 (19/08/2026): $2/$10 por milhão de tokens.
+  "claude-sonnet-5": { entrada: 2, saida: 10 },
+};
+const MODELO_PADRAO_CUSTO = "claude-sonnet-5";
+
+function calcularCustoUsdTokens(tokens: { tokensEntrada: number; tokensSaida: number } | undefined): number {
+  if (!tokens) return 0;
+  const preco = PRECO_USD_POR_MILHAO_TOKENS[MODELO_PADRAO_CUSTO];
+  return (tokens.tokensEntrada / 1_000_000) * preco.entrada + (tokens.tokensSaida / 1_000_000) * preco.saida;
+}
+
 export async function registrarEtapa<T>(
   pautaId: string,
   etapa: EtapaLog,
   fn: () => Promise<T>,
   extrairTokens?: (resultado: T) => { tokensEntrada: number; tokensSaida: number } | undefined,
   extrairDetalhes?: (resultado: T) => string | undefined,
+  extrairCustoAdicionalUsd?: (resultado: T) => number | undefined,
 ): Promise<T> {
   const supabase = createAdminClient();
   const { data: log, error: erroInsercao } = await supabase
@@ -1242,6 +1264,8 @@ export async function registrarEtapa<T>(
     if (log) {
       const tokens = extrairTokens?.(resultado);
       const detalhes = extrairDetalhes?.(resultado);
+      const custoAdicional = extrairCustoAdicionalUsd?.(resultado) ?? 0;
+      const custoUsd = tokens || custoAdicional ? calcularCustoUsdTokens(tokens) + custoAdicional : undefined;
       const { error } = await supabase
         .from("pautas_execucao_log")
         .update({
@@ -1249,6 +1273,7 @@ export async function registrarEtapa<T>(
           sucesso: true,
           ...(tokens ? { tokens_entrada: tokens.tokensEntrada, tokens_saida: tokens.tokensSaida } : {}),
           ...(detalhes !== undefined ? { detalhes } : {}),
+          ...(custoUsd !== undefined ? { custo_usd: custoUsd } : {}),
         })
         .eq("id", log.id);
       if (error) console.error(`Falha ao registrar conclusão da etapa ${etapa} da pauta ${pautaId}: ${error.message}`);

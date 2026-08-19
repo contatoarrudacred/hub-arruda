@@ -240,6 +240,11 @@ type ResultadoGeracaoImagens = {
   imagensSecundariasPersistir: ImagemSecundaria[];
   usage: UsageTokens;
   detalhesLog: string | undefined;
+  // Custo real da OpenAI (19/08/2026, pedido do Luiz) — soma capa + secundárias, 0 quando as
+  // imagens foram reaproveitadas de uma tentativa anterior (ver bloco `if (imagensExistentes)`
+  // acima) ou quando nenhuma geração de imagem chegou a rodar. Alimenta o `custo_usd` da etapa
+  // "gerar_imagens" via `extrairCustoAdicionalUsd` em registrarEtapa (repositorio.ts).
+  custoUsdOpenAi: number;
 };
 
 /**
@@ -295,15 +300,20 @@ async function gerarEEmbutirImagens(
       imagensSecundariasPersistir: imagensExistentes.imagensSecundarias,
       usage,
       detalhesLog: "imagens reaproveitadas de uma tentativa anterior desta pauta (correção cirúrgica de texto, sem custo novo de geração)",
+      custoUsdOpenAi: 0,
     };
   }
+
+  let custoUsdOpenAi = 0;
 
   try {
     const capa = await gerarCapa(pauta, conteudo, persona);
     usage = somarUsageTokens(usage, capa.usage);
+    custoUsdOpenAi += capa.custoUsdOpenAi;
 
     const secundarias = await gerarImagensSecundarias(conteudo);
     usage = somarUsageTokens(usage, secundarias.usage);
+    custoUsdOpenAi += secundarias.custoUsdOpenAi;
 
     let capaMediaId: string | undefined;
     let capaUrlPublica: string | null = null;
@@ -401,6 +411,7 @@ async function gerarEEmbutirImagens(
       imagensSecundariasPersistir: secundariasEmbutidas,
       usage,
       detalhesLog: detalhes.length > 0 ? detalhes.join(" | ") : undefined,
+      custoUsdOpenAi,
     };
   } catch (erro) {
     detalhes.push(`falha inesperada na geração/montagem de imagens (${mensagemErro(erro)})`);
@@ -412,6 +423,7 @@ async function gerarEEmbutirImagens(
       imagemDestaqueSlug: null,
       imagemDestaqueStorageUrl: null,
       imagensSecundariasPersistir: [],
+      custoUsdOpenAi,
       usage,
       detalhesLog: detalhes.join(" | "),
     };
@@ -543,6 +555,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes),
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
         (r) => r.detalhesLog,
+        (r) => r.custoUsdOpenAi,
       );
 
       // Persiste o post como PRONTO ASSIM QUE as imagens são geradas, ANTES de tentar publicar —

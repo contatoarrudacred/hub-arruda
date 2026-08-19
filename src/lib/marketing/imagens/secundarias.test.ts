@@ -106,11 +106,13 @@ describe("gerarImagensSecundarias", () => {
       usage: { inputTokens: 20, outputTokens: 10 },
     });
 
-    const { resultado } = await gerarImagensSecundarias(conteudo);
+    const { resultado, custoUsdOpenAi } = await gerarImagensSecundarias(conteudo);
 
     expect(resultado).toHaveLength(3);
     expect(resultado.map((r) => r.slug)).toEqual(["img-a", "img-b", "img-c"]);
     expect(resultado.map((r) => r.posicaoAposSecao)).toEqual(["após seção A", "após seção B", "após seção C"]);
+    // Custo real da OpenAI (19/08/2026) — 3 gerações aprovadas de primeira, $0.041 cada.
+    expect(custoUsdOpenAi).toBeCloseTo(0.123, 5);
 
     expect(revisorImagem.revisarImagem).toHaveBeenCalledTimes(3);
     expect(revisorImagem.revisarImagem).toHaveBeenNthCalledWith(1, expect.any(String), "TRECHO A — passo a passo.");
