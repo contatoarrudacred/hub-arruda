@@ -46,7 +46,7 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
       pessoa_signatario_id: entrada.pessoaSignatarioId,
       pessoa_arrudacred_signatario_id: entrada.pessoaArrudaCredSignatarioId,
       fornecedor_id: entrada.fornecedorId,
-      status: "contrato_gerado",
+      status: "nova_oportunidade",
       forma_pagamento: entrada.formaPagamento,
       metodo_pagamento: entrada.metodoPagamento,
       parcelas_qtd: entrada.parcelas.length,
@@ -131,6 +131,8 @@ export type Contrato = {
   valorTotal: number;
   assinafyDocumentId: string | null;
   assinafyDocumentStatus: string | null;
+  ultimoErro: string | null;
+  tentativasErro: number;
   parcelas: ContratoParcela[];
 };
 
@@ -158,11 +160,13 @@ type LinhaContratoBruta = {
   valor_total: number;
   assinafy_document_id: string | null;
   assinafy_document_status: string | null;
+  ultimo_erro: string | null;
+  tentativas_erro: number;
   contrato_parcelas: LinhaContratoParcelaBruta[] | null;
 };
 
 const SELECT_CONTRATO =
-  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, assinafy_document_status, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
 
 function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
@@ -181,6 +185,8 @@ function mapearContrato(linha: LinhaContratoBruta): Contrato {
     valorTotal: linha.valor_total,
     assinafyDocumentId: linha.assinafy_document_id,
     assinafyDocumentStatus: linha.assinafy_document_status,
+    ultimoErro: linha.ultimo_erro,
+    tentativasErro: linha.tentativas_erro,
     parcelas: (linha.contrato_parcelas ?? [])
       .map((parcela) => ({
         id: parcela.id,
@@ -246,6 +252,35 @@ export async function atualizarStatusContrato(
     })
     .eq("id", id);
   if (error) throw new Error(`Falha ao atualizar status do contrato: ${error.message}`);
+}
+
+/** Registra uma falha numa etapa automática — incrementa o contador de tentativas e salva a
+ * mensagem, pra aparecer no card do Kanban e na tela de Detalhes da Venda. */
+export async function registrarErroContrato(contratoId: string, mensagem: string): Promise<void> {
+  const supabase = await createClient();
+  const { data: atual, error: erroBusca } = await supabase
+    .from("contratos")
+    .select("tentativas_erro")
+    .eq("id", contratoId)
+    .single();
+  if (erroBusca) throw new Error(`Falha ao buscar contrato pra registrar erro: ${erroBusca.message}`);
+
+  const { error } = await supabase
+    .from("contratos")
+    .update({ ultimo_erro: mensagem, tentativas_erro: (atual.tentativas_erro ?? 0) + 1 })
+    .eq("id", contratoId);
+  if (error) throw new Error(`Falha ao registrar erro do contrato: ${error.message}`);
+}
+
+/** Limpa o erro e zera o contador — chamado quando uma etapa automática dá certo, ou quando
+ * alguém pede retentativa manual (dá mais 3 tentativas automáticas de novo). */
+export async function limparErroContrato(contratoId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("contratos")
+    .update({ ultimo_erro: null, tentativas_erro: 0 })
+    .eq("id", contratoId);
+  if (error) throw new Error(`Falha ao limpar erro do contrato: ${error.message}`);
 }
 
 export async function atualizarParcelaAsaas(parcelaId: string, asaasPaymentId: string): Promise<void> {
