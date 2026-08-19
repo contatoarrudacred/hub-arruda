@@ -38,7 +38,11 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
     const checkout = await criarCheckout({
       descricao: `Contrato ${contratoId}`,
       valorTotal: contrato.valorTotal,
-      maxParcelas: contrato.parcelasQtd,
+      // NÃO usar contrato.parcelasQtd aqui — pra cartão ela é sempre 1 (só existe uma linha
+      // placeholder em contrato_parcelas, ver comentário da coluna na migration). O parcelamento
+      // real que o cliente escolheu está em maxParcelasCartao; achado real na revisão final da
+      // branch (o valor escolhido nunca chegava na Asaas antes desta correção).
+      maxParcelas: contrato.maxParcelasCartao ?? 1,
       externalReference: contratoId,
       cliente: { nome: pessoa.nomeRazaoSocial, documento: pessoa.documento, email: pessoa.email, telefone: pessoa.whatsapp },
     });

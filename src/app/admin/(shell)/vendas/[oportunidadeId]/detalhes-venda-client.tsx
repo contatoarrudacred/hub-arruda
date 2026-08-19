@@ -331,16 +331,18 @@ function PainelErroTentativas({ contrato, onTentou }: { contrato: Contrato; onTe
   return (
     <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm dark:border-red-700 dark:bg-red-950">
       <p className="text-red-700 dark:text-red-400">{contrato.ultimoErro}</p>
-      {contrato.tentativasErro >= 3 && (
-        <button
-          type="button"
-          onClick={tentar}
-          disabled={tentando}
-          className="mt-2 text-xs font-medium text-red-700 underline dark:text-red-400"
-        >
-          {tentando ? "Tentando..." : "Tentar novamente"}
-        </button>
-      )}
+      {/* Não existe retentativa automática de verdade hoje (só uma tentativa por etapa, ver
+         progressao.ts) — então qualquer erro já é candidato a retentativa manual, não só depois de
+         3 falhas (achado real da revisão final da branch: com o gate >= 3, um contrato com 1 erro
+         ficava preso pra sempre, sem essa ação nem aparecer). */}
+      <button
+        type="button"
+        onClick={tentar}
+        disabled={tentando}
+        className="mt-2 text-xs font-medium text-red-700 underline dark:text-red-400"
+      >
+        {tentando ? "Tentando..." : "Tentar novamente"}
+      </button>
       {erro && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erro}</p>}
     </div>
   );

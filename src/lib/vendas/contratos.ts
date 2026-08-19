@@ -33,6 +33,9 @@ export type EntradaCriarContrato = {
   // conversas.dados.detalhe_pagamento.parcelas quando a Oportunidade vem do funil do CRM (o CRM já
   // aplica a mesma regra de âncora, não precisa recalcular).
   parcelas: Parcela[];
+  // Só relevante quando metodoPagamento = "cartao" — quantidade de parcelas que o Checkout da
+  // Asaas deve oferecer (1-21). null pra boleto_pix (usa a quantidade real de `parcelas` acima).
+  maxParcelasCartao: number | null;
 };
 
 /**
@@ -56,6 +59,7 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
       forma_pagamento: entrada.formaPagamento,
       metodo_pagamento: entrada.metodoPagamento,
       parcelas_qtd: entrada.parcelas.length,
+      max_parcelas_cartao: entrada.maxParcelasCartao,
       valor_total: entrada.valorTotal,
     })
     .select("id")
@@ -86,8 +90,8 @@ export type EntradaCriarContratoComissionado = {
  * Registro de venda pro Painel de Vendas de um produto comissionado — chamado por
  * confirmarVendaComissionada (src/lib/vendas/comissoes.ts), que só roda depois que o fornecedor já
  * aprovou a venda (não existe fase de espera a modelar aqui). Nasce direto em aguardando_pagamento,
- * pulando contrato_gerado/aguardando_assinatura/assinado/parcelas_emitidas — não existe contrato
- * com a ArrudaCred nesse tipo de produto, por isso contrato_template_id/
+ * pulando as etapas automáticas do Kanban (emitindo_contrato/envelopando_assinaturas/
+ * gerando_financeiro) — não existe contrato com a ArrudaCred nesse tipo de produto, por isso contrato_template_id/
  * pessoa_arrudacred_signatario_id/forma_pagamento/metodo_pagamento ficam null. Sem
  * contrato_parcelas — o financeiro dessa venda é comissoes_fornecedor_receber.
  */
@@ -134,6 +138,9 @@ export type Contrato = {
   formaPagamento: FormaPagamento | null;
   metodoPagamento: MetodoPagamento | null;
   parcelasQtd: number;
+  // Só preenchido quando metodoPagamento = "cartao" — quantidade de parcelas que o Checkout da
+  // Asaas deve oferecer. Distinto de parcelasQtd, que pra cartão fica sempre 1 (placeholder).
+  maxParcelasCartao: number | null;
   valorTotal: number;
   assinafyDocumentId: string | null;
   assinafyDocumentStatus: string | null;
@@ -163,6 +170,7 @@ type LinhaContratoBruta = {
   forma_pagamento: FormaPagamento | null;
   metodo_pagamento: MetodoPagamento | null;
   parcelas_qtd: number;
+  max_parcelas_cartao: number | null;
   valor_total: number;
   assinafy_document_id: string | null;
   assinafy_document_status: string | null;
@@ -172,7 +180,7 @@ type LinhaContratoBruta = {
 };
 
 const SELECT_CONTRATO =
-  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, max_parcelas_cartao, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
 
 function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
@@ -188,6 +196,7 @@ function mapearContrato(linha: LinhaContratoBruta): Contrato {
     formaPagamento: linha.forma_pagamento,
     metodoPagamento: linha.metodo_pagamento,
     parcelasQtd: linha.parcelas_qtd,
+    maxParcelasCartao: linha.max_parcelas_cartao,
     valorTotal: linha.valor_total,
     assinafyDocumentId: linha.assinafy_document_id,
     assinafyDocumentStatus: linha.assinafy_document_status,

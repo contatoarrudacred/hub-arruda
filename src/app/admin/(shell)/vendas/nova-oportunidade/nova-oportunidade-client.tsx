@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
 import { LeitorDocumentoIA } from "@/components/vendas/leitor-documento-ia";
 import { UploadDocumentosPessoa } from "@/components/vendas/upload-documentos-pessoa";
@@ -61,6 +61,15 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   const [dadosRepresentante, setDadosRepresentante] = useState<DadosContratoForm>(dadosContratoVazios);
   const [enderecoRepresentante, setEnderecoRepresentante] = useState<ValorEndereco>(enderecoVazio);
 
+  // Guarda contra resposta obsoleta (o usuário digita rápido, uma busca antiga pode voltar depois
+  // de uma mais nova e sobrescrever dado válido com null) + debounce pra não disparar uma busca por
+  // tecla — mesmo padrão já usado na tela de Fornecedores e na antiga Nova Venda. Achado real da
+  // revisão final da branch: essa proteção tinha ficado pra trás na reescrita desta tela.
+  const buscaDocIdRef = useRef(0);
+  const buscaDocTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buscaRepIdRef = useRef(0);
+  const buscaRepTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [pacote, setPacote] = useState<DocumentoPacoteForm[]>([]);
 
   const [valorTotal, setValorTotal] = useState("");
@@ -88,10 +97,15 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     setEnderecoRepresentante(enderecoVazio);
 
     const tipo = tipoPessoaPorDocumento(formatado);
-    if (!tipo) return;
+    if (!tipo) {
+      buscaDocIdRef.current++; // invalida qualquer busca anterior ainda em andamento
+      return;
+    }
 
+    const idAtual = ++buscaDocIdRef.current;
     setBuscandoPessoa(true);
     const resultado: ResultadoBuscarPessoa = await buscarPessoaPorDocumentoAction(formatado);
+    if (idAtual !== buscaDocIdRef.current) return; // uma busca mais recente já assumiu, descarta esta resposta
     if (resultado.encontrada) {
       setPessoaId(resultado.id);
       setDadosContrato({
@@ -106,6 +120,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
       setPessoaId(null);
       if (tipo === "pj") {
         const razaoSocial = await buscarRazaoSocialAction(formatado);
+        if (idAtual !== buscaDocIdRef.current) return;
         setDadosContrato({ ...dadosContratoVazios, nome: razaoSocial?.razaoSocial ?? "" });
       } else {
         setDadosContrato(dadosContratoVazios);
@@ -114,10 +129,20 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     setBuscandoPessoa(false);
   }
 
+  /** Wrapper com debounce (300ms) pro `onChange` do campo de documento digitado à mão — não usar
+   * pro Leitor de Documento IA, que já dispara uma busca deliberada e precisa do `await` direto. */
+  function aoMudarDocumento(valor: string) {
+    setDocumento(formatarCpfCnpj(valor));
+    if (buscaDocTimeoutRef.current) clearTimeout(buscaDocTimeoutRef.current);
+    buscaDocTimeoutRef.current = setTimeout(() => aoDigitarDocumento(valor), 300);
+  }
+
   async function aoDigitarDocumentoRepresentante(valor: string) {
     const formatado = formatarCpfCnpj(valor);
     setRepresentanteDocumento(formatado);
+    const idAtual = ++buscaRepIdRef.current;
     const resultado = await buscarPessoaPorDocumentoAction(formatado);
+    if (idAtual !== buscaRepIdRef.current) return;
     setRepresentanteEncontrado(resultado.encontrada ? { id: resultado.id, nome: resultado.nome } : null);
     if (resultado.encontrada) {
       setDadosRepresentante({
@@ -129,6 +154,12 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         profissao: resultado.profissao ?? "",
       });
     }
+  }
+
+  function aoMudarDocumentoRepresentante(valor: string) {
+    setRepresentanteDocumento(formatarCpfCnpj(valor));
+    if (buscaRepTimeoutRef.current) clearTimeout(buscaRepTimeoutRef.current);
+    buscaRepTimeoutRef.current = setTimeout(() => aoDigitarDocumentoRepresentante(valor), 300);
   }
 
   function adicionarDocumentoPacote() {
@@ -275,8 +306,12 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
       <div className={secao}>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Quem assina o contrato</h2>
         <LeitorDocumentoIA
-          onDadosExtraidos={(dados) => {
-            if (dados.documento) aoDigitarDocumento(dados.documento);
+          onDadosExtraidos={async (dados) => {
+            // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
+            // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso do
+            // leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que acabou de
+            // ser preenchido aqui (achado real da revisão final da branch).
+            if (dados.documento) await aoDigitarDocumento(dados.documento);
             if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
             setEndereco((atual) => ({
               ...atual,
@@ -290,7 +325,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
           }}
         />
         <label className={rotulo}>CPF/CNPJ</label>
-        <input className={campo} value={documento} onChange={(e) => aoDigitarDocumento(e.target.value)} />
+        <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
         {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
         {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Pessoa já cadastrada — dados carregados.</p>}
         <label className={rotulo}>Nome completo / Razão social</label>
@@ -342,7 +377,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
             <input
               className={campo}
               value={representanteDocumento}
-              onChange={(e) => aoDigitarDocumentoRepresentante(e.target.value)}
+              onChange={(e) => aoMudarDocumentoRepresentante(e.target.value)}
             />
             {representanteEncontrado ? (
               <p className="text-xs text-emerald-600 dark:text-emerald-400">✓ {representanteEncontrado.nome}</p>

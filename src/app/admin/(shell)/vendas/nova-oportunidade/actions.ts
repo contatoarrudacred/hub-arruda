@@ -158,6 +158,7 @@ export async function confirmarNovaOportunidadeAction(
     let parcelas;
     let formaPagamento: "avista" | "parcelado";
     let metodoPagamento: "boleto_pix" | "cartao";
+    let maxParcelasCartao: number | null = null;
 
     if (entrada.financeiro.especie === "boleto_pix") {
       formaPagamento = entrada.financeiro.formaPagamento;
@@ -170,8 +171,10 @@ export async function confirmarNovaOportunidadeAction(
     } else {
       formaPagamento = "parcelado";
       metodoPagamento = "cartao";
+      maxParcelasCartao = entrada.financeiro.maxParcelas;
       // Cartão não tem tabela de parcelas prévia (ver spec seção 6) — 1 "parcela" placeholder cobrindo
       // o valor total; os títulos reais vêm da Asaas depois que o Checkout resultar num parcelamento.
+      // O parcelamento escolhido (maxParcelasCartao) vai separado — parcelas_qtd fica sempre 1 aqui.
       parcelas = [{ numero: 1, valor: valorTotal, vencimento: new Date() }];
     }
 
@@ -198,6 +201,7 @@ export async function confirmarNovaOportunidadeAction(
       metodoPagamento,
       valorTotal,
       parcelas,
+      maxParcelasCartao,
     });
 
     const { tentarEmitirContrato } = await import("@/lib/vendas/progressao");

@@ -177,6 +177,10 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
       metodoPagamento,
       valorTotal: oportunidade.valorEstimado,
       parcelas,
+      // Aqui (diferente da Nova Oportunidade) as parcelas de cartão já são calculadas de verdade
+      // (mesmo padrão de boleto_pix) — parcelas.length já reflete o parcelamento escolhido, então
+      // reaproveita esse valor pro Checkout da Asaas em vez de pedir um campo novo no formulário.
+      maxParcelasCartao: metodoPagamento === "cartao" ? parcelas.length : null,
     });
 
     // 5) Gera o PDF (com retry automático) e encadeia envio à Assinafy — mesma orquestração usada

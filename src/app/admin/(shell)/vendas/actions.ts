@@ -32,7 +32,10 @@ export async function tentarNovamenteEmLoteAction(status: StatusContrato): Promi
   const { tentarNovamente } = await import("@/lib/vendas/progressao");
   const supabase = await createClient();
 
-  const { data, error } = await supabase.from("contratos").select("id").eq("status", status).gte("tentativas_erro", 3);
+  // Não existe retentativa automática de verdade hoje (só uma tentativa por etapa, ver
+  // progressao.ts) — então qualquer contrato com erro pendente é candidato a retentativa, não só
+  // depois de 3 falhas acumuladas (achado real da revisão final da branch).
+  const { data, error } = await supabase.from("contratos").select("id").eq("status", status).not("ultimo_erro", "is", null);
   if (error) throw new Error(`Falha ao buscar cards travados: ${error.message}`);
 
   for (const linha of data ?? []) {

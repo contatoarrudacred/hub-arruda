@@ -239,7 +239,7 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                 <h2 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300" title={estagio.rotulo}>
                   {estagio.rotulo} ({porEstagio.get(estagio.valor)?.length ?? 0})
                 </h2>
-                {(porEstagio.get(estagio.valor) ?? []).some((v) => v.tentativasErro >= 3) && (
+                {(porEstagio.get(estagio.valor) ?? []).some((v) => v.ultimoErro) && (
                   <button
                     type="button"
                     onClick={async () => {
@@ -254,7 +254,14 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
               </div>
               <div className="space-y-2">
                 {(porEstagio.get(estagio.valor) ?? []).map((venda) => (
-                  <div key={venda.contratoId} className="rounded-lg border border-zinc-200 bg-white p-2 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
+                  <div
+                    key={venda.contratoId}
+                    className={`rounded-lg border p-2 text-xs shadow-sm dark:bg-zinc-800 ${
+                      venda.ultimoErro
+                        ? "border-red-300 bg-red-50 dark:border-red-700"
+                        : "border-zinc-200 bg-white dark:border-zinc-700"
+                    }`}
+                  >
                     <div className="flex items-start justify-between gap-1">
                       <Link href={`/admin/vendas/${venda.oportunidadeId}`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
                         {venda.pessoaNome}
@@ -263,6 +270,11 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                     </div>
                     <p className="text-zinc-500 dark:text-zinc-400">{venda.produtoNome}</p>
                     <p className="mt-1 font-medium text-zinc-700 dark:text-zinc-300">{formatarValor(venda.valorTotal)}</p>
+                    {venda.ultimoErro && (
+                      <p className="mt-1 line-clamp-2 text-red-700 dark:text-red-400" title={venda.ultimoErro}>
+                        ⚠ {venda.ultimoErro}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
