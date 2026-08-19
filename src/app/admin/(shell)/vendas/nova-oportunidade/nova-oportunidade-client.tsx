@@ -48,10 +48,18 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   const ehComissionado = produtoSelecionado?.tipo === "comissionado";
 
   const [documento, setDocumento] = useState("");
+  const tipoPessoaAtual = tipoPessoaPorDocumento(documento);
+  const ehPj = tipoPessoaAtual === "pj";
   const [pessoaId, setPessoaId] = useState<string | null>(null);
   const [dadosContrato, setDadosContrato] = useState<DadosContratoForm>(dadosContratoVazios);
   const [endereco, setEndereco] = useState<ValorEndereco>(enderecoVazio);
   const [buscandoPessoa, setBuscandoPessoa] = useState(false);
+
+  const [representanteDocumento, setRepresentanteDocumento] = useState("");
+  const [representanteEncontrado, setRepresentanteEncontrado] = useState<{ id: string; nome: string } | null>(null);
+  const [representanteNome, setRepresentanteNome] = useState("");
+  const [dadosRepresentante, setDadosRepresentante] = useState<DadosContratoForm>(dadosContratoVazios);
+  const [enderecoRepresentante, setEnderecoRepresentante] = useState<ValorEndereco>(enderecoVazio);
 
   const [pacote, setPacote] = useState<DocumentoPacoteForm[]>([]);
 
@@ -97,6 +105,23 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     setBuscandoPessoa(false);
   }
 
+  async function aoDigitarDocumentoRepresentante(valor: string) {
+    const formatado = formatarCpfCnpj(valor);
+    setRepresentanteDocumento(formatado);
+    const resultado = await buscarPessoaPorDocumentoAction(formatado);
+    setRepresentanteEncontrado(resultado.encontrada ? { id: resultado.id, nome: resultado.nome } : null);
+    if (resultado.encontrada) {
+      setDadosRepresentante({
+        nome: resultado.nome,
+        email: resultado.email ?? "",
+        whatsapp: resultado.whatsapp ?? "",
+        rg: resultado.rg ?? "",
+        estadoCivil: resultado.estadoCivil ?? "",
+        profissao: resultado.profissao ?? "",
+      });
+    }
+  }
+
   function adicionarDocumentoPacote() {
     setPacote((atual) => [...atual, { documento: "", nomeRazaoSocial: "" }]);
   }
@@ -121,6 +146,13 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     if (!pessoaId && !dadosContrato.nome.trim()) {
       setErro("Informe o nome completo/razão social de quem assina o contrato.");
       return;
+    }
+
+    if (ehPj && !ehComissionado) {
+      if (!representanteEncontrado && !representanteNome.trim()) {
+        setErro("Informe o representante legal da empresa (nome ou CPF de alguém já cadastrado).");
+        return;
+      }
     }
 
     const valorTotalNumero = valorTotal.trim() ? Number(valorTotal.replace(",", ".")) : null;
@@ -182,6 +214,21 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         pacote,
         valorTotal: valorTotalNumero,
         financeiro,
+        representante:
+          ehPj && !ehComissionado
+            ? {
+                pessoaId: representanteEncontrado?.id ?? null,
+                pessoaNova: representanteEncontrado ? null : { nome: representanteNome, documento: representanteDocumento },
+                dadosContrato: {
+                  email: dadosRepresentante.email,
+                  whatsapp: dadosRepresentante.whatsapp,
+                  rg: dadosRepresentante.rg,
+                  estadoCivil: dadosRepresentante.estadoCivil,
+                  profissao: dadosRepresentante.profissao,
+                },
+                endereco: enderecoRepresentante.logradouro ? enderecoRepresentante : null,
+              }
+            : null,
       };
 
       const resultado = await confirmarNovaOportunidadeAction(entrada);
@@ -278,6 +325,69 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
           </div>
         </div>
         <CampoEndereco value={endereco} onChange={setEndereco} />
+
+        {ehPj && (
+          <div className="space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Representante legal (quem assina pela empresa)</h3>
+            <label className={rotulo}>CPF do representante</label>
+            <input
+              className={campo}
+              value={representanteDocumento}
+              onChange={(e) => aoDigitarDocumentoRepresentante(e.target.value)}
+            />
+            {representanteEncontrado ? (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">✓ {representanteEncontrado.nome}</p>
+            ) : (
+              <div>
+                <label className={rotulo}>Nome (representante novo)</label>
+                <input className={campo} value={representanteNome} onChange={(e) => setRepresentanteNome(e.target.value)} />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={rotulo}>RG</label>
+                <input
+                  className={campo}
+                  value={dadosRepresentante.rg}
+                  onChange={(e) => setDadosRepresentante({ ...dadosRepresentante, rg: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>Estado civil</label>
+                <input
+                  className={campo}
+                  value={dadosRepresentante.estadoCivil}
+                  onChange={(e) => setDadosRepresentante({ ...dadosRepresentante, estadoCivil: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>Profissão</label>
+                <input
+                  className={campo}
+                  value={dadosRepresentante.profissao}
+                  onChange={(e) => setDadosRepresentante({ ...dadosRepresentante, profissao: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>E-mail</label>
+                <input
+                  className={campo}
+                  value={dadosRepresentante.email}
+                  onChange={(e) => setDadosRepresentante({ ...dadosRepresentante, email: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>WhatsApp</label>
+                <input
+                  className={campo}
+                  value={dadosRepresentante.whatsapp}
+                  onChange={(e) => setDadosRepresentante({ ...dadosRepresentante, whatsapp: e.target.value })}
+                />
+              </div>
+            </div>
+            <CampoEndereco value={enderecoRepresentante} onChange={setEnderecoRepresentante} />
+          </div>
+        )}
       </div>
 
       {produtoSelecionado?.exigeListaDocumentos && (

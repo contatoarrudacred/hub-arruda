@@ -44,6 +44,13 @@ export type EntradaFinanceiro =
   | { especie: "boleto_pix"; formaPagamento: "avista" | "parcelado"; primeiraParcela: string; qtdParcelas: number; diaAncora: 1 | 10 | 20 }
   | { especie: "cartao"; maxParcelas: number };
 
+type RepresentanteEntrada = {
+  pessoaId: string | null;
+  pessoaNova: { nome: string; documento: string } | null;
+  dadosContrato: { email: string; whatsapp: string; rg: string; estadoCivil: string; profissao: string };
+  endereco: { cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string } | null;
+};
+
 export type EntradaConfirmarNovaOportunidade = {
   produtoId: string;
   pessoaId: string | null;
@@ -53,6 +60,7 @@ export type EntradaConfirmarNovaOportunidade = {
   pacote: EntradaPacote[];
   valorTotal: number | null;
   financeiro: EntradaFinanceiro | null; // null quando comissionado
+  representante: RepresentanteEntrada | null; // obrigatório quando a pessoa é PJ E financeiro != null; senão ignorado
 };
 
 export type ResultadoConfirmarNovaOportunidade =
@@ -118,6 +126,34 @@ export async function confirmarNovaOportunidadeAction(
       return { sucesso: false, erro: "Signatário da ArrudaCred não configurado (Configurações > contrato_arrudacred_signatario)." };
     }
 
+    const pessoaCompleta = await buscarPessoaCompleta(pessoa.pessoaId);
+    if (!pessoaCompleta) return { sucesso: false, erro: "Pessoa não encontrada após criação/resolução." };
+
+    let representanteId: string | null = null;
+    if (pessoaCompleta.tipoPessoa === "pj") {
+      if (!entrada.representante) return { sucesso: false, erro: "Informe o representante legal da empresa." };
+
+      const { definirRepresentante } = await import("@/lib/vendas/pessoa-representantes");
+      const resolvidoRepresentante = await resolverOuCriarPessoa({
+        pessoaId: entrada.representante.pessoaId,
+        pessoaNova: entrada.representante.pessoaNova,
+      });
+      if (!resolvidoRepresentante.sucesso) return { sucesso: false, erro: resolvidoRepresentante.erro };
+
+      representanteId = resolvidoRepresentante.pessoaId;
+      await definirRepresentante(pessoa.pessoaId, representanteId);
+      await atualizarDadosContratoPessoa(representanteId, {
+        email: entrada.representante.dadosContrato.email || null,
+        whatsapp: entrada.representante.dadosContrato.whatsapp || null,
+        rg: entrada.representante.dadosContrato.rg || null,
+        estadoCivil: entrada.representante.dadosContrato.estadoCivil || null,
+        profissao: entrada.representante.dadosContrato.profissao || null,
+      });
+      if (entrada.representante.endereco?.cep) {
+        await salvarEndereco({ ...entrada.representante.endereco, pessoaId: representanteId, tipo: "residencial" });
+      }
+    }
+
     const valorTotal = entrada.valorTotal ?? 0;
     let parcelas;
     let formaPagamento: "avista" | "parcelado";
@@ -142,7 +178,7 @@ export async function confirmarNovaOportunidadeAction(
     const { contratoId } = await criarContrato({
       oportunidadeId,
       contratoTemplateId: template.id,
-      pessoaSignatarioId: pessoa.pessoaId,
+      pessoaSignatarioId: representanteId ?? pessoa.pessoaId,
       pessoaArrudaCredSignatarioId: pessoaArrudaCredId,
       fornecedorId: null,
       formaPagamento,
