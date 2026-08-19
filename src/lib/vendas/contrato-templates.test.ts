@@ -106,15 +106,18 @@ describe("montarDadosClienteHtml", () => {
 describe("montarListaDocumentosHtml", () => {
   it("devolve vazio quando não é pacote (0 ou 1 documento)", () => {
     expect(montarListaDocumentosHtml([])).toBe("");
-    expect(montarListaDocumentosHtml([{ pessoa: pessoaPfBase }])).toBe("");
+    expect(montarListaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }])).toBe("");
   });
 
-  it("repete o bloco de dados pra cada documento do pacote", () => {
-    const outraPessoa: PessoaContrato = { ...pessoaPfBase, nomeRazaoSocial: "MARIA SOUZA", documento: "987.654.321-00" };
-    const html = montarListaDocumentosHtml([{ pessoa: pessoaPfBase }, { pessoa: outraPessoa }]);
+  it("lista documento + nome de cada item do pacote (sem RG/estado civil/profissão — não existe pra esses)", () => {
+    const html = montarListaDocumentosHtml([
+      { documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" },
+      { documento: "987.654.321-00", nomeRazaoSocial: "MARIA SOUZA" },
+    ]);
 
-    expect(html).toContain("Documento 1");
-    expect(html).toContain("Documento 2");
+    expect(html).toContain("<table>");
+    expect(html).toContain("123.456.789-09");
+    expect(html).toContain("987.654.321-00");
     expect(html).toContain("JOÃO DA SILVA");
     expect(html).toContain("MARIA SOUZA");
   });

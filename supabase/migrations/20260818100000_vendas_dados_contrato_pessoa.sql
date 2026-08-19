@@ -1,6 +1,6 @@
 -- ============================================================================
 -- MIGRATION 037 — Vendas: dados de Pessoa exigidos pelo contrato (RG, estado civil,
--- profissão) + vínculo de oportunidade_documentos com Pessoa real
+-- profissão) + nome de cada documento do "pacote"
 -- Sistema de Gestão ArrudaCred
 -- Plano: docs/superpowers/plans/2026-08-18-vendas-contrato.md, Task 1b
 -- ============================================================================
@@ -8,10 +8,12 @@
 -- -----------------------------------------------------------------------------
 -- pessoas: RG, estado civil e profissão — exigidos pra montar o bloco "dados do
 -- cliente"/"dados do representante" no contrato (spec de 18/08/2026, levantada com o
--- Luiz). Nullable: a maioria das Pessoas hoje (Lead/Cliente vindo do CRM) nunca
--- preencheu isso — só passa a ser exigido de verdade na tela de Fechamento de Venda,
--- não no cadastro. Tabela núcleo compartilhada — mudança 100% aditiva, não quebra
--- nenhum consumidor existente (CRM, motor de fluxo).
+-- Luiz). Só do SIGNATÁRIO (responsável financeiro que assina — PF, ou PJ +
+-- representante legal), não de todo documento do pacote (ver decisão abaixo). Nullable:
+-- a maioria das Pessoas hoje (Lead/Cliente vindo do CRM) nunca preencheu isso — só passa
+-- a ser exigido de verdade na tela de Fechamento de Venda, não no cadastro. Tabela
+-- núcleo compartilhada — mudança 100% aditiva, não quebra nenhum consumidor existente
+-- (CRM, motor de fluxo).
 -- -----------------------------------------------------------------------------
 alter table pessoas add column rg text;
 alter table pessoas add column estado_civil text;
@@ -25,17 +27,17 @@ comment on column pessoas.profissao is
   'Só relevante pra Pessoa Física — inclui o representante legal de uma Pessoa Jurídica (que é, ele mesmo, uma Pessoa Física em pessoa_representantes).';
 
 -- -----------------------------------------------------------------------------
--- oportunidade_documentos: liga cada documento do "pacote" a uma Pessoa real, pra dar
--- pra montar o bloco de dados completos (nome, RG, endereço...) de cada CPF/CNPJ do
--- pacote no contrato — hoje a tabela só guarda o texto do documento, sem saber a quem
--- ele pertence de fato.
+-- oportunidade_documentos: nome de cada documento do pacote — decisão de escopo do
+-- Luiz (18/08/2026): só temos dado completo (RG/estado civil/profissão/endereço) de
+-- quem assina o contrato e é o responsável financeiro. Os demais CPF/CNPJ cobertos pelo
+-- mesmo contrato (o "pacote" — na prática quase sempre 1 ou 2, mas pode ser N) só têm
+-- documento + nome completo/razão social, e é só isso que {{lista_documentos}} usa —
+-- nada de resolver/criar uma Pessoa completa pra cada um.
 -- -----------------------------------------------------------------------------
-alter table oportunidade_documentos add column pessoa_id uuid references pessoas(id);
+alter table oportunidade_documentos add column nome_razao_social text;
 
-comment on column oportunidade_documentos.pessoa_id is
-  'Preenchido na tela de Fechamento de Venda (busca/cria a Pessoa por CPF/CNPJ, reaproveitando resolverOuCriarPessoa) — antes disso fica null, igual documento. Usado pra montar {{lista_documentos}} no contrato com os dados completos de cada signatário do pacote, não só o número do documento.';
-
-create index idx_oportunidade_documentos_pessoa on oportunidade_documentos(pessoa_id);
+comment on column oportunidade_documentos.nome_razao_social is
+  'Nome completo (CPF) ou razão social (CNPJ) do documento — preenchido na tela de Fechamento de Venda junto com documento, quando ainda não vier do funil do CRM. É todo o dado que se tem desses documentos além do próprio número; usado em {{lista_documentos}} no contrato.';
 
 -- ============================================================================
 -- Fim da migration 037.

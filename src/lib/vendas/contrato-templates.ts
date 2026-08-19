@@ -160,22 +160,24 @@ export function montarDadosClienteHtml(pessoa: PessoaContrato, representante?: P
   ].join("\n");
 }
 
-export type DocumentoPacote = { pessoa: PessoaContrato; representante?: PessoaContrato | null };
+export type DocumentoPacote = { documento: string; nomeRazaoSocial: string };
 
 /**
- * Monta {{lista_documentos}} — repete montarDadosClienteHtml pra cada documento do pacote.
- * Devolve string vazia quando não é pacote (0 ou 1 documento — nesse caso os dados já estão em
- * {{dados_cliente}}, não precisa repetir).
+ * Monta {{lista_documentos}} — lista simples de documento + nome/razão social de cada CPF/CNPJ
+ * coberto pelo contrato. **Decisão de escopo (Luiz, 18/08/2026): só temos dado completo (RG/estado
+ * civil/profissão/endereço) de quem assina o contrato — os demais documentos do pacote só têm
+ * documento + nome, e é só isso que existe pra mostrar aqui.** Devolve string vazia quando não é
+ * pacote (0 ou 1 documento — nesse caso os dados já estão em {{dados_cliente}}, não precisa
+ * repetir).
  */
 export function montarListaDocumentosHtml(documentos: DocumentoPacote[]): string {
   if (documentos.length <= 1) return "";
 
-  return documentos
-    .map(
-      (doc, indice) =>
-        `<h4>Documento ${indice + 1}</h4>\n${montarDadosClienteHtml(doc.pessoa, doc.representante)}`,
-    )
+  const linhas = documentos
+    .map((doc) => `<tr><td>${doc.documento}</td><td>${doc.nomeRazaoSocial}</td></tr>`)
     .join("\n");
+
+  return `<table><thead><tr><th>Documento</th><th>Nome/Razão social</th></tr></thead><tbody>\n${linhas}\n</tbody></table>`;
 }
 
 export type ParcelaTabela = { numero: number; valor: number; vencimento: Date };
