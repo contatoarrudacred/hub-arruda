@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { corEstagio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
 import { cancelarVendaAction, excluirVendaAction, listarVendasAction, tentarNovamenteEmLoteAction } from "./actions";
@@ -142,6 +143,20 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
     console.log("[DEBUG PainelVendasClient] recarregar():", recarregadas.length, recarregadas);
     setVendas(recarregadas);
   }
+
+  useEffect(() => {
+    const supabase = createClient();
+    const canal = supabase
+      .channel("painel-vendas")
+      .on("postgres_changes", { event: "*", schema: "public", table: "contratos" }, () => {
+        recarregar();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, []);
 
   const porEstagio = useMemo(() => {
     const mapa = new Map(ESTAGIOS_VENDA.map((e) => [e.valor, [] as VendaResumo[]]));
