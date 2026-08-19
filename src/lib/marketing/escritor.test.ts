@@ -118,7 +118,7 @@ describe("gerarConteudo", () => {
         "Formato: post_padrao",
         "Checklist de qualidade obrigatório — todo item precisa ser atendido:",
         "- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras",
-        "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível de 40-60 palavras antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
+        "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível (contagem de palavras exata definida no item do checklist acima) antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
         "Regra de precisão em citação normativa: ao citar lei, resolução, artigo ou norma específica, só inclua número/ano se tiver certeza real deles. NUNCA invente ou chute um número de lei/resolução/artigo que pareça plausível — isso é uma alucinação factual grave, pior do que citar a norma de forma mais genérica. Na dúvida, prefira: (a) citar sem o número exato (ex.: \"conforme o Código de Defesa do Consumidor\" em vez de um artigo específico incerto), ou (b) linkar a fonte oficial (Serasa, SPC, Procon, gov.br) sem atribuir um número normativo que você não tem certeza de estar correto.",
         "Use a ferramenta para registrar o resultado.",
       ].join("\n"),

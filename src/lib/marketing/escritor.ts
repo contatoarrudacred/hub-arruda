@@ -56,7 +56,13 @@ function montarPrompt(
     "Checklist de qualidade obrigatório — todo item precisa ser atendido:",
     linhasChecklist,
     "",
-    "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível de 40-60 palavras antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
+    // Achado real de teste em produção (19/08/2026): esta linha tinha "40-60 palavras" fixo,
+    // duplicando (e travando) o número que já vem do item do checklist ("Resposta direta e
+    // extraível (N-M palavras) logo abaixo de cada H2", editável na tela Checklist de QA) —
+    // editar o item no banco não tinha efeito nenhum no Escritor, que continuava recebendo o
+    // número antigo hardcoded aqui. Removido o número: a contagem exata é responsabilidade do
+    // item do checklist (linhasChecklist acima), esta linha só explica a TÉCNICA em si.
+    "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível (contagem de palavras exata definida no item do checklist acima) antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
     "",
     // Achado do teste de ponta a ponta em produção (19/08/2026): ao ser cobrado por "fonte
     // específica" (seja na primeira geração ou numa correção), o Escritor às vezes inventa um
