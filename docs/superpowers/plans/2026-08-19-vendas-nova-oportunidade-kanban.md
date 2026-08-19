@@ -1186,11 +1186,11 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 }
 ```
 
-- [ ] **Step 2: `pnpm exec tsc --noEmit`** limpo.
+- [ ] **Step 5: `pnpm exec tsc --noEmit`** limpo.
 
-- [ ] **Step 3: Testar manualmente** via rota temporária isolada (padrão já estabelecido nesta sub-frente — criar, verificar no navegador, apagar antes de commitar).
+- [ ] **Step 6: Testar manualmente** via rota temporária isolada (padrão já estabelecido nesta sub-frente — criar, verificar no navegador, apagar antes de commitar).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/lib/vendas/produtos.ts "src/app/admin/(shell)/vendas/nova-oportunidade/"
@@ -1402,13 +1402,61 @@ export async function tentarNovamenteEmLoteAction(status: string): Promise<{ tot
 }
 ```
 
-- [ ] **Step 4: No `painel-vendas-client.tsx`**, no cabeçalho de cada coluna do Kanban (`ESTAGIOS_VENDA.map`), mostrar um botão "Tentar novamente todos" quando houver pelo menos um card com `tentativasErro >= 3` naquela coluna (checar via `VendaResumo` — precisa incluir `tentativasErro`/`ultimoErro` no tipo `VendaResumo` e na query de `listarVendas()`, `src/lib/vendas/painel-vendas.ts` — adicionar `motivo_cancelamento` já está lá, seguir o mesmo padrão pras duas colunas novas).
+- [ ] **Step 4: Incluir `tentativasErro`/`ultimoErro` em `VendaResumo` e na query de `listarVendas()`** (`src/lib/vendas/painel-vendas.ts`) — mesmo padrão de `motivoCancelamento`, que já está lá:
 
-- [ ] **Step 5: `pnpm exec tsc --noEmit`** limpo.
+No tipo `VendaResumo`, depois de `motivoCancelamento: string | null;`:
 
-- [ ] **Step 6: Testar manualmente** — via rota temporária, simular um `contrato` com `tentativasErro: 3` e `ultimoErro` preenchido, confirmar que o botão aparece e a mensagem é legível.
+```typescript
+  ultimoErro: string | null;
+  tentativasErro: number;
+```
 
-- [ ] **Step 7: Commit**
+No tipo `LinhaVendaBruta`, depois de `motivo_cancelamento: string | null;`:
+
+```typescript
+  ultimo_erro: string | null;
+  tentativas_erro: number;
+```
+
+Na string do `.select(...)` de `listarVendas()`, trocar:
+```typescript
+      "id, oportunidade_id, status, motivo_cancelamento, valor_total, created_at, oportunidades(pessoas(nome_razao_social, documento), produtos(nome))",
+```
+por:
+```typescript
+      "id, oportunidade_id, status, motivo_cancelamento, valor_total, created_at, ultimo_erro, tentativas_erro, oportunidades(pessoas(nome_razao_social, documento), produtos(nome))",
+```
+
+No `.map(...)` que monta o retorno, depois de `motivoCancelamento: linha.motivo_cancelamento,`:
+```typescript
+      ultimoErro: linha.ultimo_erro,
+      tentativasErro: linha.tentativas_erro,
+```
+
+- [ ] **Step 5: No `painel-vendas-client.tsx`**, no cabeçalho de cada coluna do Kanban (dentro do `ESTAGIOS_VENDA.map`, ao lado do título da coluna), mostrar um botão "Tentar novamente todos" quando houver pelo menos um card daquela coluna com `tentativasErro >= 3`:
+
+```tsx
+{(porEstagio.get(estagio.valor) ?? []).some((v) => v.tentativasErro >= 3) && (
+  <button
+    type="button"
+    onClick={async () => {
+      await tentarNovamenteEmLoteAction(estagio.valor);
+      recarregar();
+    }}
+    className="text-xs text-amber-700 underline dark:text-amber-400"
+  >
+    Tentar novamente todos
+  </button>
+)}
+```
+
+(import `tentarNovamenteEmLoteAction` de `./actions`, junto com `cancelarVendaAction`/`excluirVendaAction`/`listarVendasAction` que já são importados ali.)
+
+- [ ] **Step 6: `pnpm exec tsc --noEmit`** limpo.
+
+- [ ] **Step 7: Testar manualmente** — via rota temporária, simular um `contrato` com `tentativasErro: 3` e `ultimoErro` preenchido, confirmar que o botão aparece e a mensagem é legível.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add "src/app/admin/(shell)/vendas/[oportunidadeId]/actions.ts" "src/app/admin/(shell)/vendas/[oportunidadeId]/detalhes-venda-client.tsx" "src/app/admin/(shell)/vendas/actions.ts" "src/app/admin/(shell)/vendas/painel-vendas-client.tsx" src/lib/vendas/painel-vendas.ts
@@ -1475,15 +1523,15 @@ git commit -m "feat(vendas): Painel de Vendas atualiza ao vivo via Supabase Real
 ## Task 16: Fechamento de Venda cria o registro cedo (visibilidade CRM)
 
 **Files:**
-- Modify: `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/page.tsx`
 - Modify: `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/actions.ts`
+- Modify: `src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/fechamento-client.tsx`
 
 **Interfaces:**
-- Consumes: `buscarContratoPorOportunidade` (contratos.ts, já existe).
+- Consumes: `buscarContratoPorOportunidade`, `buscarContratoPorId` (contratos.ts, já existem); `tentarEmitirContrato` (progressao.ts).
 
-- [ ] **Step 1: No `page.tsx` do Fechamento**, antes de renderizar o client, checar se já existe um `contrato` pra essa Oportunidade e — **se não existir** — não criar nada ainda no `page.tsx` (Server Component não deve ter efeito colateral de escrita numa leitura de página). Em vez disso, mover a criação pra dentro de `confirmarFechamentoAction`, que já faz tudo isso: trocar a chamada de `criarContrato` (que hoje roda só no final do fluxo) pra rodar **logo no início** da action, antes de montar HTML/gerar PDF — e usar `tentarEmitirContrato` (progressao.ts) no lugar da geração de PDF inline.
+`page.tsx` **não muda** — `criarContrato` já roda dentro de `confirmarFechamentoAction` (Step "5) Cria o contrato + parcelas", que já existe hoje e já roda antes da geração do PDF) e já nasce em `status = 'nova_oportunidade'` desde a Task 3. Ou seja, o registro **já** fica visível assim que a action roda pela primeira vez — não precisa de nenhum efeito colateral no Server Component da página (que só faz leitura). Este task só troca a geração de PDF inline pela orquestração com retry.
 
-- [ ] **Step 2: Reescrever `confirmarFechamentoAction`** — a partir do Step "5) Cria o contrato + parcelas" (que hoje já existe e já roda cedo o bastante, antes da geração do PDF), trocar:
+- [ ] **Step 1: Reescrever `confirmarFechamentoAction`** — a partir do Step "5) Cria o contrato + parcelas" (inalterado, já existe hoje), trocar os steps "6" e "7" que vêm depois dele:
 
 ```typescript
     // 6) Gera o PDF e sobe pro Storage
@@ -1531,11 +1579,55 @@ export type ResultadoConfirmarFechamento =
   | { sucesso: false; erro: string };
 ```
 
-- [ ] **Step 3: `pnpm exec tsc --noEmit`** — ajustar quem consome `ResultadoConfirmarFechamento.pdfUrl` no client (`fechamento-client.tsx`) pra lidar com `null` (mostrar "PDF sendo gerado, confira em Detalhes da Venda" em vez de assumir que sempre existe).
+- [ ] **Step 3: Em `fechamento-client.tsx`, ajustar o estado e a renderização pra `pdfUrl` poder ser `null`**
 
-- [ ] **Step 4: Testar manualmente** — Fechamento de Venda ponta a ponta continua funcionando, e o registro em `contratos` já existe assim que a action roda (não muda o comportamento visível pro caminho CRM além do vocabulário de status).
+Trocar:
+```typescript
+  const [resultado, setResultado] = useState<{ pdfUrl: string } | null>(null);
+```
+por:
+```typescript
+  const [resultado, setResultado] = useState<{ pdfUrl: string | null } | null>(null);
+```
 
-- [ ] **Step 5: Commit**
+Trocar:
+```tsx
+  if (resultado) {
+    return (
+      <div className="max-w-2xl space-y-3 p-8">
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">✓ Contrato gerado.</p>
+        <a href={resultado.pdfUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline dark:text-blue-400">
+          Abrir PDF do contrato
+        </a>
+      </div>
+    );
+  }
+```
+por:
+```tsx
+  if (resultado) {
+    return (
+      <div className="max-w-2xl space-y-3 p-8">
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">✓ Venda registrada.</p>
+        {resultado.pdfUrl ? (
+          <a href={resultado.pdfUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline dark:text-blue-400">
+            Abrir PDF do contrato
+          </a>
+        ) : (
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            PDF ainda sendo gerado (ou precisou de retentativa) — acompanhe na tela de Detalhes da Venda.
+          </p>
+        )}
+      </div>
+    );
+  }
+```
+
+- [ ] **Step 4: `pnpm exec tsc --noEmit`** limpo.
+
+- [ ] **Step 5: Testar manualmente** — Fechamento de Venda ponta a ponta continua funcionando, e o registro em `contratos` já existe assim que a action roda (não muda o comportamento visível pro caminho CRM além do vocabulário de status).
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add "src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/actions.ts" "src/app/admin/(shell)/vendas/[oportunidadeId]/fechamento/fechamento-client.tsx"
