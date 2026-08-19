@@ -35,6 +35,12 @@ export type EntradaCriarContrato = {
   parcelas: Parcela[];
 };
 
+/**
+ * Insere o contrato + parcelas com todos os dados já coletados (signatário, forma de pagamento,
+ * parcelas) — nasce em `status = 'nova_oportunidade'`. Não gera PDF nem manda pra Assinafy: isso é
+ * responsabilidade de `progressao.ts` (`tentarEmitirContrato`), chamado por quem cria o contrato
+ * logo em seguida.
+ */
 export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ contratoId: string }> {
   const supabase = await createClient();
 
