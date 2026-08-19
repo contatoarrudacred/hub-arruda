@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { corEstagio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
@@ -138,11 +138,11 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
   const [vendas, setVendas] = useState(vendasIniciais);
   const [visao, setVisao] = useState<"lista" | "kanban">("kanban");
 
-  async function recarregar() {
+  const recarregar = useCallback(async () => {
     const recarregadas = await listarVendasAction();
     console.log("[DEBUG PainelVendasClient] recarregar():", recarregadas.length, recarregadas);
     setVendas(recarregadas);
-  }
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -156,7 +156,7 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
     return () => {
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [recarregar]);
 
   const porEstagio = useMemo(() => {
     const mapa = new Map(ESTAGIOS_VENDA.map((e) => [e.valor, [] as VendaResumo[]]));
