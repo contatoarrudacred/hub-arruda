@@ -42,7 +42,7 @@ const MODULOS: Modulo[] = [
     rotulo: "Vendas",
     icone: "💰",
     itens: [
-      { tipo: "em_breve", rotulo: "Dashboard", icone: "📊" },
+      { tipo: "link", rotulo: "Painel de Vendas", href: "/admin/vendas", icone: "📊" },
       { tipo: "link", rotulo: "Nova venda", href: "/admin/vendas/nova", icone: "🧾" },
       { tipo: "link", rotulo: "Fornecedores", href: "/admin/fornecedores", icone: "🏭" },
     ],
