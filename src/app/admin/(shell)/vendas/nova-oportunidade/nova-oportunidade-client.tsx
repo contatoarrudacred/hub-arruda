@@ -78,6 +78,15 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   async function aoDigitarDocumento(valor: string) {
     const formatado = formatarCpfCnpj(valor);
     setDocumento(formatado);
+    // Documento do comprador mudou — descarta qualquer representante já resolvido/preenchido pro
+    // documento anterior (senão o contrato de uma empresa nova pode sair vinculado ao representante
+    // de outra empresa que o usuário tinha digitado antes por engano).
+    setRepresentanteDocumento("");
+    setRepresentanteEncontrado(null);
+    setRepresentanteNome("");
+    setDadosRepresentante(dadosContratoVazios);
+    setEnderecoRepresentante(enderecoVazio);
+
     const tipo = tipoPessoaPorDocumento(formatado);
     if (!tipo) return;
 

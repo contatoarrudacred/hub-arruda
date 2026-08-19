@@ -175,10 +175,23 @@ export async function confirmarNovaOportunidadeAction(
       parcelas = [{ numero: 1, valor: valorTotal, vencimento: new Date() }];
     }
 
+    // Mesma checagem de fechamento/actions.ts — defesa no server, não só no client (que só evita
+    // round-trip desnecessário, não substitui validação server-side).
+    const somaParcelas = Math.round(parcelas.reduce((acc, p) => acc + p.valor, 0) * 100) / 100;
+    const valorTotalArredondado = Math.round(valorTotal * 100) / 100;
+    if (somaParcelas !== valorTotalArredondado) {
+      return { sucesso: false, erro: `A soma das parcelas (${somaParcelas}) não bate com o valor total (${valorTotalArredondado}).` };
+    }
+
     const { contratoId } = await criarContrato({
       oportunidadeId,
       contratoTemplateId: template.id,
-      pessoaSignatarioId: representanteId ?? pessoa.pessoaId,
+      // Sempre a pessoa resolvida (PF ou PJ) — nunca o representante. montarHtmlContrato (chamado
+      // por tentarEmitirContrato logo abaixo) decide sozinho, a partir do tipoPessoa de
+      // pessoaSignatarioId, se busca um representante via pessoa_representantes (definirRepresentante
+      // já gravou esse vínculo acima, chaveado pelo id da PJ) — gravar aqui o id do representante
+      // quebraria essa busca e faria o PDF sair sem razão social/CNPJ da empresa.
+      pessoaSignatarioId: pessoa.pessoaId,
       pessoaArrudaCredSignatarioId: pessoaArrudaCredId,
       fornecedorId: null,
       formaPagamento,
