@@ -7,7 +7,14 @@ import { lerDocumentoAction } from "./leitor-documento-ia-actions";
 const campo =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50";
 
-export function LeitorDocumentoIA({ onDadosExtraidos }: { onDadosExtraidos: (dados: DadosExtraidosDocumento) => void }) {
+export function LeitorDocumentoIA({
+  onDadosExtraidos,
+}: {
+  // arquivosLidos: os mesmos arquivos que a IA acabou de ler, pra quem chama poder salvá-los junto
+  // do cadastro (se a pessoa já for conhecida no momento da leitura) — ver uso em
+  // nova-oportunidade-client.tsx.
+  onDadosExtraidos: (dados: DadosExtraidosDocumento, arquivosLidos: File[]) => void | Promise<void>;
+}) {
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -38,8 +45,9 @@ export function LeitorDocumentoIA({ onDadosExtraidos }: { onDadosExtraidos: (dad
       setErro(resultado.erro);
       return;
     }
-    onDadosExtraidos(resultado.dados);
+    const arquivosLidos = arquivos;
     setArquivos([]);
+    await onDadosExtraidos(resultado.dados, arquivosLidos);
   }
 
   return (

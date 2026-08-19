@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
 import { LeitorDocumentoIA } from "@/components/vendas/leitor-documento-ia";
 import { UploadDocumentosPessoa } from "@/components/vendas/upload-documentos-pessoa";
+import { salvarDocumentosExtraidosAction } from "@/components/vendas/upload-pessoa-actions";
 import { calcularParcelasContrato, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { tipoPessoaPorDocumento } from "@/lib/vendas/documento";
@@ -134,7 +135,10 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  async function aoDigitarDocumento(valor: string) {
+  /** Devolve o pessoaId resolvido (ou null) — não só atualiza estado. Necessário pra quem chama
+   * (ex.: o Leitor de Documento IA) poder agir imediatamente com o resultado, sem depender de ler
+   * `pessoaId` do closure logo após o await (o setState não atualiza essa variável capturada). */
+  async function aoDigitarDocumento(valor: string): Promise<string | null> {
     const formatado = formatarCpfCnpj(valor);
     setDocumento(formatado);
     // Documento do comprador mudou — descarta qualquer representante já resolvido/preenchido pro
@@ -150,13 +154,13 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     if (!tipo) {
       buscaDocIdRef.current++; // invalida qualquer busca anterior ainda em andamento
       setBuscandoPessoa(false); // sem isso, "Buscando..." podia ficar preso na tela (achado real)
-      return;
+      return null;
     }
 
     const idAtual = ++buscaDocIdRef.current;
     setBuscandoPessoa(true);
     const resultado: ResultadoBuscarPessoa = await buscarPessoaPorDocumentoAction(formatado);
-    if (idAtual !== buscaDocIdRef.current) return; // uma busca mais recente já assumiu, descarta esta resposta
+    if (idAtual !== buscaDocIdRef.current) return null; // uma busca mais recente já assumiu, descarta esta resposta
     if (resultado.encontrada) {
       setPessoaId(resultado.id);
       setDadosContrato({
@@ -167,17 +171,20 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         estadoCivil: resultado.estadoCivil ?? "",
         profissao: resultado.profissao ?? "",
       });
+      setBuscandoPessoa(false);
+      return resultado.id;
+    }
+
+    setPessoaId(null);
+    if (tipo === "pj") {
+      const razaoSocial = await buscarRazaoSocialAction(formatado);
+      if (idAtual !== buscaDocIdRef.current) return null;
+      setDadosContrato({ ...dadosContratoVazios, nome: razaoSocial?.razaoSocial ?? "" });
     } else {
-      setPessoaId(null);
-      if (tipo === "pj") {
-        const razaoSocial = await buscarRazaoSocialAction(formatado);
-        if (idAtual !== buscaDocIdRef.current) return;
-        setDadosContrato({ ...dadosContratoVazios, nome: razaoSocial?.razaoSocial ?? "" });
-      } else {
-        setDadosContrato(dadosContratoVazios);
-      }
+      setDadosContrato(dadosContratoVazios);
     }
     setBuscandoPessoa(false);
+    return null;
   }
 
   /** Wrapper com debounce (300ms) pro `onChange` do campo de documento digitado à mão — não usar
@@ -358,12 +365,12 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
       <div className={secao}>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Quem assina o contrato</h2>
         <LeitorDocumentoIA
-          onDadosExtraidos={async (dados) => {
+          onDadosExtraidos={async (dados, arquivosLidos) => {
             // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
             // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso do
             // leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que acabou de
             // ser preenchido aqui (achado real da revisão final da branch).
-            if (dados.documento) await aoDigitarDocumento(dados.documento);
+            const pessoaIdResolvido = dados.documento ? await aoDigitarDocumento(dados.documento) : pessoaId;
             if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
             setEndereco((atual) => ({
               ...atual,
@@ -374,6 +381,15 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
               cidade: dados.cidade || atual.cidade,
               uf: dados.uf || atual.uf,
             }));
+
+            // Salva os arquivos lidos junto com o cadastro, classificados pela própria IA — só
+            // quando a pessoa já é conhecida nesse momento (pessoa nova ainda não tem id; o aviso na
+            // seção de documentos já explica que fica pra depois, na tela de Detalhes da Venda).
+            if (pessoaIdResolvido && arquivosLidos.length > 0) {
+              const formData = new FormData();
+              arquivosLidos.forEach((arquivo) => formData.append("arquivos", arquivo));
+              await salvarDocumentosExtraidosAction(pessoaIdResolvido, dados.tipoDocumento, formData);
+            }
           }}
         />
         <label className={rotulo}>CPF/CNPJ</label>

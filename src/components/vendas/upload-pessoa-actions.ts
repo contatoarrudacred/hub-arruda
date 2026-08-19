@@ -7,6 +7,7 @@ import {
   type PessoaDocumento,
 } from "@/lib/vendas/pessoa-documentos";
 import { enviarFotoPessoa, buscarFotoMaisRecente } from "@/lib/vendas/pessoa-fotos";
+import { normalizarTipoDocumentoPessoa } from "@/lib/vendas/tipos-documento";
 
 export async function listarDocumentosPessoaAction(pessoaId: string): Promise<PessoaDocumento[]> {
   return listarDocumentosPessoa(pessoaId);
@@ -33,6 +34,41 @@ export async function enviarDocumentoPessoaAction(formData: FormData): Promise<R
   } catch {
     return { sucesso: false, erro: "Falha ao enviar arquivo. Tente novamente." };
   }
+}
+
+/**
+ * Salva os arquivos que o Leitor de Documento IA acabou de ler, junto com o cadastro da pessoa —
+ * mesmo bucket/tabela do upload manual. Chamado só quando a pessoa já é conhecida no momento da
+ * leitura (pessoa existente); pra pessoa nova, o pessoaId ainda não existe nesse ponto, e o
+ * documento fica pra ser anexado depois (Detalhes da Venda), como já indicado na tela.
+ *
+ * Best-effort: uma falha ao salvar um arquivo não derruba os outros nem o preenchimento dos dados
+ * (que já aconteceu antes desta chamada) — só fica de fora da lista de documentos anexados.
+ */
+export async function salvarDocumentosExtraidosAction(
+  pessoaId: string,
+  tipoDocumentoSugerido: string,
+  formData: FormData,
+): Promise<{ salvos: number }> {
+  const arquivos = formData.getAll("arquivos") as File[];
+  const tipoDocumento = normalizarTipoDocumentoPessoa(tipoDocumentoSugerido);
+  let salvos = 0;
+  for (const arquivo of arquivos) {
+    if (!arquivo || arquivo.size === 0) continue;
+    try {
+      await enviarDocumentoPessoa({
+        pessoaId,
+        tipoDocumento,
+        descricao: "Lido automaticamente pela IA",
+        nomeArquivo: arquivo.name,
+        conteudo: arquivo,
+      });
+      salvos++;
+    } catch (e) {
+      console.error("Falha ao salvar documento extraído pela IA:", e);
+    }
+  }
+  return { salvos };
 }
 
 export type ResultadoExcluirDocumento = { sucesso: true } | { sucesso: false; erro: string };
