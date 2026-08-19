@@ -88,3 +88,64 @@ export async function criarCobranca(entrada: EntradaCobranca): Promise<Cobranca>
     }),
   });
 }
+
+export type EntradaCheckout = {
+  descricao: string;
+  valorTotal: number;
+  maxParcelas: number;
+  externalReference: string;
+  cliente: { nome: string; documento: string; email: string | null; telefone: string | null };
+};
+
+export type Checkout = { id: string; link: string };
+
+// Asaas não tem, no Checkout, um jeito de referenciar um cliente já existente por id (só
+// "customerData" solto) — diferente de /v3/payments, que usa "customer". Por isso aqui a gente
+// manda os dados soltos, só pra pré-preencher a página hospedada; a Asaas casa/cria o cliente dela
+// mesma por trás. A reconciliação do pagamento com o nosso contrato usa "externalReference", não
+// o id do cliente.
+const CALLBACK_PADRAO = {
+  successUrl: "https://arrudacred.com.br",
+  cancelUrl: "https://arrudacred.com.br",
+}; // placeholder — ainda não existe página dedicada de pós-pagamento; revisitar quando existir.
+
+// PNG 1x1 transparente em base64 — a Asaas exige "imageBase64" em todo item do Checkout, mas não
+// temos foto de produto (é a mensalidade de um serviço financeiro, não um bem físico).
+const IMAGEM_ITEM_PLACEHOLDER =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+/**
+ * Cria um Checkout hospedado pela Asaas pra pagamento por cartão — o cliente escolhe o
+ * parcelamento (até maxParcelas) e digita o cartão na página deles, nunca no nosso sistema (evita
+ * qualquer exigência de compliance PCI-DSS). Ver docs/superpowers/specs/2026-08-19-vendas-nova-oportunidade-kanban-design.md
+ * seção 6 pra decisão de arquitetura. Formato do request confirmado contra a doc oficial em
+ * 19/08/2026 (docs.asaas.com/reference/criar-novo-checkout).
+ */
+export async function criarCheckout(entrada: EntradaCheckout): Promise<Checkout> {
+  return chamarApi<Checkout>("/checkouts", {
+    method: "POST",
+    body: JSON.stringify({
+      billingTypes: ["CREDIT_CARD"],
+      chargeTypes: ["INSTALLMENT"],
+      minutesToExpire: 1440,
+      callback: CALLBACK_PADRAO,
+      items: [
+        {
+          name: entrada.descricao.slice(0, 30),
+          description: entrada.descricao.slice(0, 150),
+          quantity: 1,
+          value: entrada.valorTotal,
+          imageBase64: IMAGEM_ITEM_PLACEHOLDER,
+        },
+      ],
+      installment: { maxInstallmentCount: entrada.maxParcelas },
+      externalReference: entrada.externalReference,
+      customerData: {
+        name: entrada.cliente.nome,
+        cpfCnpj: entrada.cliente.documento,
+        email: entrada.cliente.email ?? undefined,
+        phone: entrada.cliente.telefone ?? undefined,
+      },
+    }),
+  });
+}

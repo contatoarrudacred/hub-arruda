@@ -1,4 +1,4 @@
-import { buscarClientePorCpfCnpj, criarCliente, criarCobranca } from "./cliente";
+import { buscarClientePorCpfCnpj, criarCheckout, criarCliente, criarCobranca } from "./cliente";
 import { atualizarParcelaAsaas, atualizarStatusContrato, buscarContratoPorId, type MetodoPagamento } from "@/lib/vendas/contratos";
 import { enviarLinkPagamentoWhatsapp } from "@/lib/vendas/notificacoes";
 import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
@@ -20,15 +20,32 @@ async function resolverClienteAsaas(pessoaId: string): Promise<string> {
 }
 
 /**
- * Cria as cobranças na Asaas a partir das parcelas já calculadas em `contrato_parcelas` — uma
- * chamada por parcela, com o valor/vencimento exatos que já temos (não usa o parcelamento nativo
- * da Asaas, ver comentário em cliente.ts). Dispara depois que a Assinafy confirma que o contrato
- * foi assinado (webhook, Task 11).
+ * Cria as cobranças na Asaas — ramifica por método de pagamento. Boleto/Pix: uma chamada por
+ * parcela, com o valor/vencimento exatos que já temos (não usa o parcelamento nativo da Asaas, ver
+ * comentário em cliente.ts). Cartão: um único Checkout hospedado, com parcelamento nativo do cartão
+ * (a Asaas divide, ver criarCheckout) — o cliente nunca digita o cartão no nosso sistema. Dispara
+ * depois que a Assinafy confirma que o contrato foi assinado (webhook, Task 11).
  */
 export async function criarCobrancasDoContrato(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato) throw new Error("Contrato não encontrado.");
   if (!contrato.metodoPagamento) throw new Error("Venda comissionada não gera cobrança na Asaas — não deveria chegar aqui.");
+
+  if (contrato.metodoPagamento === "cartao") {
+    const pessoa = await buscarPessoaCompleta(contrato.pessoaSignatarioId);
+    if (!pessoa) throw new Error(`Pessoa ${contrato.pessoaSignatarioId} não encontrada.`);
+
+    const checkout = await criarCheckout({
+      descricao: `Contrato ${contratoId}`,
+      valorTotal: contrato.valorTotal,
+      maxParcelas: contrato.parcelasQtd,
+      externalReference: contratoId,
+      cliente: { nome: pessoa.nomeRazaoSocial, documento: pessoa.documento, email: pessoa.email, telefone: pessoa.whatsapp },
+    });
+    await atualizarStatusContrato(contratoId, "aguardando_pagamento");
+    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, checkout.link);
+    return;
+  }
 
   const customerId = await resolverClienteAsaas(contrato.pessoaSignatarioId);
   const billingType = BILLING_TYPE[contrato.metodoPagamento];
