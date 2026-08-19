@@ -539,6 +539,7 @@ export type Database = {
           agenda_followup_id: string | null
           aguardando_resposta_desde: string | null
           atendente_id: string | null
+          buffer_token: string | null
           canal: string
           contador_nao_reconhecimento: number
           created_at: string
@@ -561,6 +562,7 @@ export type Database = {
           agenda_followup_id?: string | null
           aguardando_resposta_desde?: string | null
           atendente_id?: string | null
+          buffer_token?: string | null
           canal: string
           contador_nao_reconhecimento?: number
           created_at?: string
@@ -583,6 +585,7 @@ export type Database = {
           agenda_followup_id?: string | null
           aguardando_resposta_desde?: string | null
           atendente_id?: string | null
+          buffer_token?: string | null
           canal?: string
           contador_nao_reconhecimento?: number
           created_at?: string

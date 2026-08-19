@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
 import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
+import { concatenarMensagensLead } from "./buffer-mensagens";
 import { substituirVariaveisTexto } from "./engine";
 import {
   ehUltimoItemDaAgenda,
@@ -230,6 +231,60 @@ export async function registrarMensagemLead(
   if (erroConversa) {
     throw new Error(`Falha ao atualizar conversa após resposta do lead: ${erroConversa.message}`);
   }
+}
+
+/**
+ * Escreve o token de debounce (19/08/2026, "corrigir tudo de forma global" — mensagens seguidas do
+ * lead viravam turnos separados do motor, cegos um pro outro). Cada mensagem que chega sobrescreve
+ * o token da conversa; quem espera e relê o MESMO valor que escreveu é quem processa o turno (ver
+ * `aindaEhTokenAtual` e o webhook, `route.ts`).
+ */
+export async function escreverTokenBuffer(conversaId: string, token: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("conversas").update({ buffer_token: token }).eq("id", conversaId);
+  if (error) throw new Error(`Falha ao gravar token de buffer: ${error.message}`);
+}
+
+/** true só se `buffer_token` da conversa ainda for exatamente o token informado — false quando uma mensagem mais nova já sobrescreveu (essa invocação desiste, a mais nova processa tudo). */
+export async function aindaEhTokenAtual(conversaId: string, token: string): Promise<boolean> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("conversas").select("buffer_token").eq("id", conversaId).single();
+  if (error) throw new Error(`Falha ao reler token de buffer: ${error.message}`);
+  return data?.buffer_token === token;
+}
+
+/**
+ * Todo texto que o lead mandou desde a última fala da Malala nesta conversa (ou desde o início,
+ * se a Malala ainda não falou nada) — a "janela" que o debounce concatena num turno só. Ignora
+ * mensagens sem texto (mídia sem legenda): elas não alimentam o motor de qualquer forma.
+ */
+export async function montarRespostaConcatenadaDesdeUltimaFala(conversaId: string): Promise<string> {
+  const supabase = createAdminClient();
+
+  const { data: ultimaMalala, error: erroUltimaMalala } = await supabase
+    .from("mensagens")
+    .select("enviado_em")
+    .eq("conversa_id", conversaId)
+    .eq("remetente", "malala")
+    .order("enviado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroUltimaMalala) throw new Error(`Falha ao buscar última mensagem da Malala: ${erroUltimaMalala.message}`);
+
+  let query = supabase
+    .from("mensagens")
+    .select("conteudo, enviado_em")
+    .eq("conversa_id", conversaId)
+    .eq("remetente", "lead")
+    .order("enviado_em", { ascending: true });
+  if (ultimaMalala?.enviado_em) {
+    query = query.gt("enviado_em", ultimaMalala.enviado_em);
+  }
+
+  const { data: mensagensLead, error: erroMensagensLead } = await query;
+  if (erroMensagensLead) throw new Error(`Falha ao buscar mensagens do lead pra concatenar: ${erroMensagensLead.message}`);
+
+  return concatenarMensagensLead(mensagensLead ?? []);
 }
 
 /** Marca `conversas.estagnado_desde` (selo de risco de esfriar, sinal 3) se ainda não estiver marcada — nunca sobrescreve uma pendência já aberta, a data precisa refletir quando ela começou de verdade. */
