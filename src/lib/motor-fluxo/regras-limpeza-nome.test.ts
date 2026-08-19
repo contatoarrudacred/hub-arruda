@@ -4,9 +4,12 @@ import {
   buscarFaixaPreco,
   combinarFaixasPacote,
   combinarParcelas,
+  formatarFaixaConfirmacao,
   formatarLabelFaixa,
   formatarMenuFaixas,
   formatarParcelas,
+  montarMensagemConfirmacaoFaixa,
+  valorRepresentativoFaixa,
   type FaixaPreco,
 } from "./regras-limpeza-nome";
 
@@ -161,5 +164,57 @@ describe("formatarMenuFaixas", () => {
     const [a, b, c, d, e] = FAIXAS_PRECOS;
     const foraDeOrdem = [c, a, e, b, d];
     expect(formatarMenuFaixas(foraDeOrdem)).toBe(formatarMenuFaixas(FAIXAS_PRECOS));
+  });
+});
+
+describe("formatarFaixaConfirmacao (frase de confirmação do ln_passo6, 18/08/2026)", () => {
+  it("primeira faixa: 'menos de X mil', minúsculo e sem espaço antes do mil", () => {
+    const faixa: FaixaPreco = { faixaMin: 3000, faixaMax: 10000, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(formatarFaixaConfirmacao(faixa, true)).toBe("menos de 10mil");
+  });
+
+  it("faixa do meio: 'entre X e Ymil' — só o segundo número leva 'mil' colado", () => {
+    const faixa: FaixaPreco = { faixaMin: 10000, faixaMax: 30000, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(formatarFaixaConfirmacao(faixa, false)).toBe("entre 10 e 30mil");
+  });
+
+  it("faixa sem teto: 'acima de Xmil'", () => {
+    const faixa: FaixaPreco = { faixaMin: 500000, faixaMax: null, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(formatarFaixaConfirmacao(faixa, false)).toBe("acima de 500mil");
+  });
+});
+
+describe("valorRepresentativoFaixa", () => {
+  it("faixa com teto: ponto médio", () => {
+    const faixa: FaixaPreco = { faixaMin: 10000, faixaMax: 30000, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(valorRepresentativoFaixa(faixa)).toBe(20000);
+  });
+
+  it("faixa sem teto: usa o piso", () => {
+    const faixa: FaixaPreco = { faixaMin: 500000, faixaMax: null, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(valorRepresentativoFaixa(faixa)).toBe(500000);
+  });
+});
+
+describe("montarMensagemConfirmacaoFaixa (formato exato pedido por Luiz, 18/08/2026)", () => {
+  const faixa: FaixaPreco = { faixaMin: 10000, faixaMax: 30000, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+
+  it("1 CPF só — sem 'cada um deles'", () => {
+    expect(montarMensagemConfirmacaoFaixa(faixa, false, ["cpf"])).toBe(
+      "Só confirmando: Limpeza de nome para *01 CPF* com restrições entre 10 e 30mil.\n👉 *Está correto?*",
+    );
+  });
+
+  it("1 CPF e 1 CNPJ — com 'em cada um deles'", () => {
+    expect(montarMensagemConfirmacaoFaixa(faixa, false, ["cpf", "cnpj"])).toBe(
+      "Só confirmando: Limpeza de nome para *01 CPF e 01 CNPJ* com restrições entre 10 e 30mil em *cada um deles*.\n👉 *Está correto?*",
+    );
+  });
+
+  it("3 CPF e 55 CNPJ — conta agrupada por tipo, zero-padded", () => {
+    const tipos: ("cpf" | "cnpj")[] = [...Array(3).fill("cpf"), ...Array(55).fill("cnpj")];
+    expect(montarMensagemConfirmacaoFaixa(faixa, false, tipos)).toBe(
+      "Só confirmando: Limpeza de nome para *03 CPF e 55 CNPJ* com restrições entre 10 e 30mil em *cada um deles*.\n👉 *Está correto?*",
+    );
   });
 });

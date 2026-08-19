@@ -318,9 +318,12 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     // "nao_entendi" deixa `reconhecido` null — cai no bloco genérico abaixo (repete a pergunta original).
   }
 
-  // "faixas_documentos" — mesma filosofia de 3 saídas, mas extrai a faixa de TODOS os documentos
-  // de uma resposta livre só (decisão de Luiz, 17/08/2026: uma pergunta só, não um checkpoint por
-  // documento, pra não gerar fricção/evasão). "não sei" por documento é uma resposta válida.
+  // "faixas_documentos" — menu fechado com confirmação (correção 18/08/2026, Luiz: mesma faixa
+  // assumida pra TODOS os documentos, uma pergunta só). "incompleto" carrega `dadosParciais`
+  // (índice da faixa escolhida aguardando confirmação, ou sinal de que caiu no modo livre por
+  // documento) — precisa ir pra `dadosNovos` mesmo sem avançar de checkpoint, senão o interpretador
+  // não teria como saber em que rodada está no próximo turno (mesmo problema/solução de
+  // negociacao_pagamento, já que o interpretador só recebe `dados`, sem histórico de turnos).
   if (!reconhecido && conteudo.tipo_resposta === "faixas_documentos" && contexto.interpretarFaixasDocumentos) {
     const resultado = await contexto.interpretarFaixasDocumentos({ etapaAtual, respostaLead, dados });
     interpretadoPorIA = true;
@@ -334,9 +337,22 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
       return {
         mensagens: [empacotar(substituirVariaveisMensagem(retomada, dados, variaveisGlobais), conteudo)],
         etapaFinal: etapaAtual,
-        dadosNovos: {},
+        dadosNovos: resultado.dadosParciais ?? {},
         efeitos: [],
         naoReconhecido: true,
+        interpretadoPorIA: true,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    } else if (resultado.status === "escalar_consulta_paga") {
+      // Lead pediu a consulta oficial paga (R$39/documento) em vez de seguir por estimativa — sai
+      // do automatizado e escala pro humano (sem dizer isso ao lead, como pedido por Luiz).
+      const mensagem: MensagemEtapa = { tipo: "texto", texto: resultado.mensagem };
+      return {
+        mensagens: [empacotar(substituirVariaveisMensagem(mensagem, dados, variaveisGlobais), conteudo)],
+        etapaFinal: null,
+        dadosNovos: {},
+        efeitos: [{ tipo: "escalar_supervisor", motivo: "Lead pediu a consulta oficial paga (R$39/documento) em vez de estimativa por faixa" }],
+        naoReconhecido: false,
         interpretadoPorIA: true,
         kanbanSubetapa: conteudo.kanban_subetapa ?? null,
       };

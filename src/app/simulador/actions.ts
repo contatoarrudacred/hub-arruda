@@ -7,7 +7,7 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
-import { interpretarFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
+import { criarInterpretadorFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
 import {
@@ -52,6 +52,7 @@ async function montarDependencias() {
     etapasPorCodigo,
     resolverMensagensDinamicas: criarResolverMensagensDinamicas(faixas, config),
     calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas),
+    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas),
   };
 }
 
@@ -95,7 +96,7 @@ export async function enviarResposta(
     return { mensagens: [], estado, encerrado: true, naoReconhecido: false };
   }
 
-  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } =
+  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos } =
     await montarDependencias();
   const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
 
