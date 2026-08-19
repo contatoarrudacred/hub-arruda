@@ -131,7 +131,12 @@ export async function criarCheckout(entrada: EntradaCheckout): Promise<Checkout>
       callback: CALLBACK_PADRAO,
       items: [
         {
-          name: entrada.descricao.slice(0, 30),
+          // "name" tem limite rígido de 30 chars — usar um rótulo fixo e legível em vez de
+          // truncar `entrada.descricao` (que carrega o id do contrato, um UUID de 36 chars: cortado
+          // em 30 vira um fragmento ilegível na página de pagamento real). O texto completo, com o
+          // id do contrato, vai em "description" (150 chars) — quem precisa mesmo do id do contrato
+          // pra reconciliar é o `externalReference`, não este texto.
+          name: "Contrato ArrudaCred",
           description: entrada.descricao.slice(0, 150),
           quantity: 1,
           value: entrada.valorTotal,
