@@ -22,6 +22,19 @@ bloqueio: verificação manual ponta a ponta depende da migration aplicada + dep
 
 **Por que não bloqueia o merge:** todas as 18 tasks passaram por revisão individual (spec + qualidade) durante a implementação, com 3 achados Critical/Important reais encontrados e corrigidos ao longo do processo (ver `.superpowers/sdd/2026-08-19-vendas-nova-oportunidade-kanban/progress.md`, não versionado — histórico completo do processo). O código está pronto pra funcionar assim que a migration rodar; falta só a verificação com dado real, que é ação do Luiz + deploy, não algo que eu resolvo sozinho neste worktree.
 
+## Revisão final de branch (2026-08-19) — achados corrigidos + pendências que sobraram
+
+Depois das 18 tasks implementadas e revisadas individualmente, rodei uma revisão final olhando a branch inteira (18 commits, diff completo) — esse tipo de passada pega coisas que cruzam múltiplas tasks, que nenhuma revisão isolada consegue ver. Achou 2 Critical reais (corrigidos no mesmo dia, commit `5f51e42`):
+- Parcelamento do cartão nunca chegava na Asaas (o client coletava, o server descartava) — Checkout sempre saía em 1x. Corrigido com coluna nova `contratos.max_parcelas_cartao`.
+- Retentativa automática "3x" não existe de fato (nenhuma etapa re-tenta sozinha) mas o botão manual só aparecia depois de 3 falhas acumuladas — um contrato com 1 erro ficava preso pra sempre, sem ação disponível. Corrigido: botão aparece a partir do primeiro erro.
+
+Mais 4 achados Important corrigidos junto (migration não-idempotente; nome do Leitor de Documento IA sendo apagado; debounce/guarda de resposta obsoleta perdidos na busca por documento; card do Kanban sem indicador visual de erro).
+
+**Pendências que ficaram, registradas — não bloqueiam, mas valem revisitar:**
+- **Status transitório "aguardando_assinaturas" quando `ASAAS_API_KEY` não está configurada:** o webhook da Assinafy grava esse status ao confirmar assinatura e só avança pra "gerando_financeiro" se a chave da Asaas existir. Sem ela (estado atual), um contrato assinado fica visualmente indistinguível de um não-assinado, sem erro registrado. Auto-resolve quando o Luiz configurar a conta Asaas real — registrado aqui pra não surpreender ninguém antes disso.
+- **Cadeia PDF+Assinafy sem `maxDuration` explícito nas rotas de Vendas:** se `tentarEmitirContrato` (Puppeteer + upload + Assinafy) estourar o timeout padrão da função, o contrato pode ficar em `emitindo_contrato` sem erro registrado (a função morre no meio, antes do catch rodar). Mitigação futura: mover pra `after()` (padrão já usado nos webhooks) e/ou exportar `maxDuration`. Não corrigido nesta passada — mudança de arquitetura maior, melhor como item isolado.
+- Diversos Minors de polimento (feedback de quantos cards foram retentados em lote; `Record<string,string>` sem exaustividade em `FORMA_PAGAMENTO_LABEL`; logs de debug com dado sensível ainda em `fechamento/actions.ts`) — ver relatório completo da revisão em `.superpowers/sdd/2026-08-19-vendas-nova-oportunidade-kanban/` (workspace local, não versionado).
+
 ## Pendências conhecidas — Asaas Checkout (cartão, Task 10/10b)
 
 - **Reconciliação de parcelas do cartão:** os "títulos a receber" reais do cartão (datas/valores exatos que a Asaas vai creditar por parcela) ainda não são gravados em `contrato_parcelas` — a parcela única criada no submit (Task 13) continua sendo só um placeholder pro valor total. Resolver depende da pesquisa pendente da spec seção 6.1 (onde/como a Asaas expõe o detalhe por parcela de um Checkout pago). Não bloqueia o resto do plano.
