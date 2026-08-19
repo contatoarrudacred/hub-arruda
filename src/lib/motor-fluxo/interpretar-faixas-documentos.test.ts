@@ -1,90 +1,71 @@
 import { describe, expect, it } from "vitest";
 import {
+  codificarParcialFaixas,
+  decodificarParcialFaixas,
+  mesclarAtualizacoesParciais,
   validarConfirmacaoFaixa,
   validarEscolhaFaixaMenu,
-  validarRespostaFaixasDocumentos,
 } from "./interpretar-faixas-documentos-validacao";
 
-describe("validarRespostaFaixasDocumentos", () => {
-  it("completo: 1 documento com valor conhecido", () => {
-    const r = validarRespostaFaixasDocumentos(
-      {
-        status: "completo",
-        itens: [{ tipo: "cpf", sabe_valor: true, valor_aproximado: 15000 }],
-        pergunta_esclarecimento: "",
-      },
-      ["cpf"],
-    );
-    expect(r).toEqual({ status: "completo", itens: [{ tipo: "cpf", valorAproximado: 15000 }] });
+describe("codificarParcialFaixas / decodificarParcialFaixas (modo livre, 19/08/2026)", () => {
+  it("ida e volta preserva os 3 estados: ainda não sabido, não sei, valor conhecido", () => {
+    const itens = [null, { tipo: "cpf" as const, valorAproximado: null }, { tipo: "cnpj" as const, valorAproximado: 20000 }];
+    const csv = codificarParcialFaixas(itens);
+    expect(csv).toBe(",nao_sei,20000");
+    expect(decodificarParcialFaixas(csv, ["cpf", "cpf", "cnpj"])).toEqual(itens);
   });
 
-  it("completo: pacote com 2 documentos, um deles 'não sei'", () => {
-    const r = validarRespostaFaixasDocumentos(
-      {
-        status: "completo",
-        itens: [
-          { tipo: "cpf", sabe_valor: true, valor_aproximado: 15000 },
-          { tipo: "cnpj", sabe_valor: false, valor_aproximado: 0 },
-        ],
-        pergunta_esclarecimento: "",
-      },
-      ["cpf", "cnpj"],
-    );
-    expect(r).toEqual({
-      status: "completo",
-      itens: [
-        { tipo: "cpf", valorAproximado: 15000 },
-        { tipo: "cnpj", valorAproximado: null },
-      ],
-    });
+  it("string vazia decodifica como 'tudo ainda não sabido' (estado inicial)", () => {
+    expect(decodificarParcialFaixas("", ["cpf", "cnpj"])).toEqual([null, null]);
   });
 
-  it("incompleto: repassa a pergunta de esclarecimento", () => {
-    const r = validarRespostaFaixasDocumentos(
-      {
-        status: "incompleto",
-        itens: [],
-        pergunta_esclarecimento: "Você mencionou o CPF, mas qual a faixa do CNPJ?",
-      },
-      ["cpf", "cnpj"],
-    );
-    expect(r).toEqual({ status: "incompleto", perguntaEsclarecimento: "Você mencionou o CPF, mas qual a faixa do CNPJ?" });
+  it("token malformado (não numérico, não 'nao_sei') decodifica como não sabido, defensivo", () => {
+    expect(decodificarParcialFaixas("abc,10000", ["cpf", "cnpj"])).toEqual([null, { tipo: "cnpj", valorAproximado: 10000 }]);
+  });
+});
+
+describe("mesclarAtualizacoesParciais (modo livre, 19/08/2026 — corrige o loop infinito do log real)", () => {
+  it("aplica atualização num índice sem mexer nos outros já sabidos", () => {
+    const anterior = [{ tipo: "cpf" as const, valorAproximado: 20000 }, null];
+    const r = mesclarAtualizacoesParciais(anterior, [{ indice: 2, tipo: "cpf", sabe_valor: true, valor_aproximado: 8000 }], ["cpf", "cpf"]);
+    expect(r).toEqual([
+      { tipo: "cpf", valorAproximado: 20000 },
+      { tipo: "cpf", valorAproximado: 8000 },
+    ]);
   });
 
-  it("rejeita quando a quantidade de itens não bate com os documentos esperados", () => {
-    const r = validarRespostaFaixasDocumentos(
-      {
-        status: "completo",
-        itens: [{ tipo: "cpf", sabe_valor: true, valor_aproximado: 15000 }],
-        pergunta_esclarecimento: "",
-      },
-      ["cpf", "cnpj"],
-    );
-    expect(r).toEqual({ status: "nao_entendi" });
+  it("caso do log real: resposta 'menos de 10' pro segundo CPF fecha o checkpoint (não fica em loop)", () => {
+    const anterior = [{ tipo: "cpf" as const, valorAproximado: 20000 }, null];
+    const r = mesclarAtualizacoesParciais(anterior, [{ indice: 2, tipo: "cpf", sabe_valor: true, valor_aproximado: 9000 }], ["cpf", "cpf"]);
+    expect(r.every((item) => item !== null)).toBe(true);
   });
 
-  it("rejeita quando a ordem/tipo dos itens não bate com o esperado", () => {
-    const r = validarRespostaFaixasDocumentos(
-      {
-        status: "completo",
-        itens: [{ tipo: "cnpj", sabe_valor: true, valor_aproximado: 15000 }],
-        pergunta_esclarecimento: "",
-      },
-      ["cpf"],
-    );
-    expect(r).toEqual({ status: "nao_entendi" });
+  it("'não sei' é uma atualização válida (fecha o item, não bloqueia)", () => {
+    const r = mesclarAtualizacoesParciais([null], [{ indice: 1, tipo: "cpf", sabe_valor: false, valor_aproximado: 0 }], ["cpf"]);
+    expect(r).toEqual([{ tipo: "cpf", valorAproximado: null }]);
   });
 
-  it("rejeita valor absurdo (alucinação)", () => {
-    const r = validarRespostaFaixasDocumentos(
-      {
-        status: "completo",
-        itens: [{ tipo: "cpf", sabe_valor: true, valor_aproximado: 999_999_999 }],
-        pergunta_esclarecimento: "",
-      },
-      ["cpf"],
-    );
-    expect(r).toEqual({ status: "nao_entendi" });
+  it("ignora índice fora do range (defensivo contra alucinação)", () => {
+    const anterior = [null];
+    const r = mesclarAtualizacoesParciais(anterior, [{ indice: 5, tipo: "cpf", sabe_valor: true, valor_aproximado: 1000 }], ["cpf"]);
+    expect(r).toEqual([null]);
+  });
+
+  it("ignora quando o tipo da atualização não bate com o esperado naquele índice", () => {
+    const anterior = [null];
+    const r = mesclarAtualizacoesParciais(anterior, [{ indice: 1, tipo: "cnpj", sabe_valor: true, valor_aproximado: 1000 }], ["cpf"]);
+    expect(r).toEqual([null]);
+  });
+
+  it("ignora valor absurdo (alucinação), mantém o item como ainda não sabido", () => {
+    const anterior = [null];
+    const r = mesclarAtualizacoesParciais(anterior, [{ indice: 1, tipo: "cpf", sabe_valor: true, valor_aproximado: 999_999_999 }], ["cpf"]);
+    expect(r).toEqual([null]);
+  });
+
+  it("sem atualizações, devolve o estado anterior intacto", () => {
+    const anterior = [{ tipo: "cpf" as const, valorAproximado: 5000 }, null];
+    expect(mesclarAtualizacoesParciais(anterior, [], ["cpf", "cpf"])).toEqual(anterior);
   });
 });
 

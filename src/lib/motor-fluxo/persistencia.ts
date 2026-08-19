@@ -423,7 +423,15 @@ export async function registrarTurnoMalala(params: {
   }
 
   if (resultado.mensagens.length > 0) {
-    const linhas = resultado.mensagens.map((item: MensagemEnviada) => {
+    // `enviado_em` explícito e crescente (19/08/2026, achado real — log de produção mostrou a
+    // Tela de Atendimento em ordem ERRADA dentro de um mesmo turno, ex.: pergunta de e-mail antes
+    // da saudação/foto). Causa: um único INSERT em lote faz o Postgres avaliar `now()` uma vez só
+    // pra todas as linhas — com timestamp idêntico, a ordem de exibição fica ao sabor de como o
+    // banco devolve as linhas, não da ordem real do array (que já está certa). 50ms de espaçamento
+    // é imperceptível pro usuário mas garante desempate determinístico, sem depender de nenhuma
+    // coluna nova nem de índice sequencial.
+    const agora = Date.now();
+    const linhas = resultado.mensagens.map((item: MensagemEnviada, indice) => {
       const { conteudo, midiaUrl, midiaTipo } = paraColunasMensagem(item.mensagem);
       return {
         conversa_id: conversaId,
@@ -432,6 +440,7 @@ export async function registrarTurnoMalala(params: {
         conteudo,
         midia_url: midiaUrl,
         midia_tipo: midiaTipo,
+        enviado_em: new Date(agora + indice * 50).toISOString(),
       };
     });
     const { error } = await supabase.from("mensagens").insert(linhas);
