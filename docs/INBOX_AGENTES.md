@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| **CRM** | Vendas | 19/08 01h10 | 🚨 **Filtrar o Kanban:** vendas sem funil prévio (sem `conversas` ligada) não podem aparecer no seu board — só as que vieram da Malala | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 19/08 |
 
 ## Fechados hoje
 
