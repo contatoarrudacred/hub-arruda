@@ -9,6 +9,7 @@ import {
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
 import { interpretarFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
+import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
 import {
   carregarConfigPrecificacao,
   carregarEtapasPorCodigo,
@@ -50,7 +51,7 @@ async function montarDependencias() {
   return {
     etapasPorCodigo,
     resolverMensagensDinamicas: criarResolverMensagensDinamicas(faixas, config),
-    calcularDadosDerivados: criarCalculadoraDadosDerivados(config),
+    calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas),
   };
 }
 
@@ -108,6 +109,7 @@ export async function enviarResposta(
     interpretarComIA,
     interpretarListaDocumentos,
     interpretarFaixasDocumentos,
+    interpretarNegociacaoPagamento,
     variaveisGlobais: { saudacao: saudacaoPorHorario() },
   });
 

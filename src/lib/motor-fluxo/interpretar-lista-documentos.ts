@@ -73,10 +73,11 @@ function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string
 }
 
 export const interpretarListaDocumentos: InterpretadorListaDocumentos = async ({ etapaAtual, respostaLead }) => {
-  const cliente = obterCliente();
   const prompt = montarPrompt({ etapaAtual, respostaLead });
 
   try {
+    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
+    const cliente = obterCliente();
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 400,

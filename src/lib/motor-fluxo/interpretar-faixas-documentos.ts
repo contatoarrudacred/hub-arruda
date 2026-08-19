@@ -94,10 +94,11 @@ export const interpretarFaixasDocumentos: InterpretadorFaixasDocumentos = async 
     .filter((t): t is "cpf" | "cnpj" => t === "cpf" || t === "cnpj");
   if (tiposEsperados.length === 0) return { status: "nao_entendi" };
 
-  const cliente = obterCliente();
   const prompt = montarPrompt({ etapaAtual, respostaLead, tiposEsperados });
 
   try {
+    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
+    const cliente = obterCliente();
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 800,

@@ -84,10 +84,14 @@ function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string
 }
 
 export const interpretarComIA: InterpretadorIA = async ({ etapaAtual, respostaLead }) => {
-  const cliente = obterCliente();
   const prompt = montarPrompt({ etapaAtual, respostaLead });
 
   try {
+    // obterCliente() dentro do try de propósito (achado real, 18/08/2026): estava fora, e uma
+    // API key ausente/inválida derrubava o turno inteiro do webhook sem resposta nenhuma pro lead,
+    // em vez de degradar pra "não reconhecido" (mesmo tratamento que qualquer outra falha da IA já
+    // tinha aqui embaixo).
+    const cliente = obterCliente();
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 300,

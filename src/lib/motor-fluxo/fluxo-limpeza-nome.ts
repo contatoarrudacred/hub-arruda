@@ -15,6 +15,7 @@
 // 3.2/3.3/4.1/4.2 (assinatura_digital/pagamento/ganha/perdida) ficam fora do automatizado do MVP1,
 // exceto "perdida" que o motor já atribui sozinho quando `encerra_com_perda` dispara (engine.ts).
 
+import { dataDeHojeISO, expandirParcelas, type DiaAncora } from "./calculo-vencimentos-pagamento";
 import { tipoEtapaDb } from "./db";
 import { extrairDadosAbertura } from "./extracao";
 import type { ConteudoEtapa, DadosConversa, EtapaCarregada, MensagemEtapa } from "./tipos";
@@ -24,6 +25,10 @@ import {
   combinarFaixasPacote,
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
+  formatarDataBr,
+  formatarMenuFaixas,
+  formatarReais,
+  type ParcelaTier,
   montarPropostaAltoValorSelfService,
   montarPropostaBaixoValor,
   montarPropostaPorFaixa,
@@ -139,20 +144,20 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
   {
     // Justificativa de valor + limite de tentativas — PLANO_MESTRE seção 8.12 (decisão de Luiz,
     // 17/08/2026): pedir e-mail sem dizer pra quê gerava resistência, e o checkpoint não tinha
-    // saída quando o lead recusava/insistia que não tinha. Mensagem agora explica o motivo de
-    // antemão (proposta por escrito, dicas de nome limpo/score, cupons — e pode parar de receber
-    // quando quiser); `opcional_apos_tentativas: 2` garante que nunca trava o funil.
+    // saída quando o lead recusava/insistia que não tinha. `opcional_apos_tentativas: 2` garante
+    // que nunca trava o funil.
+    // Correção 18/08/2026 (Luiz, teste ao vivo): a justificativa saía junto da pergunta, no mesmo
+    // turno, antes do lead ter chance de responder — parecia forçado. Agora só a pergunta é fixa
+    // aqui; a justificativa vira a mensagem de retomada (2ª tentativa em diante), gerada por
+    // criarResolverMensagensDinamicas com base em `dados["_tentativas:abertura_email"]` — só
+    // aparece se o lead não respondeu (ou recusou/questionou o motivo, o que também não bate como
+    // e-mail válido e cai no mesmo caminho de retomada).
     codigo: "abertura_email",
     ordem: 5,
     campoSalvo: "email",
     conteudo: {
       codigo: "abertura_email",
-      mensagens: [
-        t("Pra eu te atender melhor, me confirma também seu e-mail:"),
-        t(
-          "É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
-        ),
-      ],
+      mensagens: [t("Pra eu te atender melhor, me confirma também seu e-mail:")],
       aguarda_resposta: true,
       tipo_resposta: "email",
       proximo_codigo: "triagem_menu",
@@ -615,18 +620,16 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
+    // Conteúdo real (mensagem de confirmação de pagamento) gerado em tempo de execução por
+    // criarResolverMensagensDinamicas — varia por valores/vencimentos calculados.
     codigo: "ln_passo16_1",
     ordem: 24,
-    campoSalvo: "data_primeira_parcela",
+    campoSalvo: "detalhe_pagamento_confirmado_bruto",
     conteudo: {
       codigo: "ln_passo16_1",
-      mensagens: [
-        t(
-          "Perfeito! Só preciso confirmar uma coisa: qual a melhor data pra você pra realizar o pagamento da primeira parcela? O processo só dá entrada depois que o pagamento for confirmado, viu?",
-        ),
-      ],
+      mensagens: [t("(mensagem de confirmação de pagamento gerada dinamicamente)")],
       aguarda_resposta: true,
-      tipo_resposta: "texto_livre",
+      tipo_resposta: "negociacao_pagamento",
       proximo_codigo: "ln_passo17a",
       kanban_subetapa: KANBAN_NEGOCIACAO_DUVIDAS,
     },
@@ -824,6 +827,7 @@ function valoresPorDocumento(dados: DadosConversa): number[] {
 
 export function criarCalculadoraDadosDerivados(
   config: Pick<ConfigPrecificacaoLimpaNome, "altoValorFixo" | "altoValorPercentual" | "corteAltoValor">,
+  faixasPrecos: FaixaPreco[],
 ) {
   return (dados: DadosConversa): DadosConversa => {
     const derivados: DadosConversa = {};
@@ -837,6 +841,30 @@ export function criarCalculadoraDadosDerivados(
       derivados.valor_restricao_estimado = String(total);
       derivados.alto_valor = classificarAltoValor(total, config.corteAltoValor) ? "sim" : "nao";
       derivados.documentos_valor_baixo = total < 3000 ? "sim" : "nao";
+    }
+
+    // Defaults do detalhe de pagamento (spec 2026-08-18) — calculados UMA vez, assim que
+    // forma_pagamento é escolhida (ln_passo15_normal/selfservice); se parcelas_valores já existe,
+    // é porque já foi calculado antes (ou já foi ajustado pela negociação) — nunca sobrescreve,
+    // senão perderia um ajuste que o lead já tinha feito.
+    if (dados.forma_pagamento && !dados.parcelas_valores) {
+      const parcelado = dados.forma_pagamento === "parcelado";
+      const faixaCombinada = combinarFaixasPacote(valoresPorDocumento(dados), faixasPrecos);
+      const tiers: ParcelaTier[] = parcelado
+        ? (faixaCombinada?.parcelasBoleto ?? [])
+        : [{ quantidade: 1, valor: faixaCombinada?.precoAvista ?? 0 }];
+
+      if (tiers.length > 0) {
+        const hojeISO = dataDeHojeISO();
+        const diaAncora: DiaAncora = 10;
+        const parcelas = expandirParcelas(tiers, hojeISO, diaAncora);
+
+        derivados.forma_pagamento_detalhe = "boleto_pix";
+        derivados.data_primeira_parcela = hojeISO;
+        if (parcelado) derivados.dia_ancora_parcelas = String(diaAncora);
+        derivados.parcelas_valores = parcelas.map((p) => p.valor.toFixed(2)).join(",");
+        derivados.parcelas_vencimentos = parcelas.map((p) => p.vencimento).join(",");
+      }
     }
 
     return derivados;
@@ -859,13 +887,6 @@ function obterValorRestricao(dados: DadosConversa): number | null {
 // Passos 6/12) já previa isso como "pergunta dinâmica conforme tipo capturado" — nunca foi ligado.
 // ---------------------------------------------------------------------------
 
-/** "neste CPF" / "neste CNPJ" / "nestes documentos" — usado em ln_passo6. */
-function fraseNesteDocumento(dados: DadosConversa): string {
-  if (dados.tipo_documento === "cnpj") return "neste CNPJ";
-  if (dados.tipo_documento === "cpf_e_cnpj") return "nestes documentos";
-  return "neste CPF";
-}
-
 /** "do CPF limpo" / "do CNPJ limpo" / "dos documentos limpos" — usado em ln_passo12. */
 function fraseNecessidadeDocumentoLimpo(dados: DadosConversa): string {
   if (dados.tipo_documento === "cnpj") return "do CNPJ limpo";
@@ -885,16 +906,27 @@ export function criarResolverMensagensDinamicas(
   config: ConfigPrecificacaoLimpaNome,
 ) {
   return (codigo: string, dados: DadosConversa): MensagemEtapa[] | null => {
-    if (codigo === "ln_passo6") {
-      const tiposLista = (dados.documentos_tipos ?? "").split(",").filter(Boolean);
-      const maisDeUm = tiposLista.length > 1;
-      const referenciaDocumentos = maisDeUm
-        ? "de cada documento:\n" + tiposLista.map((tipo, i) => `${i + 1}. ${tipo.toUpperCase()}`).join("\n")
-        : `${fraseNesteDocumento(dados)}`;
-
+    // Justificativa do e-mail (correção 18/08/2026) — só entra na 2ª tentativa em diante, quando
+    // `dados["_tentativas:abertura_email"]` já existe (1ª resposta não reconhecida: recusa,
+    // pergunta "pra quê", ou e-mail inválido). Na 1ª pergunta esse campo ainda não existe, então
+    // cai no `null` no fim da função e usa só a pergunta fixa (conteudo.mensagens).
+    if (codigo === "abertura_email" && dados["_tentativas:abertura_email"]) {
       return [
         t(
-          `👉 Pra eu te passar o preço certo${maisDeUm ? " de cada documento" : ""}, preciso saber a faixa aproximada do valor das restrições ${referenciaDocumentos}\n\nPode ser um valor aproximado, ou "não sei" ${maisDeUm ? "pra qualquer um deles" : ""} — nesse caso, posso te oferecer uma consulta oficial nos 4 órgãos (Serasa, SPC Brasil, SCPC Boa Vista e CENPROT) por R$ 39,00 por documento. Se preferir, você também consegue consultar de graça baixando os apps oficiais de cada órgão. 😊`,
+          "É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
+        ),
+      ];
+    }
+
+    if (codigo === "ln_passo6") {
+      // Menu fechado (correção 18/08/2026, Luiz) — cabeçalho fixo + lista de faixas gerada do
+      // banco (formatarMenuFaixas, regras-limpeza-nome.ts — mesmo texto que o interpretador usa
+      // pra saber o que cada número significa). A mensagem de confirmação ("Só confirmando...")
+      // e a negociação por documento (se o lead não confirmar) são geradas pelo interpretador
+      // especializado (interpretar-faixas-documentos.ts), não aqui.
+      return [
+        t(
+          `👉 *Em qual das faixas abaixo melhor se enquadra o valor das suas restrições atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n${formatarMenuFaixas(faixasPrecos)}`,
         ),
       ];
     }
@@ -941,6 +973,32 @@ export function criarResolverMensagensDinamicas(
         config.altoValorPercentual,
       );
       return montarPropostaAltoValorSelfService(valorEstimado).map(t);
+    }
+
+    if (codigo === "ln_passo16_1") {
+      const valores = (dados.parcelas_valores ?? "").split(",").filter(Boolean).map(Number);
+      const vencimentos = (dados.parcelas_vencimentos ?? "").split(",").filter(Boolean);
+      if (valores.length === 0 || vencimentos.length !== valores.length) return null;
+
+      const formaTexto = dados.forma_pagamento_detalhe === "cartao" ? "Cartão" : "Boleto/Pix";
+      const totalContrato = valores.reduce((soma, v) => soma + v, 0);
+
+      if (valores.length === 1) {
+        return [
+          t(
+            `Valor do Contrato:\n${formatarReais(totalContrato)}\n\nPagamento:\nÀ Vista no ${formaTexto}\n\nVencimento:\n${formatarDataBr(vencimentos[0])}`,
+          ),
+        ];
+      }
+
+      const linhasVencimentos = vencimentos
+        .map((venc, i) => `${formatarDataBr(venc)} - ${formatarReais(valores[i])}`)
+        .join("\n");
+      return [
+        t(
+          `Valor do Contrato: ${formatarReais(totalContrato)}\n\nPagamento:\nem ${valores.length} vezes - Parcelado no ${formaTexto}\n\nValor da Parcela:\n${formatarReais(valores[0])}\n\nVencimentos:\n${linhasVencimentos}`,
+        ),
+      ];
     }
 
     return null;

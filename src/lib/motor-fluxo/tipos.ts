@@ -29,7 +29,15 @@ export type TipoResposta =
    * quando tiver uma faixa (ou "não sei") pra TODOS os documentos da lista — mesma filosofia de
    * "lista_documentos" (3 saídas, nunca reconhecido pelo parser determinístico).
    */
-  | "faixas_documentos";
+  | "faixas_documentos"
+  /**
+   * Negociação natural do detalhe de pagamento no fechamento (forma, data da 1ª parcela,
+   * dia-âncora das seguintes) — spec: docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md.
+   * Mesma filosofia de interpretador especializado de lista_documentos/faixas_documentos, mas com
+   * 3 saídas diferentes (`ResultadoNegociacaoPagamento`): confirmado / ajuste válido / precisa
+   * negociar — nunca binário reconhecido/não-reconhecido.
+   */
+  | "negociacao_pagamento";
 
 export type Opcao = {
   /** valor persistido em `dados[campo_salvo]` quando esta opção é escolhida */
@@ -238,6 +246,32 @@ export type InterpretadorFaixasDocumentos = (params: {
   dados: DadosConversa;
 }) => Promise<ResultadoInterpretacaoFaixasDocumentos>;
 
+/**
+ * Resultado do interpretador especializado de `tipo_resposta: "negociacao_pagamento"` — 3 saídas:
+ * - `confirmado`: o lead aceitou a mensagem de confirmação como está — motor grava o detalhe final
+ *   em `dados` e segue em frente.
+ * - `ajuste_valido`: o lead pediu uma mudança dentro das regras (forma, data ≤15 dias, âncora
+ *   01/10/20) — motor persiste o ajuste, recalcula vencimentos e reenvia a confirmação atualizada.
+ * - `negociando`: o lead pediu algo fora das regras ou ambíguo — a IA explica o limite/opções em
+ *   linguagem natural (não uma mensagem fixa) e o motor permanece no checkpoint.
+ */
+export type ResultadoNegociacaoPagamento =
+  | { status: "confirmado" }
+  | {
+      status: "ajuste_valido";
+      formaPagamento: "boleto_pix" | "cartao";
+      dataPrimeiraParcela: string; // ISO, já validada contra a regra de +15 dias
+      diaAncora: 1 | 10 | 20 | null; // null quando à vista (não se aplica)
+      mensagemConfirmando: string; // frase curta, natural, confirmando o que mudou
+    }
+  | { status: "negociando"; mensagemNegociacao: string };
+
+export type InterpretadorNegociacaoPagamento = (params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  dados: DadosConversa;
+}) => Promise<ResultadoNegociacaoPagamento>;
+
 /** O que o motor precisa pra decidir o próximo passo — tudo isolado do Supabase, testável puro (exceto o hook de IA, que é assíncrono por natureza). */
 export type ContextoAvanco = {
   etapaAtual: EtapaCarregada;
@@ -250,6 +284,7 @@ export type ContextoAvanco = {
   interpretarComIA?: InterpretadorIA;
   interpretarListaDocumentos?: InterpretadorListaDocumentos;
   interpretarFaixasDocumentos?: InterpretadorFaixasDocumentos;
+  interpretarNegociacaoPagamento?: InterpretadorNegociacaoPagamento;
   /** placeholders tipo `[saudacao]` que não vêm de `dados` (ex.: hora do dia) — computados por quem chama o motor, pra manter o motor determinístico/testável */
   variaveisGlobais?: Record<string, string>;
 };

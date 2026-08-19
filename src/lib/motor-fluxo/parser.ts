@@ -92,9 +92,11 @@ export function parseResposta(conteudo: ConteudoEtapa, respostaLead: string): Re
       return parseNumeroOuNaoSei(respostaLead);
     case "lista_documentos":
     case "faixas_documentos":
+    case "negociacao_pagamento":
       // Nunca reconhecido pelo parser determinístico — não dá pra regex "2 CPF e 1 CNPJ da
-      // empresa" ou "o CPF tem uns 15 mil e o CNPJ uns 40" com confiança. Sempre cai pro
-      // interpretador especializado (engine.ts).
+      // empresa", "o CPF tem uns 15 mil e o CNPJ uns 40", ou uma negociação natural de pagamento
+      // ("pode ser no cartão então?") com confiança. Sempre cai pro interpretador especializado
+      // (engine.ts).
       return { reconhecido: false };
     case "texto_livre":
     default:
