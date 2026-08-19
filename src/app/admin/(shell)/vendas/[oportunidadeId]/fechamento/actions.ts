@@ -94,13 +94,15 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
     console.log("[DEBUG confirmarFechamento] oportunidade:", JSON.stringify(oportunidade));
     if (!oportunidade) return { sucesso: false, erro: "Oportunidade não encontrada." };
 
+    // Template/signatário ArrudaCred faltando NÃO bloqueia a criação do contrato — o card precisa
+    // aparecer no Kanban mesmo assim. A falta de um dos dois vira um erro visível na etapa de
+    // emissão (montarHtmlContrato/enviarContratoParaAssinatura já checam isso e lançam erro claro,
+    // capturado por tentarEmitirContrato) — mesmo achado da Nova Oportunidade, corrigido junto.
     const template = await buscarTemplateAtivoPorProduto(oportunidade.produtoId);
     console.log("[DEBUG confirmarFechamento] template encontrado:", template ? template.id : null);
-    if (!template) return { sucesso: false, erro: `Nenhum template de contrato configurado pro produto "${oportunidade.produtoNome}".` };
 
     const pessoaArrudaCredId = await buscarPessoaArrudaCredSignatario();
     console.log("[DEBUG confirmarFechamento] pessoaArrudaCredId:", pessoaArrudaCredId);
-    if (!pessoaArrudaCredId) return { sucesso: false, erro: "Signatário da ArrudaCred não configurado (Configurações > contrato_arrudacred_signatario)." };
 
     // 1) Salva dados de contrato + endereço do signatário (e do representante, se PJ)
     await atualizarDadosContratoPessoa(entrada.pessoaId, entrada.dadosContrato);
@@ -171,7 +173,7 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
     // (Step 5 abaixo) reconstrói tudo a partir do banco via montarHtmlContrato, igual à Nova Oportunidade.
     const { contratoId } = await criarContrato({
       oportunidadeId: entrada.oportunidadeId,
-      contratoTemplateId: template.id,
+      contratoTemplateId: template?.id ?? null,
       // Sempre a pessoa resolvida (PF ou PJ) — nunca o representante. montarHtmlContrato (chamado
       // por tentarEmitirContrato logo abaixo) decide sozinho, a partir do tipoPessoa de
       // pessoaSignatarioId, se busca um representante via pessoa_representantes (definirRepresentante

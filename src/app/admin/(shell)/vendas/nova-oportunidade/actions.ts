@@ -118,13 +118,13 @@ export async function confirmarNovaOportunidadeAction(
     const { buscarPessoaArrudaCredSignatario, criarContrato } = await import("@/lib/vendas/contratos");
     const { calcularParcelasContrato } = await import("@/lib/vendas/calculo-parcelas");
 
+    // Template/signatário ArrudaCred faltando NÃO bloqueia a criação do contrato — o card precisa
+    // aparecer no Kanban mesmo assim, em "Nova Oportunidade". A falta de um dos dois vira um erro
+    // visível na etapa de emissão (montarHtmlContrato/enviarContratoParaAssinatura já checam isso e
+    // lançam erro claro, capturado por tentarEmitirContrato) — achado real de teste em produção:
+    // bloquear aqui deixava a Oportunidade órfã, sem contrato, invisível no Painel de Vendas.
     const template = await buscarTemplateAtivoPorProduto(entrada.produtoId);
-    if (!template) return { sucesso: false, erro: "Nenhum template de contrato configurado pra esse produto." };
-
     const pessoaArrudaCredId = await buscarPessoaArrudaCredSignatario();
-    if (!pessoaArrudaCredId) {
-      return { sucesso: false, erro: "Signatário da ArrudaCred não configurado (Configurações > contrato_arrudacred_signatario)." };
-    }
 
     const pessoaCompleta = await buscarPessoaCompleta(pessoa.pessoaId);
     if (!pessoaCompleta) return { sucesso: false, erro: "Pessoa não encontrada após criação/resolução." };
@@ -194,7 +194,7 @@ export async function confirmarNovaOportunidadeAction(
 
     const { contratoId } = await criarContrato({
       oportunidadeId,
-      contratoTemplateId: template.id,
+      contratoTemplateId: template?.id ?? null,
       // Sempre a pessoa resolvida (PF ou PJ) — nunca o representante. montarHtmlContrato (chamado
       // por tentarEmitirContrato logo abaixo) decide sozinho, a partir do tipoPessoa de
       // pessoaSignatarioId, se busca um representante via pessoa_representantes (definirRepresentante

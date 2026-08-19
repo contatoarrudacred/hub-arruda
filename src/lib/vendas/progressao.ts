@@ -1,4 +1,4 @@
-import { atualizarStatusContrato, buscarContratoPorId, limparErroContrato, registrarErroContrato } from "./contratos";
+import { buscarContratoPorId, limparErroContrato, registrarErroContrato } from "./contratos";
 import { gerarEEmitirContrato } from "./emissao-contrato";
 
 const MAX_TENTATIVAS_AUTOMATICAS = 3;
@@ -25,24 +25,30 @@ async function executarPassoAutomatico(contratoId: string, executar: () => Promi
 }
 
 /** Etapa "Emitindo Contrato" — gera o PDF. Encadeia direto pra "Envelopando Assinaturas" quando dá
- * certo, porque as duas são automáticas (não param pra esperar ninguém). */
+ * certo, porque as duas são automáticas (não param pra esperar ninguém).
+ *
+ * Não marca o status como "emitindo_contrato" antes de tentar — gerarEEmitirContrato já faz isso
+ * como último passo, só quando dá certo. Assim, se a etapa falhar (ex.: produto sem template de
+ * contrato configurado), o card fica visível no Kanban parado no último estágio que realmente
+ * alcançou (aqui, "nova_oportunidade"), com o erro visível — não "some" nem fica com um rótulo que
+ * sugere um progresso que não aconteceu. Achado real de teste em produção. */
 export async function tentarEmitirContrato(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato || !podeTentarAutomaticamente(contrato.tentativasErro)) return;
 
-  await atualizarStatusContrato(contratoId, "emitindo_contrato");
   const resultado = await executarPassoAutomatico(contratoId, () => gerarEEmitirContrato(contratoId));
   if (resultado.sucesso) await tentarEnvelopar(contratoId);
 }
 
 /** Etapa "Envelopando Assinaturas" — manda o PDF pra Assinafy. Ao dar certo, o próprio
  * enviarContratoParaAssinatura já deixa o contrato em "aguardando_assinaturas" (etapa 4, espera
- * ação humana — não encadeia mais nada automático a partir daqui). */
+ * ação humana — não encadeia mais nada automático a partir daqui). Mesmo raciocínio de
+ * tentarEmitirContrato: não marca "envelopando_assinaturas" antes de tentar — só o adapter, ao
+ * suceder. Se falhar, o card fica no último estágio confirmado ("emitindo_contrato"). */
 export async function tentarEnvelopar(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato || !podeTentarAutomaticamente(contrato.tentativasErro)) return;
 
-  await atualizarStatusContrato(contratoId, "envelopando_assinaturas");
   await executarPassoAutomatico(contratoId, async () => {
     const { enviarContratoParaAssinatura } = await import("@/lib/assinafy/adapter");
     await enviarContratoParaAssinatura(contratoId);
@@ -52,12 +58,12 @@ export async function tentarEnvelopar(contratoId: string): Promise<void> {
 /** Etapa "Gerando Financeiro" — cria a(s) cobrança(s) na Asaas. Disparada pelo webhook da Assinafy
  * quando todo mundo assina (não pela cadeia automática inicial — isso só acontece depois de uma
  * ação humana). Ao dar certo, criarCobrancasDoContrato já deixa o contrato em
- * "aguardando_pagamento" (etapa 6, espera ação humana). */
+ * "aguardando_pagamento" (etapa 6, espera ação humana). Mesmo raciocínio: não marca
+ * "gerando_financeiro" antes de tentar. */
 export async function tentarGerarFinanceiro(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato || !podeTentarAutomaticamente(contrato.tentativasErro)) return;
 
-  await atualizarStatusContrato(contratoId, "gerando_financeiro");
   await executarPassoAutomatico(contratoId, async () => {
     const { criarCobrancasDoContrato } = await import("@/lib/asaas/adapter");
     await criarCobrancasDoContrato(contratoId);

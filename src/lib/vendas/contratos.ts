@@ -21,9 +21,14 @@ export type StatusContrato =
 
 export type EntradaCriarContrato = {
   oportunidadeId: string;
-  contratoTemplateId: string;
+  // Nullable de propósito: o contrato nasce mesmo que o produto ainda não tenha template
+  // configurado, ou que contrato_arrudacred_signatario não esteja definido em Configurações — o
+  // card aparece no Kanban imediatamente, e a falta de template/signatário vira um erro visível na
+  // etapa (via montarHtmlContrato/enviarContratoParaAssinatura, que já checam isso), não um bloqueio
+  // silencioso na hora de criar a Oportunidade.
+  contratoTemplateId: string | null;
   pessoaSignatarioId: string;
-  pessoaArrudaCredSignatarioId: string;
+  pessoaArrudaCredSignatarioId: string | null;
   fornecedorId: string | null;
   formaPagamento: FormaPagamento;
   metodoPagamento: MetodoPagamento;
