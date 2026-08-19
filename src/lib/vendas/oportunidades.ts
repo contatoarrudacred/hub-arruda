@@ -1,5 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
 
+/**
+ * Push pontual pro etapa_kanban da Oportunidade (Kanban do CRM) nos marcos-chave da venda —
+ * "pagamento" quando o contrato é assinado, "ganha" quando a 1ª parcela é paga, "perdida" quando a
+ * venda é cancelada. Vendas SÓ ESCREVE aqui, nunca lê etapa_kanban de volta pra decidir nada — o
+ * Painel de Vendas usa contratos.status, um campo totalmente seu (ver spec seção 3.6). Mesma
+ * coluna que o próprio CRM já escreve (persistencia.ts) — não é arquivo/lógica deles, é só a
+ * tabela núcleo compartilhada, uso já previsto desde o desenho original da spec.
+ */
+export async function sincronizarEtapaKanban(oportunidadeId: string, etapaKanban: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("oportunidades").update({ etapa_kanban: etapaKanban }).eq("id", oportunidadeId);
+  if (error) throw new Error(`Falha ao sincronizar etapa_kanban: ${error.message}`);
+}
+
 export type OportunidadeFechamento = {
   id: string;
   pessoaId: string;

@@ -151,6 +151,19 @@ function mapearContrato(linha: LinhaContratoBruta): Contrato {
   };
 }
 
+export async function buscarContratoPorAssinafyDocumentId(assinafyDocumentId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contratos")
+    .select(SELECT_CONTRATO)
+    .eq("assinafy_document_id", assinafyDocumentId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato por documento Assinafy: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
 export async function buscarContratoPorOportunidade(oportunidadeId: string): Promise<Contrato | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
