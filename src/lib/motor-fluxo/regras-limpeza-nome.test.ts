@@ -4,6 +4,8 @@ import {
   buscarFaixaPreco,
   combinarFaixasPacote,
   combinarParcelas,
+  formatarLabelFaixa,
+  formatarMenuFaixas,
   formatarParcelas,
   type FaixaPreco,
 } from "./regras-limpeza-nome";
@@ -121,5 +123,43 @@ describe("combinarFaixasPacote (pacote Fase 4 — preço por documento, somado)"
 
   it("sem nenhum documento com faixa encontrada, retorna null", () => {
     expect(combinarFaixasPacote([], FAIXAS_PRECOS)).toBeNull();
+  });
+});
+
+describe("formatarLabelFaixa (menu do ln_passo6, correção 18/08/2026)", () => {
+  it("primeira faixa da lista vira 'Menos de X mil' (só o teto)", () => {
+    const faixa: FaixaPreco = { faixaMin: 3000, faixaMax: 10000, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(formatarLabelFaixa(faixa, true)).toBe("Menos de 10 mil");
+  });
+
+  it("faixa do meio vira 'Entre X e Y mil'", () => {
+    const faixa: FaixaPreco = { faixaMin: 10000, faixaMax: 30000, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(formatarLabelFaixa(faixa, false)).toBe("Entre 10 mil e 30 mil");
+  });
+
+  it("faixa sem teto (faixaMax null) vira 'Acima de X mil'", () => {
+    const faixa: FaixaPreco = { faixaMin: 500000, faixaMax: null, precoCheio: null, precoAvista: null, parcelasBoletoQtd: null, parcelasBoletoValor: null, parcelasCartaoMax: null, voucherAvista: null, voucherParcelasQtd: null, voucherParcelasValor: null };
+    expect(formatarLabelFaixa(faixa, false)).toBe("Acima de 500 mil");
+  });
+});
+
+describe("formatarMenuFaixas", () => {
+  it("gera lista numerada com emoji, ordenada por faixaMin, com as 5 faixas reais do produto", () => {
+    const menu = formatarMenuFaixas(FAIXAS_PRECOS);
+    expect(menu).toBe(
+      [
+        "1️⃣ Menos de 10 mil",
+        "2️⃣ Entre 10 mil e 30 mil",
+        "3️⃣ Entre 30 mil e 50 mil",
+        "4️⃣ Entre 50 mil e 100 mil",
+        "5️⃣ Entre 100 mil e 500 mil",
+      ].join("\n"),
+    );
+  });
+
+  it("ordena mesmo se a lista de entrada vier fora de ordem", () => {
+    const [a, b, c, d, e] = FAIXAS_PRECOS;
+    const foraDeOrdem = [c, a, e, b, d];
+    expect(formatarMenuFaixas(foraDeOrdem)).toBe(formatarMenuFaixas(FAIXAS_PRECOS));
   });
 });

@@ -88,6 +88,40 @@ export function formatarReais(valor: number): string {
   });
 }
 
+/** Valor em milhares arredondado, sem casas decimais — "10000" -> "10 mil". Toda faixa de preço hoje é múltiplo exato de 1000 (ver migration 013). */
+function formatarMil(valor: number): string {
+  return `${Math.round(valor / 1000)} mil`;
+}
+
+const EMOJIS_NUMERO = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+
+/**
+ * Rótulo de uma faixa pra menu numerado (checkpoint ln_passo6, correção 18/08/2026 — Luiz pediu
+ * menu fechado em vez de pergunta de texto livre). A primeira faixa da lista (menor `faixaMin`) é
+ * descrita só pelo teto ("Menos de X mil"), a última com `faixaMax` nulo só pelo piso ("Acima de X
+ * mil"); as do meio, "Entre X e Y mil".
+ */
+export function formatarLabelFaixa(faixa: FaixaPreco, ehPrimeira: boolean): string {
+  if (ehPrimeira) return `Menos de ${formatarMil(faixa.faixaMax ?? faixa.faixaMin)}`;
+  if (faixa.faixaMax === null) return `Acima de ${formatarMil(faixa.faixaMin)}`;
+  return `Entre ${formatarMil(faixa.faixaMin)} e ${formatarMil(faixa.faixaMax)}`;
+}
+
+/**
+ * Lista numerada (1️⃣, 2️⃣...) de todas as faixas, ordenadas por `faixaMin` — usada tanto na
+ * mensagem que o lead vê (criarResolverMensagensDinamicas) quanto no prompt do interpretador de IA
+ * (pra ele conseguir mapear "2" pro intervalo certo), sempre o mesmo texto nos dois lugares.
+ */
+export function formatarMenuFaixas(faixas: FaixaPreco[]): string {
+  const ordenadas = [...faixas].sort((a, b) => a.faixaMin - b.faixaMin);
+  return ordenadas
+    .map((faixa, i) => {
+      const emoji = EMOJIS_NUMERO[i] ?? `${i + 1}.`;
+      return `${emoji} ${formatarLabelFaixa(faixa, i === 0)}`;
+    })
+    .join("\n");
+}
+
 /** Data ISO (YYYY-MM-DD) formatada como DD/MM/AA — usado na mensagem de confirmação de pagamento. */
 export function formatarDataBr(dataISO: string): string {
   const [ano, mes, dia] = dataISO.split("-");
