@@ -125,6 +125,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 ## 3. Avisos entre agentes / sinergias potenciais
 
+- **19/08/2026 (CRM) — 📤 `git push origin main` feito agora — 15 commits que estavam só locais desde 18/08 20h13 foram publicados (`5c65daf..f10adb1`).** Tudo do dia (captura de pagamento, fixes de `obterCliente()`/`abertura_email`, redesenho do `ln_passo6`, buffer pós-mídia) estava rodando SÓ localmente até agora — o WhatsApp real e o `main` do GitHub estavam na versão de ontem à noite. Vercel deve redeployar automaticamente a partir do push. **Se vocês sincronizarem com `main` agora, puxam tudo isso de uma vez.**
+
 - **19/08/2026 (CRM) — 🐛 Luiz reportou mensagens chegando fora de ordem (e mais rápido que antes) no WhatsApp real — investigado, NÃO é do redesenho do ln_passo6.** Testei com dados reais do banco antes de concluir qualquer coisa: as 3 mensagens de abertura (foto + saudação + "Com quem eu falo?", checkpoint `saudacao_inicial`/`pergunta_nome` — não é ln_passo6, não toquei nele hoje) chegaram na ordem trocada no aparelho do lead.
   - **Descartado:** não é o meu commit de hoje (`git diff` confere — não toquei em `enviar.ts`, `zapster.ts` nem no checkpoint de abertura).
   - **Checado na doc oficial da Zapster** (Luiz pediu pra conferir antes de mexer): não existe controle nativo de delay/fila sub-minuto — só `send_at` pra agendamento (mínimo 1 min no futuro, não serve pra espaçar balões de um script). Confirma que o `enviarSequenciaWhatsapp` (`src/lib/whatsapp/enviar.ts`) — nosso loop sequencial com delay — é o único controle que temos.
