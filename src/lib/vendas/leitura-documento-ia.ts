@@ -11,6 +11,7 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { TIPOS_DOCUMENTO_PESSOA } from "./tipos-documento";
 
 const MODELO_LEITURA_DOCUMENTO = "claude-haiku-4-5-20251001";
 
@@ -39,8 +40,14 @@ const FERRAMENTA_LEITURA = {
       bairro: { type: "string", description: "Bairro encontrado. String vazia se não encontrado." },
       cidade: { type: "string", description: "Cidade encontrada. String vazia se não encontrado." },
       uf: { type: "string", description: "UF (2 letras) encontrada. String vazia se não encontrado." },
+      tipoDocumento: {
+        type: "string",
+        enum: TIPOS_DOCUMENTO_PESSOA.map((t) => t.valor),
+        description:
+          'Classifique o tipo do documento entre as opções da lista. Use "outro" se não conseguir identificar com confiança como nenhum dos tipos conhecidos.',
+      },
     },
-    required: ["nome", "documento", "cep", "logradouro", "numero", "bairro", "cidade", "uf"],
+    required: ["nome", "documento", "cep", "logradouro", "numero", "bairro", "cidade", "uf", "tipoDocumento"],
   },
 };
 
@@ -55,6 +62,7 @@ export type DadosExtraidosDocumento = {
   bairro: string;
   cidade: string;
   uf: string;
+  tipoDocumento: string;
 };
 
 export async function lerDocumentoComIA(arquivos: ArquivoParaLeitura[]): Promise<DadosExtraidosDocumento | null> {
@@ -81,7 +89,7 @@ export async function lerDocumentoComIA(arquivos: ArquivoParaLeitura[]): Promise
 
   const blocoTexto: Anthropic.Messages.ContentBlockParam = {
     type: "text",
-    text: "Estas imagens/documento(s) são de um documento de identificação ou comprovante de endereço brasileiro (RG, CNH, cartão CNPJ, comprovante de residência, etc. — pode ser mais de uma imagem do mesmo documento, ex.: frente e verso). Extraia nome/razão social, CPF/CNPJ e endereço, quando existirem. Use a ferramenta pra registrar o resultado — nunca invente um dado que não está visível, deixe o campo vazio nesse caso.",
+    text: "Estas imagens/documento(s) são de um documento de identificação ou comprovante de endereço brasileiro (RG, CNH, cartão CNPJ, comprovante de residência, etc. — pode ser mais de uma imagem do mesmo documento, ex.: frente e verso). Extraia nome/razão social, CPF/CNPJ e endereço, quando existirem, e classifique o tipo do documento. Use a ferramenta pra registrar o resultado — nunca invente um dado que não está visível, deixe o campo vazio nesse caso (exceto tipoDocumento, que deve sempre vir preenchido, usando \"outro\" quando não identificar com confiança).",
   };
 
   try {

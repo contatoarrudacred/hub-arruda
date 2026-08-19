@@ -41,7 +41,17 @@ export async function buscarRazaoSocialAction(cnpj: string): Promise<{ razaoSoci
 export type EntradaPacote = { documento: string; nomeRazaoSocial: string };
 
 export type EntradaFinanceiro =
-  | { especie: "boleto_pix"; formaPagamento: "avista" | "parcelado"; primeiraParcela: string; qtdParcelas: number; diaAncora: 1 | 10 | 20 }
+  | {
+      especie: "boleto_pix";
+      formaPagamento: "avista" | "parcelado";
+      primeiraParcela: string;
+      qtdParcelas: number;
+      diaAncora: 1 | 10 | 20;
+      // Tabela de parcelas já ajustada manualmente na tela (valor/vencimento por parcela) — quando
+      // presente, usada como está em vez de recalcular via calcularParcelasContrato no server. Sem
+      // isso, qualquer edição feita na tabela se perdia — o server sempre recalculava do zero.
+      parcelas?: { numero: number; valor: number; vencimento: string }[];
+    }
   | { especie: "cartao"; maxParcelas: number };
 
 type RepresentanteEntrada = {
@@ -164,10 +174,18 @@ export async function confirmarNovaOportunidadeAction(
       formaPagamento = entrada.financeiro.formaPagamento;
       metodoPagamento = "boleto_pix";
       const primeiraParcela = new Date(entrada.financeiro.primeiraParcela);
-      parcelas =
-        formaPagamento === "avista"
-          ? [{ numero: 1, valor: valorTotal, vencimento: primeiraParcela }]
-          : calcularParcelasContrato(valorTotal, entrada.financeiro.qtdParcelas, primeiraParcela, entrada.financeiro.diaAncora);
+      if (formaPagamento === "avista") {
+        parcelas = [{ numero: 1, valor: valorTotal, vencimento: primeiraParcela }];
+      } else if (entrada.financeiro.parcelas && entrada.financeiro.parcelas.length > 0) {
+        // Tabela editada manualmente na tela — usa como está, não recalcula.
+        parcelas = entrada.financeiro.parcelas.map((p) => ({
+          numero: p.numero,
+          valor: p.valor,
+          vencimento: new Date(`${p.vencimento}T00:00:00`),
+        }));
+      } else {
+        parcelas = calcularParcelasContrato(valorTotal, entrada.financeiro.qtdParcelas, primeiraParcela, entrada.financeiro.diaAncora);
+      }
     } else {
       formaPagamento = "parcelado";
       metodoPagamento = "cartao";

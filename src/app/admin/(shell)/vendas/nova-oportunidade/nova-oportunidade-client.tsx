@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
 import { LeitorDocumentoIA } from "@/components/vendas/leitor-documento-ia";
 import { UploadDocumentosPessoa } from "@/components/vendas/upload-documentos-pessoa";
+import { salvarDocumentosExtraidosAction } from "@/components/vendas/upload-pessoa-actions";
 import { calcularParcelasContrato, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { tipoPessoaPorDocumento } from "@/lib/vendas/documento";
@@ -38,6 +39,20 @@ function somaParcelasBateComTotal(parcelas: Parcela[], valorTotal: number): bool
   const somaParcelas = Math.round(parcelas.reduce((acc, p) => acc + p.valor, 0) * 100) / 100;
   const valorTotalArredondado = Math.round(valorTotal * 100) / 100;
   return somaParcelas === valorTotalArredondado;
+}
+
+type ParcelaForm = { numero: number; valor: string; vencimento: string };
+
+function parcelasParaForm(parcelas: Parcela[]): ParcelaForm[] {
+  return parcelas.map((p) => ({
+    numero: p.numero,
+    valor: p.valor.toFixed(2),
+    vencimento: p.vencimento.toISOString().slice(0, 10),
+  }));
+}
+
+function formParaParcelas(form: ParcelaForm[]): Parcela[] {
+  return form.map((p) => ({ numero: p.numero, valor: Number(p.valor.replace(",", ".")) || 0, vencimento: new Date(`${p.vencimento}T00:00:00`) }));
 }
 
 export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVenda[] }) {
@@ -80,11 +95,52 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   const [qtdParcelas, setQtdParcelas] = useState("2");
   const [diaAncora, setDiaAncora] = useState<DiaAncora>(10);
   const [maxParcelasCartao, setMaxParcelasCartao] = useState("12");
+  const [parcelasBoleto, setParcelasBoleto] = useState<ParcelaForm[]>([]);
+
+  const valorTotalNumeroPreview = valorTotal.trim() ? Number(valorTotal.replace(",", ".")) : null;
+
+  // Recalcula a tabela de parcelas sempre que qtd/data/dia-âncora/valor mudam — edições manuais numa
+  // linha específica (valor/vencimento) ficam até a próxima mudança de um desses campos, que
+  // reconstrói a tabela do zero. Achado real de teste em produção: essa tabela nunca aparecia,
+  // mesmo já sendo parte do design original da tela.
+  //
+  // Padrão recomendado do React pra "estado derivado, mas com escape hatch pra edição manual":
+  // recalcula durante o render (comparando uma chave com a última vista), não dentro de um
+  // useEffect — evita o ciclo extra de render que o effect causaria.
+  const chaveRecalculoParcelas = `${especiePagamento}|${formaPagamento}|${primeiraParcela}|${qtdParcelas}|${diaAncora}|${valorTotalNumeroPreview}`;
+  const [chaveRecalculoAnterior, setChaveRecalculoAnterior] = useState(chaveRecalculoParcelas);
+  if (chaveRecalculoParcelas !== chaveRecalculoAnterior) {
+    setChaveRecalculoAnterior(chaveRecalculoParcelas);
+    const qtd = Number(qtdParcelas);
+    if (
+      especiePagamento === "boleto_pix" &&
+      formaPagamento === "parcelado" &&
+      primeiraParcela &&
+      valorTotalNumeroPreview &&
+      valorTotalNumeroPreview > 0 &&
+      Number.isInteger(qtd) &&
+      qtd >= 2
+    ) {
+      const calculadas = calcularParcelasContrato(valorTotalNumeroPreview, qtd, new Date(`${primeiraParcela}T00:00:00`), diaAncora);
+      setParcelasBoleto(parcelasParaForm(calculadas));
+    } else {
+      setParcelasBoleto([]);
+    }
+  }
+
+  function atualizarParcelaBoleto(indice: number, campoAlterado: "valor" | "vencimento", valor: string) {
+    setParcelasBoleto((atual) => atual.map((p, i) => (i === indice ? { ...p, [campoAlterado]: valor } : p)));
+  }
 
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [avisoDocumentoIA, setAvisoDocumentoIA] = useState<string | null>(null);
+  const [mostrarTranscricaoIA, setMostrarTranscricaoIA] = useState(false);
 
-  async function aoDigitarDocumento(valor: string) {
+  /** Devolve o pessoaId resolvido (ou null) — não só atualiza estado. Necessário pra quem chama
+   * (ex.: o Leitor de Documento IA) poder agir imediatamente com o resultado, sem depender de ler
+   * `pessoaId` do closure logo após o await (o setState não atualiza essa variável capturada). */
+  async function aoDigitarDocumento(valor: string): Promise<string | null> {
     const formatado = formatarCpfCnpj(valor);
     setDocumento(formatado);
     // Documento do comprador mudou — descarta qualquer representante já resolvido/preenchido pro
@@ -100,13 +156,13 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     if (!tipo) {
       buscaDocIdRef.current++; // invalida qualquer busca anterior ainda em andamento
       setBuscandoPessoa(false); // sem isso, "Buscando..." podia ficar preso na tela (achado real)
-      return;
+      return null;
     }
 
     const idAtual = ++buscaDocIdRef.current;
     setBuscandoPessoa(true);
     const resultado: ResultadoBuscarPessoa = await buscarPessoaPorDocumentoAction(formatado);
-    if (idAtual !== buscaDocIdRef.current) return; // uma busca mais recente já assumiu, descarta esta resposta
+    if (idAtual !== buscaDocIdRef.current) return null; // uma busca mais recente já assumiu, descarta esta resposta
     if (resultado.encontrada) {
       setPessoaId(resultado.id);
       setDadosContrato({
@@ -117,17 +173,20 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         estadoCivil: resultado.estadoCivil ?? "",
         profissao: resultado.profissao ?? "",
       });
+      setBuscandoPessoa(false);
+      return resultado.id;
+    }
+
+    setPessoaId(null);
+    if (tipo === "pj") {
+      const razaoSocial = await buscarRazaoSocialAction(formatado);
+      if (idAtual !== buscaDocIdRef.current) return null;
+      setDadosContrato({ ...dadosContratoVazios, nome: razaoSocial?.razaoSocial ?? "" });
     } else {
-      setPessoaId(null);
-      if (tipo === "pj") {
-        const razaoSocial = await buscarRazaoSocialAction(formatado);
-        if (idAtual !== buscaDocIdRef.current) return;
-        setDadosContrato({ ...dadosContratoVazios, nome: razaoSocial?.razaoSocial ?? "" });
-      } else {
-        setDadosContrato(dadosContratoVazios);
-      }
+      setDadosContrato(dadosContratoVazios);
     }
     setBuscandoPessoa(false);
+    return null;
   }
 
   /** Wrapper com debounce (300ms) pro `onChange` do campo de documento digitado à mão — não usar
@@ -219,14 +278,15 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         };
 
         // Validação de soma de parcelas == valor total antes de submeter (evita round-trip só pra
-        // descobrir que não bate) — mesma lógica de arredondamento em centavos do Fechamento de Venda.
-        const parcelas: Parcela[] =
-          formaPagamento === "avista"
-            ? [{ numero: 1, valor: valorTotalNumero, vencimento: new Date(primeiraParcela) }]
-            : calcularParcelasContrato(valorTotalNumero, Number(qtdParcelas), new Date(primeiraParcela), diaAncora);
-        if (!somaParcelasBateComTotal(parcelas, valorTotalNumero)) {
-          setErro("A soma das parcelas não bate com o valor total.");
-          return;
+        // descobrir que não bate) — usa a tabela como está na tela (com edições manuais, se houver),
+        // não uma recalculada do zero, já que é isso que vai ser enviado de verdade.
+        if (formaPagamento === "parcelado") {
+          const parcelasEditadas = formParaParcelas(parcelasBoleto);
+          if (!somaParcelasBateComTotal(parcelasEditadas, valorTotalNumero)) {
+            setErro("A soma das parcelas não bate com o valor total. Ajuste a tabela de parcelas abaixo.");
+            return;
+          }
+          financeiro.parcelas = parcelasBoleto.map((p) => ({ numero: p.numero, valor: Number(p.valor.replace(",", ".")) || 0, vencimento: p.vencimento }));
         }
       } else {
         const maxParcelas = Number(maxParcelasCartao);
@@ -285,7 +345,87 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-8">
-      <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Nova Oportunidade</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Nova Oportunidade</h1>
+        <button
+          type="button"
+          onClick={() => setMostrarTranscricaoIA((v) => !v)}
+          title="Ler CPF/CNPJ, nome e endereço automaticamente a partir de uma foto/PDF de um documento"
+          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            mostrarTranscricaoIA
+              ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"
+              : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }`}
+        >
+          <span>✨</span> Transcrição com IA
+        </button>
+      </div>
+
+      {mostrarTranscricaoIA && (
+        <div className={secao}>
+          <LeitorDocumentoIA
+            onDadosExtraidos={async (dados, arquivosLidos) => {
+              setAvisoDocumentoIA(null);
+              const ehComprovanteResidencia = dados.tipoDocumento === "comprovante_residencia";
+
+              // Comprovante de residência costuma estar em nome de outra pessoa da família (cônjuge,
+              // pai/mãe) mesmo quando o endereço é mesmo do cliente — nesse caso NÃO mexe em
+              // nome/documento (só o endereço vale), pra não trocar a identidade de quem está sendo
+              // cadastrado. Pedido explícito do Luiz, achado testando em produção.
+              let pessoaIdResolvido = pessoaId;
+              if (!ehComprovanteResidencia) {
+                // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
+                // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso
+                // do leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que
+                // acabou de ser preenchido aqui (achado real da revisão final da branch).
+                if (dados.documento) pessoaIdResolvido = await aoDigitarDocumento(dados.documento);
+                if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
+              }
+
+              const temEnderecoExtraido = [dados.cep, dados.logradouro, dados.bairro, dados.cidade].some((v) => v);
+              if (temEnderecoExtraido) {
+                const preencherEndereco = (atual: ValorEndereco): ValorEndereco => ({
+                  ...atual,
+                  cep: dados.cep || atual.cep,
+                  logradouro: dados.logradouro || atual.logradouro,
+                  numero: dados.numero || atual.numero,
+                  bairro: dados.bairro || atual.bairro,
+                  cidade: dados.cidade || atual.cidade,
+                  uf: dados.uf || atual.uf,
+                });
+                // Numa venda PJ o endereço da EMPRESA não é mais coletado (ver caixa "Dados da
+                // Empresa" abaixo) — o endereço extraído só faz sentido pro representante legal, a
+                // pessoa física de verdade nesse fluxo.
+                if (ehPj) {
+                  setEnderecoRepresentante(preencherEndereco);
+                } else {
+                  setEndereco(preencherEndereco);
+                }
+              }
+
+              if (ehComprovanteResidencia) {
+                setAvisoDocumentoIA(
+                  "Endereço preenchido a partir do comprovante de residência enviado. Comprovantes às vezes estão em nome de outra pessoa da família (cônjuge, pai/mãe) — confira se o endereço corresponde mesmo a quem está sendo cadastrado.",
+                );
+              }
+
+              // Salva os arquivos lidos junto com o cadastro, classificados pela própria IA — só
+              // quando a pessoa já é conhecida nesse momento (pessoa nova ainda não tem id; o aviso
+              // na seção de documentos já explica que fica pra depois, na tela de Detalhes da Venda).
+              if (pessoaIdResolvido && arquivosLidos.length > 0) {
+                const formData = new FormData();
+                arquivosLidos.forEach((arquivo) => formData.append("arquivos", arquivo));
+                await salvarDocumentosExtraidosAction(pessoaIdResolvido, dados.tipoDocumento, formData);
+              }
+            }}
+          />
+          {avisoDocumentoIA && (
+            <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+              ⚠ {avisoDocumentoIA}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className={secao}>
         <label className={rotulo}>Serviço</label>
@@ -306,70 +446,74 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 
       <div className={secao}>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Quem assina o contrato</h2>
-        <LeitorDocumentoIA
-          onDadosExtraidos={async (dados) => {
-            // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
-            // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso do
-            // leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que acabou de
-            // ser preenchido aqui (achado real da revisão final da branch).
-            if (dados.documento) await aoDigitarDocumento(dados.documento);
-            if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
-            setEndereco((atual) => ({
-              ...atual,
-              cep: dados.cep || atual.cep,
-              logradouro: dados.logradouro || atual.logradouro,
-              numero: dados.numero || atual.numero,
-              bairro: dados.bairro || atual.bairro,
-              cidade: dados.cidade || atual.cidade,
-              uf: dados.uf || atual.uf,
-            }));
-          }}
-        />
-        <label className={rotulo}>CPF/CNPJ</label>
-        <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
-        {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
-        {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Pessoa já cadastrada — dados carregados.</p>}
-        <label className={rotulo}>Nome completo / Razão social</label>
-        <input
-          className={campo}
-          value={dadosContrato.nome}
-          onChange={(e) => setDadosContrato({ ...dadosContrato, nome: e.target.value })}
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className={rotulo}>RG</label>
-            <input className={campo} value={dadosContrato.rg} onChange={(e) => setDadosContrato({ ...dadosContrato, rg: e.target.value })} />
-          </div>
-          <div>
-            <label className={rotulo}>Estado civil</label>
+
+        {ehPj ? (
+          <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Dados da Empresa</h3>
+            <label className={rotulo}>CNPJ</label>
+            <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
+            {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
+            {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Empresa já cadastrada — dados carregados.</p>}
+            <label className={rotulo}>Razão Social</label>
             <input
               className={campo}
-              value={dadosContrato.estadoCivil}
-              onChange={(e) => setDadosContrato({ ...dadosContrato, estadoCivil: e.target.value })}
+              value={dadosContrato.nome}
+              onChange={(e) => setDadosContrato({ ...dadosContrato, nome: e.target.value })}
             />
           </div>
-          <div>
-            <label className={rotulo}>Profissão</label>
+        ) : (
+          <>
+            <label className={rotulo}>CPF/CNPJ</label>
+            <input className={campo} value={documento} onChange={(e) => aoMudarDocumento(e.target.value)} />
+            {buscandoPessoa && <p className="text-xs text-zinc-500">Buscando...</p>}
+            {!buscandoPessoa && pessoaId && <p className="text-xs text-emerald-600 dark:text-emerald-400">Pessoa já cadastrada — dados carregados.</p>}
+            <label className={rotulo}>Nome completo</label>
             <input
               className={campo}
-              value={dadosContrato.profissao}
-              onChange={(e) => setDadosContrato({ ...dadosContrato, profissao: e.target.value })}
+              value={dadosContrato.nome}
+              onChange={(e) => setDadosContrato({ ...dadosContrato, nome: e.target.value })}
             />
-          </div>
-          <div>
-            <label className={rotulo}>E-mail</label>
-            <input className={campo} value={dadosContrato.email} onChange={(e) => setDadosContrato({ ...dadosContrato, email: e.target.value })} />
-          </div>
-          <div>
-            <label className={rotulo}>WhatsApp</label>
-            <input
-              className={campo}
-              value={dadosContrato.whatsapp}
-              onChange={(e) => setDadosContrato({ ...dadosContrato, whatsapp: e.target.value })}
-            />
-          </div>
-        </div>
-        <CampoEndereco value={endereco} onChange={setEndereco} />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={rotulo}>RG</label>
+                <input className={campo} value={dadosContrato.rg} onChange={(e) => setDadosContrato({ ...dadosContrato, rg: e.target.value })} />
+              </div>
+              <div>
+                <label className={rotulo}>Estado civil</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.estadoCivil}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, estadoCivil: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>Profissão</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.profissao}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, profissao: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>E-mail</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.email}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, email: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={rotulo}>WhatsApp</label>
+                <input
+                  className={campo}
+                  value={dadosContrato.whatsapp}
+                  onChange={(e) => setDadosContrato({ ...dadosContrato, whatsapp: e.target.value })}
+                />
+              </div>
+            </div>
+            <CampoEndereco value={endereco} onChange={setEndereco} />
+          </>
+        )}
 
         {ehPj && (
           <div className="space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
@@ -536,6 +680,63 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
                 value={maxParcelasCartao}
                 onChange={(e) => setMaxParcelasCartao(e.target.value)}
               />
+            </div>
+          )}
+
+          {especiePagamento === "boleto_pix" && formaPagamento === "parcelado" && parcelasBoleto.length > 0 && (
+            <div className="space-y-1 pt-2">
+              <p className={rotulo}>
+                Parcelas — ajuste valor ou data de uma parcela específica se precisar (ex.: 1ª parcela menor). Mudar
+                quantidade/data-base/dia-âncora acima recalcula a tabela do zero.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400">
+                      <th className="py-1 pr-2">Nº</th>
+                      <th className="py-1 pr-2">Vencimento</th>
+                      <th className="py-1">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parcelasBoleto.map((p, indice) => (
+                      <tr key={p.numero} className="border-t border-zinc-100 dark:border-zinc-800">
+                        <td className="py-1 pr-2 text-zinc-500 dark:text-zinc-400">{p.numero}</td>
+                        <td className="py-1 pr-2">
+                          <input
+                            className={campo}
+                            type="date"
+                            value={p.vencimento}
+                            onChange={(e) => atualizarParcelaBoleto(indice, "vencimento", e.target.value)}
+                          />
+                        </td>
+                        <td className="py-1">
+                          <input
+                            className={campo}
+                            type="number"
+                            step="0.01"
+                            value={p.valor}
+                            onChange={(e) => atualizarParcelaBoleto(indice, "valor", e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Soma:{" "}
+                {formParaParcelas(parcelasBoleto)
+                  .reduce((acc, p) => acc + p.valor, 0)
+                  .toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                {valorTotalNumeroPreview != null && (
+                  <>
+                    {" "}
+                    de{" "}
+                    {valorTotalNumeroPreview.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </>
+                )}
+              </p>
             </div>
           )}
         </div>
