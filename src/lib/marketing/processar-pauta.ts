@@ -80,8 +80,13 @@ export async function cotaDiariaAtingida(propriedadeId: string, limite: number |
 // fallback pra não quebrar propriedade nenhuma configurada só por env). Nome de variável de
 // ambiente não aceita hífen, daí a troca por underscore no nome da env própria.
 export function credenciaisWordPressDaPropriedade(propriedade: PropriedadeCarregada): CredenciaisWordPress {
+  // `usuario` checado explicitamente (não só a existência do objeto): a tela de Propriedades
+  // Digitais permite salvar só a senha sem usuário preenchido (campo write-only, ver
+  // salvarCredencialCanal) — sem esta checagem, esse caso silenciosamente publicaria com usuário
+  // vazio e a senha real, pulando os dois fallbacks e o console.warn (achado da revisão desta
+  // mesma correção).
   const credencialBanco = propriedade.credenciaisCanais?.wordpress;
-  if (credencialBanco) {
+  if (credencialBanco?.usuario && credencialBanco.senhaCifrada) {
     return { usuario: credencialBanco.usuario, senhaApp: decifrar(credencialBanco.senhaCifrada) };
   }
 

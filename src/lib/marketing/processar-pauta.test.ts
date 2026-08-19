@@ -155,6 +155,22 @@ describe("credenciaisWordPressDaPropriedade", () => {
     expect(credenciais).toEqual({ usuario: "admin-banco", senhaApp: "senha-secreta-do-banco" });
   });
 
+  // Achado da revisão desta correção: a tela de Propriedades Digitais permite salvar só a senha
+  // sem usuário (campo write-only) — sem checar `usuario` explicitamente, esse caso silenciosamente
+  // publicaria com usuário vazio e a senha real, pulando os dois fallbacks.
+  it("ignora a credencial do banco e cai pro fallback quando ela tem senha mas usuário vazio", () => {
+    vi.stubEnv(`WORDPRESS_USUARIO_${SUFIXO_ENV}`, "usuario-env-proprio");
+    vi.stubEnv(`WORDPRESS_SENHA_APP_${SUFIXO_ENV}`, "senha-env-propria");
+    const propriedadeComUsuarioVazio = {
+      ...propriedadeFalsa,
+      credenciaisCanais: { wordpress: { usuario: "", senhaCifrada: cifrar("senha-real-mas-sem-usuario") } },
+    };
+
+    const credenciais = credenciaisWordPressDaPropriedade(propriedadeComUsuarioVazio);
+
+    expect(credenciais).toEqual({ usuario: "usuario-env-proprio", senhaApp: "senha-env-propria" });
+  });
+
   it("cai pra env própria da propriedade quando não há credencial no banco", () => {
     vi.stubEnv(`WORDPRESS_USUARIO_${SUFIXO_ENV}`, "usuario-env-proprio");
     vi.stubEnv(`WORDPRESS_SENHA_APP_${SUFIXO_ENV}`, "senha-env-propria");
