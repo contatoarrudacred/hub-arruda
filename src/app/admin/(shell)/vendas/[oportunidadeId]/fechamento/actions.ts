@@ -222,7 +222,7 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
     const pdf = await gerarPdfContrato(html);
     const { path } = await uploadPdfContrato(contratoId, pdf);
     const pdfUrl = await gerarUrlAssinadaContrato(path);
-    await atualizarStatusContrato(contratoId, "gerado", { pdfUrl: path });
+    await atualizarStatusContrato(contratoId, "contrato_gerado", { pdfUrl: path });
 
     return { sucesso: true, contratoId, pdfUrl };
   } catch (erro) {

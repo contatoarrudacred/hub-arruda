@@ -6,7 +6,17 @@ export type FormaPagamento = "avista" | "parcelado";
 // (docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md, seção 1) —
 // mesmas duas opções que o bot do CRM oferece via conversas.dados.detalhe_pagamento.forma.
 export type MetodoPagamento = "boleto_pix" | "cartao";
-export type StatusContrato = "gerado" | "enviado" | "assinado" | "recusado" | "cancelado";
+// Estágio da venda no Painel de Vendas (quadro-branco do Vendas) — SEM relação com
+// oportunidades.etapa_kanban (kanban do CRM, tabela e dados diferentes, nunca lido daqui). Nos
+// marcos-chave o Vendas empurra uma atualização pontual pro etapa_kanban, nunca o contrário.
+export type StatusContrato =
+  | "contrato_gerado"
+  | "aguardando_assinatura"
+  | "assinado"
+  | "parcelas_emitidas"
+  | "aguardando_pagamento"
+  | "concluida"
+  | "cancelada";
 
 export type EntradaCriarContrato = {
   oportunidadeId: string;
@@ -35,7 +45,7 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
       pessoa_signatario_id: entrada.pessoaSignatarioId,
       pessoa_arrudacred_signatario_id: entrada.pessoaArrudaCredSignatarioId,
       fornecedor_id: entrada.fornecedorId,
-      status: "gerado",
+      status: "contrato_gerado",
       forma_pagamento: entrada.formaPagamento,
       metodo_pagamento: entrada.metodoPagamento,
       parcelas_qtd: entrada.parcelas.length,
@@ -70,6 +80,7 @@ export type Contrato = {
   id: string;
   oportunidadeId: string;
   status: StatusContrato;
+  motivoCancelamento: string | null;
   pdfUrl: string | null;
   formaPagamento: FormaPagamento;
   metodoPagamento: MetodoPagamento;
@@ -91,6 +102,7 @@ type LinhaContratoBruta = {
   id: string;
   oportunidade_id: string;
   status: StatusContrato;
+  motivo_cancelamento: string | null;
   pdf_url: string | null;
   forma_pagamento: FormaPagamento;
   metodo_pagamento: MetodoPagamento;
@@ -100,24 +112,15 @@ type LinhaContratoBruta = {
   contrato_parcelas: LinhaContratoParcelaBruta[] | null;
 };
 
-export async function buscarContratoPorOportunidade(oportunidadeId: string): Promise<Contrato | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("contratos")
-    .select(
-      "id, oportunidade_id, status, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, contrato_parcelas(id, numero, valor, vencimento_previsto, status)",
-    )
-    .eq("oportunidade_id", oportunidadeId)
-    .maybeSingle();
-  if (error) throw new Error(`Falha ao buscar contrato: ${error.message}`);
-  if (!data) return null;
+const SELECT_CONTRATO =
+  "id, oportunidade_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
 
-  const linha = data as unknown as LinhaContratoBruta;
-
+function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
     id: linha.id,
     oportunidadeId: linha.oportunidade_id,
     status: linha.status,
+    motivoCancelamento: linha.motivo_cancelamento,
     pdfUrl: linha.pdf_url,
     formaPagamento: linha.forma_pagamento,
     metodoPagamento: linha.metodo_pagamento,
@@ -136,10 +139,32 @@ export async function buscarContratoPorOportunidade(oportunidadeId: string): Pro
   };
 }
 
+export async function buscarContratoPorOportunidade(oportunidadeId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contratos")
+    .select(SELECT_CONTRATO)
+    .eq("oportunidade_id", oportunidadeId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
+export async function buscarContratoPorId(contratoId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("contratos").select(SELECT_CONTRATO).eq("id", contratoId).maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
 export async function atualizarStatusContrato(
   id: string,
   status: StatusContrato,
-  extras?: { pdfUrl?: string; enviadoEm?: string; assinadoEm?: string; assinafyDocumentId?: string },
+  extras?: { pdfUrl?: string; enviadoEm?: string; assinadoEm?: string; assinafyDocumentId?: string; motivoCancelamento?: string },
 ): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase
@@ -150,6 +175,7 @@ export async function atualizarStatusContrato(
       ...(extras?.enviadoEm !== undefined ? { enviado_em: extras.enviadoEm } : {}),
       ...(extras?.assinadoEm !== undefined ? { assinado_em: extras.assinadoEm } : {}),
       ...(extras?.assinafyDocumentId !== undefined ? { assinafy_document_id: extras.assinafyDocumentId } : {}),
+      ...(extras?.motivoCancelamento !== undefined ? { motivo_cancelamento: extras.motivoCancelamento } : {}),
     })
     .eq("id", id);
   if (error) throw new Error(`Falha ao atualizar status do contrato: ${error.message}`);

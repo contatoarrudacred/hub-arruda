@@ -29,8 +29,12 @@ create table contratos (
   pessoa_arrudacred_signatario_id uuid not null references pessoas(id),
   fornecedor_id uuid references pessoas(id),
   pdf_url text,
-  status text not null default 'gerado'
-    check (status in ('gerado', 'enviado', 'assinado', 'recusado', 'cancelado')),
+  status text not null default 'contrato_gerado'
+    check (status in (
+      'contrato_gerado', 'aguardando_assinatura', 'assinado',
+      'parcelas_emitidas', 'aguardando_pagamento', 'concluida', 'cancelada'
+    )),
+  motivo_cancelamento text,
   assinafy_document_id text,
   assinafy_document_status text,
   forma_pagamento text not null check (forma_pagamento in ('avista', 'parcelado')),
@@ -43,7 +47,11 @@ create table contratos (
   updated_at timestamptz not null default now()
 );
 comment on table contratos is
-  '1 Oportunidade = 1 contrato, mesmo em pacote de vários documentos (regra fechada em KANBAN_COMERCIAL_LIMPANOME.md/seção 11 do plano mestre). Gerado pela tela de Fechamento de Venda (spec seção 3.2.1), que completa o detalhe de pagamento que o CRM ainda não captura por completo.';
+  '1 Oportunidade = 1 contrato, mesmo em pacote de vários documentos (regra fechada em KANBAN_COMERCIAL_LIMPANOME.md/seção 11 do plano mestre). Gerado pela tela de Fechamento de Venda (spec seção 3.2.1), que completa o detalhe de pagamento que o CRM ainda não captura por completo. `status` é o estágio da venda no Painel de Vendas — quadro próprio do Vendas, SEM relação com `oportunidades.etapa_kanban` (kanban do CRM, dados diferentes, tabela diferente). Nos marcos-chave (assinado, 1ª parcela paga, cancelada) o Vendas empurra uma atualização pontual pro etapa_kanban da Oportunidade, mas nunca lê/depende dele de volta.';
+comment on column contratos.status is
+  'Estágio da venda: contrato_gerado (PDF pronto, instantâneo) → aguardando_assinatura (enviado à Assinafy) → assinado → parcelas_emitidas (cobrança criada na Asaas, instantâneo) → aguardando_pagamento → concluida (1ª parcela paga) | cancelada (cliente desistiu antes de assinar, ou assinou e não pagou — motivo em motivo_cancelamento).';
+comment on column contratos.motivo_cancelamento is
+  'Preenchido só quando status = cancelada — texto livre (ex.: "cliente desistiu antes de assinar", "recusado pelo signatário", "não pagou a 1ª parcela").';
 comment on column contratos.oportunidade_id is
   'Único — reforça a regra de 1 Oportunidade = 1 contrato.';
 comment on column contratos.pessoa_signatario_id is
