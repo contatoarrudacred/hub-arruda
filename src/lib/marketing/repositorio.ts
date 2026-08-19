@@ -11,11 +11,14 @@ import type {
   EtapaConcluida,
   EtapaEmAndamento,
   EtapaLog,
+  FunilPauta,
   ItemChecklistAdmin,
   ItemChecklistCarregado,
   JanelaPublicacao,
   MatrizAdmin,
   PautaCarregada,
+  PersonaAtiva,
+  PersonaCarregada,
   PersonaFormulario,
   PostAdmin,
   PostCriado,
@@ -26,6 +29,7 @@ import type {
   ResumoVisaoGeral,
   StatusPauta,
   StatusPost,
+  TipoConteudo,
 } from "./tipos";
 
 const CAMPOS_PAUTA =
@@ -519,7 +523,17 @@ export async function salvarMatriz(dados: DadosMatriz): Promise<MatrizAdmin> {
   return mapearMatrizAdmin(data as Parameters<typeof mapearMatrizAdmin>[0]);
 }
 
-export async function carregarPersona(matrizId: string): Promise<PersonaFormulario | null> {
+/**
+ * Renomeada de `carregarPersona` pra `carregarPersonaFormulario` (Fase 3, Task 2, 18/08/2026) —
+ * a Fase 3 introduz um `carregarPersona(personaId): Promise<PersonaCarregada>` novo (modelo de
+ * persona rica, tabela `personas`), e o nome `carregarPersona` já estava ocupado por esta função
+ * antiga (persona de 8 campos em `matrizes_conteudo.eixos.persona`, Fase 2). Duas funções com o
+ * mesmo nome e assinaturas incompatíveis não compilam — o nome novo ficou com o contrato que as
+ * Tasks 3/5/6 (ainda não construídas) já assumem literalmente no plano mestre; esta, marcada
+ * obsoleta pela spec de personas ricas (seção 9, "Pendências" — decidir separadamente o destino
+ * da tela `configuracoes/marketing/personas/`), cedeu o nome.
+ */
+export async function carregarPersonaFormulario(matrizId: string): Promise<PersonaFormulario | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase.from("matrizes_conteudo").select("eixos").eq("id", matrizId).single();
   if (error || !data) throw new Error(`Falha ao carregar persona da matriz ${matrizId}: ${error?.message ?? "não encontrada"}`);
@@ -558,6 +572,154 @@ export async function salvarPersona(matrizId: string, persona: PersonaFormulario
 
   const { error } = await supabase.from("matrizes_conteudo").update({ eixos }).eq("id", matrizId);
   if (error) throw new Error(`Falha ao salvar persona da matriz ${matrizId}: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Fase 3 (personas ricas) — Task 2. Ver
+// docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md seções 3 e 5.
+// Substitui o modelo "1 persona por matriz" (funções acima, PersonaFormulario) por N personas
+// ricas por propriedade (tabela `personas`), sorteadas a cada pauta pelo Estrategista (Task 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Personas ativas da propriedade, prontas pro sorteio ponderado do Estrategista (Task 4) — spec
+ * seção 5. Duas queries: (1) personas ativas da propriedade, (2) TODAS as pautas dessas personas
+ * (persona_id, angulo, created_at) numa única chamada com `.in()`, em vez de 1 query por persona —
+ * evita N+1 quando a propriedade tem muitas personas ativas.
+ *
+ * `angulosProntos` é `angulos_prontos` (jsonb da persona) MENOS o conjunto de ângulos já usados
+ * por ela em `pautas` — subtração de conjunto, não um filtro de linha. `[]` não é erro: é o sinal
+ * que a Task 4 usa pra decidir ir pro fallback de IA (Gerador de Ângulo, Task 3) pra essa persona.
+ *
+ * `usadaPelaUltimaVezEm` é o `created_at` mais recente entre as pautas da persona (comparação de
+ * string funciona porque ISO 8601 com mesma largura ordena lexicograficamente igual a
+ * cronologicamente), ou `null` se a persona nunca gerou pauta — usado pelo sorteio ponderado
+ * "menos usada recentemente tem mais peso" (spec seção 5), decisão que fica na Task 4, não aqui.
+ */
+export async function listarPersonasAtivasComAngulosDisponiveis(propriedadeId: string): Promise<PersonaAtiva[]> {
+  const supabase = createAdminClient();
+  const { data: personas, error: erroPersonas } = await supabase
+    .from("personas")
+    .select("id, nome, angulos_prontos")
+    .eq("propriedade_id", propriedadeId)
+    .eq("ativo", true);
+  if (erroPersonas) throw new Error(`Falha ao listar personas ativas da propriedade ${propriedadeId}: ${erroPersonas.message}`);
+  if (!personas || personas.length === 0) return [];
+
+  const personaIds = personas.map((persona) => persona.id as string);
+  const { data: pautas, error: erroPautas } = await supabase.from("pautas").select("persona_id, angulo, created_at").in("persona_id", personaIds);
+  if (erroPautas) {
+    throw new Error(`Falha ao carregar pautas das personas da propriedade ${propriedadeId}: ${erroPautas.message}`);
+  }
+
+  const angulosUsadosPorPersona = new Map<string, Set<string>>();
+  const ultimoUsoPorPersona = new Map<string, string>();
+  for (const pauta of pautas ?? []) {
+    const personaId = pauta.persona_id as string;
+    const angulo = pauta.angulo as string;
+    const createdAt = pauta.created_at as string;
+
+    const angulosUsados = angulosUsadosPorPersona.get(personaId) ?? new Set<string>();
+    angulosUsados.add(angulo);
+    angulosUsadosPorPersona.set(personaId, angulosUsados);
+
+    const ultimoAtual = ultimoUsoPorPersona.get(personaId);
+    if (!ultimoAtual || createdAt > ultimoAtual) ultimoUsoPorPersona.set(personaId, createdAt);
+  }
+
+  return personas.map((persona) => {
+    const personaId = persona.id as string;
+    const angulosProntos = (persona.angulos_prontos as string[]) ?? [];
+    const angulosUsados = angulosUsadosPorPersona.get(personaId) ?? new Set<string>();
+    return {
+      id: personaId,
+      nome: persona.nome as string,
+      angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo)),
+      usadaPelaUltimaVezEm: ultimoUsoPorPersona.get(personaId) ?? null,
+    };
+  });
+}
+
+function mapearPersonaCarregada(data: { id: string; nome: string; angulos_prontos: unknown; conteudo_completo: string }): PersonaCarregada {
+  return {
+    id: data.id,
+    nome: data.nome,
+    angulosProntos: (data.angulos_prontos as string[]) ?? [],
+    // Não computado aqui (exigiria uma 2ª query agregando pautas, igual a
+    // listarPersonasAtivasComAngulosDisponiveis) — nenhum consumidor de carregarPersona (Gerador
+    // de Ângulo, Task 3; Escritor, Task 5) usa usadaPelaUltimaVezEm, só conteudoCompleto. Quem
+    // precisa do sorteio ponderado usa listarPersonasAtivasComAngulosDisponiveis, que já calcula.
+    usadaPelaUltimaVezEm: null,
+    conteudoCompleto: data.conteudo_completo,
+  };
+}
+
+/** Persona completa (com `conteudoCompleto`) pra uma persona já escolhida — usada pelo Gerador de
+ * Ângulo (Task 3, fallback de IA) e pelo Escritor (Task 5, prompt principal, spec seção 7). */
+export async function carregarPersona(personaId: string): Promise<PersonaCarregada> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("personas").select("id, nome, angulos_prontos, conteudo_completo").eq("id", personaId).single();
+  if (error || !data) throw new Error(`Falha ao carregar persona ${personaId}: ${error?.message ?? "não encontrada"}`);
+  return mapearPersonaCarregada(data as Parameters<typeof mapearPersonaCarregada>[0]);
+}
+
+/**
+ * Todos os ângulos já registrados em `pautas` pra essa persona — prontos do Bloco 11 E gerados
+ * por IA em ciclos anteriores, sem distinção (spec seção 5: "cobre tanto os ângulos prontos
+ * quanto os gerados por IA em ciclos anteriores"). Usado pelo fallback de IA (Gerador de Ângulo,
+ * Task 3) pra nunca repetir um ângulo. Dedup em JS (`Set`), não `distinct` do PostgREST — mesma
+ * decisão de agregação em JS já usada em carregarDuracaoMediaPorEtapa, mantém o fake do query
+ * builder simples (sem precisar de um método `.distinct()` que hoje não existe nele).
+ */
+export async function carregarAngulosUsadosPorPersona(personaId: string): Promise<string[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("pautas").select("angulo").eq("persona_id", personaId);
+  if (error) throw new Error(`Falha ao carregar ângulos usados pela persona ${personaId}: ${error.message}`);
+  return Array.from(new Set((data ?? []).map((linha) => linha.angulo as string)));
+}
+
+/**
+ * Cria uma pauta diretamente a partir de uma persona sorteada (Estrategista, Task 4) — spec
+ * seção 5. Desvio deliberado do caminho antigo (pauta nasce "pendente" e só vira "em_producao"
+ * quando o cron a seleciona via marcarPautaEmProducao, em selecionarProximaPautaPendente): aqui a
+ * pauta nasce DIRETO em "em_producao". Não existe "esperar na fila" neste caminho — o
+ * Estrategista já decidiu produzir agora, no mesmo ciclo em que a criou; gravar "pendente" e
+ * imediatamente sobrescrever pra "em_producao" seria uma segunda escrita sem propósito.
+ *
+ * `geografia`: sempre `null` — decisão explícita da spec (seção 9, Pendências): personas não têm
+ * campo estruturado de geografia (só aparece em texto livre na Ficha Rápida), extrair dali não é
+ * confiável o suficiente pra automatizar.
+ *
+ * `prioridade_score`: omitido do payload de insert — usa o default da coluna (0), igual a toda
+ * pauta criada hoje (nenhum caminho do sistema seta esse campo explicitamente ainda).
+ */
+export async function criarPautaDePersona(params: {
+  matrizConteudoId: string;
+  personaId: string;
+  angulo: string;
+  palavraChavePrincipal: string;
+  palavrasSecundarias: string[];
+  funil: FunilPauta;
+  tipoConteudo: TipoConteudo;
+}): Promise<PautaCarregada> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("pautas")
+    .insert({
+      matriz_conteudo_id: params.matrizConteudoId,
+      persona_id: params.personaId,
+      angulo: params.angulo,
+      palavra_chave_principal: params.palavraChavePrincipal,
+      palavras_secundarias: params.palavrasSecundarias,
+      funil: params.funil,
+      tipo_conteudo: params.tipoConteudo,
+      geografia: null,
+      status: "em_producao",
+    })
+    .select(CAMPOS_PAUTA)
+    .single();
+  if (error || !data) throw new Error(`Falha ao criar pauta a partir da persona ${params.personaId}: ${error?.message ?? "sem retorno"}`);
+  return mapearPauta(data as Parameters<typeof mapearPauta>[0]);
 }
 
 export async function listarChecklistPorPropriedade(propriedadeId: string): Promise<ItemChecklistAdmin[]> {

@@ -248,3 +248,42 @@ export type EtapaConcluida = {
  * ainda não aplicado em produção, ver Task 1) ou quando uma etapa específica nunca rodou ainda.
  */
 export type DuracaoMediaPorEtapa = Partial<Record<EtapaLog, number>>;
+
+// ---------------------------------------------------------------------------
+// Fase 3 (personas ricas) — Task 2. Ver
+// docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md seções 3 e 5.
+// Substitui o modelo de persona de 8 campos por matriz (PersonaFormulario, acima) por N personas
+// ricas por propriedade, sorteadas a cada pauta pelo Estrategista (Task 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Persona ativa candidata ao sorteio ponderado do Estrategista (Task 4) —
+ * `listarPersonasAtivasComAngulosDisponiveis` já entrega `angulosProntos` com os ângulos já
+ * usados subtraídos (ver spec seção 5) e `usadaPelaUltimaVezEm` pronto pra decidir peso do
+ * sorteio. `angulosProntos: []` não é erro — é o sinal de que essa persona esgotou os ângulos do
+ * Bloco 11 e precisa do fallback de IA (Gerador de Ângulo, Task 3).
+ */
+export type PersonaAtiva = {
+  id: string;
+  nome: string;
+  angulosProntos: string[];
+  /** `created_at` mais recente entre as pautas dessa persona, ou `null` se ela nunca foi usada. */
+  usadaPelaUltimaVezEm: string | null;
+};
+
+/** Persona completa, com o texto dos 11 blocos — usada pelo Gerador de Ângulo (Task 3, prompt de
+ * fallback) e pelo Escritor (Task 5, prompt principal, ver spec seção 7). */
+export type PersonaCarregada = PersonaAtiva & {
+  conteudoCompleto: string;
+};
+
+/** Saída do Gerador de Ângulo (Task 3) — o fallback de IA que roda só quando uma persona esgota
+ * os ângulos prontos do Bloco 11 (spec seção 6). Mesma forma dos campos derivados que o caminho
+ * sem IA também precisa produzir pra `criarPautaDePersona`. */
+export type AnguloGerado = {
+  anguloTexto: string;
+  palavraChavePrincipal: string;
+  palavrasSecundarias: string[];
+  funil: FunilPauta;
+  tipoConteudo: TipoConteudo;
+};

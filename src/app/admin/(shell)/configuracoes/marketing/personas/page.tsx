@@ -1,4 +1,4 @@
-import { carregarPersona, listarMatrizes, listarPropriedades } from "@/lib/marketing/repositorio";
+import { carregarPersonaFormulario, listarMatrizes, listarPropriedades } from "@/lib/marketing/repositorio";
 import type { PersonaFormulario } from "@/lib/marketing/tipos";
 import { PersonasClient } from "./personas-client";
 
@@ -20,7 +20,7 @@ export default async function PersonasPage() {
   // Carrega a persona de cada matriz de antemão (em vez de buscar sob demanda ao trocar a seleção
   // no cliente) — evita precisar de uma server action só de leitura pra alternar seleção; volume é
   // pequeno (uma tela de configuração, não uma lista operacional).
-  const personasCarregadas = await Promise.all(matrizes.map((m) => carregarPersona(m.id)));
+  const personasCarregadas = await Promise.all(matrizes.map((m) => carregarPersonaFormulario(m.id)));
   const personasPorMatrizId: Record<string, PersonaFormulario | null> = {};
   matrizes.forEach((m, i) => {
     personasPorMatrizId[m.id] = personasCarregadas[i];

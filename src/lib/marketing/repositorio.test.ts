@@ -4,17 +4,21 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  carregarAngulosUsadosPorPersona,
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
+  carregarPersonaFormulario,
   carregarPropriedade,
   carregarResumoVisaoGeral,
   contarPostsPublicadosDesde,
+  criarPautaDePersona,
   excluirItemChecklist,
   listarChecklistPorPropriedade,
   listarEtapasConcluidasRecentes,
   listarEtapasEmAndamento,
   listarMatrizes,
   listarPautasPorStatus,
+  listarPersonasAtivasComAngulosDisponiveis,
   listarPostsPublicados,
   listarPropriedades,
   listarUnidadesNegocio,
@@ -613,17 +617,19 @@ describe("salvarMatriz", () => {
   });
 });
 
-describe("carregarPersona", () => {
+describe("carregarPersonaFormulario", () => {
+  // Renomeada de carregarPersona (Fase 3, Task 2) — nome cedido pro carregarPersona novo da tabela
+  // `personas` (modelo de persona rica). Ver comentário na função em repositorio.ts.
   it("retorna null quando a matriz não tem persona ainda", async () => {
     mockarFrom(criarQueryFalsa({ data: { eixos: { temas: ["x"] } }, error: null }));
 
-    expect(await carregarPersona("matriz-1")).toBeNull();
+    expect(await carregarPersonaFormulario("matriz-1")).toBeNull();
   });
 
   it("retorna a persona com defaults pros campos ausentes", async () => {
     mockarFrom(criarQueryFalsa({ data: { eixos: { persona: { nome: "Consumidor Endividado", tomDeVoz: "acolhedor" } } }, error: null }));
 
-    const persona = await carregarPersona("matriz-1");
+    const persona = await carregarPersonaFormulario("matriz-1");
 
     expect(persona).toEqual({
       nome: "Consumidor Endividado",
@@ -640,7 +646,7 @@ describe("carregarPersona", () => {
   it("lança erro claro quando a matriz não é encontrada", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: null }));
 
-    await expect(carregarPersona("matriz-x")).rejects.toThrow(/Falha ao carregar persona da matriz matriz-x/);
+    await expect(carregarPersonaFormulario("matriz-x")).rejects.toThrow(/Falha ao carregar persona da matriz matriz-x/);
   });
 });
 
@@ -1258,5 +1264,306 @@ describe("carregarDuracaoMediaPorEtapa", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(carregarDuracaoMediaPorEtapa()).rejects.toThrow(/Falha ao carregar duração média por etapa.*erro de teste/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fase 3 (personas ricas) — Task 2. Ver
+// docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md seções 3 e 5.
+// ---------------------------------------------------------------------------
+
+describe("listarPersonasAtivasComAngulosDisponiveis", () => {
+  // Caso exato do worked example da spec seção 5 / brief da Task 2, Step 2: persona com
+  // angulos_prontos ["A","B","C"] e uma pauta já registrada com angulo "B" pra essa persona deve
+  // devolver angulosProntos ["A","C"] — subtração de conjunto, não é uma query "distinct" simples.
+  it("subtrai os ângulos já usados dos angulos_prontos da persona (worked example da spec)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A", "B", "C"] }],
+        error: null,
+      }),
+      criarQueryFalsa({
+        data: [{ persona_id: "persona-1", angulo: "B", created_at: "2026-08-18T10:00:00Z" }],
+        error: null,
+      }),
+    );
+
+    const personas = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(personas).toEqual([
+      {
+        id: "persona-1",
+        nome: "Marcelo Andrade",
+        angulosProntos: ["A", "C"],
+        usadaPelaUltimaVezEm: "2026-08-18T10:00:00Z",
+      },
+    ]);
+  });
+
+  // Step 3 do brief: todos os ângulos prontos esgotados não é erro — é o sinal que a Task 4
+  // (Estrategista) usa pra decidir ir pro fallback de IA (Gerador de Ângulo).
+  it("retorna angulosProntos vazio quando todos os ângulos da persona já foram usados (sinal de esgotamento, não erro)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A"] }],
+        error: null,
+      }),
+      criarQueryFalsa({
+        data: [{ persona_id: "persona-1", angulo: "A", created_at: "2026-08-18T10:00:00Z" }],
+        error: null,
+      }),
+    );
+
+    const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(persona.angulosProntos).toEqual([]);
+  });
+
+  it("usadaPelaUltimaVezEm é null quando a persona nunca foi usada em nenhuma pauta", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A", "B"] }], error: null }),
+      criarQueryFalsa({ data: [], error: null }),
+    );
+
+    const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(persona.usadaPelaUltimaVezEm).toBeNull();
+    expect(persona.angulosProntos).toEqual(["A", "B"]);
+  });
+
+  it("usadaPelaUltimaVezEm é o created_at MAIS RECENTE entre as pautas da persona", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: [] }], error: null }),
+      criarQueryFalsa({
+        data: [
+          { persona_id: "persona-1", angulo: "A", created_at: "2026-08-01T10:00:00Z" },
+          { persona_id: "persona-1", angulo: "B", created_at: "2026-08-18T10:00:00Z" },
+          { persona_id: "persona-1", angulo: "C", created_at: "2026-08-10T10:00:00Z" },
+        ],
+        error: null,
+      }),
+    );
+
+    const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(persona.usadaPelaUltimaVezEm).toBe("2026-08-18T10:00:00Z");
+  });
+
+  it("filtra por propriedade_id e ativo = true", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+    expect(builder.eq).toHaveBeenCalledWith("ativo", true);
+  });
+
+  it("retorna lista vazia sem consultar pautas quando a propriedade não tem persona ativa", async () => {
+    const from = mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    const personas = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(personas).toEqual([]);
+    expect(from).toHaveBeenCalledTimes(1); // não bate em "pautas" sem nenhuma persona pra buscar
+  });
+
+  it("lança erro claro quando a query de personas falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(listarPersonasAtivasComAngulosDisponiveis("prop-1")).rejects.toThrow(
+      /Falha ao listar personas ativas da propriedade prop-1.*erro de teste/,
+    );
+  });
+
+  it("lança erro claro quando a query de pautas (pra calcular ângulos usados) falha", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A"] }], error: null }),
+      criarQueryFalsa({ data: null, error: erro }),
+    );
+
+    await expect(listarPersonasAtivasComAngulosDisponiveis("prop-1")).rejects.toThrow(
+      /Falha ao carregar pautas das personas da propriedade prop-1.*erro de teste/,
+    );
+  });
+});
+
+describe("carregarPersona", () => {
+  it("carrega a persona completa, com conteudoCompleto mapeado", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "persona-1",
+          nome: "Marcelo Andrade",
+          angulos_prontos: ["A", "B"],
+          conteudo_completo: "## Bloco 1 — Ficha rápida\n...",
+        },
+        error: null,
+      }),
+    );
+
+    const persona = await carregarPersona("persona-1");
+
+    expect(persona).toEqual({
+      id: "persona-1",
+      nome: "Marcelo Andrade",
+      angulosProntos: ["A", "B"],
+      usadaPelaUltimaVezEm: null,
+      conteudoCompleto: "## Bloco 1 — Ficha rápida\n...",
+    });
+  });
+
+  it("lança erro claro quando a persona não é encontrada", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    await expect(carregarPersona("persona-x")).rejects.toThrow(/Falha ao carregar persona persona-x/);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPersona("persona-1")).rejects.toThrow(/Falha ao carregar persona persona-1.*erro de teste/);
+  });
+});
+
+describe("carregarAngulosUsadosPorPersona", () => {
+  it("lista os ângulos distintos já registrados em pautas pra essa persona", async () => {
+    const builder = criarQueryFalsa({
+      data: [
+        { angulo: "A citação de medo" },
+        { angulo: "B citação de urgência" },
+        { angulo: "A citação de medo" }, // repetido — dedup
+      ],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const angulos = await carregarAngulosUsadosPorPersona("persona-1");
+
+    expect(angulos).toEqual(["A citação de medo", "B citação de urgência"]);
+    expect(builder.eq).toHaveBeenCalledWith("persona_id", "persona-1");
+  });
+
+  it("retorna lista vazia quando a persona nunca foi usada", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await carregarAngulosUsadosPorPersona("persona-1")).toEqual([]);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarAngulosUsadosPorPersona("persona-1")).rejects.toThrow(
+      /Falha ao carregar ângulos usados pela persona persona-1.*erro de teste/,
+    );
+  });
+});
+
+describe("criarPautaDePersona", () => {
+  const paramsBase = {
+    matrizConteudoId: "matriz-1",
+    personaId: "persona-1",
+    angulo: "\"Eles disseram que era golpe. Eu disse: 'vamos ver.'\"",
+    palavraChavePrincipal: "limpar nome negativado",
+    palavrasSecundarias: ["score de crédito", "SPC Serasa"],
+    funil: "topo" as const,
+    tipoConteudo: "post_storytelling" as const,
+  };
+
+  // Step 4 do brief: a pauta nasce DIRETO em em_producao, não pendente — não existe "esperar na
+  // fila" neste caminho (o Estrategista já decidiu produzir agora).
+  it("cria a pauta já com status em_producao (não pendente)", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: ["score de crédito", "SPC Serasa"],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const pauta = await criarPautaDePersona(paramsBase);
+
+    expect(pauta.status).toBe("em_producao");
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        matriz_conteudo_id: "matriz-1",
+        persona_id: "persona-1",
+        angulo: paramsBase.angulo,
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: ["score de crédito", "SPC Serasa"],
+        funil: "topo",
+        tipo_conteudo: "post_storytelling",
+        geografia: null,
+        status: "em_producao",
+      }),
+    );
+  });
+
+  // Spec seção 9, Pendências: personas não têm campo estruturado de geografia — geografia fica
+  // sempre null nas pautas geradas por persona.
+  it("grava geografia como null (decisão explícita da spec — personas não têm geografia estruturada)", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: [],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    await criarPautaDePersona(paramsBase);
+
+    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ geografia: null }));
+  });
+
+  // prioridade_score não é passado no payload — usa o default da coluna (0), igual a toda pauta.
+  it("não envia prioridade_score no payload de insert (usa o default da coluna)", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: [],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    await criarPautaDePersona(paramsBase);
+
+    const payload = (builder.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("prioridade_score");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(criarPautaDePersona(paramsBase)).rejects.toThrow(/Falha ao criar pauta a partir da persona persona-1.*erro de teste/);
   });
 });
