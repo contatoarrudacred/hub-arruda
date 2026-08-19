@@ -1,55 +1,78 @@
 // Parte pura de interpretar-faixas-documentos.ts, separada sem `server-only` de propósito — mesmo
 // motivo de interpretacao-ia-validacao.ts (o SDK da Anthropic quebra o Vitest se importado direto).
 
-import type { FaixaDocumentoCapturada, ResultadoInterpretacaoFaixasDocumentos } from "./tipos";
+import type { FaixaDocumentoCapturada } from "./tipos";
 
-export type ItemBrutoFaixaDocumento = {
+// --- Modo livre (texto por documento) — acumulação parcial entre tentativas -------------------
+//
+// Achado real (19/08/2026, log de produção): o extrator original pedia TODOS os documentos numa
+// resposta só, sem lembrar nada de tentativas anteriores — cada resposta do lead era avaliada
+// contra a pergunta ORIGINAL, do zero. Resultado: "menos de 10" (resposta clara ao "e o segundo
+// CPF?") não fechava nada, porque o interpretador não sabia mais que o PRIMEIRO CPF já tinha sido
+// confirmado 2 mensagens antes — ele voltava a perguntar "e o segundo CPF?" pra sempre, em loop.
+//
+// Correção: cada documento tem 3 estados possíveis — `null` (ainda não sabemos), `{valorAproximado:
+// null}` (lead disse "não sei", resposta final válida), `{valorAproximado: number}` (valor
+// conhecido). O estado parcial atravessa o turno codificado em `dados._faixas_parcial_valores`
+// (CSV, um token por documento, na ordem de `documentos_tipos`) — a IA só precisa dizer o que ESTA
+// resposta esclarece ou corrige (`atualizacoes`, por índice), nunca repetir o que já foi dito; a
+// mesclagem determinística é feita em código (`mesclarAtualizacoesParciais`), não pela IA.
+
+export type ItemAtualizacaoParcial = {
+  indice: number;
   tipo: "cpf" | "cnpj";
   sabe_valor: boolean;
   valor_aproximado: number;
 };
 
-export type RespostaBrutaFaixasDocumentos = {
+export type RespostaBrutaModoLivre = {
   status: "completo" | "incompleto" | "nao_entendi";
-  itens: ItemBrutoFaixaDocumento[];
+  atualizacoes: ItemAtualizacaoParcial[];
   pergunta_esclarecimento: string;
 };
 
+/** "20000,,nao_sei" -> token por posição: número, "" (ainda não sabemos) ou "nao_sei". */
+export function codificarParcialFaixas(itens: (FaixaDocumentoCapturada | null)[]): string {
+  return itens.map((item) => (item === null ? "" : item.valorAproximado === null ? "nao_sei" : String(item.valorAproximado))).join(",");
+}
+
+/** Contrapartida de `codificarParcialFaixas` — string vazia ou malformada vira "tudo ainda não sabido" (defensivo, nunca trava por estado inconsistente). */
+export function decodificarParcialFaixas(csv: string, tiposEsperados: ("cpf" | "cnpj")[]): (FaixaDocumentoCapturada | null)[] {
+  const tokens = csv.split(",");
+  return tiposEsperados.map((tipo, i) => {
+    const token = (tokens[i] ?? "").trim();
+    if (token === "") return null;
+    if (token === "nao_sei") return { tipo, valorAproximado: null };
+    const valor = Number(token);
+    return Number.isFinite(valor) ? { tipo, valorAproximado: valor } : null;
+  });
+}
+
 /**
- * Valida a resposta bruta da IA contra a lista de documentos já conhecida (`documentos_tipos`) —
- * só aceita "completo" quando `itens` tem exatamente uma entrada por documento, na mesma ordem e
- * tipo (nunca confia cegamente que o modelo preservou isso sozinho).
+ * Aplica só as atualizações que a IA identificou nesta resposta sobre o estado parcial já
+ * acumulado — índice fora do range, tipo que não bate com o esperado naquela posição, ou valor
+ * absurdo (alucinação) são ignorados em vez de corromper o que já sabíamos.
  */
-export function validarRespostaFaixasDocumentos(
-  bruta: RespostaBrutaFaixasDocumentos,
+export function mesclarAtualizacoesParciais(
+  parcialAnterior: (FaixaDocumentoCapturada | null)[],
+  atualizacoes: ItemAtualizacaoParcial[],
   tiposEsperados: ("cpf" | "cnpj")[],
-): ResultadoInterpretacaoFaixasDocumentos {
-  if (bruta.status === "incompleto") {
-    const pergunta = bruta.pergunta_esclarecimento?.trim();
-    if (!pergunta) return { status: "nao_entendi" };
-    return { status: "incompleto", perguntaEsclarecimento: pergunta };
-  }
+): (FaixaDocumentoCapturada | null)[] {
+  const mesclado = [...parcialAnterior];
+  for (const upd of atualizacoes ?? []) {
+    const i = upd.indice - 1;
+    if (!Number.isInteger(upd.indice) || i < 0 || i >= tiposEsperados.length) continue;
+    if (upd.tipo !== tiposEsperados[i]) continue;
 
-  if (bruta.status !== "completo") return { status: "nao_entendi" };
-  if (!Array.isArray(bruta.itens) || bruta.itens.length !== tiposEsperados.length) {
-    return { status: "nao_entendi" };
-  }
-
-  const itens: FaixaDocumentoCapturada[] = [];
-  for (let i = 0; i < tiposEsperados.length; i++) {
-    const item = bruta.itens[i];
-    if (!item || item.tipo !== tiposEsperados[i]) return { status: "nao_entendi" };
-
-    if (!item.sabe_valor) {
-      itens.push({ tipo: item.tipo, valorAproximado: null });
+    if (!upd.sabe_valor) {
+      mesclado[i] = { tipo: upd.tipo, valorAproximado: null };
       continue;
     }
-    const valor = Number(item.valor_aproximado);
-    if (!Number.isFinite(valor) || valor <= 0 || valor > 50_000_000) return { status: "nao_entendi" };
-    itens.push({ tipo: item.tipo, valorAproximado: valor });
+    const valor = Number(upd.valor_aproximado);
+    if (!Number.isFinite(valor) || valor <= 0 || valor > 50_000_000) continue;
+    mesclado[i] = { tipo: upd.tipo, valorAproximado: valor };
   }
-
-  return { status: "completo", itens };
+  return mesclado;
 }
 
 // --- Menu fechado (correção 18/08/2026, Luiz) — 2 rodadas: escolha de faixa no menu, depois
