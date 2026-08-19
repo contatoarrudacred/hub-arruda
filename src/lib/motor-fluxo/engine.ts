@@ -308,7 +308,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
       return {
         mensagens: [empacotar(substituirVariaveisMensagem(retomada, dados, variaveisGlobais), conteudo)],
         etapaFinal: etapaAtual,
-        dadosNovos: {},
+        dadosNovos: resultado.dadosParciais ?? {},
         efeitos: [],
         naoReconhecido: true,
         interpretadoPorIA: true,

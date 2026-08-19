@@ -217,7 +217,14 @@ export type ItemDocumentoPendente = { tipo: "cpf" | "cnpj" };
  */
 export type ResultadoInterpretacaoListaDocumentos =
   | { status: "completo"; itens: ItemDocumentoPendente[] }
-  | { status: "incompleto"; perguntaEsclarecimento: string }
+  /**
+   * `dadosParciais` (19/08/2026, Luiz: "corrigir tudo de forma global") — quando a IA propõe uma
+   * contagem específica pra confirmar (ex.: "1 CPF e 1 CNPJ, é isso?"), a pergunta em si precisa
+   * atravessar o turno em `dados`, senão o motor não tem como saber, na resposta seguinte ("sim"),
+   * o que exatamente está sendo confirmado — mesmo padrão de `dadosParciais` em
+   * `ResultadoInterpretacaoFaixasDocumentos`.
+   */
+  | { status: "incompleto"; perguntaEsclarecimento: string; dadosParciais?: DadosConversa }
   | { status: "nao_entendi" };
 
 export type InterpretadorListaDocumentos = (params: {
