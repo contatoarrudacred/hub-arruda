@@ -43,7 +43,7 @@ const MODULOS: Modulo[] = [
     icone: "💰",
     itens: [
       { tipo: "link", rotulo: "Painel de Vendas", href: "/admin/vendas", icone: "📊" },
-      { tipo: "link", rotulo: "Nova venda", href: "/admin/vendas/nova", icone: "🧾" },
+      { tipo: "link", rotulo: "Nova Oportunidade", href: "/admin/vendas/nova-oportunidade", icone: "🧾" },
       { tipo: "link", rotulo: "Fornecedores", href: "/admin/fornecedores", icone: "🏭" },
     ],
   },

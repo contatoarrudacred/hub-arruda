@@ -188,11 +188,11 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
             </button>
           </div>
           <Link
-            href="/admin/vendas/nova"
-            title="Cadastrar uma venda sem passar pelo funil de atendimento"
+            href="/admin/vendas/nova-oportunidade"
+            title="Cadastrar uma oportunidade sem passar pelo funil de atendimento"
             className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900"
           >
-            + Nova venda
+            + Nova Oportunidade
           </Link>
         </div>
       </div>
