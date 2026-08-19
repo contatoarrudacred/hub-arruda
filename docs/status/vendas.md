@@ -1,6 +1,6 @@
 # Status — Vendas
 
-tarefa: Task 1 — Migration do novo vocabulário do Kanban (nova_oportunidade + campos de erro/retentativa + Realtime)
+tarefa: Implementando o redesenho Nova Oportunidade + Kanban de Vendas (novo vocabulário de 8 etapas) via subagent-driven-development — migration do schema novo já escrita, seguindo pras camadas de lógica/repositório
 desde: 2026-08-19T12:00:00-03:00
-proxima: Task 2
+proxima: estagio-venda.ts com o novo vocabulário (TDD)
 bloqueio:
