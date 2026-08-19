@@ -58,6 +58,13 @@ function montarPrompt(
     "",
     "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível de 40-60 palavras antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
     "",
+    // Achado do teste de ponta a ponta em produção (19/08/2026): ao ser cobrado por "fonte
+    // específica" (seja na primeira geração ou numa correção), o Escritor às vezes inventa um
+    // número de lei/resolução/artigo plausível em vez de citar algo mais genérico mas correto —
+    // isso é uma alucinação factual grave em conteúdo YMYL (financeiro), pior do que a fonte
+    // genérica que a instrução tentava evitar. Regra explícita para fechar esse gap.
+    "Regra de precisão em citação normativa: ao citar lei, resolução, artigo ou norma específica, só inclua número/ano se tiver certeza real deles. NUNCA invente ou chute um número de lei/resolução/artigo que pareça plausível — isso é uma alucinação factual grave, pior do que citar a norma de forma mais genérica. Na dúvida, prefira: (a) citar sem o número exato (ex.: \"conforme o Código de Defesa do Consumidor\" em vez de um artigo específico incerto), ou (b) linkar a fonte oficial (Serasa, SPC, Procon, gov.br) sem atribuir um número normativo que você não tem certeza de estar correto.",
+    "",
     // Fase 3 (personas ricas), Task 5, spec seção 7 — adição aditiva: só entra no prompt quando a
     // pauta nasceu de uma persona sorteada (pauta.personaId não nulo, ver processar-pauta.ts);
     // pautas antigas/manuais (persona null) mantêm o prompt idêntico ao de antes desta task, sem
