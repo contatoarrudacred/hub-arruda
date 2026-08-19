@@ -118,12 +118,19 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 | `20260818090001` | `20260818090001_vendas_contrato_nucleo.sql` | Vendas | 🗄️ **ENVIADA AO LUIZ em 18/08 18h00** (consolidada com a do Marketing em `docs/migrations-pendentes-supabase.sql`). Rename confirmado (commit `8855fff`, 18/08 14h59) — colisão resolvida, sem referência ao número antigo no arquivo. Cria `contrato_templates`, `contratos`, `contrato_parcelas`, `comissoes_fornecedor_receber`. **Escrita, NÃO aplicada** — vem pro Luiz quando a sub-frente fechar |
 | `20260818080000` | `20260818080000_pautas_atualizado_em.sql` | Marketing | Aplicada no banco real via `supabase db push` (commit `a13c15d`) **antes da regra dura acima existir**; mesclada em `main` em 18/08/2026 |
 | `20260818090000` | `20260818090000_marketing_credenciais_e_log.sql` | Marketing | ✅ **Aplicada** — o Luiz rodou no SQL Editor em 18/08/2026. Verificado por mim (leitura só, sem escrita): `propriedades_digitais.credenciais_canais` e a tabela `pautas_execucao_log` existem de verdade no banco. |
+| `20260818100000` | `20260818100000_personas_ricas.sql` | Marketing | Aguardando envio ao Luiz |
 
 **Regra prática:** se dois agentes forem criar migration no "mesmo dia" (mesmo prefixo `YYYYMMDD`), quem for escrever depois confere a tabela e usa um horário/minuto que ainda não apareça aqui pra aquele dia — não precisa ser hora real, só precisa ser único.
 
 ---
 
 ## 3. Avisos entre agentes / sinergias potenciais
+
+- **18/08/2026 (Marketing → Coordenador) — Migration da Task 1 da Fase 3 (personas ricas) escrita e reservada, aguardando envio ao Luiz.** Timestamp `20260818100000` (próximo livre depois de `20260818090001`, conferido na tabela da seção 2 antes de escrever), arquivo `supabase/migrations/20260818100000_personas_ricas.sql`, linha adicionada na tabela da seção 2 com status `Aguardando envio ao Luiz`.
+  - **O que ela faz:** cria a tabela `personas` (perfis ricos de persona, formato de 11 blocos, com `angulos_prontos` jsonb pra sorteio sem custo de IA — RLS + trigger de auditoria + índice, mesmo padrão do resto do módulo) e adiciona a coluna `pautas.persona_id` (referência opcional a `personas`, com índice). Segue exatamente o SQL da spec `docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md` seção 3, comentários `COMMENT ON TABLE`/`COMMENT ON COLUMN` incluídos.
+  - **Não é destrutiva:** só `create table personas` e `alter table pautas add column persona_id` (mais índices, policy e trigger) — nenhum `drop`/`truncate`/`delete`.
+  - **Não depende de nada de outro módulo e não toca tabela de outro módulo:** `personas.propriedade_id` referencia `propriedades_digitais(id)`, que já existe (núcleo do Marketing). `pautas.persona_id` referencia a própria tabela `personas` nova. Nenhuma tabela de CRM, Vendas ou qualquer outro módulo é tocada.
+  - **Não rodei nenhum comando contra o banco** — nem `supabase db push`, nem `migration repair`, nem regenerei `database.types.ts`.
 
 - **19/08/2026 (CRM) — atualização do aviso abaixo: Luiz adicionou `ANTHROPIC_API_KEY` na Vercel.** Falta confirmar se já redeployou — env var nova normalmente só entra em vigor no próximo deploy, o build atual pode continuar rodando sem ela até lá.
 
