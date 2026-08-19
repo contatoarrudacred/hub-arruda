@@ -35,7 +35,7 @@ import {
   resolverEstagnacaoAction,
   sugerirRespostaAction,
 } from "./actions";
-import { resetarConversaAction } from "../reset-conversa/actions";
+import { resetarApenasConversaAction, resetarConversaAction } from "../reset-conversa/actions";
 import { sair } from "../actions";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import type { EmojiData } from "emoji-picker-react/dist/types/exposedTypes";
@@ -600,6 +600,7 @@ export function AtendimentoClient({
   const [midiaEmTelaCheia, setMidiaEmTelaCheia] = useState<{ url: string; tipo: "imagem" | "video" } | null>(null);
   const [resetando, setResetando] = useState(false);
   const [erroReset, setErroReset] = useState<string | null>(null);
+  const [bloqueioReset, setBloqueioReset] = useState<{ contratos: number; comissoes: number } | null>(null);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
@@ -736,15 +737,39 @@ export function AtendimentoClient({
     if (!detalhe?.pessoaTelefone) return;
     setResetando(true);
     setErroReset(null);
+    setBloqueioReset(null);
     const resultado = await resetarConversaAction(detalhe.pessoaTelefone);
     setResetando(false);
     // Achado real (19/08/2026): esta chamada nunca checava o resultado — se o reset falhasse (ex.:
     // violação de FK por causa de um contrato já gerado), o modal fechava do mesmo jeito, dando a
     // impressão de que funcionou, mas a conversa continuava lá.
-    if (!resultado.sucesso) {
-      setErroReset(resultado.erro);
+    if (resultado.status === "erro") {
+      setErroReset(resultado.mensagem);
       return;
     }
+    // Pessoa que já gerou contrato/comissão NUNCA é apagada (quebraria registro de venda emitido,
+    // decisão do Luiz 19/08/2026) — oferece o reset parcial (só a conversa) em vez de travar calado.
+    if (resultado.status === "bloqueado_por_venda") {
+      setBloqueioReset({ contratos: resultado.quantidadeContratos, comissoes: resultado.quantidadeComissoes });
+      return;
+    }
+    setConfirmandoReset(false);
+    setConversaSelecionadaId(null);
+    await recarregarLista();
+    await recarregarContagens();
+  }
+
+  async function confirmarResetApenasConversa() {
+    if (!detalhe?.pessoaTelefone) return;
+    setResetando(true);
+    setErroReset(null);
+    const resultado = await resetarApenasConversaAction(detalhe.pessoaTelefone);
+    setResetando(false);
+    if (resultado.status === "erro") {
+      setErroReset(resultado.mensagem);
+      return;
+    }
+    setBloqueioReset(null);
     setConfirmandoReset(false);
     setConversaSelecionadaId(null);
     await recarregarLista();
@@ -1411,6 +1436,7 @@ export function AtendimentoClient({
                   telefone={detalhe.pessoaTelefone}
                   onResetar={() => {
                     setErroReset(null);
+                    setBloqueioReset(null);
                     setConfirmandoReset(true);
                   }}
                 />
@@ -1982,32 +2008,67 @@ export function AtendimentoClient({
     {confirmandoReset && detalhe && (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
         <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900">
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-            Resetar a conversa com {detalhe.pessoaNome}?
-          </p>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Apaga pessoa, oportunidade, conversa e mensagens desse número — ação irreversível. A
-            próxima mensagem desse número no WhatsApp começa do zero.
-          </p>
-          {erroReset && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{erroReset}</p>}
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => {
-                setErroReset(null);
-                setConfirmandoReset(false);
-              }}
-              className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={confirmarReset}
-              disabled={resetando}
-              className="rounded-full bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-40"
-            >
-              {resetando ? "Resetando..." : "Resetar"}
-            </button>
-          </div>
+          {bloqueioReset ? (
+            <>
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                {detalhe.pessoaNome} já tem venda registrada
+              </p>
+              <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+                ⚠️ {bloqueioReset.contratos} contrato(s) e {bloqueioReset.comissoes} comissão(ões) já
+                emitidos — o cadastro não pode ser apagado (quebraria esses registros). Dá pra apagar
+                só a conversa: cadastro, oportunidade e contrato/comissão continuam intactos.
+              </p>
+              {erroReset && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{erroReset}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setErroReset(null);
+                    setBloqueioReset(null);
+                    setConfirmandoReset(false);
+                  }}
+                  className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarResetApenasConversa}
+                  disabled={resetando}
+                  className="rounded-full bg-amber-600 px-4 py-1.5 text-sm text-white hover:bg-amber-700 disabled:opacity-40"
+                >
+                  {resetando ? "Apagando..." : "Apagar só a conversa"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                Resetar a conversa com {detalhe.pessoaNome}?
+              </p>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                Apaga pessoa, oportunidade, conversa e mensagens desse número — ação irreversível. A
+                próxima mensagem desse número no WhatsApp começa do zero.
+              </p>
+              {erroReset && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{erroReset}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setErroReset(null);
+                    setConfirmandoReset(false);
+                  }}
+                  className="rounded-full px-4 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarReset}
+                  disabled={resetando}
+                  className="rounded-full bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-40"
+                >
+                  {resetando ? "Resetando..." : "Resetar"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     )}
