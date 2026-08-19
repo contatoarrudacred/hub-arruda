@@ -92,8 +92,9 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
   });
 }
 
-/** Gera o PDF a partir do HTML reconstruído e sobe pro Storage — não mexe no `status` (quem chama
- * já deixou o contrato em "emitindo_contrato" antes de chamar isto). */
+/** Gera o PDF a partir do HTML reconstruído e sobe pro Storage — não faz *transição* de estágio
+ * (quem chama já deixou o contrato em "emitindo_contrato" antes de chamar isto); a chamada a
+ * `atualizarStatusContrato` aqui só reafirma esse mesmo status pra poder gravar `pdfUrl` junto. */
 export async function gerarEEmitirContrato(contratoId: string): Promise<void> {
   const html = await montarHtmlContrato(contratoId);
   const pdf = await gerarPdfContrato(html);
