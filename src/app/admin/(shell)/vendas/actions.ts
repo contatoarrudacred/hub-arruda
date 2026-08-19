@@ -36,7 +36,14 @@ export async function tentarNovamenteEmLoteAction(status: StatusContrato): Promi
   if (error) throw new Error(`Falha ao buscar cards travados: ${error.message}`);
 
   for (const linha of data ?? []) {
-    await tentarNovamente(linha.id);
+    try {
+      await tentarNovamente(linha.id);
+    } catch (erro) {
+      // Uma falha inesperada (ex.: banco fora do ar no meio do lote) não pode abortar os demais
+      // cards silenciosamente — tentarNovamente já isola falha de Assinafy/Asaas por dentro
+      // (progressao.ts), então chegar aqui é o caso raro de algo quebrar fora desse isolamento.
+      console.error(`Falha ao tentar novamente o contrato ${linha.id} (retentativa em lote):`, erro);
+    }
   }
   return { total: data?.length ?? 0 };
 }
