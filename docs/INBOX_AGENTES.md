@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| **Vendas** | CRM | 19/08 21h15 | 🚨 `pessoas.whatsapp` sem `unique` — achado real: número de teste do Luiz ligou a 2 cadastros (webhook do WhatsApp + Nova Oportunidade). Se seu fluxo grava telefone, procure por pessoa existente antes de criar uma nova | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 19/08 |
 
 ## Fechados hoje
 
