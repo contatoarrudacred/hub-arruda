@@ -1,7 +1,6 @@
 # Status — Marketing
 
-tarefa: Escrevendo a spec técnica da Fase 3 — 75 personas ricas (Luiz mandou o arquivo completo) + Estrategista reescrito pra gerar pauta a partir de persona sorteada, com fallback de IA quando os ângulos prontos da persona esgotarem
-desde: 2026-08-18T20:20:00-03:00
-proxima: Validar a spec com o Luiz, depois plano de implementação (SDD) — migration de personas + coluna pautas.persona_id + reescrita do Estrategista
+tarefa: Escrevendo o plano de implementação da Fase 3 (personas ricas + geração de pauta por persona) — spec já validada com o Luiz
+desde: 2026-08-18T20:45:00-03:00
+proxima: Subagent-Driven Development (migration + repositório + Gerador de Ângulo + Estrategista reescrito + Escritor) e depois a importação das 75 personas
 bloqueio:
-turno_fim: 2026-08-18T20:11:51-03:00
