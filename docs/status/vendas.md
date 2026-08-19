@@ -1,6 +1,6 @@
 # Status — Vendas
 
-tarefa: Detalhes da Venda + Painel Interativo prontos (/admin/vendas/[oportunidadeId]) — status por estágio, verificação ao vivo na Assinafy/Asaas sob demanda, reenvio de link (WhatsApp/e-mail/copiar), timeline via auditoria_log, marcar comissão recebida, cancelar venda.
-desde: 2026-08-19T04:20:00-03:00
-proxima: Task 17 — verificação ponta a ponta com credenciais reais (Assinafy/Asaas), quando as contas existirem
-bloqueio: nenhum — ressalva: não consegui verificar a tela nova no navegador nesta sessão (portas 3000/3001 ocupadas por outras sessões, servidor de outra sessão não pegou as rotas novas); validado por tsc+eslint+vitest e revisão manual do código
+tarefa: Sub-frente Contrato/Assinatura/Financeiro da venda concluída. Migrations aplicadas no Supabase real (confirmado por Luiz via Table Editor em 19/08/2026). Branch `vendas-contrato` no GitHub, com o main do CRM já mesclado, pronta pra ir pro main.
+desde: 2026-08-19T05:30:00-03:00
+proxima: Trazer `vendas-contrato` pro `main` (Vercel publica automaticamente). Task 17 (verificação com credenciais reais Assinafy/Asaas) fica pra quando as contas existirem.
+bloqueio: nenhum
