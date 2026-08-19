@@ -40,6 +40,20 @@ function somaParcelasBateComTotal(parcelas: Parcela[], valorTotal: number): bool
   return somaParcelas === valorTotalArredondado;
 }
 
+type ParcelaForm = { numero: number; valor: string; vencimento: string };
+
+function parcelasParaForm(parcelas: Parcela[]): ParcelaForm[] {
+  return parcelas.map((p) => ({
+    numero: p.numero,
+    valor: p.valor.toFixed(2),
+    vencimento: p.vencimento.toISOString().slice(0, 10),
+  }));
+}
+
+function formParaParcelas(form: ParcelaForm[]): Parcela[] {
+  return form.map((p) => ({ numero: p.numero, valor: Number(p.valor.replace(",", ".")) || 0, vencimento: new Date(`${p.vencimento}T00:00:00`) }));
+}
+
 export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVenda[] }) {
   const router = useRouter();
 
@@ -80,6 +94,42 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   const [qtdParcelas, setQtdParcelas] = useState("2");
   const [diaAncora, setDiaAncora] = useState<DiaAncora>(10);
   const [maxParcelasCartao, setMaxParcelasCartao] = useState("12");
+  const [parcelasBoleto, setParcelasBoleto] = useState<ParcelaForm[]>([]);
+
+  const valorTotalNumeroPreview = valorTotal.trim() ? Number(valorTotal.replace(",", ".")) : null;
+
+  // Recalcula a tabela de parcelas sempre que qtd/data/dia-âncora/valor mudam — edições manuais numa
+  // linha específica (valor/vencimento) ficam até a próxima mudança de um desses campos, que
+  // reconstrói a tabela do zero. Achado real de teste em produção: essa tabela nunca aparecia,
+  // mesmo já sendo parte do design original da tela.
+  //
+  // Padrão recomendado do React pra "estado derivado, mas com escape hatch pra edição manual":
+  // recalcula durante o render (comparando uma chave com a última vista), não dentro de um
+  // useEffect — evita o ciclo extra de render que o effect causaria.
+  const chaveRecalculoParcelas = `${especiePagamento}|${formaPagamento}|${primeiraParcela}|${qtdParcelas}|${diaAncora}|${valorTotalNumeroPreview}`;
+  const [chaveRecalculoAnterior, setChaveRecalculoAnterior] = useState(chaveRecalculoParcelas);
+  if (chaveRecalculoParcelas !== chaveRecalculoAnterior) {
+    setChaveRecalculoAnterior(chaveRecalculoParcelas);
+    const qtd = Number(qtdParcelas);
+    if (
+      especiePagamento === "boleto_pix" &&
+      formaPagamento === "parcelado" &&
+      primeiraParcela &&
+      valorTotalNumeroPreview &&
+      valorTotalNumeroPreview > 0 &&
+      Number.isInteger(qtd) &&
+      qtd >= 2
+    ) {
+      const calculadas = calcularParcelasContrato(valorTotalNumeroPreview, qtd, new Date(`${primeiraParcela}T00:00:00`), diaAncora);
+      setParcelasBoleto(parcelasParaForm(calculadas));
+    } else {
+      setParcelasBoleto([]);
+    }
+  }
+
+  function atualizarParcelaBoleto(indice: number, campoAlterado: "valor" | "vencimento", valor: string) {
+    setParcelasBoleto((atual) => atual.map((p, i) => (i === indice ? { ...p, [campoAlterado]: valor } : p)));
+  }
 
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -219,14 +269,15 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         };
 
         // Validação de soma de parcelas == valor total antes de submeter (evita round-trip só pra
-        // descobrir que não bate) — mesma lógica de arredondamento em centavos do Fechamento de Venda.
-        const parcelas: Parcela[] =
-          formaPagamento === "avista"
-            ? [{ numero: 1, valor: valorTotalNumero, vencimento: new Date(primeiraParcela) }]
-            : calcularParcelasContrato(valorTotalNumero, Number(qtdParcelas), new Date(primeiraParcela), diaAncora);
-        if (!somaParcelasBateComTotal(parcelas, valorTotalNumero)) {
-          setErro("A soma das parcelas não bate com o valor total.");
-          return;
+        // descobrir que não bate) — usa a tabela como está na tela (com edições manuais, se houver),
+        // não uma recalculada do zero, já que é isso que vai ser enviado de verdade.
+        if (formaPagamento === "parcelado") {
+          const parcelasEditadas = formParaParcelas(parcelasBoleto);
+          if (!somaParcelasBateComTotal(parcelasEditadas, valorTotalNumero)) {
+            setErro("A soma das parcelas não bate com o valor total. Ajuste a tabela de parcelas abaixo.");
+            return;
+          }
+          financeiro.parcelas = parcelasBoleto.map((p) => ({ numero: p.numero, valor: Number(p.valor.replace(",", ".")) || 0, vencimento: p.vencimento }));
         }
       } else {
         const maxParcelas = Number(maxParcelasCartao);
@@ -536,6 +587,63 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
                 value={maxParcelasCartao}
                 onChange={(e) => setMaxParcelasCartao(e.target.value)}
               />
+            </div>
+          )}
+
+          {especiePagamento === "boleto_pix" && formaPagamento === "parcelado" && parcelasBoleto.length > 0 && (
+            <div className="space-y-1 pt-2">
+              <p className={rotulo}>
+                Parcelas — ajuste valor ou data de uma parcela específica se precisar (ex.: 1ª parcela menor). Mudar
+                quantidade/data-base/dia-âncora acima recalcula a tabela do zero.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400">
+                      <th className="py-1 pr-2">Nº</th>
+                      <th className="py-1 pr-2">Vencimento</th>
+                      <th className="py-1">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parcelasBoleto.map((p, indice) => (
+                      <tr key={p.numero} className="border-t border-zinc-100 dark:border-zinc-800">
+                        <td className="py-1 pr-2 text-zinc-500 dark:text-zinc-400">{p.numero}</td>
+                        <td className="py-1 pr-2">
+                          <input
+                            className={campo}
+                            type="date"
+                            value={p.vencimento}
+                            onChange={(e) => atualizarParcelaBoleto(indice, "vencimento", e.target.value)}
+                          />
+                        </td>
+                        <td className="py-1">
+                          <input
+                            className={campo}
+                            type="number"
+                            step="0.01"
+                            value={p.valor}
+                            onChange={(e) => atualizarParcelaBoleto(indice, "valor", e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Soma:{" "}
+                {formParaParcelas(parcelasBoleto)
+                  .reduce((acc, p) => acc + p.valor, 0)
+                  .toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                {valorTotalNumeroPreview != null && (
+                  <>
+                    {" "}
+                    de{" "}
+                    {valorTotalNumeroPreview.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </>
+                )}
+              </p>
             </div>
           )}
         </div>
