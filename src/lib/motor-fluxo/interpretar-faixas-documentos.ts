@@ -179,7 +179,7 @@ function ferramentaModoLivre(tiposEsperados: ("cpf" | "cnpj")[]) {
           type: "string",
           enum: ["completo", "incompleto", "nao_entendi"],
           description:
-            "'completo' só quando tiver um valor aproximado (ou 'não sei' explícito) pra CADA UM dos documentos. 'incompleto' quando faltar informação de pelo menos um documento — gere uma pergunta de esclarecimento específica pedindo só o que falta. 'nao_entendi' quando a resposta não tem nada a ver com valores de restrição.",
+            "'completo' quando tiver um valor aproximado (ou 'não sei' explícito) pra CADA UM dos documentos — não precisa certeza absoluta, uma inferência razoável já basta. 'incompleto' só quando genuinamente faltar informação de pelo menos um documento — gere uma pergunta de esclarecimento específica pedindo só o que falta (nunca peça detalhe irrelevante, tipo de quem é o documento). 'nao_entendi' quando a resposta não tem nada a ver com valores de restrição.",
         },
         itens: {
           type: "array",
@@ -225,7 +225,7 @@ function montarPromptModoLivre(params: { etapaAtual: EtapaCarregada; respostaLea
     "",
     `Resposta do lead: "${respostaLead}"`,
     "",
-    "O lead pode responder com valores aproximados por extenso, com gírias, ou dizer 'não sei' pra qualquer documento (isso é uma resposta válida, não bloqueia o status completo). Use a ferramenta pra registrar o resultado, na mesma ordem dos documentos listados acima. Só marque 'completo' quando tiver informação (valor OU 'não sei' explícito) de TODOS os documentos — é melhor pedir esclarecimento do que assumir errado.",
+    "O lead pode responder com valores aproximados por extenso, com gírias, ou dizer 'não sei' pra qualquer documento (isso é uma resposta válida, não bloqueia o status completo). Use a ferramenta pra registrar o resultado, na mesma ordem dos documentos listados acima. PREFIRA marcar 'completo' sempre que conseguir inferir um valor aproximado (ou 'não sei') pra cada documento com confiança razoável — não exija precisão além do que o lead já deu, e não peça nenhum detalhe que não seja o valor aproximado de cada documento (não pergunte de quem é o documento, forma de pagamento, ou qualquer coisa que não mude o valor). Só marque 'incompleto' quando genuinamente faltar saber o valor de pelo menos um documento.",
   ].join("\n");
 }
 
