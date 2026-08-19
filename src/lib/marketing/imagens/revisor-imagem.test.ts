@@ -102,4 +102,28 @@ describe("revisarImagem", () => {
 
     await expect(revisarImagem(imagemUrl, trechoFonte)).rejects.toThrow(/motivo/i);
   });
+
+  // Task 7 — a OpenAI (GPT Image, ver gerador-imagem-openai.ts) nunca devolve URL pros modelos
+  // GPT Image, só base64. `gerarImagemOpenAI` empacota isso como data URL
+  // (`data:image/png;base64,...`) e passa pra `revisarImagem` no mesmo parâmetro `imagemUrl` —
+  // este teste confirma que uma data URL vira um bloco `base64` (não `url`, que a Anthropic
+  // tentaria buscar por HTTP e falharia).
+  it("aceita data URL base64 (formato produzido pela OpenAI) e monta bloco base64, não url", async () => {
+    const mockCreate = obterMockCreate();
+    mockCreate.mockResolvedValue({
+      content: [{ type: "tool_use", input: { aprovada: true, motivo: null } }],
+      usage: { input_tokens: 500, output_tokens: 10 },
+    });
+
+    const dataUrl = "data:image/png;base64,aGVsbG8tbXVuZG8=";
+    await revisarImagem(dataUrl, trechoFonte);
+
+    const chamada = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0];
+    const blocoImagem = chamada.messages[0].content.find((b: { type: string }) => b.type === "image");
+    expect(blocoImagem.source).toEqual({
+      type: "base64",
+      media_type: "image/png",
+      data: "aGVsbG8tbXVuZG8=",
+    });
+  });
 });
