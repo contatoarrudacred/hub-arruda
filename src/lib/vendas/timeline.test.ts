@@ -15,9 +15,9 @@ function linha(overrides: Partial<LinhaAuditoriaBruta>): LinhaAuditoriaBruta {
 describe("formatarEventoAuditoria", () => {
   it("formata a criação do contrato (INSERT)", () => {
     const evento = formatarEventoAuditoria(
-      linha({ tabela: "contratos", operacao: "INSERT", dados_depois: { status: "contrato_gerado" } }),
+      linha({ tabela: "contratos", operacao: "INSERT", dados_depois: { status: "nova_oportunidade" } }),
     );
-    expect(evento).toEqual({ data: "2026-08-19T10:00:00Z", texto: "Venda registrada — Emissão Contrato" });
+    expect(evento).toEqual({ data: "2026-08-19T10:00:00Z", texto: "Venda registrada — Nova Oportunidade" });
   });
 
   it("formata avanço de estágio (status mudou)", () => {
@@ -25,11 +25,11 @@ describe("formatarEventoAuditoria", () => {
       linha({
         tabela: "contratos",
         operacao: "UPDATE",
-        dados_antes: { status: "contrato_gerado" },
-        dados_depois: { status: "aguardando_assinatura" },
+        dados_antes: { status: "nova_oportunidade" },
+        dados_depois: { status: "emitindo_contrato" },
       }),
     );
-    expect(evento).toEqual({ data: "2026-08-19T10:00:00Z", texto: 'Avançou para "Assinatura"' });
+    expect(evento).toEqual({ data: "2026-08-19T10:00:00Z", texto: 'Avançou para "Emitindo Contrato"' });
   });
 
   it("inclui o motivo quando cancela", () => {
@@ -37,7 +37,7 @@ describe("formatarEventoAuditoria", () => {
       linha({
         tabela: "contratos",
         operacao: "UPDATE",
-        dados_antes: { status: "aguardando_assinatura" },
+        dados_antes: { status: "aguardando_assinaturas" },
         dados_depois: { status: "cancelada", motivo_cancelamento: "Cliente desistiu" },
       }),
     );
@@ -49,8 +49,8 @@ describe("formatarEventoAuditoria", () => {
       linha({
         tabela: "contratos",
         operacao: "UPDATE",
-        dados_antes: { status: "aguardando_assinatura" },
-        dados_depois: { status: "aguardando_assinatura", assinafy_document_status: "pending_signature" },
+        dados_antes: { status: "aguardando_assinaturas" },
+        dados_depois: { status: "aguardando_assinaturas", assinafy_document_status: "pending_signature" },
       }),
     );
     expect(evento).toBeNull();
