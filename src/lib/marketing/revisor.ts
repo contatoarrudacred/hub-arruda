@@ -104,7 +104,11 @@ function montarPrompt(
   propriedade: PropriedadeCarregada,
   postsRecentes: PostRecenteResumo[],
 ): string {
-  const linhasChecklist = checklist.map((c) => `- (peso ${c.peso}) ${c.item}`).join("\n");
+  // Calibração dupla Escritor/Revisor (Fase 4b, 19/08/2026, pedido do Luiz) — itemParaRevisor,
+  // quando preenchido, substitui o texto que o Revisor vê pra este item (ex.: Escritor mira
+  // "40-60 palavras", Revisor aceita "20-80 palavras"); ausente/null usa o mesmo `item` do
+  // Escritor (comportamento padrão, idêntico a antes desta calibração existir).
+  const linhasChecklist = checklist.map((c) => `- (peso ${c.peso}) ${c.itemParaRevisor ?? c.item}`).join("\n");
   const contagemPalavras = contarPalavrasCorpo(conteudo.conteudoHtml);
   const scoreMinimo = propriedade.scoreMinimoAprovacao ?? SCORE_MINIMO_APROVACAO_PADRAO;
   const textoRigor = TEXTOS_RIGOR_YMYL[propriedade.rigorYmyl ?? "medio"];

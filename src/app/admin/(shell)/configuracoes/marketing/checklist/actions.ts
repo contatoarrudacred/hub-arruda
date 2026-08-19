@@ -12,6 +12,7 @@ export type EntradaSalvarItemChecklist = {
   item: string;
   peso: number;
   ativo: boolean;
+  itemParaRevisor: string | null;
 };
 
 export type ResultadoSalvarItemChecklist =
@@ -35,6 +36,7 @@ export async function salvarItemChecklistAction(
     item,
     peso: entrada.peso,
     ativo: entrada.ativo,
+    itemParaRevisor: entrada.itemParaRevisor?.trim() || null,
   });
 
   revalidatePath(ROTA);

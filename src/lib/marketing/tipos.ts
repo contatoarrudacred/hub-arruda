@@ -42,6 +42,15 @@ export type ItemChecklistCarregado = {
   id: string;
   item: string;
   peso: number;
+  /**
+   * Calibração dupla Escritor/Revisor (Fase 4b, 19/08/2026, pedido do Luiz) — texto alternativo
+   * usado só pelo Revisor ao montar seu prompt. `null`/ausente = Revisor usa o mesmo `item` do
+   * Escritor (comportamento padrão). Permite o Escritor mirar num alvo ideal (ex.: "40-60
+   * palavras") enquanto o Revisor aceita uma faixa mais tolerante (ex.: "20-80 palavras") pro
+   * mesmo item, reduzindo retrabalho em itens de faixa numérica estreita sem abrir mão do padrão
+   * de qualidade que o Escritor tenta atingir.
+   */
+  itemParaRevisor?: string | null;
 };
 
 /**
@@ -177,6 +186,7 @@ export type PostProntoParaPublicar = {
   imagemDestaqueMediaId: string | null;
 };
 
+
 /** Post publicado da mesma propriedade, candidato a "post relacionado" no Agente de Links. */
 export type PostRelacionado = {
   titulo: string;
@@ -276,6 +286,8 @@ export type ItemChecklistAdmin = {
   item: string;
   peso: number;
   ativo: boolean;
+  /** Ver ItemChecklistCarregado.itemParaRevisor — calibração dupla Escritor/Revisor. */
+  itemParaRevisor: string | null;
 };
 
 export type DadosItemChecklist = {
@@ -284,6 +296,7 @@ export type DadosItemChecklist = {
   item: string;
   peso: number;
   ativo?: boolean;
+  itemParaRevisor?: string | null;
 };
 
 /** Post publicado, com os campos que a tela de Posts Publicados precisa mostrar. */

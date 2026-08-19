@@ -272,12 +272,12 @@ export async function carregarChecklistAtivo(propriedadeId: string): Promise<Ite
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("checklist_qa_itens")
-    .select("id, item, peso")
+    .select("id, item, peso, item_para_revisor")
     .eq("propriedade_id", propriedadeId)
     .eq("ativo", true);
 
   if (error) throw new Error(`Falha ao carregar checklist da propriedade ${propriedadeId}: ${error.message}`);
-  return (data ?? []).map((linha) => ({ id: linha.id, item: linha.item, peso: linha.peso }));
+  return (data ?? []).map((linha) => ({ id: linha.id, item: linha.item, peso: linha.peso, itemParaRevisor: linha.item_para_revisor }));
 }
 
 export async function marcarPautaEmProducao(pautaId: string): Promise<void> {
@@ -1061,7 +1061,7 @@ export async function listarChecklistPorPropriedade(propriedadeId: string): Prom
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("checklist_qa_itens")
-    .select("id, propriedade_id, item, peso, ativo")
+    .select("id, propriedade_id, item, peso, ativo, item_para_revisor")
     .eq("propriedade_id", propriedadeId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(`Falha ao listar checklist da propriedade ${propriedadeId}: ${error.message}`);
@@ -1071,20 +1071,36 @@ export async function listarChecklistPorPropriedade(propriedadeId: string): Prom
     item: linha.item as string,
     peso: linha.peso as number,
     ativo: linha.ativo as boolean,
+    itemParaRevisor: linha.item_para_revisor as string | null,
   }));
 }
 
 export async function salvarItemChecklist(dados: DadosItemChecklist): Promise<ItemChecklistAdmin> {
   const supabase = createAdminClient();
-  const linha = { propriedade_id: dados.propriedadeId, item: dados.item, peso: dados.peso, ativo: dados.ativo ?? true };
+  const linha = {
+    propriedade_id: dados.propriedadeId,
+    item: dados.item,
+    peso: dados.peso,
+    ativo: dados.ativo ?? true,
+    // Calibração dupla Escritor/Revisor (Fase 4b, 19/08/2026) — "" tratado como null (campo
+    // deixado em branco no formulário = "sem override", não uma string vazia salva no banco).
+    item_para_revisor: dados.itemParaRevisor?.trim() ? dados.itemParaRevisor : null,
+  };
 
   const query = dados.id
     ? supabase.from("checklist_qa_itens").update(linha).eq("id", dados.id)
     : supabase.from("checklist_qa_itens").insert(linha);
 
-  const { data, error } = await query.select("id, propriedade_id, item, peso, ativo").single();
+  const { data, error } = await query.select("id, propriedade_id, item, peso, ativo, item_para_revisor").single();
   if (error || !data) throw new Error(`Falha ao salvar item de checklist "${dados.item}": ${error?.message ?? "sem retorno"}`);
-  return { id: data.id, propriedadeId: data.propriedade_id, item: data.item, peso: data.peso, ativo: data.ativo };
+  return {
+    id: data.id,
+    propriedadeId: data.propriedade_id,
+    item: data.item,
+    peso: data.peso,
+    ativo: data.ativo,
+    itemParaRevisor: data.item_para_revisor,
+  };
 }
 
 export async function excluirItemChecklist(itemId: string): Promise<void> {

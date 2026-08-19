@@ -287,4 +287,45 @@ describe("revisarConteudo", () => {
     const promptEnviado = chamada.messages[0].content as string;
     expect(promptEnviado).toContain("Contagem REAL de palavras do corpo do artigo (calculada programaticamente, não estime por conta própria): 4 palavras.");
   });
+
+  // Calibração dupla Escritor/Revisor (Fase 4b, 19/08/2026, pedido do Luiz) — achado real do teste
+  // de ponta a ponta: itens de faixa numérica estreita (ex.: "40-60 palavras") são difíceis do
+  // Escritor acertar em TODAS as seções de um artigo simultaneamente. itemParaRevisor permite o
+  // Revisor aceitar uma faixa mais tolerante que o alvo pedido ao Escritor pro mesmo item.
+  it("usa itemParaRevisor no prompt quando preenchido, em vez do item padrão do Escritor", async () => {
+    const mockCreate = obterMockCreate();
+    mockCreate.mockResolvedValue({
+      content: [
+        { type: "tool_use", input: { score: 90, motivo: null, precisao_factual_adequada: true, fontes_especificas: true, originalidade_adequada: true } },
+      ],
+      usage: { input_tokens: 800, output_tokens: 40 },
+    });
+    const checklistComCalibracaoDupla: ItemChecklistCarregado[] = [
+      { id: "1", item: "Resposta direta (40-60 palavras) logo abaixo de cada H2", peso: 1, itemParaRevisor: "Resposta direta (20-80 palavras) logo abaixo de cada H2" },
+    ];
+
+    await revisarConteudo(conteudo, checklistComCalibracaoDupla, propriedadeSemCalibracao, postsRecentesVazio);
+
+    const chamada = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0];
+    const promptEnviado = chamada.messages[0].content as string;
+    expect(promptEnviado).toContain("Resposta direta (20-80 palavras) logo abaixo de cada H2");
+    expect(promptEnviado).not.toContain("40-60 palavras");
+  });
+
+  it("usa o item padrão (mesmo texto do Escritor) quando itemParaRevisor é null/ausente", async () => {
+    const mockCreate = obterMockCreate();
+    mockCreate.mockResolvedValue({
+      content: [
+        { type: "tool_use", input: { score: 90, motivo: null, precisao_factual_adequada: true, fontes_especificas: true, originalidade_adequada: true } },
+      ],
+      usage: { input_tokens: 800, output_tokens: 40 },
+    });
+    const checklistSemOverride: ItemChecklistCarregado[] = [{ id: "1", item: "Mínimo 1.800 palavras", peso: 1, itemParaRevisor: null }];
+
+    await revisarConteudo(conteudo, checklistSemOverride, propriedadeSemCalibracao, postsRecentesVazio);
+
+    const chamada = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0];
+    const promptEnviado = chamada.messages[0].content as string;
+    expect(promptEnviado).toContain("Mínimo 1.800 palavras");
+  });
 });
