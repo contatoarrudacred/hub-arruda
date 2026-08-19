@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cifrar } from "./criptografia";
 import type {
+  AutoriaPropriedade,
   ConteudoGerado,
   DadosItemChecklist,
   DadosMatriz,
@@ -57,6 +58,35 @@ function mapearRascunho(bruto: unknown): ConteudoGerado | null {
   if (!bruto) return null;
   const r = bruto as RascunhoBruto;
   return { titulo: r.titulo, conteudoHtml: r.conteudo_html, metaTitle: r.meta_title, metaDescription: r.meta_description, slug: r.slug };
+}
+
+// Formato do jsonb propriedades_digitais.autoria (migration 20260819110000, Fase 4a Task 1) —
+// snake_case, mesma convenção de RascunhoBruto acima (gravado/lido direto, sem passar pelo
+// PostgREST). Ver comment on column na migration pra shape completo.
+type AutoriaBruta = {
+  nome: string;
+  foto_url: string;
+  bio: string;
+  especialidade: string;
+  empresa: string;
+  credenciais: string[];
+  perfis_profissionais: string[];
+};
+
+/** `null` quando a propriedade não tem autoria configurada ainda (coluna nula) — ver
+ * AutoriaPropriedade em tipos.ts e a spec Fase 4a seção 3.3. */
+function mapearAutoria(bruto: unknown): AutoriaPropriedade | null {
+  if (!bruto) return null;
+  const a = bruto as AutoriaBruta;
+  return {
+    nome: a.nome,
+    fotoUrl: a.foto_url,
+    bio: a.bio,
+    especialidade: a.especialidade,
+    empresa: a.empresa,
+    credenciais: a.credenciais,
+    perfisProfissionais: a.perfis_profissionais,
+  };
 }
 
 function mapearPauta(data: {
@@ -171,7 +201,7 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("propriedades_digitais")
-    .select("id, nome, url_base, tipo_cms, config_pipeline, credenciais_canais")
+    .select("id, nome, url_base, tipo_cms, config_pipeline, credenciais_canais, autoria")
     .eq("id", propriedadeId)
     .single();
 
@@ -199,6 +229,16 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
     postsPorDia: config.postsPorDia ?? undefined,
     janelaPublicacao: config.janelaPublicacao ?? undefined,
     credenciaisCanais,
+    autoria: mapearAutoria(data.autoria),
+    // Passthrough puro — SEM `?? default` aqui. O default de cada campo (80/"medio"/true) é
+    // responsabilidade exclusiva de revisor.ts (SCORE_MINIMO_APROVACAO_PADRAO, calcularAprovacao,
+    // montarPrompt) — ver Fase 4a Task 2. Inventar um segundo default nesta camada seria uma
+    // segunda fonte de verdade podendo divergir silenciosamente da primeira.
+    scoreMinimoAprovacao: config.scoreMinimoAprovacao,
+    rigorYmyl: config.rigorYmyl,
+    checarPrecisaoFactual: config.checarPrecisaoFactual,
+    checarFontesEspecificas: config.checarFontesEspecificas,
+    checarOriginalidade: config.checarOriginalidade,
   };
 }
 
@@ -377,12 +417,35 @@ function mapearConfigPipeline(bruto: unknown): {
   maxTentativas: number;
   postsPorDia: number | null;
   janelaPublicacao: JanelaPublicacao | null;
+  // Os 5 campos de calibração do Revisor (Fase 4a, Task 3, spec seção 3.1.1) — deliberadamente
+  // `| undefined`, NUNCA com fallback pra um valor concreto aqui: quem decide o default (80,
+  // "medio", true) é revisor.ts, não este mapeador. Ver comentário em carregarPropriedade.
+  scoreMinimoAprovacao: number | undefined;
+  rigorYmyl: PropriedadeCarregada["rigorYmyl"];
+  checarPrecisaoFactual: boolean | undefined;
+  checarFontesEspecificas: boolean | undefined;
+  checarOriginalidade: boolean | undefined;
 } {
-  const config = (bruto as { max_tentativas?: number; posts_por_dia?: number | null; janela_publicacao?: JanelaPublicacao | null }) ?? {};
+  const config =
+    (bruto as {
+      max_tentativas?: number;
+      posts_por_dia?: number | null;
+      janela_publicacao?: JanelaPublicacao | null;
+      score_minimo_aprovacao?: number;
+      rigor_ymyl?: PropriedadeCarregada["rigorYmyl"];
+      checar_precisao_factual?: boolean;
+      checar_fontes_especificas?: boolean;
+      checar_originalidade?: boolean;
+    }) ?? {};
   return {
     maxTentativas: config.max_tentativas ?? 3,
     postsPorDia: config.posts_por_dia ?? null,
     janelaPublicacao: config.janela_publicacao ?? null,
+    scoreMinimoAprovacao: config.score_minimo_aprovacao,
+    rigorYmyl: config.rigor_ymyl,
+    checarPrecisaoFactual: config.checar_precisao_factual,
+    checarFontesEspecificas: config.checar_fontes_especificas,
+    checarOriginalidade: config.checar_originalidade,
   };
 }
 
@@ -407,6 +470,7 @@ function mapearPropriedadeAdmin(data: {
   ativo: boolean;
   config_pipeline: unknown;
   credenciais_canais: unknown;
+  autoria: unknown;
 }): PropriedadeAdmin {
   const config = mapearConfigPipeline(data.config_pipeline);
   return {
@@ -419,10 +483,11 @@ function mapearPropriedadeAdmin(data: {
     postsPorDia: config.postsPorDia,
     janelaPublicacao: config.janelaPublicacao,
     credenciais: mapearCredenciais(data.credenciais_canais),
+    autoria: mapearAutoria(data.autoria),
   };
 }
 
-const CAMPOS_PROPRIEDADE_ADMIN = "id, nome, url_base, tipo_cms, ativo, config_pipeline, credenciais_canais";
+const CAMPOS_PROPRIEDADE_ADMIN = "id, nome, url_base, tipo_cms, ativo, config_pipeline, credenciais_canais, autoria";
 
 /**
  * Lista as unidades de negócio pro seletor de "dono" da propriedade na tela de Propriedades
@@ -472,11 +537,25 @@ export async function salvarPropriedade(dados: DadosPropriedade): Promise<Propri
     configPipelineExistente = (atual.config_pipeline as Record<string, unknown>) ?? {};
   }
 
+  // Fase 4a, Task 3 (19/08/2026) — os 5 campos de calibração do Revisor, ao contrário de
+  // max_tentativas/posts_por_dia/janela_publicacao acima, são inclusão CONDICIONAL: um chamador
+  // que não informa um desses campos (`dados.scoreMinimoAprovacao === undefined`, caso de toda a
+  // base de código hoje — a tela ainda não os expõe) PRECISA preservar o valor já salvo no
+  // config_pipeline, não apagá-lo. Se fossem escritos incondicionalmente (mesmo padrão de
+  // max_tentativas), toda chamada a salvarPropriedade que não conhece calibração sobrescreveria
+  // silenciosamente `score_minimo_aprovacao`/etc. com `undefined`, que o JSON.stringify do
+  // supabase-js dropa — apagando uma calibração configurada numa sessão anterior. Mesmo raciocínio
+  // já usado abaixo pra pessoaId/unidadeNegocioId.
   const configPipeline = {
     ...configPipelineExistente,
     max_tentativas: dados.maxTentativas,
     posts_por_dia: dados.postsPorDia ?? null,
     janela_publicacao: dados.janelaPublicacao ?? null,
+    ...(dados.scoreMinimoAprovacao !== undefined ? { score_minimo_aprovacao: dados.scoreMinimoAprovacao } : {}),
+    ...(dados.rigorYmyl !== undefined ? { rigor_ymyl: dados.rigorYmyl } : {}),
+    ...(dados.checarPrecisaoFactual !== undefined ? { checar_precisao_factual: dados.checarPrecisaoFactual } : {}),
+    ...(dados.checarFontesEspecificas !== undefined ? { checar_fontes_especificas: dados.checarFontesEspecificas } : {}),
+    ...(dados.checarOriginalidade !== undefined ? { checar_originalidade: dados.checarOriginalidade } : {}),
   };
 
   const linha = {
@@ -487,6 +566,11 @@ export async function salvarPropriedade(dados: DadosPropriedade): Promise<Propri
     config_pipeline: configPipeline,
     ...(dados.pessoaId !== undefined ? { pessoa_id: dados.pessoaId } : {}),
     ...(dados.unidadeNegocioId !== undefined ? { unidade_negocio_id: dados.unidadeNegocioId } : {}),
+    // autoria: coluna própria, não faz parte do config_pipeline (spec seção 3.3 — não é
+    // "configuração do pipeline", é dado de identidade cadastrado por propriedade). `undefined` =
+    // não mexe no valor já salvo; `null` explícito = limpa; objeto = substitui por inteiro (não é
+    // merge parcial de subcampos — autoria é sempre editada/salva como uma unidade só na tela).
+    ...(dados.autoria !== undefined ? { autoria: dados.autoria } : {}),
   };
 
   const query = dados.id
@@ -882,6 +966,46 @@ export async function listarPostsPublicados(propriedadeId?: string): Promise<Pos
       publicadoEm: linha.publicado_em as string | null,
       tentativas: linha.tentativas as number,
     };
+  });
+}
+
+/**
+ * Título + ângulo dos últimos `limite` posts publicados da propriedade, mais recentes primeiro —
+ * resolve o TODO(Task 3) deixado por processar-pauta.ts (Fase 4a, spec seção 3.1, "Contexto novo
+ * no prompt do Revisor": o Revisor usa isto pra julgar `originalidade_adequada`).
+ *
+ * Função dedicada, não extensão de `listarPostsPublicados` acima: aquela serve a tela de admin
+ * "Posts Publicados" (Fase 2, Task 11) e devolve `PostAdmin` (id/url/scoreQa/tentativas) — campos
+ * que o Revisor não precisa, e que não carrega `angulo` porque esse campo vive em `pautas`, não em
+ * `posts` (decisão registrada no relatório da Task 2). Estender aquele tipo/consulta só pra este
+ * uso pouparia uma função nova à custa de acoplar dois consumidores com necessidades diferentes ao
+ * mesmo contrato — mais barato manter os dois separados.
+ *
+ * Embed `pautas(angulo)` SEM `!inner` — seguro porque `posts.pauta_id` é
+ * `not null references pautas(id)` (mesma decisão já documentada em listarEtapasConcluidasRecentes
+ * pra `pautas_execucao_log.pauta_id`, também not-null). `[]` (não erro) quando a propriedade não
+ * tem posts publicados ainda — o Revisor trata lista vazia com o texto fixo do prompt (ver
+ * montarPrompt, revisor.ts), continua funcionando normalmente sem contexto de comparação.
+ */
+export async function carregarPostsRecentes(propriedadeId: string, limite: number): Promise<{ titulo: string; angulo: string }[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("titulo, pautas(angulo)")
+    .eq("propriedade_id", propriedadeId)
+    .eq("status", "publicado")
+    .order("publicado_em", { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(`Falha ao carregar posts recentes da propriedade ${propriedadeId}: ${error.message}`);
+
+  return (data ?? []).map((linha) => {
+    // Mesma forma defensiva de mapearNomePauta (acima): o supabase-js tipa embeds belongs-to como
+    // array em alguns casos e como objeto em outros, dependendo da versão/inferência — cobre os
+    // dois. `pautas` nulo/ausente não deveria acontecer (FK not null), mas degrada pra "" em vez de
+    // lançar, na dúvida.
+    const pauta = linha.pautas as { angulo?: string } | { angulo?: string }[] | null;
+    const angulo = Array.isArray(pauta) ? (pauta[0]?.angulo ?? "") : (pauta?.angulo ?? "");
+    return { titulo: linha.titulo as string, angulo };
   });
 }
 

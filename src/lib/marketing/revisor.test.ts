@@ -27,6 +27,7 @@ const propriedadeSemCalibracao: PropriedadeCarregada = {
   urlBase: "https://exemplo.com",
   tipoCms: "wordpress",
   maxTentativas: 3,
+  autoria: null,
 };
 
 const postsRecentesVazio: { titulo: string; angulo: string }[] = [];

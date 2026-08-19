@@ -8,6 +8,7 @@ import {
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
   carregarPersonaFormulario,
+  carregarPostsRecentes,
   carregarPropriedade,
   carregarResumoVisaoGeral,
   contarPostsPublicadosDesde,
@@ -119,6 +120,7 @@ describe("carregarPropriedade", () => {
       maxTentativas: 5,
       postsPorDia: 3,
       janelaPublicacao: { inicio: "08:00", fim: "20:00" },
+      autoria: null,
     });
   });
 
@@ -195,6 +197,125 @@ describe("carregarPropriedade", () => {
 
     await expect(carregarPropriedade("prop-x")).rejects.toThrow(/Falha ao carregar propriedade prop-x/);
   });
+
+  // Fase 4a, Task 3 (19/08/2026) — autoria vive em coluna própria (autoria jsonb), não em
+  // config_pipeline. `null` quando a propriedade não tem autoria configurada, objeto completo
+  // (snake_case do banco -> camelCase do tipo) quando presente.
+  it("mapeia autoria quando presente no banco (snake_case -> camelCase)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          autoria: {
+            nome: "Fulano de Tal",
+            foto_url: "https://exemplo.com/fulano.jpg",
+            bio: "Especialista em recuperação de crédito.",
+            especialidade: "Direito do Consumidor",
+            empresa: "ArrudaCred",
+            credenciais: ["OAB/SP 123456"],
+            perfis_profissionais: ["https://linkedin.com/in/fulano"],
+          },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.autoria).toEqual({
+      nome: "Fulano de Tal",
+      fotoUrl: "https://exemplo.com/fulano.jpg",
+      bio: "Especialista em recuperação de crédito.",
+      especialidade: "Direito do Consumidor",
+      empresa: "ArrudaCred",
+      credenciais: ["OAB/SP 123456"],
+      perfisProfissionais: ["https://linkedin.com/in/fulano"],
+    });
+  });
+
+  it("mapeia autoria como null quando ausente no banco", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          autoria: null,
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.autoria).toBeNull();
+  });
+
+  // Fase 4a, Task 3 — os 5 campos de calibração do Revisor vivem em config_pipeline, mesmo padrão
+  // de max_tentativas/posts_por_dia/janela_publicacao já mapeados acima.
+  it("mapeia os 5 campos de calibração do Revisor quando presentes no config_pipeline", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: {
+            max_tentativas: 3,
+            score_minimo_aprovacao: 90,
+            rigor_ymyl: "alto",
+            checar_precisao_factual: false,
+            checar_fontes_especificas: true,
+            checar_originalidade: false,
+          },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.scoreMinimoAprovacao).toBe(90);
+    expect(propriedade.rigorYmyl).toBe("alto");
+    expect(propriedade.checarPrecisaoFactual).toBe(false);
+    expect(propriedade.checarFontesEspecificas).toBe(true);
+    expect(propriedade.checarOriginalidade).toBe(false);
+  });
+
+  // Regressão (Task 2 depende disto): propriedade sem NENHUM dos 5 campos de calibração no
+  // config_pipeline precisa continuar produzindo `undefined` nesses 5 campos — NÃO um default
+  // inventado aqui (o default é responsabilidade de revisor.ts, ver calcularAprovacao/montarPrompt).
+  // Repetir o default nesta camada seria uma segunda fonte de verdade, o risco que o brief desta
+  // task pediu pra evitar explicitamente.
+  it("regressão: deixa os 5 campos de calibração undefined quando ausentes do config_pipeline (default é do revisor.ts, não daqui)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.scoreMinimoAprovacao).toBeUndefined();
+    expect(propriedade.rigorYmyl).toBeUndefined();
+    expect(propriedade.checarPrecisaoFactual).toBeUndefined();
+    expect(propriedade.checarFontesEspecificas).toBeUndefined();
+    expect(propriedade.checarOriginalidade).toBeUndefined();
+  });
 });
 
 describe("contarPostsPublicadosDesde", () => {
@@ -257,6 +378,7 @@ describe("listarPropriedades", () => {
         postsPorDia: 3,
         janelaPublicacao: { inicio: "08:00", fim: "20:00" },
         credenciais: { wordpress: { usuario: "admin", senhaConfigurada: true } },
+        autoria: null,
       },
     ]);
   });
@@ -285,6 +407,47 @@ describe("listarPropriedades", () => {
     expect(propriedade.postsPorDia).toBeNull();
     expect(propriedade.janelaPublicacao).toBeNull();
     expect(propriedade.credenciais).toEqual({});
+    expect(propriedade.autoria).toBeNull();
+  });
+
+  it("mapeia autoria quando presente (Fase 4a, Task 3)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          {
+            id: "prop-3",
+            nome: "Site Com Autoria",
+            url_base: "https://y.com",
+            tipo_cms: "wordpress",
+            ativo: true,
+            config_pipeline: {},
+            credenciais_canais: {},
+            autoria: {
+              nome: "Fulano",
+              foto_url: "https://y.com/fulano.jpg",
+              bio: "Bio curta.",
+              especialidade: "Crédito",
+              empresa: "ArrudaCred",
+              credenciais: [],
+              perfis_profissionais: [],
+            },
+          },
+        ],
+        error: null,
+      }),
+    );
+
+    const [propriedade] = await listarPropriedades();
+
+    expect(propriedade.autoria).toEqual({
+      nome: "Fulano",
+      fotoUrl: "https://y.com/fulano.jpg",
+      bio: "Bio curta.",
+      especialidade: "Crédito",
+      empresa: "ArrudaCred",
+      credenciais: [],
+      perfisProfissionais: [],
+    });
   });
 
   it("lança erro claro quando a query falha", async () => {
@@ -444,6 +607,150 @@ describe("salvarPropriedade", () => {
     await expect(
       salvarPropriedade({ nome: "X", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3, pessoaId: "p1" }),
     ).rejects.toThrow(/Falha ao salvar propriedade "X".*erro de teste/);
+  });
+
+  // Fase 4a, Task 3 (19/08/2026) — os 5 campos de calibração do Revisor gravam nas mesmas chaves
+  // snake_case que carregarPropriedade lê de volta (score_minimo_aprovacao/rigor_ymyl/checar_*).
+  it("grava os campos de calibração informados no config_pipeline", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarPropriedade({
+      id: "prop-1",
+      nome: "Site",
+      urlBase: "https://x.com",
+      tipoCms: "wordpress",
+      maxTentativas: 3,
+      scoreMinimoAprovacao: 90,
+      rigorYmyl: "alto",
+      checarPrecisaoFactual: false,
+      checarFontesEspecificas: true,
+      checarOriginalidade: false,
+    });
+
+    expect(linhaEscritaGravada?.config_pipeline).toEqual(
+      expect.objectContaining({
+        score_minimo_aprovacao: 90,
+        rigor_ymyl: "alto",
+        checar_precisao_factual: false,
+        checar_fontes_especificas: true,
+        checar_originalidade: false,
+      }),
+    );
+  });
+
+  // Não-regressão (mesmo espírito do teste de canais_distribuicao acima): salvar a propriedade sem
+  // informar os campos de calibração (chamador que ainda não conhece esses campos — caso de toda a
+  // base de código hoje, a tela ainda não os expõe) não pode apagar um valor de calibração já salvo
+  // numa sessão anterior. Diferente de max_tentativas/posts_por_dia (sempre reescritos com o que
+  // vier em `dados`, `?? null` inclusive): calibração ausente em `dados` (undefined) precisa
+  // PRESERVAR o que já estava no config_pipeline, não sobrescrever com undefined/apagar a chave.
+  it("preserva score_minimo_aprovacao já salvo quando a chamada não informa esse campo (não força wipe)", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) {
+        return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3, score_minimo_aprovacao: 90, rigor_ymyl: "alto" } }, error: null });
+      }
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    // Sem nenhum campo de calibração no payload — simula a tela atual, que ainda não os envia.
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 5 });
+
+    expect(linhaEscritaGravada?.config_pipeline).toEqual(
+      expect.objectContaining({ score_minimo_aprovacao: 90, rigor_ymyl: "alto", max_tentativas: 5 }),
+    );
+  });
+
+  // Fase 4a, Task 3 — autoria é coluna própria (não faz parte do config_pipeline).
+  it("grava autoria como coluna própria (fora do config_pipeline) quando informada", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    const autoria = {
+      nome: "Fulano",
+      fotoUrl: "https://x.com/f.jpg",
+      bio: "Bio",
+      especialidade: "Crédito",
+      empresa: "ArrudaCred",
+      credenciais: ["OAB 1"],
+      perfisProfissionais: ["https://linkedin.com/in/fulano"],
+    };
+
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3, autoria });
+
+    expect(linhaEscritaGravada?.autoria).toEqual(autoria);
+    expect(linhaEscritaGravada?.config_pipeline).not.toHaveProperty("autoria");
+  });
+
+  it("não mexe na coluna autoria quando não informada (undefined preserva o valor já salvo)", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3 });
+
+    expect(linhaEscritaGravada).not.toHaveProperty("autoria");
   });
 });
 
@@ -1011,6 +1318,69 @@ describe("listarPostsPublicados", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(listarPostsPublicados()).rejects.toThrow(/Falha ao listar posts publicados.*erro de teste/);
+  });
+});
+
+// Fase 4a, Task 3 (19/08/2026) — resolve o TODO deixado pela Task 2 (revisor.test.ts/
+// processar-pauta.ts): título + ângulo dos posts publicados recentes desta propriedade, pro
+// Revisor julgar originalidade_adequada (spec seção 3.1, "Contexto novo no prompt do Revisor").
+// Função dedicada (não extensão de listarPostsPublicados, que serve a tela de admin e não carrega
+// ângulo, campo que vive em `pautas`) — ver decisão registrada no relatório desta task.
+describe("carregarPostsRecentes", () => {
+  it("mapeia titulo/angulo via embed com pautas, mais recentes primeiro", async () => {
+    const builder = criarQueryFalsa({
+      data: [
+        { titulo: "Como Limpar o Nome", pautas: { angulo: "passo_a_passo" } },
+        { titulo: "Score de Crédito Explicado", pautas: { angulo: "mitos_e_verdades" } },
+      ],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const posts = await carregarPostsRecentes("prop-1", 10);
+
+    expect(posts).toEqual([
+      { titulo: "Como Limpar o Nome", angulo: "passo_a_passo" },
+      { titulo: "Score de Crédito Explicado", angulo: "mitos_e_verdades" },
+    ]);
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+    expect(builder.eq).toHaveBeenCalledWith("status", "publicado");
+    expect(builder.order).toHaveBeenCalledWith("publicado_em", { ascending: false });
+  });
+
+  it("respeita o parâmetro limite", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await carregarPostsRecentes("prop-1", 5);
+
+    expect(builder.limit).toHaveBeenCalledWith(5);
+  });
+
+  it("retorna array vazio quando a propriedade não tem posts publicados ainda (não lança)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    await expect(carregarPostsRecentes("prop-1", 10)).resolves.toEqual([]);
+  });
+
+  it("retorna array vazio quando data vem null", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    await expect(carregarPostsRecentes("prop-1", 10)).resolves.toEqual([]);
+  });
+
+  it("é defensivo quando o embed de pauta vem vazio/nulo (angulo cai pra string vazia, não quebra)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ titulo: "Post Órfão", pautas: null }], error: null }));
+
+    const [post] = await carregarPostsRecentes("prop-1", 10);
+
+    expect(post).toEqual({ titulo: "Post Órfão", angulo: "" });
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPostsRecentes("prop-1", 10)).rejects.toThrow(/Falha ao carregar posts recentes da propriedade prop-1.*erro de teste/);
   });
 });
 

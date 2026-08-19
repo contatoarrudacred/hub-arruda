@@ -44,6 +44,23 @@ export type ItemChecklistCarregado = {
   peso: number;
 };
 
+/**
+ * Dados de autoria E-E-A-T de uma propriedade (Fase 4a, spec seção 3.3, 19/08/2026) —
+ * `propriedades_digitais.autoria`, coluna jsonb própria (migration Task 1, NÃO em
+ * `config_pipeline`: não é configuração do pipeline, é dado de identidade cadastrado uma vez por
+ * propriedade e herdado por todo post dela). Usada só na montagem do schema estruturado
+ * `Article`/`Organization` (seção 3.4, outra task) — não influencia o texto gerado pelo Escritor.
+ */
+export type AutoriaPropriedade = {
+  nome: string;
+  fotoUrl: string;
+  bio: string;
+  especialidade: string;
+  empresa: string;
+  credenciais: string[];
+  perfisProfissionais: string[];
+};
+
 export type PropriedadeCarregada = {
   id: string;
   nome: string;
@@ -78,6 +95,15 @@ export type PropriedadeCarregada = {
   checarPrecisaoFactual?: boolean;
   checarFontesEspecificas?: boolean;
   checarOriginalidade?: boolean;
+  /**
+   * Autoria E-E-A-T da propriedade (Fase 4a, spec seção 3.3, Task 3, 19/08/2026) —
+   * `propriedades_digitais.autoria`, mapeada por `carregarPropriedade` (repositorio.ts). Campo
+   * obrigatório (não opcional, diferente dos de calibração acima) porque toda propriedade tem uma
+   * resposta definitiva pra "tem autoria configurada?": `null` = não configurada ainda (posts
+   * publicam normalmente, só sem o campo `author` no schema Article), objeto completo = configurada.
+   * Mesma convenção de `PautaCarregada.ultimoRascunho`.
+   */
+  autoria: AutoriaPropriedade | null;
 };
 
 /** Saída do Escritor — o rascunho completo antes de qualquer revisão. */
@@ -154,6 +180,8 @@ export type PropriedadeAdmin = {
   postsPorDia: number | null;
   janelaPublicacao: JanelaPublicacao | null;
   credenciais: Record<string, CredencialCanalAdmin>;
+  /** Autoria E-E-A-T cadastrada (Fase 4a, Task 3, 19/08/2026) — `null` = não configurada ainda. */
+  autoria: AutoriaPropriedade | null;
 };
 
 export type DadosPropriedade = {
@@ -168,6 +196,19 @@ export type DadosPropriedade = {
   /** Um dos dois é obrigatório na criação — constraint chk_propriedade_tem_dono do banco. */
   pessoaId?: string | null;
   unidadeNegocioId?: string | null;
+  /**
+   * Calibração do Revisor (Fase 4a, Task 3, 19/08/2026) — mesclados no `config_pipeline` por
+   * `salvarPropriedade`, ausência (`undefined`) preserva o valor já salvo (ou deixa ausente, caindo
+   * no default do `revisor.ts`) em vez de apagar; diferente de `postsPorDia`/`janelaPublicacao`
+   * acima, que a tela sempre envia e `undefined`/ausência vira `null` explícito (limpar).
+   */
+  scoreMinimoAprovacao?: number;
+  rigorYmyl?: "alto" | "medio" | "baixo" | "desativado";
+  checarPrecisaoFactual?: boolean;
+  checarFontesEspecificas?: boolean;
+  checarOriginalidade?: boolean;
+  /** `undefined` = não mexe na autoria já salva; `null` explícito = limpa; objeto = substitui. */
+  autoria?: AutoriaPropriedade | null;
 };
 
 export type MatrizAdmin = {

@@ -34,6 +34,7 @@ const propriedadeFalsa = {
   urlBase: "https://teste.exemplo.com",
   tipoCms: "wordpress" as const,
   maxTentativas: 3,
+  autoria: null,
 };
 
 /**
@@ -194,12 +195,14 @@ describe("credenciaisWordPressDaPropriedade", () => {
 });
 
 describe("processarProximaPauta", () => {
-  // salvarRascunho (Fase 3, 19/08/2026) roda em toda tentativa que chega em gerar_conteudo — mock
-  // padrão aqui em vez de em cada teste individualmente (mesmo raciocínio do resto do arquivo: sem
-  // mock explícito, a chamada cairia na implementação real de repositorio.ts e bateria de verdade
-  // no Supabase). Testes que querem verificar a chamada sobrescrevem com seu próprio spy.
+  // salvarRascunho (Fase 3, 19/08/2026) e carregarPostsRecentes (Fase 4a, Task 3, 19/08/2026)
+  // rodam em toda tentativa que chega em gerar_conteudo/revisar — mock padrão aqui em vez de em
+  // cada teste individualmente (mesmo raciocínio do resto do arquivo: sem mock explícito, a
+  // chamada cairia na implementação real de repositorio.ts e bateria de verdade no Supabase).
+  // Testes que querem verificar a chamada sobrescrevem com seu próprio spy.
   beforeEach(() => {
     vi.spyOn(repositorio, "salvarRascunho").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "carregarPostsRecentes").mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -323,6 +326,55 @@ describe("processarProximaPauta", () => {
       metaDescription: "Guia completo.",
       slug: "como-limpar-nome-serasa",
     });
+  });
+
+  // Fase 4a, Task 3 (19/08/2026): resolve o TODO(Task 3) que a Task 2 deixou — postsRecentes
+  // precisa vir de carregarPostsRecentes(propriedade.id, 10) de verdade, e o resultado precisa
+  // chegar intocado em revisarConteudo (4º argumento) — sem isto o gate de originalidade do
+  // Revisor julgaria sempre sem contexto de comparação, mesmo com posts publicados existindo.
+  it("carrega os posts recentes da propriedade e repassa pro Revisor (originalidade_adequada)", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
+    });
+    const postsRecentesFalsos = [{ titulo: "Post Anterior", angulo: "passo_a_passo" }];
+    const carregarPostsRecentesSpy = vi.spyOn(repositorio, "carregarPostsRecentes").mockResolvedValue(postsRecentesFalsos);
+    const revisarConteudoSpy = vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    espiarRegistrarEtapa();
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(carregarPostsRecentesSpy).toHaveBeenCalledWith("prop-1", 10);
+    expect(revisarConteudoSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), postsRecentesFalsos);
   });
 
   it("mantém o resultado publicado sem reprovar quando só o registro de metadados do post falha", async () => {
