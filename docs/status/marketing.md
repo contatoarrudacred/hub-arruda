@@ -1,6 +1,6 @@
 # Status — Marketing
 
-tarefa: Fase 3 completa + validada end-to-end em produção (migration 20260819100000 aplicada). Fase 4 (a: YMYL/E-E-A-T no Revisor, b: capa+imagens, c: distribuição multi-canal) mapeada ponta a ponta com o Luiz e documentada — fluxo completo publicado como artifact (diagrama + cards) e registrado em MODULO_MARKETING_CONTEUDO_ARRUDACRED.md. Nenhum código da Fase 4 iniciado — só planejamento, pronto pra virar spec formal.
-desde: 2026-08-19T07:00:00-03:00
-proxima: decidir com o Luiz se escreve a spec formal da Fase 4 agora (spec → plano → SDD, mesmo rigor das fases anteriores) ou se segue outro trabalho primeiro
+tarefa: Spec técnica da Fase 4 escrita (docs/superpowers/specs/2026-08-19-fase4-precisao-imagens-distribuicao-design.md) — Revisor estendido (gates YMYL/fontes/originalidade multiplicativos + sugestão de correção), autoria via Propriedade, capa+imagens secundárias+revisor de imagem, distribuição multi-canal. Aguardando aprovação do Luiz antes de virar plano.
+desde: 2026-08-19T08:00:00-03:00
+proxima: Luiz aprova a spec (ou pede ajuste) → escrever o plano de implementação → SDD
 bloqueio: aguardando o Coordenador mesclar a branch em main (pedido já no INBOX)
