@@ -44,7 +44,9 @@ export async function criarVendaSemFunilPrevioAction(entrada: EntradaCriarVenda)
       valorEstimado: entrada.valorEstimado,
     });
     return { sucesso: true, oportunidadeId: resultado.oportunidadeId, pessoaId: pessoa.pessoaId };
-  } catch {
-    return { sucesso: false, erro: "Falha ao criar a venda. Tente novamente." };
+  } catch (erro) {
+    console.error("Falha ao criar venda sem funil prévio:", erro);
+    const mensagem = erro instanceof Error ? erro.message : "Falha ao criar a venda. Tente novamente.";
+    return { sucesso: false, erro: mensagem };
   }
 }
