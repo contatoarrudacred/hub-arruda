@@ -5,7 +5,7 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ConteudoGerado, ItemChecklistCarregado, PautaCarregada, PersonaCarregada, UsageTokens } from "./tipos";
+import type { ConteudoGerado, ItemChecklistCarregado, PautaCarregada, PersonaCarregada, PropriedadeCarregada, UsageTokens } from "./tipos";
 
 const MODELO_ESCRITOR = "claude-sonnet-5";
 
@@ -36,7 +36,12 @@ const FERRAMENTA_ESCRITOR = {
   },
 };
 
-function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[], persona: PersonaCarregada | null): string {
+function montarPrompt(
+  pauta: PautaCarregada,
+  checklist: ItemChecklistCarregado[],
+  persona: PersonaCarregada | null,
+  propriedade: PropriedadeCarregada,
+): string {
   const linhasChecklist = checklist.map((c) => `- ${c.item}`).join("\n");
   const linhas = [
     "Você é o Agente Escritor de um pipeline de geração de conteúdo para blog, otimizado tanto para SEO tradicional quanto para citação por IAs (AEO/GEO).",
@@ -90,6 +95,12 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
         ? `Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:\n${pauta.motivoUltimaReprovacao}`
         : "",
     "",
+    // Fase 4a, Task 4, spec seção 3.1.2 — instruções adicionais cadastradas por propriedade
+    // (config_pipeline.instrucoes_adicionais, ver repositorio.ts), aditivo igual aos blocos de
+    // persona/motivo acima: propriedade sem instrução extra cadastrada (undefined/"") não adiciona
+    // bloco nenhum, prompt sai idêntico ao de antes desta task.
+    propriedade.instrucoesAdicionais ? `Instruções adicionais desta propriedade — siga além de tudo já pedido acima:\n${propriedade.instrucoesAdicionais}` : "",
+    "",
     "Use a ferramenta para registrar o resultado.",
   ];
   return linhas.filter(Boolean).join("\n");
@@ -99,9 +110,10 @@ export async function gerarConteudo(
   pauta: PautaCarregada,
   checklist: ItemChecklistCarregado[],
   persona: PersonaCarregada | null,
+  propriedade: PropriedadeCarregada,
 ): Promise<{ resultado: ConteudoGerado; usage: UsageTokens }> {
   const cliente = obterCliente();
-  const prompt = montarPrompt(pauta, checklist, persona);
+  const prompt = montarPrompt(pauta, checklist, persona, propriedade);
 
   const resposta = await cliente.messages.create({
     model: MODELO_ESCRITOR,

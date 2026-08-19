@@ -146,7 +146,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     const { resultado: conteudo } = await registrarEtapa(
       pauta.id,
       "gerar_conteudo",
-      () => gerarConteudo(pauta, checklist, persona),
+      () => gerarConteudo(pauta, checklist, persona, propriedade),
       (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
     );
 

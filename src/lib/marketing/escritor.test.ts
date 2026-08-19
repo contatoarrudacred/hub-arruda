@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import { gerarConteudo } from "./escritor";
-import type { ItemChecklistCarregado, PautaCarregada, PersonaCarregada } from "./tipos";
+import type { ItemChecklistCarregado, PautaCarregada, PersonaCarregada, PropriedadeCarregada } from "./tipos";
 
 vi.mock("@anthropic-ai/sdk", () => {
   const create = vi.fn();
@@ -49,6 +49,22 @@ const checklist: ItemChecklistCarregado[] = [
   { id: "2", item: "Mínimo 1.800 palavras", peso: 10 },
 ];
 
+const propriedade: PropriedadeCarregada = {
+  id: "prop-1",
+  nome: "Site Teste",
+  urlBase: "https://teste.exemplo.com",
+  tipoCms: "wordpress",
+  maxTentativas: 3,
+  autoria: null,
+};
+
+// Task 4 (Fase 4a), spec seção 3.1.2 — mesma propriedade, mas com instrucoesAdicionais
+// cadastrado, pro teste que confirma o bloco aditivo no prompt.
+const propriedadeComInstrucoes: PropriedadeCarregada = {
+  ...propriedade,
+  instrucoesAdicionais: "Evite jargão técnico neste site; sempre mencione que a consultoria é gratuita.",
+};
+
 describe("gerarConteudo", () => {
   // `create` (dentro do mock de @anthropic-ai/sdk) é um único vi.fn() compartilhado pelo módulo
   // inteiro (fora da factory de vi.mock), reusado por toda instância de Anthropic — inclusive o
@@ -84,7 +100,7 @@ describe("gerarConteudo", () => {
       usage: { input_tokens: 1234, output_tokens: 5678 },
     });
 
-    const { resultado, usage } = await gerarConteudo(pauta, checklist, null);
+    const { resultado, usage } = await gerarConteudo(pauta, checklist, null, propriedade);
 
     expect(resultado.titulo).toContain("Serasa");
     expect(resultado.slug).toBe("como-limpar-nome-serasa");
@@ -107,6 +123,7 @@ describe("gerarConteudo", () => {
       ].join("\n"),
     );
     expect(promptEnviado).not.toContain("Persona deste post");
+    expect(promptEnviado).not.toContain("Instruções adicionais desta propriedade");
     expect(argumentosChamada.max_tokens).toBe(16000);
     expect(usage.inputTokens).toBe(1234);
     expect(usage.outputTokens).toBe(5678);
@@ -136,7 +153,7 @@ describe("gerarConteudo", () => {
       usage: { input_tokens: 1234, output_tokens: 5678 },
     });
 
-    await gerarConteudo(pautaDePersona, checklist, persona);
+    await gerarConteudo(pautaDePersona, checklist, persona, propriedade);
 
     const argumentosChamada = mockCreate.mock.calls[0][0];
     const promptEnviado = argumentosChamada.messages[0].content;
@@ -148,6 +165,46 @@ describe("gerarConteudo", () => {
     expect(promptEnviado.indexOf(persona.conteudoCompleto)).toBeLessThan(promptEnviado.indexOf("Use a ferramenta para registrar o resultado."));
     // Resto do prompt (pauta/checklist/regra de citabilidade) continua idêntico ao teste de
     // regressão acima — mesma ordem, nada reescrito.
+    expect(promptEnviado).toContain("Checklist de qualidade obrigatório — todo item precisa ser atendido:\n- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras");
+  });
+
+  // Novo (Task 4, Fase 4a, spec seção 3.1.2): com propriedade.instrucoesAdicionais preenchido, o
+  // prompt ganha o bloco adicional — aditivo, mesmo padrão do bloco de persona acima, sem tocar no
+  // resto do prompt.
+  it("inclui o bloco de instruções adicionais no prompt quando a propriedade tem instrucoesAdicionais", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
+            conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
+            meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+            meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+      usage: { input_tokens: 1234, output_tokens: 5678 },
+    });
+
+    await gerarConteudo(pauta, checklist, null, propriedadeComInstrucoes);
+
+    const argumentosChamada = mockCreate.mock.calls[0][0];
+    const promptEnviado = argumentosChamada.messages[0].content;
+    expect(promptEnviado).toContain(
+      `Instruções adicionais desta propriedade — siga além de tudo já pedido acima:\n${propriedadeComInstrucoes.instrucoesAdicionais}`,
+    );
+    // A instrução final continua depois do bloco — prova que a adição é ANTES dela, não uma
+    // substituição/reordenação do resto do prompt.
+    expect(promptEnviado.indexOf(propriedadeComInstrucoes.instrucoesAdicionais!)).toBeLessThan(
+      promptEnviado.indexOf("Use a ferramenta para registrar o resultado."),
+    );
+    // Resto do prompt (pauta/checklist/regra de citabilidade) continua idêntico ao teste de
+    // regressão — mesma ordem, nada reescrito.
     expect(promptEnviado).toContain("Checklist de qualidade obrigatório — todo item precisa ser atendido:\n- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras");
   });
 
@@ -181,7 +238,7 @@ describe("gerarConteudo", () => {
       motivoUltimaReprovacao: "Contagem de palavras insuficiente: só 1.200 de 1.800 exigidas.",
     };
 
-    await gerarConteudo(pautaReprovadaAntes, checklist, null);
+    await gerarConteudo(pautaReprovadaAntes, checklist, null, propriedade);
 
     const argumentosChamada = mockCreate.mock.calls[0][0];
     const promptEnviado = argumentosChamada.messages[0].content;
@@ -230,7 +287,7 @@ describe("gerarConteudo", () => {
       },
     };
 
-    await gerarConteudo(pautaComRascunhoAnterior, checklist, null);
+    await gerarConteudo(pautaComRascunhoAnterior, checklist, null, propriedade);
 
     const argumentosChamada = mockCreate.mock.calls[0][0];
     const promptEnviado = argumentosChamada.messages[0].content;
@@ -272,7 +329,7 @@ describe("gerarConteudo", () => {
       ],
     });
 
-    await expect(gerarConteudo(pauta, checklist, null)).rejects.toThrow(/truncada por limite de tokens/);
+    await expect(gerarConteudo(pauta, checklist, null, propriedade)).rejects.toThrow(/truncada por limite de tokens/);
   });
 
   it("lança erro claro quando um campo obrigatório vem ausente/vazio", async () => {
@@ -295,6 +352,6 @@ describe("gerarConteudo", () => {
       ],
     });
 
-    await expect(gerarConteudo(pauta, checklist, null)).rejects.toThrow(/titulo/);
+    await expect(gerarConteudo(pauta, checklist, null, propriedade)).rejects.toThrow(/titulo/);
   });
 });

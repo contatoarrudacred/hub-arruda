@@ -663,7 +663,7 @@ describe("processarProximaPauta", () => {
 
     expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
     expect(carregarPersonaSpy).toHaveBeenCalledWith("persona-1");
-    expect(gerarConteudoSpy).toHaveBeenCalledWith(pautaComPersona, [], personaFalsa);
+    expect(gerarConteudoSpy).toHaveBeenCalledWith(pautaComPersona, [], personaFalsa, propriedadeFalsa);
   });
 
   // Regressão: pauta antiga/manual (personaId null) não deve pagar o custo de carregarPersona nem
@@ -700,7 +700,7 @@ describe("processarProximaPauta", () => {
 
     expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
     expect(carregarPersonaSpy).not.toHaveBeenCalled();
-    expect(gerarConteudoSpy).toHaveBeenCalledWith(pautaFalsa, [], null);
+    expect(gerarConteudoSpy).toHaveBeenCalledWith(pautaFalsa, [], null, propriedadeFalsa);
   });
 
   it("bloqueia sem gerar quando o limite de tentativas já foi esgotado", async () => {

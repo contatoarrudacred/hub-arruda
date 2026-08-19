@@ -96,6 +96,16 @@ export type PropriedadeCarregada = {
   checarFontesEspecificas?: boolean;
   checarOriginalidade?: boolean;
   /**
+   * Instruções adicionais do Escritor por propriedade (Fase 4a, spec seção 3.1.2, Task 4,
+   * 19/08/2026) — `config_pipeline.instrucoes_adicionais`, texto curto e opcional cadastrado uma
+   * vez por propriedade (ex.: "evite jargão técnico neste site", "sempre mencione X"). Lido por
+   * `montarPrompt` (escritor.ts) e concatenado como bloco aditivo no fim do prompt, mesmo padrão
+   * do bloco de persona/motivo de reprovação — nunca substitui a estrutura do prompt.
+   * `undefined` = propriedade sem instrução extra cadastrada, sem default (diferente dos campos de
+   * calibração acima, aqui não existe "outro" valor pra cair).
+   */
+  instrucoesAdicionais?: string;
+  /**
    * Autoria E-E-A-T da propriedade (Fase 4a, spec seção 3.3, Task 3, 19/08/2026) —
    * `propriedades_digitais.autoria`, mapeada por `carregarPropriedade` (repositorio.ts). Campo
    * obrigatório (não opcional, diferente dos de calibração acima) porque toda propriedade tem uma

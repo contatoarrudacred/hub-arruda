@@ -239,6 +239,9 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
     checarPrecisaoFactual: config.checarPrecisaoFactual,
     checarFontesEspecificas: config.checarFontesEspecificas,
     checarOriginalidade: config.checarOriginalidade,
+    // Fase 4a, Task 4, spec seção 3.1.2 — mesmo passthrough puro dos campos acima, sem default
+    // nesta camada (lido direto por montarPrompt em escritor.ts).
+    instrucoesAdicionais: config.instrucoesAdicionais,
   };
 }
 
@@ -425,6 +428,10 @@ function mapearConfigPipeline(bruto: unknown): {
   checarPrecisaoFactual: boolean | undefined;
   checarFontesEspecificas: boolean | undefined;
   checarOriginalidade: boolean | undefined;
+  // Instruções adicionais do Escritor por propriedade (Fase 4a, Task 4, spec seção 3.1.2) — mesmo
+  // tratamento passthrough dos 5 campos de calibração acima: `| undefined`, sem fallback pra um
+  // valor concreto aqui (não há "outro" default pra este campo, ausência = nenhuma instrução extra).
+  instrucoesAdicionais: string | undefined;
 } {
   const config =
     (bruto as {
@@ -436,6 +443,7 @@ function mapearConfigPipeline(bruto: unknown): {
       checar_precisao_factual?: boolean;
       checar_fontes_especificas?: boolean;
       checar_originalidade?: boolean;
+      instrucoes_adicionais?: string;
     }) ?? {};
   return {
     maxTentativas: config.max_tentativas ?? 3,
@@ -446,6 +454,7 @@ function mapearConfigPipeline(bruto: unknown): {
     checarPrecisaoFactual: config.checar_precisao_factual,
     checarFontesEspecificas: config.checar_fontes_especificas,
     checarOriginalidade: config.checar_originalidade,
+    instrucoesAdicionais: config.instrucoes_adicionais,
   };
 }
 
