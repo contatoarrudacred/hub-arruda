@@ -140,7 +140,7 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("propriedades_digitais")
-    .select("id, nome, url_base, tipo_cms, config_pipeline")
+    .select("id, nome, url_base, tipo_cms, config_pipeline, credenciais_canais")
     .eq("id", propriedadeId)
     .single();
 
@@ -149,6 +149,16 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
   // Reaproveita o mesmo parser de config_pipeline usado pelas telas de admin (mapearConfigPipeline,
   // definido mais abaixo neste arquivo) — evita duas leituras divergentes do mesmo jsonb.
   const config = mapearConfigPipeline(data.config_pipeline);
+
+  // Só repassa o canal wordpress, cifrado — decifrar é responsabilidade de quem usa (processar-
+  // pauta.ts), no momento exato da chamada à API, não aqui (mesmo princípio de mapearCredenciais,
+  // que nunca expõe a senha decifrada pra tela de admin).
+  const credenciaisBrutas = (data.credenciais_canais as Record<string, { usuario?: string; senha_cifrada?: string }> | null) ?? {};
+  const wordpress = credenciaisBrutas.wordpress;
+  const credenciaisCanais = wordpress?.senha_cifrada
+    ? { wordpress: { usuario: wordpress.usuario ?? "", senhaCifrada: wordpress.senha_cifrada } }
+    : undefined;
+
   return {
     id: data.id,
     nome: data.nome,
@@ -157,6 +167,7 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
     maxTentativas: config.maxTentativas,
     postsPorDia: config.postsPorDia ?? undefined,
     janelaPublicacao: config.janelaPublicacao ?? undefined,
+    credenciaisCanais,
   };
 }
 

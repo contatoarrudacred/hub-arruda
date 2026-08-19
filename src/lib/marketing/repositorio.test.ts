@@ -144,6 +144,51 @@ describe("carregarPropriedade", () => {
     expect(propriedade.maxTentativas).toBe(3);
   });
 
+  // Gap real deixado pela Fase 2 (Task 5 desta sessão, spec seção 143 do design das telas):
+  // carregarPropriedade nunca selecionava credenciais_canais, então processar-pauta.ts nunca
+  // conseguia usar a credencial cifrada salva pela tela Propriedades Digitais — só o fallback de
+  // env var funcionava, mesmo em produção. Corrigido junto com credenciaisWordPressDaPropriedade
+  // (processar-pauta.ts) nesta mesma sessão.
+  it("mapeia credenciais_canais.wordpress pra credenciaisCanais.wordpress (senha continua cifrada, não decifra aqui)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          credenciais_canais: { wordpress: { usuario: "admin", senha_cifrada: "CIFRADO-XYZ" } },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.credenciaisCanais).toEqual({ wordpress: { usuario: "admin", senhaCifrada: "CIFRADO-XYZ" } });
+  });
+
+  it("deixa credenciaisCanais undefined quando não há senha_cifrada salva pro canal wordpress", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          credenciais_canais: {},
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.credenciaisCanais).toBeUndefined();
+  });
+
   it("lança erro claro quando a propriedade não é encontrada", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: null }));
 

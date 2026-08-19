@@ -1,11 +1,12 @@
 // src/lib/marketing/processar-pauta.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cotaDiariaAtingida, dentroDaJanela, processarProximaPauta } from "./processar-pauta";
+import { cotaDiariaAtingida, credenciaisWordPressDaPropriedade, dentroDaJanela, processarProximaPauta } from "./processar-pauta";
 import * as estrategista from "./estrategista";
 import * as escritor from "./escritor";
 import * as revisor from "./revisor";
 import * as repositorio from "./repositorio";
 import { criarAdaptadorWordPress } from "./canais/wordpress";
+import { cifrar } from "./criptografia";
 import { inserirLinksInternos } from "./links";
 
 vi.mock("./canais/wordpress");
@@ -128,6 +129,50 @@ describe("cotaDiariaAtingida", () => {
     await cotaDiariaAtingida("prop-1", 3, agora);
 
     expect(contarSpy).toHaveBeenCalledWith("prop-1", "2026-08-18T00:00:00-03:00");
+  });
+});
+
+describe("credenciaisWordPressDaPropriedade", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  // Nome de env var não aceita hífen — o código troca por underscore (propriedadeFalsa.id é
+  // "prop-1"); os testes stubam o nome já convertido, igual credenciaisWordPressDaPropriedade faz.
+  const SUFIXO_ENV = propriedadeFalsa.id.replace(/-/g, "_");
+
+  it("usa a credencial cifrada do banco quando a propriedade tem uma salva (ordem: banco primeiro)", () => {
+    vi.stubEnv(`WORDPRESS_USUARIO_${SUFIXO_ENV}`, "usuario-env-nao-deveria-ser-usado");
+    vi.stubEnv(`WORDPRESS_SENHA_APP_${SUFIXO_ENV}`, "senha-env-nao-deveria-ser-usada");
+    const propriedadeComCredencial = {
+      ...propriedadeFalsa,
+      credenciaisCanais: { wordpress: { usuario: "admin-banco", senhaCifrada: cifrar("senha-secreta-do-banco") } },
+    };
+
+    const credenciais = credenciaisWordPressDaPropriedade(propriedadeComCredencial);
+
+    expect(credenciais).toEqual({ usuario: "admin-banco", senhaApp: "senha-secreta-do-banco" });
+  });
+
+  it("cai pra env própria da propriedade quando não há credencial no banco", () => {
+    vi.stubEnv(`WORDPRESS_USUARIO_${SUFIXO_ENV}`, "usuario-env-proprio");
+    vi.stubEnv(`WORDPRESS_SENHA_APP_${SUFIXO_ENV}`, "senha-env-propria");
+
+    const credenciais = credenciaisWordPressDaPropriedade(propriedadeFalsa);
+
+    expect(credenciais).toEqual({ usuario: "usuario-env-proprio", senhaApp: "senha-env-propria" });
+  });
+
+  it("cai pro par genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP quando não há credencial no banco nem env própria (comportamento original da Fase 1)", () => {
+    vi.stubEnv("WORDPRESS_USUARIO", "usuario-generico");
+    vi.stubEnv("WORDPRESS_SENHA_APP", "senha-generica");
+    const avisoSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const credenciais = credenciaisWordPressDaPropriedade(propriedadeFalsa);
+
+    expect(credenciais).toEqual({ usuario: "usuario-generico", senhaApp: "senha-generica" });
+    expect(avisoSpy).toHaveBeenCalledOnce();
   });
 });
 

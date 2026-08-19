@@ -10,6 +10,7 @@ import { selecionarPauta } from "./estrategista";
 import { gerarConteudo } from "./escritor";
 import { revisarConteudo } from "./revisor";
 import { criarAdaptadorWordPress, type CredenciaisWordPress } from "./canais/wordpress";
+import { decifrar } from "./criptografia";
 import { inserirLinksInternos } from "./links";
 import { sanitizarConteudoHtml } from "./sanitizar-html";
 import {
@@ -24,7 +25,7 @@ import {
   registrarEtapa,
   registrarReprovacaoPauta,
 } from "./repositorio";
-import type { JanelaPublicacao } from "./tipos";
+import type { JanelaPublicacao, PropriedadeCarregada } from "./tipos";
 
 const FUSO_SAO_PAULO = "America/Sao_Paulo";
 
@@ -73,18 +74,24 @@ export async function cotaDiariaAtingida(propriedadeId: string, limite: number |
   return totalPublicadoHoje >= limite;
 }
 
-// Nome de variável de ambiente não aceita hífen, daí a troca por underscore. Cai pro par
-// genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP quando a propriedade ainda não tem credencial
-// própria configurada (hoje só existe uma propriedade; o roadmap prevê um segundo site,
-// vozdocredito.com.br, cuja senha não pode vazar pro host desta propriedade).
-function credenciaisWordPressDaPropriedade(propriedadeId: string): CredenciaisWordPress {
-  const sufixo = propriedadeId.replace(/-/g, "_");
+// Ordem: banco cifrado primeiro (propriedades_digitais.credenciais_canais, tela Propriedades
+// Digitais — Fase 2), senão env var própria da propriedade, senão o par genérico
+// WORDPRESS_USUARIO/WORDPRESS_SENHA_APP (comportamento original da Fase 1, mantido como último
+// fallback pra não quebrar propriedade nenhuma configurada só por env). Nome de variável de
+// ambiente não aceita hífen, daí a troca por underscore no nome da env própria.
+export function credenciaisWordPressDaPropriedade(propriedade: PropriedadeCarregada): CredenciaisWordPress {
+  const credencialBanco = propriedade.credenciaisCanais?.wordpress;
+  if (credencialBanco) {
+    return { usuario: credencialBanco.usuario, senhaApp: decifrar(credencialBanco.senhaCifrada) };
+  }
+
+  const sufixo = propriedade.id.replace(/-/g, "_");
   const usuario = process.env[`WORDPRESS_USUARIO_${sufixo}`];
   const senhaApp = process.env[`WORDPRESS_SENHA_APP_${sufixo}`];
   if (usuario && senhaApp) return { usuario, senhaApp };
 
   console.warn(
-    `Propriedade ${propriedadeId} sem credencial WordPress própria (WORDPRESS_USUARIO_${sufixo}/WORDPRESS_SENHA_APP_${sufixo}); usando fallback genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP.`,
+    `Propriedade ${propriedade.id} sem credencial WordPress no banco nem em env própria (WORDPRESS_USUARIO_${sufixo}/WORDPRESS_SENHA_APP_${sufixo}); usando fallback genérico WORDPRESS_USUARIO/WORDPRESS_SENHA_APP.`,
   );
   return {
     usuario: process.env.WORDPRESS_USUARIO ?? "",
@@ -170,7 +177,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       pauta.id,
       "publicar",
       async () => {
-        const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedadeId));
+        const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedade));
         const rascunho = await adaptador.criarRascunho({
           titulo: conteudo.titulo,
           corpoHtml: corpoHtmlSanitizado,

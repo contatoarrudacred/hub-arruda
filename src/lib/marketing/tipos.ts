@@ -50,6 +50,13 @@ export type PropriedadeCarregada = {
    * independente do fuso do servidor — ver dentroDaJanela em processar-pauta.ts.
    */
   janelaPublicacao?: JanelaPublicacao;
+  /**
+   * Credencial cifrada do canal WordPress (propriedades_digitais.credenciais_canais), decifrada
+   * só no momento de uso em processar-pauta.ts — ver credenciaisWordPressDaPropriedade. Ausente
+   * quando a propriedade não tem credencial salva no banco (fallback pro par de env genérico
+   * WORDPRESS_USUARIO/WORDPRESS_SENHA_APP, comportamento da Fase 1 preservado).
+   */
+  credenciaisCanais?: { wordpress?: { usuario: string; senhaCifrada: string } };
 };
 
 /** Saída do Escritor — o rascunho completo antes de qualquer revisão. */
