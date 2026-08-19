@@ -102,7 +102,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     return { status: "fora_da_janela" as const };
   }
 
-  const pauta = await selecionarPauta(matrizConteudoId);
+  const pauta = await selecionarPauta(matrizConteudoId, propriedade.id);
   if (!pauta) return { status: "sem_pauta" as const };
 
   if (pauta.tentativas >= propriedade.maxTentativas) {

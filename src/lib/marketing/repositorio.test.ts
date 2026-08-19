@@ -1279,7 +1279,14 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
   it("subtrai os ângulos já usados dos angulos_prontos da persona (worked example da spec)", async () => {
     mockarFrom(
       criarQueryFalsa({
-        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A", "B", "C"] }],
+        data: [
+          {
+            id: "persona-1",
+            nome: "Marcelo Andrade",
+            dor_entrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
+            angulos_prontos: ["A", "B", "C"],
+          },
+        ],
         error: null,
       }),
       criarQueryFalsa({
@@ -1294,6 +1301,7 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
       {
         id: "persona-1",
         nome: "Marcelo Andrade",
+        dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
         angulosProntos: ["A", "C"],
         usadaPelaUltimaVezEm: "2026-08-18T10:00:00Z",
       },
@@ -1395,6 +1403,7 @@ describe("carregarPersona", () => {
         data: {
           id: "persona-1",
           nome: "Marcelo Andrade",
+          dor_entrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
           angulos_prontos: ["A", "B"],
           conteudo_completo: "## Bloco 1 — Ficha rápida\n...",
         },
@@ -1407,6 +1416,7 @@ describe("carregarPersona", () => {
     expect(persona).toEqual({
       id: "persona-1",
       nome: "Marcelo Andrade",
+      dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
       angulosProntos: ["A", "B"],
       usadaPelaUltimaVezEm: null,
       conteudoCompleto: "## Bloco 1 — Ficha rápida\n...",

@@ -600,7 +600,7 @@ export async function listarPersonasAtivasComAngulosDisponiveis(propriedadeId: s
   const supabase = createAdminClient();
   const { data: personas, error: erroPersonas } = await supabase
     .from("personas")
-    .select("id, nome, angulos_prontos")
+    .select("id, nome, dor_entrada, angulos_prontos")
     .eq("propriedade_id", propriedadeId)
     .eq("ativo", true);
   if (erroPersonas) throw new Error(`Falha ao listar personas ativas da propriedade ${propriedadeId}: ${erroPersonas.message}`);
@@ -634,16 +634,24 @@ export async function listarPersonasAtivasComAngulosDisponiveis(propriedadeId: s
     return {
       id: personaId,
       nome: persona.nome as string,
+      dorEntrada: persona.dor_entrada as string,
       angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo)),
       usadaPelaUltimaVezEm: ultimoUsoPorPersona.get(personaId) ?? null,
     };
   });
 }
 
-function mapearPersonaCarregada(data: { id: string; nome: string; angulos_prontos: unknown; conteudo_completo: string }): PersonaCarregada {
+function mapearPersonaCarregada(data: {
+  id: string;
+  nome: string;
+  dor_entrada: string;
+  angulos_prontos: unknown;
+  conteudo_completo: string;
+}): PersonaCarregada {
   return {
     id: data.id,
     nome: data.nome,
+    dorEntrada: data.dor_entrada,
     angulosProntos: (data.angulos_prontos as string[]) ?? [],
     // Não computado aqui (exigiria uma 2ª query agregando pautas, igual a
     // listarPersonasAtivasComAngulosDisponiveis) — nenhum consumidor de carregarPersona (Gerador
@@ -658,7 +666,11 @@ function mapearPersonaCarregada(data: { id: string; nome: string; angulos_pronto
  * Ângulo (Task 3, fallback de IA) e pelo Escritor (Task 5, prompt principal, spec seção 7). */
 export async function carregarPersona(personaId: string): Promise<PersonaCarregada> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase.from("personas").select("id, nome, angulos_prontos, conteudo_completo").eq("id", personaId).single();
+  const { data, error } = await supabase
+    .from("personas")
+    .select("id, nome, dor_entrada, angulos_prontos, conteudo_completo")
+    .eq("id", personaId)
+    .single();
   if (error || !data) throw new Error(`Falha ao carregar persona ${personaId}: ${error?.message ?? "não encontrada"}`);
   return mapearPersonaCarregada(data as Parameters<typeof mapearPersonaCarregada>[0]);
 }

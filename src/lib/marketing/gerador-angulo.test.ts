@@ -12,6 +12,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 const persona: PersonaCarregada = {
   id: "persona-1",
   nome: "Marta, 42 anos, autônoma",
+  dorEntrada: "Nome negativado, sem conseguir crédito pro negócio.",
   angulosProntos: [],
   usadaPelaUltimaVezEm: "2026-08-01T00:00:00Z",
   conteudoCompleto: "## Bloco 1 — Perfil\nMarta é autônoma, mãe de dois filhos...\n## Bloco 11 — Ângulos\n- **\"citação\"** (explicação)",

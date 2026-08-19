@@ -269,6 +269,14 @@ export type PersonaAtiva = {
   angulosProntos: string[];
   /** `created_at` mais recente entre as pautas dessa persona, ou `null` se ela nunca foi usada. */
   usadaPelaUltimaVezEm: string | null;
+  /**
+   * `personas.dor_entrada` (Task 4, Estrategista, 19/08/2026) — exposta aqui (não fazia parte do
+   * contrato original da Task 2) porque o caminho "ângulo pronto" (sem IA) de `selecionarPauta`
+   * precisa derivar `palavraChavePrincipal` sem chamar o Gerador de Ângulo; a dor de entrada,
+   * escrita pelo Luiz, já é um texto curto orientado à dor/palavra-chave do público — ver spec
+   * seção 9, "Pendências", e o comentário em estrategista.ts sobre a heurística escolhida.
+   */
+  dorEntrada: string;
 };
 
 /** Persona completa, com o texto dos 11 blocos — usada pelo Gerador de Ângulo (Task 3, prompt de
