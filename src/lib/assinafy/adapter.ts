@@ -17,12 +17,14 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato) throw new Error("Contrato não encontrado.");
   if (!contrato.pdfUrl) throw new Error("Contrato ainda não tem PDF gerado.");
+  const pessoaArrudaCredSignatarioId = contrato.pessoaArrudaCredSignatarioId;
+  if (!pessoaArrudaCredSignatarioId) throw new Error("Venda comissionada não tem assinatura eletrônica — não deveria chegar aqui.");
 
   const pdf = await baixarPdfContrato(contrato.pdfUrl);
   const documento = await uploadDocumento(`contrato-${contratoId}.pdf`, pdf);
 
   const signerIds = await Promise.all(
-    [contrato.pessoaSignatarioId, contrato.pessoaArrudaCredSignatarioId].map(async (pessoaId) => {
+    [contrato.pessoaSignatarioId, pessoaArrudaCredSignatarioId].map(async (pessoaId) => {
       const pessoa = await buscarPessoaCompleta(pessoaId);
       if (!pessoa) throw new Error(`Pessoa signatária ${pessoaId} não encontrada.`);
       if (!pessoa.email) throw new Error(`Pessoa "${pessoa.nomeRazaoSocial}" não tem e-mail cadastrado — obrigatório pra assinatura eletrônica.`);

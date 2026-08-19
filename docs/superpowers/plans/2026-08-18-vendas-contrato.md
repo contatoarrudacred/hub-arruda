@@ -272,10 +272,16 @@ Mesmo clone estrutural, mas segredo vem no **header** `asaas-access-token` (não
 **Files:** Edit `src/lib/assinafy/adapter.ts` e `src/lib/asaas/adapter.ts` (ou um helper comum em `src/lib/vendas/`)
 Usa `enviarSequenciaWhatsapp` (`src/lib/whatsapp/enviar.ts`, já existe) pra reenviar link de assinatura/pagamento — **não chama Zapster direto**.
 
-## Task 16: Nova subetapa Kanban
+## Task 16: Registro de venda comissionada no Painel de Vendas — RE-ESCOPADA (19/08/2026)
 
-**Files:** Edit `src/lib/motor-fluxo/kanban.ts`
-Adiciona `aguardando_confirmacao_fornecedor` (só caminho comissionado, entre `dados_contrato` e `ganha`).
+**Substitui o plano original** (nova subetapa `aguardando_confirmacao_fornecedor` em `src/lib/motor-fluxo/kanban.ts`, território do CRM) — descartada após a decisão de Painel de Vendas separado (spec seção 3.6): não existe kanban novo no CRM, o estágio da venda comissionada vive só em `contratos.status`, igual proprio/subcontratado.
+
+**Files:**
+- Edit `supabase/migrations/20260818090001_vendas_contrato_nucleo.sql` — `contrato_template_id`/`pessoa_arrudacred_signatario_id`/`forma_pagamento`/`metodo_pagamento` viram opcionais em `contratos` (não fazem sentido pra comissionado).
+- Edit `src/lib/vendas/contratos.ts` — `criarContratoComissionado` (novo), tipos `Contrato`/`LinhaContratoBruta` com esses campos nullable.
+- Edit `src/lib/vendas/comissoes.ts` — `confirmarVendaComissionada` cria o registro em `contratos` direto em `aguardando_pagamento`; `marcarComissaoParcelaRecebida` (novo) avança pra `concluida` na 1ª parcela da comissão recebida.
+- Edit `src/lib/assinafy/adapter.ts`, `src/lib/asaas/adapter.ts` — guarda contra os campos agora nullable (nunca deveriam rodar pra um contrato comissionado, mas o tipo exige o guard).
+- Create `src/app/admin/(shell)/vendas/[oportunidadeId]/confirmar-comissionada/` (page/actions/client) — tela "Confirmar venda" que faltava (a lib function já existia, sem UI).
 
 ## Task 17: Verificação manual ponta a ponta
 

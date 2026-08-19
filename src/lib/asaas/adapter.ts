@@ -28,6 +28,7 @@ async function resolverClienteAsaas(pessoaId: string): Promise<string> {
 export async function criarCobrancasDoContrato(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato) throw new Error("Contrato não encontrado.");
+  if (!contrato.metodoPagamento) throw new Error("Venda comissionada não gera cobrança na Asaas — não deveria chegar aqui.");
 
   const customerId = await resolverClienteAsaas(contrato.pessoaSignatarioId);
   const billingType = BILLING_TYPE[contrato.metodoPagamento];

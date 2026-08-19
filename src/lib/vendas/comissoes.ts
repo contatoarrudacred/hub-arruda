@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buscarUnidadeNegocioDaPessoa, promoverPessoaACliente } from "./clientes";
 import { calcularParcelas } from "./calculo-parcelas";
 import { sincronizarEtapaKanban } from "./oportunidades";
+import { atualizarStatusContrato, buscarContratoPorOportunidade, criarContratoComissionado } from "./contratos";
 
 type FornecedorProdutoRegra = {
   fornecedor_id: string;
@@ -64,10 +65,43 @@ export async function confirmarVendaComissionada(oportunidadeId: string, dataAss
   );
   if (erroInsert) throw new Error(`Falha ao gerar comissões: ${erroInsert.message}`);
 
+  // Registra a venda no Painel de Vendas — direto em aguardando_pagamento (pula os estágios de
+  // contrato/assinatura, que não existem pra comissionado): a venda só chega aqui depois de já
+  // aprovada pelo fornecedor, não tem fase de espera a modelar.
+  await criarContratoComissionado({
+    oportunidadeId,
+    pessoaSignatarioId: oportunidade.pessoa_id,
+    fornecedorId,
+    valorTotal: valorComissaoTotal,
+  });
+
   await sincronizarEtapaKanban(oportunidadeId, "ganha");
 
   const unidadeNegocioId = await buscarUnidadeNegocioDaPessoa(oportunidade.pessoa_id);
   if (unidadeNegocioId) {
     await promoverPessoaACliente(oportunidade.pessoa_id, unidadeNegocioId);
   }
+}
+
+/**
+ * Marca uma parcela de comissão como recebida do fornecedor — ação manual do admin (não existe
+ * webhook de fornecedor pra isso). Quando é a 1ª parcela, a venda avança pra `concluida` no Painel
+ * de Vendas (mesmo critério usado pro contrato normal: 1ª parcela paga = venda concluída, o resto é
+ * cobrança contínua do financeiro).
+ */
+export async function marcarComissaoParcelaRecebida(comissaoParcelaId: string, recebidoEm: Date): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: parcela, error: erroUpdate } = await supabase
+    .from("comissoes_fornecedor_receber")
+    .update({ status: "recebido", recebido_em: recebidoEm.toISOString() })
+    .eq("id", comissaoParcelaId)
+    .select("oportunidade_id, numero")
+    .single();
+  if (erroUpdate) throw new Error(`Falha ao marcar comissão como recebida: ${erroUpdate.message}`);
+
+  if (parcela.numero !== 1) return;
+
+  const contrato = await buscarContratoPorOportunidade(parcela.oportunidade_id);
+  if (contrato) await atualizarStatusContrato(contrato.id, "concluida");
 }

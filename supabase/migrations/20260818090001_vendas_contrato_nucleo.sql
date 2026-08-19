@@ -24,9 +24,9 @@ comment on column contrato_templates.versao is
 create table contratos (
   id uuid primary key default gen_random_uuid(),
   oportunidade_id uuid not null unique references oportunidades(id),
-  contrato_template_id uuid not null references contrato_templates(id),
+  contrato_template_id uuid references contrato_templates(id),
   pessoa_signatario_id uuid not null references pessoas(id),
-  pessoa_arrudacred_signatario_id uuid not null references pessoas(id),
+  pessoa_arrudacred_signatario_id uuid references pessoas(id),
   fornecedor_id uuid references pessoas(id),
   pdf_url text,
   status text not null default 'contrato_gerado'
@@ -37,8 +37,8 @@ create table contratos (
   motivo_cancelamento text,
   assinafy_document_id text,
   assinafy_document_status text,
-  forma_pagamento text not null check (forma_pagamento in ('avista', 'parcelado')),
-  metodo_pagamento text not null check (metodo_pagamento in ('boleto_pix', 'cartao')),
+  forma_pagamento text check (forma_pagamento in ('avista', 'parcelado')),
+  metodo_pagamento text check (metodo_pagamento in ('boleto_pix', 'cartao')),
   parcelas_qtd integer not null default 1,
   valor_total numeric(12,2) not null,
   enviado_em timestamptz,
@@ -47,17 +47,17 @@ create table contratos (
   updated_at timestamptz not null default now()
 );
 comment on table contratos is
-  '1 Oportunidade = 1 contrato, mesmo em pacote de vários documentos (regra fechada em KANBAN_COMERCIAL_LIMPANOME.md/seção 11 do plano mestre). Gerado pela tela de Fechamento de Venda (spec seção 3.2.1), que completa o detalhe de pagamento que o CRM ainda não captura por completo. `status` é o estágio da venda no Painel de Vendas — quadro próprio do Vendas, SEM relação com `oportunidades.etapa_kanban` (kanban do CRM, dados diferentes, tabela diferente). Nos marcos-chave (assinado, 1ª parcela paga, cancelada) o Vendas empurra uma atualização pontual pro etapa_kanban da Oportunidade, mas nunca lê/depende dele de volta.';
+  '1 Oportunidade = 1 registro de venda no Painel de Vendas, mesmo em pacote de vários documentos (regra fechada em KANBAN_COMERCIAL_LIMPANOME.md/seção 11 do plano mestre). Pra proprio/subcontratado é gerado pela tela de Fechamento de Venda (spec seção 3.2.1) com contrato/PDF/Assinafy de verdade. Pra comissionado é gerado pela ação "Confirmar venda" (spec seção 3.4) direto em aguardando_pagamento — sem contrato com a ArrudaCred, por isso contrato_template_id/pessoa_arrudacred_signatario_id/forma_pagamento/metodo_pagamento ficam null nesse caso (ver comentário de cada coluna). `status` é o estágio da venda no Painel de Vendas — quadro próprio do Vendas, SEM relação com `oportunidades.etapa_kanban` (kanban do CRM, dados diferentes, tabela diferente). Nos marcos-chave (assinado, 1ª parcela/comissão paga, cancelada) o Vendas empurra uma atualização pontual pro etapa_kanban da Oportunidade, mas nunca lê/depende dele de volta.';
 comment on column contratos.status is
-  'Estágio da venda: contrato_gerado (PDF pronto, instantâneo) → aguardando_assinatura (enviado à Assinafy) → assinado → parcelas_emitidas (cobrança criada na Asaas, instantâneo) → aguardando_pagamento → concluida (1ª parcela paga) | cancelada (cliente desistiu antes de assinar, ou assinou e não pagou — motivo em motivo_cancelamento).';
+  'Estágio da venda: contrato_gerado (PDF pronto, instantâneo) → aguardando_assinatura (enviado à Assinafy) → assinado → parcelas_emitidas (cobrança criada na Asaas, instantâneo) → aguardando_pagamento → concluida (1ª parcela paga) | cancelada (cliente desistiu antes de assinar, ou assinou e não pagou — motivo em motivo_cancelamento). Comissionado nasce direto em aguardando_pagamento (pula os estágios de contrato/assinatura, que não existem pra esse tipo de produto) e avança pra concluida quando a 1ª parcela da comissão do fornecedor é recebida.';
 comment on column contratos.motivo_cancelamento is
   'Preenchido só quando status = cancelada — texto livre (ex.: "cliente desistiu antes de assinar", "recusado pelo signatário", "não pagou a 1ª parcela").';
 comment on column contratos.oportunidade_id is
-  'Único — reforça a regra de 1 Oportunidade = 1 contrato.';
+  'Único — reforça a regra de 1 Oportunidade = 1 registro de venda.';
 comment on column contratos.pessoa_signatario_id is
-  'O cliente, ou o representante legal (via pessoa_representantes) quando o cliente é PJ.';
+  'O cliente, ou o representante legal (via pessoa_representantes) quando o cliente é PJ. Pra comissionado é o cliente da venda mesmo sem assinatura de contrato com a ArrudaCred (quem contratou o serviço com o fornecedor).';
 comment on column contratos.pessoa_arrudacred_signatario_id is
-  'Pessoa da ArrudaCred que assina — configurável via configuracoes (chave contrato_arrudacred_signatario), não hardcoded no código.';
+  'Pessoa da ArrudaCred que assina — configurável via configuracoes (chave contrato_arrudacred_signatario), não hardcoded no código. Null pra comissionado (não existe contrato com a ArrudaCred).';
 comment on column contratos.fornecedor_id is
   'Só preenchido quando o Produto é subcontratado e fornecedor_definido_em = ''venda'' — é aqui que a escolha do fornecedor por venda fica registrada, não em produtos.';
 comment on column contratos.assinafy_document_id is
@@ -65,9 +65,9 @@ comment on column contratos.assinafy_document_id is
 comment on column contratos.assinafy_document_status is
   'Espelho do status retornado pela Assinafy (uploaded/metadata_ready/pending_signature/certificating/certificated/rejected_by_signer/...) — só pra debug, quem manda no fluxo é a coluna status acima.';
 comment on column contratos.forma_pagamento is
-  'avista ou parcelado — mapeado de conversas.dados.detalhe_pagamento.tipo (CRM, spec 2026-08-18-captura-detalhe-pagamento-fechamento-design.md) quando existir, senão capturado na tela de Fechamento de Venda.';
+  'avista ou parcelado — mapeado de conversas.dados.detalhe_pagamento.tipo (CRM, spec 2026-08-18-captura-detalhe-pagamento-fechamento-design.md) quando existir, senão capturado na tela de Fechamento de Venda. Null pra comissionado — o cliente paga o fornecedor, não a ArrudaCred.';
 comment on column contratos.metodo_pagamento is
-  'boleto_pix ou cartao — únicas duas opções da regra de negócio validada com o Luiz (spec 2026-08-18-captura-detalhe-pagamento-fechamento-design.md, seção 1). Mapeado de conversas.dados.detalhe_pagamento.forma quando existir, senão capturado na tela de Fechamento de Venda.';
+  'boleto_pix ou cartao — únicas duas opções da regra de negócio validada com o Luiz (spec 2026-08-18-captura-detalhe-pagamento-fechamento-design.md, seção 1). Mapeado de conversas.dados.detalhe_pagamento.forma quando existir, senão capturado na tela de Fechamento de Venda. Null pra comissionado.';
 comment on column contratos.parcelas_qtd is
   '1 = à vista.';
 comment on column contratos.valor_total is

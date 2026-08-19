@@ -68,6 +68,42 @@ export async function criarContrato(entrada: EntradaCriarContrato): Promise<{ co
   return { contratoId: contrato.id };
 }
 
+export type EntradaCriarContratoComissionado = {
+  oportunidadeId: string;
+  pessoaSignatarioId: string;
+  fornecedorId: string;
+  valorTotal: number;
+};
+
+/**
+ * Registro de venda pro Painel de Vendas de um produto comissionado — chamado por
+ * confirmarVendaComissionada (src/lib/vendas/comissoes.ts), que só roda depois que o fornecedor já
+ * aprovou a venda (não existe fase de espera a modelar aqui). Nasce direto em aguardando_pagamento,
+ * pulando contrato_gerado/aguardando_assinatura/assinado/parcelas_emitidas — não existe contrato
+ * com a ArrudaCred nesse tipo de produto, por isso contrato_template_id/
+ * pessoa_arrudacred_signatario_id/forma_pagamento/metodo_pagamento ficam null. Sem
+ * contrato_parcelas — o financeiro dessa venda é comissoes_fornecedor_receber.
+ */
+export async function criarContratoComissionado(entrada: EntradaCriarContratoComissionado): Promise<{ contratoId: string }> {
+  const supabase = await createClient();
+
+  const { data: contrato, error } = await supabase
+    .from("contratos")
+    .insert({
+      oportunidade_id: entrada.oportunidadeId,
+      pessoa_signatario_id: entrada.pessoaSignatarioId,
+      fornecedor_id: entrada.fornecedorId,
+      status: "aguardando_pagamento",
+      parcelas_qtd: 1,
+      valor_total: entrada.valorTotal,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`Falha ao criar registro de venda comissionada: ${error.message}`);
+
+  return { contratoId: contrato.id };
+}
+
 export type ContratoParcela = {
   id: string;
   numero: number;
@@ -79,15 +115,17 @@ export type ContratoParcela = {
 export type Contrato = {
   id: string;
   oportunidadeId: string;
-  contratoTemplateId: string;
+  // Null pra venda comissionada (criarContratoComissionado) — não existe contrato/template/forma
+  // de pagamento com a ArrudaCred nesse caso, ver comentário da tabela na migration.
+  contratoTemplateId: string | null;
   pessoaSignatarioId: string;
-  pessoaArrudaCredSignatarioId: string;
+  pessoaArrudaCredSignatarioId: string | null;
   fornecedorId: string | null;
   status: StatusContrato;
   motivoCancelamento: string | null;
   pdfUrl: string | null;
-  formaPagamento: FormaPagamento;
-  metodoPagamento: MetodoPagamento;
+  formaPagamento: FormaPagamento | null;
+  metodoPagamento: MetodoPagamento | null;
   parcelasQtd: number;
   valorTotal: number;
   assinafyDocumentId: string | null;
@@ -105,15 +143,15 @@ type LinhaContratoParcelaBruta = {
 type LinhaContratoBruta = {
   id: string;
   oportunidade_id: string;
-  contrato_template_id: string;
+  contrato_template_id: string | null;
   pessoa_signatario_id: string;
-  pessoa_arrudacred_signatario_id: string;
+  pessoa_arrudacred_signatario_id: string | null;
   fornecedor_id: string | null;
   status: StatusContrato;
   motivo_cancelamento: string | null;
   pdf_url: string | null;
-  forma_pagamento: FormaPagamento;
-  metodo_pagamento: MetodoPagamento;
+  forma_pagamento: FormaPagamento | null;
+  metodo_pagamento: MetodoPagamento | null;
   parcelas_qtd: number;
   valor_total: number;
   assinafy_document_id: string | null;

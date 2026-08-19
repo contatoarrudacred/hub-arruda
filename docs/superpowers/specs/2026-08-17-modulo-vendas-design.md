@@ -128,7 +128,7 @@ Vale pra **qualquer** tela que cadastra/edita uma Pessoa neste sistema (Forneced
 - **Ação "Confirmar venda"** (produtos comissionados): hoje não existe integração automatizada com cada administradora/banco que avise a ArrudaCred sozinha — é uma ação manual do admin, que precisa informar **a data em que o cliente assinou com o fornecedor** (o dado real que baseia o cálculo de vencimento — pode ser anterior a hoje, se o fornecedor demorou pra avisar). Ao confirmar, o sistema gera de uma vez todas as parcelas de `comissoes_fornecedor_receber` a partir da regra em `fornecedor_produtos`. Fica registrado como suposição a validar quando a frente for implementada — se algum fornecedor específico expuser API própria no futuro, isso vira automatizável sem redesenhar o modelo (só passa a preencher a data de referência sozinho, em vez de pedir pro admin).
 - **"Ganha" da Oportunidade comissionada = confirmação do fornecedor**, não o recebimento da comissão em si (diferente do modelo `proprio`/`subcontratado`, onde Ganha = dinheiro do cliente confirmado).
 - **Sem handoff pra Operação** — sem execução da ArrudaCred, não há o que rastrear em Operação.
-- **Sem Contrato/Assinafy** — o contrato de verdade é entre cliente e fornecedor, fora do sistema.
+- **Sem Contrato/Assinafy** — o contrato de verdade é entre cliente e fornecedor, fora do sistema. Isso **não** significa que a venda fica invisível no Painel de Vendas — ela aparece lá igual às demais, só que com um caminho automático mais curto (ver seção 3.6): como só vira registro depois de já aprovada pelo fornecedor, ela nasce direto em `aguardando_pagamento` (pulando os estágios de contrato/assinatura, que não existem aqui) e avança pra `concluida` quando a 1ª parcela da comissão é recebida.
 
 ### 3.5 Handoff — sinal para o módulo Operação
 
@@ -158,8 +158,11 @@ Vale pra **qualquer** tela que cadastra/edita uma Pessoa neste sistema (Forneced
 | `concluida` | 1ª parcela paga (webhook Asaas) — dispara promoção a cliente + handoff (seção 3.5) |
 | `cancelada` | Cliente desistiu antes de assinar, ou assinou e não pagou — motivo livre em `contratos.motivo_cancelamento` |
 
+**Produto `comissionado` usa o mesmo Kanban de Vendas, sem estágio novo** (decidido com o Luiz em 19/08/2026 — inicialmente cogitado um estágio `aguardando_confirmacao_fornecedor`, descartado): como a ação "Confirmar venda" (seção 3.4) só roda depois que o fornecedor **já aprovou** a venda, não existe fase de espera a modelar — o registro nasce direto em `aguardando_pagamento` (pulando `contrato_gerado`/`aguardando_assinatura`/`assinado`/`parcelas_emitidas`, que não existem pra esse tipo de produto) e avança pra `concluida` quando a 1ª parcela da comissão do fornecedor é marcada como recebida (ação manual do admin, sem webhook de fornecedor).
+
 **Telas:**
 - **Painel de Vendas** (`/admin/vendas`) — lista ou Kanban (toggle), todas as vendas com estágio visível. Cada linha/card tem menu de ações: **Detalhes**, **Cancelar**, **Excluir** (Excluir é ação de admin — remove só o registro do Vendas, contrato+parcelas via cascade, nunca a Oportunidade/dado do CRM). Botão "Nova venda" abre `/admin/vendas/nova` (já existe).
+- **Confirmar venda** (`/admin/vendas/[oportunidadeId]/confirmar-comissionada`) — equivalente ao Fechamento de Venda, só que pro caminho comissionado: sem contrato/PDF, só pede a data em que o cliente assinou com o fornecedor e gera as parcelas de comissão (seção 3.4).
 - **Detalhes da Venda** (`/admin/vendas/[oportunidadeId]`) — visão completa da venda. Antes do contrato existir, permite editar (link pra `/fechamento`). Depois de gerado, mostra um **"Painel Interativo"** que muda de acordo com o estágio atual — nos estágios de assinatura/pagamento, é o retrato ao vivo do que a Assinafy/Asaas estão reportando (quem assinou, status da cobrança), não só um texto estático.
 - Telas devem ser amigáveis, limpas, com tooltips ajudando a entender cada estágio — sem exigir que o usuário conheça o "por trás" do sistema pra usar.
 
@@ -192,15 +195,17 @@ dados_contrato completo (nome, documento, endereço, forma de pagamento)
 
 ```
 dados_contrato completo (nome, documento — fornecedor já é implícito via produtos.fornecedor_id)
-  → registra venda (sem contrato/Assinafy)
-  → aguarda confirmação do fornecedor (manual, hoje)
-  → [confirmação registrada] → gera comissoes_fornecedor_receber (a partir de fornecedor_produtos)
-     → etapa_kanban = 'ganha'
+  → aguarda aprovação do fornecedor, fora do sistema (nada registrado em Vendas ainda)
+  → [fornecedor aprova] → ação "Confirmar venda" (manual, admin informa a data de assinatura cliente×fornecedor)
+     → gera comissoes_fornecedor_receber (a partir de fornecedor_produtos)
+     → cria o registro em contratos direto em status = 'aguardando_pagamento' (Painel de Vendas, seção 3.6)
+     → etapa_kanban (CRM) = 'ganha'
      → promove Pessoa a cliente
      → (sem handoff pra Operação)
+  → [1ª parcela da comissão recebida, marcado manualmente] → contratos.status = 'concluida'
 ```
 
-**Nova subetapa de Kanban necessária:** `aguardando_confirmacao_fornecedor` (entre `dados_contrato` e `ganha`, substituindo `assinatura_digital`/`pagamento` no caminho comissionado).
+**Sem subetapa nova no Kanban do CRM** (`src/lib/motor-fluxo/kanban.ts` não é tocado) — o estágio da venda comissionada vive só em `contratos.status` (Painel de Vendas, seção 3.6), igual proprio/subcontratado; só que entrando direto em `aguardando_pagamento` em vez de `contrato_gerado`, já que não existe fase de contrato/assinatura pra esse tipo de produto.
 
 ---
 
