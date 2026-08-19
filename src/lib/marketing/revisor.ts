@@ -193,12 +193,16 @@ export async function revisarConteudo(
 
   const resposta = await cliente.messages.create({
     model: MODELO_REVISOR,
-    // 1000 (valor original, núcleo da Fase 1) estourava e cortava o tool_use no meio depois da
-    // Fase 4a: o campo `motivo` passou a exigir diagnóstico + sugestão concreta (bem mais longo
-    // que antes), e a ferramenta ganhou 3 campos booleanos a mais — achado real via teste de
-    // ponta a ponta em produção (19/08/2026): usage.outputTokens batendo exatamente 1000 numa
-    // reprovação sem motivo nenhum registrado, sinal de truncamento, não de decisão do modelo.
-    max_tokens: 2000,
+    // Histórico de truncamento real (19/08/2026, 2 ocorrências): 1000 (valor original da Fase 1)
+    // estourava depois da Fase 4a (motivo passou a exigir diagnóstico + sugestão); 2000 (1º
+    // aumento) estourou de novo depois do reforço de "revisão sistemática completa" (pedido do
+    // Luiz — listar TODOS os problemas encontrados, não só os 1-2 primeiros, produz um motivo
+    // ainda mais longo em posts com vários itens reprovados). As duas vezes o sintoma foi
+    // idêntico: usage.outputTokens batendo EXATAMENTE no limite numa reprovação sem motivo nenhum
+    // registrado — sinal de truncamento do tool_use, não de decisão do modelo. Margem generosa
+    // desta vez porque o motivo tende a crescer, não encolher, à medida que o checklist ganha
+    // itens.
+    max_tokens: 4000,
     tools: [FERRAMENTA_REVISOR],
     tool_choice: { type: "tool", name: "registrar_revisao" },
     messages: [{ role: "user", content: prompt }],
