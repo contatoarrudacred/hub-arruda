@@ -119,6 +119,14 @@ function montarPrompt(
   return [
     "Você é o Agente QA/Revisor de um pipeline de geração de conteúdo. Avalie o rascunho abaixo contra o checklist, incluindo checagem de alucinação factual (dados numéricos citados precisam ser plausíveis, não inventados).",
     "",
+    // Achado real de teste em produção (19/08/2026, pedido do Luiz): sem esta instrução, o
+    // Revisor tendia a reportar só 2-3 problemas por rodada — o Escritor corrigia exatamente
+    // esses, e a rodada seguinte reprovava por OUTROS problemas que já existiam desde o início,
+    // mas nunca tinham sido mencionados. Isso multiplicava o número de tentativas necessárias (e
+    // o custo de cada uma) sem motivo — o texto já tinha o segundo problema na 1ª versão, só
+    // ninguém tinha avisado. Instrução explícita pra evitar reprovação "em fatias".
+    "Revisão sistemática obrigatória: percorra o CHECKLIST INTEIRO, item por item, contra o TEXTO COMPLETO do rascunho (do título ao final do FAQ) antes de decidir o resultado — não pare no primeiro problema encontrado nem generalize a partir de uma amostra. Se o rascunho for reprovado, o motivo precisa listar TODOS os problemas reais encontrados nesta passada completa, não só os 1-2 primeiros — o objetivo é que o Escritor consiga corrigir tudo de uma vez na próxima tentativa, em vez de descobrir um problema novo a cada rodada.",
+    "",
     `Contagem REAL de palavras do corpo do artigo (calculada programaticamente, não estime por conta própria): ${contagemPalavras} palavras. Use este número exato para avaliar qualquer item do checklist sobre extensão mínima/máxima — não tente contar ou estimar visualmente, o número acima já é preciso.`,
     "",
     `Score mínimo para aprovação: ${scoreMinimo}/100.`,
@@ -139,7 +147,7 @@ function montarPrompt(
     `Meta description: ${conteudo.metaDescription}`,
     `Conteúdo HTML:\n"""\n${conteudo.conteudoHtml}\n"""`,
     "",
-    "Use a ferramenta para registrar o resultado. Se o rascunho for reprovado (score abaixo do mínimo OU algum dos três campos booleanos for false), o campo motivo é obrigatório e precisa conter tanto o diagnóstico específico (o que exatamente falhou) quanto uma sugestão concreta do que corrigir — não basta apontar o problema, aponte a correção. O texto será lido tanto por um Escritor automático quanto por um humano revisando manualmente.",
+    "Use a ferramenta para registrar o resultado. Se o rascunho for reprovado (score abaixo do mínimo OU algum dos três campos booleanos for false), o campo motivo é obrigatório e precisa conter, pra CADA problema real encontrado na revisão completa (não só o primeiro), tanto o diagnóstico específico (o que exatamente falhou) quanto uma sugestão concreta do que corrigir — não basta apontar o problema, aponte a correção. O texto será lido tanto por um Escritor automático quanto por um humano revisando manualmente.",
   ].join("\n");
 }
 

@@ -16,9 +16,9 @@ import {
   criarPautaDePersona,
   excluirItemChecklist,
   listarChecklistPorPropriedade,
-  listarEtapasConcluidasRecentes,
-  listarEtapasEmAndamento,
   listarMatrizes,
+  listarPautasConcluidasRecentes,
+  listarPautasEmAndamento,
   listarPautasPorStatus,
   listarPersonasAtivasComAngulosDisponiveis,
   listarPostsPublicados,
@@ -69,6 +69,7 @@ function criarQueryFalsa(resultado: ResultadoQuery) {
     "in",
     "not",
     "is",
+    "or",
     "update",
     "insert",
     "upsert",
@@ -1673,151 +1674,151 @@ describe("carregarResumoVisaoGeral", () => {
 // Task 13 (Monitor de execução, Realtime) — carga inicial dos 3 blocos + estimativa de progresso.
 // ---------------------------------------------------------------------------
 
-describe("listarEtapasEmAndamento", () => {
-  it("mapeia etapas sem concluido_em, resolvendo o nome da pauta via embed", async () => {
-    const builder = criarQueryFalsa({
+describe("listarPautasEmAndamento", () => {
+  // Redesenho de 19/08/2026 (pedido do Luiz): 1 card por PAUTA, não mais por linha de log —
+  // função agora faz 2 queries (pautas, depois pautas_execucao_log) e agrupa em memória.
+
+  it("agrupa etapas por pauta, ordenadas cronologicamente", async () => {
+    const builderPautas = criarQueryFalsa({
+      data: [{ id: "pauta-1", palavra_chave_principal: "limpar nome", tentativas: 1 }],
+      error: null,
+    });
+    const builderLogs = criarQueryFalsa({
       data: [
-        {
-          id: "log-1",
-          pauta_id: "pauta-1",
-          etapa: "gerar_conteudo",
-          iniciado_em: "2026-08-18T10:00:00Z",
-          pautas: { palavra_chave_principal: "limpar nome", status: "em_producao" },
-        },
+        { id: "log-1", pauta_id: "pauta-1", etapa: "buscar_checklist", iniciado_em: "2026-08-18T10:00:00Z", concluido_em: "2026-08-18T10:00:01Z", sucesso: true, detalhes: null },
+        { id: "log-2", pauta_id: "pauta-1", etapa: "gerar_conteudo", iniciado_em: "2026-08-18T10:00:01Z", concluido_em: null, sucesso: null, detalhes: null },
       ],
       error: null,
     });
-    mockarFrom(builder);
+    mockarFrom(builderPautas, builderLogs);
 
-    const etapas = await listarEtapasEmAndamento();
+    const pautas = await listarPautasEmAndamento();
 
-    expect(etapas).toEqual([
+    expect(pautas).toEqual([
       {
-        id: "log-1",
         pautaId: "pauta-1",
         palavraChavePrincipal: "limpar nome",
-        etapa: "gerar_conteudo",
-        iniciadoEm: "2026-08-18T10:00:00Z",
+        tentativas: 1,
+        etapas: [
+          { id: "log-1", etapa: "buscar_checklist", iniciadoEm: "2026-08-18T10:00:00Z", concluidoEm: "2026-08-18T10:00:01Z", sucesso: true, detalhes: null },
+          { id: "log-2", etapa: "gerar_conteudo", iniciadoEm: "2026-08-18T10:00:01Z", concluidoEm: null, sucesso: null, detalhes: null },
+        ],
       },
     ]);
   });
 
-  // As duas asserções protegem a mesma lógica indissociável do embed inner join (mesma lição do
-  // Task 3 sobre listarPautasPorStatus): filtrar por `pautas.status` só é válido no PostgREST se
-  // `pautas!inner(...)` também estiver no select — checar só o `.eq()` não pegaria alguém removendo
-  // o embed do `select()` por engano.
-  it("filtra por concluido_em nulo e pautas.status = em_producao via inner join", async () => {
-    const builder = criarQueryFalsa({ data: [], error: null });
-    mockarFrom(builder);
+  it("filtra pautas por status em_producao OU (pendente com tentativas > 0)", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas);
 
-    await listarEtapasEmAndamento();
+    await listarPautasEmAndamento();
 
-    expect(builder.select).toHaveBeenCalledWith(expect.stringContaining("pautas!inner(palavra_chave_principal, status)"));
-    expect(builder.is).toHaveBeenCalledWith("concluido_em", null);
-    expect(builder.eq).toHaveBeenCalledWith("pautas.status", "em_producao");
+    expect(builderPautas.or).toHaveBeenCalledWith("status.eq.em_producao,and(status.eq.pendente,tentativas.gt.0)");
   });
 
-  it("usa um rótulo de fallback quando o embed de pauta vem vazio (defensivo)", async () => {
-    mockarFrom(
-      criarQueryFalsa({
-        data: [{ id: "log-1", pauta_id: "pauta-1", etapa: "revisar", iniciado_em: "2026-08-18T10:00:00Z", pautas: null }],
-        error: null,
-      }),
-    );
+  it("retorna lista vazia sem consultar o log quando não há pauta em andamento (evita query com .in([]))", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    const from = mockarFrom(builderPautas);
 
-    const [etapa] = await listarEtapasEmAndamento();
-
-    expect(etapa.palavraChavePrincipal).toBe("(pauta desconhecida)");
+    expect(await listarPautasEmAndamento()).toEqual([]);
+    expect(from).toHaveBeenCalledTimes(1);
   });
 
-  it("retorna lista vazia quando não há etapas em andamento", async () => {
-    mockarFrom(criarQueryFalsa({ data: [], error: null }));
-
-    expect(await listarEtapasEmAndamento()).toEqual([]);
-  });
-
-  it("lança erro claro quando a query falha", async () => {
+  it("lança erro claro quando a query de pautas falha", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
-    await expect(listarEtapasEmAndamento()).rejects.toThrow(/Falha ao listar etapas em andamento.*erro de teste/);
+    await expect(listarPautasEmAndamento()).rejects.toThrow(/Falha ao listar pautas em andamento.*erro de teste/);
+  });
+
+  it("lança erro claro quando a query de log falha", async () => {
+    const builderPautas = criarQueryFalsa({ data: [{ id: "pauta-1", palavra_chave_principal: "x", tentativas: 0 }], error: null });
+    const builderLogs = criarQueryFalsa({ data: null, error: erro });
+    mockarFrom(builderPautas, builderLogs);
+
+    await expect(listarPautasEmAndamento()).rejects.toThrow(/Falha ao listar etapas das pautas em andamento.*erro de teste/);
   });
 });
 
-describe("listarEtapasConcluidasRecentes", () => {
-  const linhaBruta = {
-    id: "log-2",
-    pauta_id: "pauta-2",
-    etapa: "publicar",
-    iniciado_em: "2026-08-18T09:00:00Z",
-    concluido_em: "2026-08-18T09:02:30Z",
-    sucesso: true,
-    detalhes: null,
-    pautas: { palavra_chave_principal: "score de crédito" },
-  };
+describe("listarPautasConcluidasRecentes", () => {
+  it("agrupa etapas por pauta concluída, incluindo status/motivo/concluidoEm", async () => {
+    const builderPautas = criarQueryFalsa({
+      data: [{ id: "pauta-2", palavra_chave_principal: "score de crédito", status: "publicado", motivo_ultima_reprovacao: null, atualizado_em: "2026-08-18T09:02:30Z" }],
+      error: null,
+    });
+    const builderLogs = criarQueryFalsa({
+      data: [{ id: "log-2", pauta_id: "pauta-2", etapa: "publicar", iniciado_em: "2026-08-18T09:00:00Z", concluido_em: "2026-08-18T09:02:30Z", sucesso: true, detalhes: null }],
+      error: null,
+    });
+    mockarFrom(builderPautas, builderLogs);
 
-  it("mapeia etapas concluídas com sucesso/detalhes/nome da pauta", async () => {
-    mockarFrom(criarQueryFalsa({ data: [linhaBruta], error: null }));
+    const pautas = await listarPautasConcluidasRecentes();
 
-    const etapas = await listarEtapasConcluidasRecentes();
-
-    expect(etapas).toEqual([
+    expect(pautas).toEqual([
       {
-        id: "log-2",
         pautaId: "pauta-2",
         palavraChavePrincipal: "score de crédito",
-        etapa: "publicar",
-        iniciadoEm: "2026-08-18T09:00:00Z",
+        status: "publicado",
+        motivoUltimaReprovacao: null,
         concluidoEm: "2026-08-18T09:02:30Z",
-        sucesso: true,
-        detalhes: null,
+        etapas: [{ id: "log-2", etapa: "publicar", iniciadoEm: "2026-08-18T09:00:00Z", concluidoEm: "2026-08-18T09:02:30Z", sucesso: true, detalhes: null }],
       },
     ]);
   });
 
-  it("filtra concluido_em não nulo, ordena desc e usa o limite default de 20", async () => {
-    const builder = criarQueryFalsa({ data: [], error: null });
-    mockarFrom(builder);
+  it("filtra status IN (publicado, bloqueada, rejeitado), ordena por atualizado_em desc e usa o limite default de 20", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas);
 
-    await listarEtapasConcluidasRecentes();
+    await listarPautasConcluidasRecentes();
 
-    expect(builder.not).toHaveBeenCalledWith("concluido_em", "is", null);
-    expect(builder.order).toHaveBeenCalledWith("concluido_em", { ascending: false });
-    expect(builder.limit).toHaveBeenCalledWith(20);
+    expect(builderPautas.in).toHaveBeenCalledWith("status", ["publicado", "bloqueada", "rejeitado"]);
+    expect(builderPautas.order).toHaveBeenCalledWith("atualizado_em", { ascending: false });
+    expect(builderPautas.limit).toHaveBeenCalledWith(20);
   });
 
   it("respeita um limite customizado", async () => {
-    const builder = criarQueryFalsa({ data: [], error: null });
-    mockarFrom(builder);
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas);
 
-    await listarEtapasConcluidasRecentes(5);
+    await listarPautasConcluidasRecentes(5);
 
-    expect(builder.limit).toHaveBeenCalledWith(5);
+    expect(builderPautas.limit).toHaveBeenCalledWith(5);
   });
 
-  it("mapeia sucesso false e detalhes preenchidos (etapa que falhou)", async () => {
-    mockarFrom(
-      criarQueryFalsa({
-        data: [{ ...linhaBruta, sucesso: false, detalhes: "Timeout ao publicar no WordPress." }],
-        error: null,
-      }),
-    );
+  it("mapeia motivo de reprovação de uma pauta bloqueada", async () => {
+    const builderPautas = criarQueryFalsa({
+      data: [{ id: "pauta-3", palavra_chave_principal: "y", status: "bloqueada", motivo_ultima_reprovacao: "Limite de tentativas esgotado.", atualizado_em: "2026-08-18T09:00:00Z" }],
+      error: null,
+    });
+    const builderLogs = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas, builderLogs);
 
-    const [etapa] = await listarEtapasConcluidasRecentes();
+    const [pauta] = await listarPautasConcluidasRecentes();
 
-    expect(etapa.sucesso).toBe(false);
-    expect(etapa.detalhes).toBe("Timeout ao publicar no WordPress.");
+    expect(pauta.status).toBe("bloqueada");
+    expect(pauta.motivoUltimaReprovacao).toBe("Limite de tentativas esgotado.");
   });
 
-  it("retorna lista vazia quando não há etapas concluídas (tabela ainda vazia, migration pendente)", async () => {
-    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+  it("retorna lista vazia sem consultar o log quando não há pauta concluída", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    const from = mockarFrom(builderPautas);
 
-    expect(await listarEtapasConcluidasRecentes()).toEqual([]);
+    expect(await listarPautasConcluidasRecentes()).toEqual([]);
+    expect(from).toHaveBeenCalledTimes(1);
   });
 
-  it("lança erro claro quando a query falha", async () => {
+  it("lança erro claro quando a query de pautas falha", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
-    await expect(listarEtapasConcluidasRecentes()).rejects.toThrow(/Falha ao listar etapas concluídas recentes.*erro de teste/);
+    await expect(listarPautasConcluidasRecentes()).rejects.toThrow(/Falha ao listar pautas concluídas recentes.*erro de teste/);
+  });
+
+  it("lança erro claro quando a query de log falha", async () => {
+    const builderPautas = criarQueryFalsa({ data: [{ id: "pauta-1", palavra_chave_principal: "x", status: "publicado", motivo_ultima_reprovacao: null, atualizado_em: "2026-08-18T09:00:00Z" }], error: null });
+    const builderLogs = criarQueryFalsa({ data: null, error: erro });
+    mockarFrom(builderPautas, builderLogs);
+
+    await expect(listarPautasConcluidasRecentes()).rejects.toThrow(/Falha ao listar etapas das pautas concluídas.*erro de teste/);
   });
 });
 

@@ -347,30 +347,47 @@ export type ResumoVisaoGeral = {
 // ---------------------------------------------------------------------------
 
 /**
- * Uma linha de `pautas_execucao_log` ainda sem `concluido_em` — pauta com etapa em andamento
- * (ou possivelmente travada, ver RECLAIM_MINUTOS em repositorio.ts e a nota da spec seção 6:
- * "sem concluido_em" pode significar em andamento de verdade OU travado por timeout, e só o
- * tempo decorrido desde iniciadoEm distingue os dois — decisão que cabe à tela, não ao repositório).
+ * Uma etapa dentro da timeline de uma pauta no Monitor (redesenho de 19/08/2026, pedido do Luiz)
+ * — substitui o modelo anterior de "1 card por linha de log" por "1 card por PAUTA, com uma
+ * timeline de etapas dentro". `concluidoEm`/`sucesso` nulos = etapa ainda rodando (ou
+ * possivelmente travada, ver RECLAIM_MINUTOS em repositorio.ts — só o tempo decorrido desde
+ * `iniciadoEm` distingue os dois, decisão que cabe à tela, não ao repositório).
  */
-export type EtapaEmAndamento = {
+export type EtapaTimeline = {
   id: string;
-  pautaId: string;
-  palavraChavePrincipal: string;
   etapa: EtapaLog;
   iniciadoEm: string;
-};
-
-/** Uma linha de `pautas_execucao_log` já concluída (sucesso ou falha) — alimenta o bloco
- * "Concluídos recentes" do Monitor. */
-export type EtapaConcluida = {
-  id: string;
-  pautaId: string;
-  palavraChavePrincipal: string;
-  etapa: EtapaLog;
-  iniciadoEm: string;
-  concluidoEm: string;
+  concluidoEm: string | null;
   sucesso: boolean | null;
   detalhes: string | null;
+};
+
+/**
+ * Pauta com pelo menos uma tentativa já iniciada e ainda sem desfecho final — alimenta o bloco
+ * "Em andamento agora" do Monitor. `etapas` acumula TODAS as tentativas desta pauta (uma
+ * reprovação que volta a pauta pra "pendente" não tira o card daqui — só um desfecho final
+ * publicado/bloqueada/rejeitado move o card pra "Concluídos", ver `listarPautasEmAndamento`),
+ * ordenadas cronologicamente (mais antiga primeiro), pra renderizar como timeline vertical.
+ */
+export type PautaEmAndamento = {
+  pautaId: string;
+  palavraChavePrincipal: string;
+  tentativas: number;
+  etapas: EtapaTimeline[];
+};
+
+/**
+ * Pauta que já atingiu um desfecho final (publicada, bloqueada, ou reprovada sem mais tentativas)
+ * — alimenta o bloco "Concluídos recentes" do Monitor, um card por pauta (não mais um por linha de
+ * log). `etapas` é o histórico completo de todas as tentativas, pra expandir e inspecionar.
+ */
+export type PautaConcluida = {
+  pautaId: string;
+  palavraChavePrincipal: string;
+  status: StatusPauta;
+  motivoUltimaReprovacao: string | null;
+  concluidoEm: string;
+  etapas: EtapaTimeline[];
 };
 
 /**

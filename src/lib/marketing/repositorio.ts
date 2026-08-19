@@ -9,15 +9,16 @@ import type {
   DadosMatriz,
   DadosPropriedade,
   DuracaoMediaPorEtapa,
-  EtapaConcluida,
-  EtapaEmAndamento,
   EtapaLog,
+  EtapaTimeline,
   FunilPauta,
   ItemChecklistAdmin,
   ItemChecklistCarregado,
   JanelaPublicacao,
   MatrizAdmin,
   PautaCarregada,
+  PautaConcluida,
+  PautaEmAndamento,
   PersonaAtiva,
   PersonaCarregada,
   PersonaFormulario,
@@ -1402,69 +1403,109 @@ export async function carregarResumoVisaoGeral(): Promise<ResumoVisaoGeral> {
 // de leitura fora de registrarEtapa/carregarResumoVisaoGeral).
 // ---------------------------------------------------------------------------
 
-function mapearNomePauta(embed: unknown): string {
-  const pauta = embed as { palavra_chave_principal?: string } | { palavra_chave_principal?: string }[] | null;
-  if (Array.isArray(pauta)) return pauta[0]?.palavra_chave_principal ?? "(pauta desconhecida)";
-  return pauta?.palavra_chave_principal ?? "(pauta desconhecida)";
+const STATUS_PAUTA_FINAL: StatusPauta[] = ["publicado", "bloqueada", "rejeitado"];
+
+function mapearEtapaTimeline(linha: {
+  id: string;
+  etapa: EtapaLog;
+  iniciado_em: string;
+  concluido_em: string | null;
+  sucesso: boolean | null;
+  detalhes: string | null;
+}): EtapaTimeline {
+  return {
+    id: linha.id,
+    etapa: linha.etapa,
+    iniciadoEm: linha.iniciado_em,
+    concluidoEm: linha.concluido_em,
+    sucesso: linha.sucesso,
+    detalhes: linha.detalhes,
+  };
 }
 
 /**
- * Etapas de `pautas_execucao_log` ainda sem `concluido_em`, restritas a pautas com
- * `status = em_producao` (join inner com `pautas`, ver spec seção 7) — implementa o bloco "Em
- * andamento agora". Não deduplica por pauta_id: no cenário de reclaim (spec seção 6), uma pauta
- * pode ter DUAS linhas abertas simultaneamente — a órfã (função anterior morreu, nunca fechou a
- * linha) e a da tentativa atual — e mostrar as duas é o comportamento desejado (a órfã aparece
- * naturalmente como "possivelmente travada" na tela, sem precisar de lógica extra aqui).
- *
- * Nota (mesma cautela já registrada em listarPautasPorStatus): o embed `pautas!inner(...)` só foi
- * testado com mock do Supabase (regra dura de migration — tabela pautas_execucao_log ainda não
- * existe em produção) — validar manualmente contra o Postgrest real depois da migration da Task 1
- * ser aplicada, antes de confiar cegamente neste caminho.
+ * Pautas com pelo menos uma tentativa já iniciada e sem desfecho final — implementa o bloco "Em
+ * andamento agora" do Monitor (redesenho de 19/08/2026, pedido do Luiz: 1 card por PAUTA, com uma
+ * timeline de etapas dentro, em vez de 1 card por linha de log). `status IN
+ * ('em_producao', 'pendente')`: uma reprovação de conteúdo volta a pauta pra "pendente" entre
+ * tentativas (ver registrarReprovacaoPauta) — sem incluir esse status aqui, o card sumiria de
+ * "em andamento" e voltaria pra "na fila" a cada retry, exatamente a confusão que este redesenho
+ * existe pra evitar. `tentativas > 0` distingue "pendente aguardando retry" de "pendente nunca
+ * tentada" (que pertence à fila, ver listarPautasPorStatus) sem precisar consultar o log — o
+ * contador já vive na própria pauta.
  */
-export async function listarEtapasEmAndamento(): Promise<EtapaEmAndamento[]> {
+export async function listarPautasEmAndamento(): Promise<PautaEmAndamento[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("pautas_execucao_log")
-    .select("id, pauta_id, etapa, iniciado_em, pautas!inner(palavra_chave_principal, status)")
-    .is("concluido_em", null)
-    .eq("pautas.status", "em_producao")
-    .order("iniciado_em", { ascending: false });
-  if (error) throw new Error(`Falha ao listar etapas em andamento: ${error.message}`);
+  const { data: pautas, error: erroPautas } = await supabase
+    .from("pautas")
+    .select("id, palavra_chave_principal, tentativas")
+    .or("status.eq.em_producao,and(status.eq.pendente,tentativas.gt.0)");
+  if (erroPautas) throw new Error(`Falha ao listar pautas em andamento: ${erroPautas.message}`);
+  if (!pautas || pautas.length === 0) return [];
 
-  return (data ?? []).map((linha) => ({
-    id: linha.id as string,
-    pautaId: linha.pauta_id as string,
-    palavraChavePrincipal: mapearNomePauta((linha as { pautas?: unknown }).pautas),
-    etapa: linha.etapa as EtapaLog,
-    iniciadoEm: linha.iniciado_em as string,
+  const ids = pautas.map((p) => p.id);
+  const { data: logs, error: erroLogs } = await supabase
+    .from("pautas_execucao_log")
+    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes")
+    .in("pauta_id", ids)
+    .order("iniciado_em", { ascending: true });
+  if (erroLogs) throw new Error(`Falha ao listar etapas das pautas em andamento: ${erroLogs.message}`);
+
+  const etapasPorPauta = new Map<string, EtapaTimeline[]>();
+  for (const linha of logs ?? []) {
+    const lista = etapasPorPauta.get(linha.pauta_id as string) ?? [];
+    lista.push(mapearEtapaTimeline(linha as Parameters<typeof mapearEtapaTimeline>[0]));
+    etapasPorPauta.set(linha.pauta_id as string, lista);
+  }
+
+  return pautas.map((p) => ({
+    pautaId: p.id as string,
+    palavraChavePrincipal: p.palavra_chave_principal as string,
+    tentativas: p.tentativas as number,
+    etapas: etapasPorPauta.get(p.id as string) ?? [],
   }));
 }
 
 /**
- * Últimas `limite` etapas concluídas (sucesso ou falha) de `pautas_execucao_log`, mais recentes
- * primeiro — implementa o bloco "Concluídos recentes". `pautas` (embed simples, sem `!inner`) é
- * seguro aqui porque `pauta_id` é `not null references pautas(id)` — toda linha concluída tem uma
- * pauta associada, não precisa de inner join pra filtrar nada.
+ * Últimas `limite` pautas que atingiram um desfecho final (publicada, bloqueada, ou reprovada
+ * sem mais tentativas), mais recentes primeiro — implementa o bloco "Concluídos recentes" (mesmo
+ * redesenho de listarPautasEmAndamento: 1 card por pauta, com o histórico completo de etapas de
+ * todas as tentativas pra expandir). Ordenado por `atualizado_em` da pauta (não pelo log) — é o
+ * timestamp que reflete o instante real do desfecho final, já usado pelo resto do módulo.
  */
-export async function listarEtapasConcluidasRecentes(limite = 20): Promise<EtapaConcluida[]> {
+export async function listarPautasConcluidasRecentes(limite = 20): Promise<PautaConcluida[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("pautas_execucao_log")
-    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes, pautas(palavra_chave_principal)")
-    .not("concluido_em", "is", null)
-    .order("concluido_em", { ascending: false })
+  const { data: pautas, error: erroPautas } = await supabase
+    .from("pautas")
+    .select("id, palavra_chave_principal, status, motivo_ultima_reprovacao, atualizado_em")
+    .in("status", STATUS_PAUTA_FINAL)
+    .order("atualizado_em", { ascending: false })
     .limit(limite);
-  if (error) throw new Error(`Falha ao listar etapas concluídas recentes: ${error.message}`);
+  if (erroPautas) throw new Error(`Falha ao listar pautas concluídas recentes: ${erroPautas.message}`);
+  if (!pautas || pautas.length === 0) return [];
 
-  return (data ?? []).map((linha) => ({
-    id: linha.id as string,
-    pautaId: linha.pauta_id as string,
-    palavraChavePrincipal: mapearNomePauta((linha as { pautas?: unknown }).pautas),
-    etapa: linha.etapa as EtapaLog,
-    iniciadoEm: linha.iniciado_em as string,
-    concluidoEm: linha.concluido_em as string,
-    sucesso: linha.sucesso as boolean | null,
-    detalhes: linha.detalhes as string | null,
+  const ids = pautas.map((p) => p.id);
+  const { data: logs, error: erroLogs } = await supabase
+    .from("pautas_execucao_log")
+    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes")
+    .in("pauta_id", ids)
+    .order("iniciado_em", { ascending: true });
+  if (erroLogs) throw new Error(`Falha ao listar etapas das pautas concluídas: ${erroLogs.message}`);
+
+  const etapasPorPauta = new Map<string, EtapaTimeline[]>();
+  for (const linha of logs ?? []) {
+    const lista = etapasPorPauta.get(linha.pauta_id as string) ?? [];
+    lista.push(mapearEtapaTimeline(linha as Parameters<typeof mapearEtapaTimeline>[0]));
+    etapasPorPauta.set(linha.pauta_id as string, lista);
+  }
+
+  return pautas.map((p) => ({
+    pautaId: p.id as string,
+    palavraChavePrincipal: p.palavra_chave_principal as string,
+    status: p.status as StatusPauta,
+    motivoUltimaReprovacao: p.motivo_ultima_reprovacao as string | null,
+    concluidoEm: p.atualizado_em as string,
+    etapas: etapasPorPauta.get(p.id as string) ?? [],
   }));
 }
 
