@@ -46,6 +46,24 @@ export async function buscarTemplateAtivoPorProduto(produtoId: string): Promise<
   };
 }
 
+export async function buscarTemplatePorId(templateId: string): Promise<ContratoTemplate | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contrato_templates")
+    .select("id, produto_id, conteudo_html, versao")
+    .eq("id", templateId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar template de contrato: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    produtoId: data.produto_id,
+    conteudoHtml: data.conteudo_html,
+    versao: data.versao,
+  };
+}
+
 export async function salvarTemplate(produtoId: string, conteudoHtml: string): Promise<{ id: string }> {
   const supabase = await createClient();
   const existente = await buscarTemplateAtivoPorProduto(produtoId);
