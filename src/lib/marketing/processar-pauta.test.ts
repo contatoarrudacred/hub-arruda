@@ -217,6 +217,10 @@ describe("processarProximaPauta", () => {
   beforeEach(() => {
     vi.spyOn(repositorio, "salvarRascunho").mockResolvedValue(undefined);
     vi.spyOn(repositorio, "carregarPostsRecentes").mockResolvedValue([]);
+    // Reaproveitamento entre tentativas (19/08/2026) — default "nenhum post pronto ainda", mesmo
+    // comportamento de antes desta mudança existir (sempre gera do zero). Testes dedicados de
+    // reaproveitamento (describe "reaproveitamento de post pronto" abaixo) sobrescrevem.
+    vi.spyOn(repositorio, "carregarPostProntoParaPublicar").mockResolvedValue(null);
     // Task 10 — default "sem imagem nenhuma" (mesmo comportamento de antes desta task existir):
     // capa reprovada/sem resultado, zero secundárias aprovadas. Testes dedicados de imagem
     // (describe "gerar_imagens (Task 10)" abaixo) sobrescrevem com seus próprios resultados.
@@ -538,8 +542,11 @@ describe("processarProximaPauta", () => {
       "pauta-1",
       expect.stringContaining("https://teste.exemplo.com/como-limpar-nome-serasa/"),
     );
-    // atualizarStatusPost não deve rodar: a pauta já foi resolvida (bloqueada) nesse ramo.
-    expect(atualizarStatusPostSpy).not.toHaveBeenCalled();
+    // atualizarStatusPost roda 1x (persistência das imagens, logo após "gerar_imagens", ANTES de
+    // publicar — mudança de 19/08/2026) mas NÃO uma 2ª vez com os campos de publicação: a pauta já
+    // foi resolvida (bloqueada) antes de chegar nesse ponto do bloco "registrar_resultado".
+    expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(1);
+    expect(atualizarStatusPostSpy).toHaveBeenCalledWith("post-1", "rascunho", expect.objectContaining({ imagensSecundarias: [] }));
     expect(erroSpy).toHaveBeenCalled();
     expect(etapasChamadas).toEqual([
       "buscar_checklist",
@@ -788,6 +795,74 @@ describe("processarProximaPauta", () => {
     expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo"]);
   });
 
+  // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — achado real de teste em
+  // produção: uma falha técnica na publicação (credencial de WordPress inválida) descartava um
+  // texto já aprovado e imagens já geradas, forçando a próxima tentativa a recomeçar do zero e
+  // gastando tokens/dinheiro de novo à toa. Quando já existe um post "pronto_para_publicar" pra
+  // esta pauta, o pipeline deve pular INTEIRAMENTE gerar_conteudo/revisar/inserir_links/
+  // sanitizar/gerar_imagens — nenhuma chamada de IA nova, direto pra "publicar".
+  describe("reaproveitamento de post pronto entre tentativas", () => {
+    it("quando já existe um post pronto pra publicar, pula toda a geração (nenhuma chamada de IA) e publica direto com o material reaproveitado", async () => {
+      vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+      vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+      vi.spyOn(repositorio, "carregarPostProntoParaPublicar").mockResolvedValue({
+        id: "post-1",
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+        imagemDestaqueMediaId: "media-capa-reaproveitada",
+      });
+      const gerarConteudoSpy = vi.spyOn(escritor, "gerarConteudo");
+      const revisarConteudoSpy = vi.spyOn(revisor, "revisarConteudo");
+      const criarPostSpy = vi.spyOn(repositorio, "criarPost");
+      const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+      vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia: vi.fn(),
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+      const { etapasChamadas } = espiarRegistrarEtapa();
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      // A prova real de que não gastou tokens à toa: nenhuma dessas funções foi chamada.
+      expect(gerarConteudoSpy).not.toHaveBeenCalled();
+      expect(revisarConteudoSpy).not.toHaveBeenCalled();
+      expect(gerarCapa).not.toHaveBeenCalled();
+      expect(gerarImagensSecundarias).not.toHaveBeenCalled();
+      expect(inserirLinksInternos).not.toHaveBeenCalled();
+      expect(criarPostSpy).not.toHaveBeenCalled();
+      expect(etapasChamadas).toEqual(["publicar", "registrar_resultado"]);
+      // Dados do post reaproveitado chegam intactos em criarRascunho, incluindo o media id da capa
+      // (reaproveitado sem repetir o upload).
+      expect(criarRascunho).toHaveBeenCalledWith(
+        {
+          titulo: "Como Limpar o Nome no Serasa",
+          corpoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>",
+          slug: "como-limpar-nome-serasa",
+          metaTitle: "Como Limpar Nome no Serasa",
+          metaDescription: "Guia completo.",
+        },
+        "media-capa-reaproveitada",
+      );
+      // atualizarStatusPost só roda 1x aqui (bloco final de sucesso) — sem a chamada extra de
+      // persistência de imagens, que só existe no caminho de geração do zero.
+      expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(1);
+      expect(atualizarStatusPostSpy).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({ conteudoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>" }),
+      );
+    });
+  });
+
   // Task 10 (Fase 4a+4b, 19/08/2026) — conecta gerarCapa (Task 7), gerarImagensSecundarias (Task
   // 8), enviarMidia (Task 9) e montarSchemaArticle/montarSchemaOrganization (Task 5) na sequência
   // real do pipeline. Sequência exercitada aqui: capa/secundárias geradas (data URLs) → upload de
@@ -905,7 +980,7 @@ describe("processarProximaPauta", () => {
 
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
-        "publicado",
+        "rascunho",
         expect.objectContaining({
           imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png",
           imagemDestaqueAlt: "Pessoa aliviada olhando boletos organizados",
@@ -952,7 +1027,7 @@ describe("processarProximaPauta", () => {
       expect(enviarImagemStorage).not.toHaveBeenCalled();
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
-        "publicado",
+        "rascunho",
         expect.objectContaining({
           imagemDestaqueUrl: undefined,
           imagemDestaqueAlt: undefined,
@@ -1016,7 +1091,7 @@ describe("processarProximaPauta", () => {
       expect(enviarImagemStorage).toHaveBeenCalledWith("data:image/png;base64,BBBB", "prop-1/pauta-1/secundaria-doc-necessarios.png");
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
-        "publicado",
+        "rascunho",
         expect.objectContaining({
           imagensSecundarias: [
             expect.objectContaining({
@@ -1084,7 +1159,7 @@ describe("processarProximaPauta", () => {
       expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
-        "publicado",
+        "rascunho",
         expect.objectContaining({
           imagensSecundarias: [
             expect.objectContaining({
@@ -1123,7 +1198,7 @@ describe("processarProximaPauta", () => {
       // A falha é só do Storage — a capa continua indo pro ar no WordPress normalmente.
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
-        "publicado",
+        "rascunho",
         expect.objectContaining({
           imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png",
           imagemDestaqueStorageUrl: undefined,
@@ -1160,7 +1235,7 @@ describe("processarProximaPauta", () => {
       expect(enviarImagemStorage).not.toHaveBeenCalled();
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
-        "publicado",
+        "rascunho",
         expect.objectContaining({
           imagemDestaqueUrl: undefined,
           imagemDestaqueAlt: undefined,

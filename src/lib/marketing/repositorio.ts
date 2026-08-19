@@ -23,6 +23,7 @@ import type {
   PersonaFormulario,
   PostAdmin,
   PostCriado,
+  PostProntoParaPublicar,
   PostRelacionado,
   PropriedadeAdmin,
   PropriedadeCarregada,
@@ -351,6 +352,41 @@ export async function criarPost(params: {
 }
 
 /**
+ * Post já preparado (pronto_para_publicar = true) pra esta pauta, se existir — reaproveitamento
+ * entre tentativas (19/08/2026). `status = "rascunho"`: só reaproveita post que nunca chegou a
+ * publicar de verdade (um post "publicado" não devia estar associado a uma pauta que voltou pra
+ * "pendente" — cenário que não deveria acontecer, mas o filtro protege mesmo assim). Mais recente
+ * primeiro + `limit(1)`: uma pauta pode, em teoria, ter mais de um post ao longo de tentativas
+ * diferentes (cada `criarPost` insere uma linha nova) — sempre o mais recente é o que reflete a
+ * tentativa mais avançada.
+ */
+export async function carregarPostProntoParaPublicar(pautaId: string): Promise<PostProntoParaPublicar | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, titulo, conteudo_html, meta_title, meta_description, slug, imagem_destaque_media_id")
+    .eq("pauta_id", pautaId)
+    .eq("status", "rascunho")
+    .eq("pronto_para_publicar", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar post pronto para pauta ${pautaId}: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    titulo: data.titulo,
+    conteudoHtml: data.conteudo_html,
+    metaTitle: data.meta_title,
+    metaDescription: data.meta_description,
+    slug: data.slug,
+    imagemDestaqueMediaId: data.imagem_destaque_media_id,
+  };
+}
+
+/**
  * Até 6 posts publicados da mesma propriedade, mais recentes primeiro — usados pelo Agente de
  * Links (src/lib/marketing/links.ts) pra montar a seção "Posts relacionados" ao final do artigo.
  * A URL vem de canais.wordpress.url (jsonb), preenchido em atualizarStatusPost no momento da
@@ -439,6 +475,9 @@ export async function atualizarStatusPost(
     // dentro: ver decisão abaixo, na condição de escrita.
     imagemDestaqueStorageUrl?: string | null;
     imagensSecundarias?: ImagemSecundaria[];
+    // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — ver carregarPostProntoParaPublicar.
+    prontoParaPublicar?: boolean;
+    imagemDestaqueMediaId?: string;
   },
 ): Promise<void> {
   const supabase = createAdminClient();
@@ -471,6 +510,8 @@ export async function atualizarStatusPost(
       ...(extra?.imagensSecundarias !== undefined
         ? { imagens_secundarias: extra.imagensSecundarias.map(mapearImagemSecundariaBruta) }
         : {}),
+      ...(extra?.prontoParaPublicar !== undefined ? { pronto_para_publicar: extra.prontoParaPublicar } : {}),
+      ...(extra?.imagemDestaqueMediaId ? { imagem_destaque_media_id: extra.imagemDestaqueMediaId } : {}),
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", postId);

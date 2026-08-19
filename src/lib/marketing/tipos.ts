@@ -159,6 +159,24 @@ export type PostCriado = {
   status: StatusPost;
 };
 
+/**
+ * Post já preparado (texto aprovado, links, sanitização e imagens já embutidos) esperando só a
+ * publicação — reaproveitamento entre tentativas (19/08/2026, pedido do Luiz). Achado real de
+ * teste em produção: sem isso, uma falha técnica na publicação (ex.: credencial de WordPress
+ * inválida) descartava um post inteiro já aprovado e imagens já geradas, forçando a próxima
+ * tentativa a regenerar tudo do zero — desperdício real de $ (Anthropic + OpenAI). Carregado por
+ * `carregarPostProntoParaPublicar` (repositorio.ts) quando `posts.pronto_para_publicar = true`.
+ */
+export type PostProntoParaPublicar = {
+  id: string;
+  titulo: string;
+  conteudoHtml: string;
+  metaTitle: string;
+  metaDescription: string;
+  slug: string;
+  imagemDestaqueMediaId: string | null;
+};
+
 /** Post publicado da mesma propriedade, candidato a "post relacionado" no Agente de Links. */
 export type PostRelacionado = {
   titulo: string;

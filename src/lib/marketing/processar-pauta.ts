@@ -21,6 +21,7 @@ import {
   atualizarStatusPost,
   carregarChecklistAtivo,
   carregarPersona,
+  carregarPostProntoParaPublicar,
   carregarPostsRecentes,
   carregarPropriedade,
   contarPostsPublicadosDesde,
@@ -404,84 +405,137 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
   }
 
   try {
-    // Cada etapa é envolvida por registrarEtapa (Task 3) — grava início/fim/sucesso em
-    // pautas_execucao_log, alimentando o Monitor de execução e o Painel de Custo (spec seção 6).
-    // Etapas gerar_conteudo/revisar passam um extrator de tokens porque Escritor/Revisor retornam
-    // `usage` junto do resultado de negócio (mudança desta mesma task).
-    const checklist = await registrarEtapa(pauta.id, "buscar_checklist", () => carregarChecklistAtivo(propriedadeId));
+    // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — achado real de teste em
+    // produção: uma falha técnica na publicação (ex.: credencial de WordPress inválida) descartava
+    // um texto já aprovado e imagens já geradas (custando $ real de Anthropic + OpenAI), forçando a
+    // próxima tentativa a recomeçar do zero: Escritor, Revisor e geração de imagens de novo. Se já
+    // existe um post "pronto_para_publicar" pra esta pauta (gravado logo após "gerar_imagens" rodar
+    // com sucesso, ver mais abaixo), pula TODA a geração — direto pra "publicar" com o material que
+    // já está pronto. Isso só é seguro porque "pronto_para_publicar" só fica true depois que o
+    // Revisor JÁ aprovou o conteúdo (o problema anterior era só técnico, não de conteúdo).
+    const postPronto = await carregarPostProntoParaPublicar(pauta.id);
 
-    // Fase 3 (personas ricas), Task 5, spec seção 7 — pauta.personaId só existe quando a pauta
-    // nasceu do terceiro caminho do Estrategista (persona sorteada, Task 4); pautas antigas/
-    // manuais (pendente/reclaim) têm personaId null e não pagam o custo de uma query extra aqui —
-    // sem carregarPersona nesse caso, `persona` fica null e o Escritor mantém o prompt de antes
-    // desta task (ver escritor.ts).
-    const persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
-
-    const { resultado: conteudo } = await registrarEtapa(
-      pauta.id,
-      "gerar_conteudo",
-      () => gerarConteudo(pauta, checklist, persona, propriedade),
-      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-    );
-
-    // Salva o rascunho ANTES de saber se o Revisor vai aprovar (achado do teste real de ponta a
-    // ponta, 19/08/2026) — se reprovar, a próxima tentativa desta pauta encontra o texto aqui
-    // (pauta.ultimoRascunho) e revisa em vez de reescrever do zero (ver montarPrompt, escritor.ts).
-    // Fora do registrarEtapa de cima de propósito: não é parte do custo/tempo da geração em si.
-    await salvarRascunho(pauta.id, conteudo);
-
-    // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio, não
-    // erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de log
-    // ficaria sucesso: true, detalhes: null, indistinguível de uma revisão realmente aprovada. Só
-    // grava o motivo quando reprovado; aprovado devolve undefined (não escreve nada em detalhes).
-    // postsRecentes (títulos+ângulos dos últimos posts publicados desta propriedade, pro Revisor
-    // julgar originalidade_adequada — spec Fase 4a seção 3.1) — resolvido na Task 3 via
-    // carregarPostsRecentes (repositorio.ts), função dedicada porque listarPostsPublicados não
-    // carrega `angulo` (vive em `pautas`, não em `posts`). LIMITE_POSTS_RECENTES = 10, "últimos
-    // ~10 posts publicados" da spec.
-    const postsRecentes = await carregarPostsRecentes(propriedade.id, LIMITE_POSTS_RECENTES);
-
-    const { resultado: revisao } = await registrarEtapa(
-      pauta.id,
-      "revisar",
-      () => revisarConteudo(conteudo, checklist, propriedade, postsRecentes),
-      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-      (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
-    );
-
-    if (!revisao.aprovado) {
-      await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
-      return { status: "reprovado" as const, pautaId: pauta.id };
-    }
-
-    const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
-    // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
-    // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
-    // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
-    const conteudoComLinks = await registrarEtapa(pauta.id, "inserir_links", () =>
-      inserirLinksInternos(conteudo.conteudoHtml, propriedadeId, post.id),
-    );
-    const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
-
-    // Adaptador criado aqui (não mais dentro da etapa "publicar") porque a etapa "gerar_imagens"
-    // (Task 10) já precisa dele pra chamar enviarMidia antes de chegar em "publicar" — mesma
-    // instância reaproveitada nas duas etapas, credenciais decifradas uma única vez.
+    // Adaptador criado uma única vez, usado tanto por "gerar_imagens" (upload de mídia) quanto por
+    // "publicar" — precisa existir nos dois caminhos (reaproveitado ou gerado do zero).
     const adaptador = criarAdaptadorWordPress(propriedade.urlBase, credenciaisWordPressDaPropriedade(propriedade));
 
-    // Etapa "gerar_imagens" (Task 10, Fase 4a+4b) — capa + imagens secundárias + upload WordPress
-    // + schema Article/Organization embutidos no HTML, entre "sanitizar" e "publicar" (spec seção
-    // 4.7). gerarEEmbutirImagens NUNCA lança (Global Constraint do plano mestre: falha de imagem
-    // não pode bloquear a publicação do texto) — por isso esta etapa sempre é registrada como
-    // sucesso: true; extrairDetalhes grava o que faltou/degradou (capa reprovada, upload que
-    // falhou, zero secundárias aprovadas) na mesma coluna `detalhes` que as outras etapas usam pra
-    // rejeição de negócio, pra não ficar indistinguível de execução perfeita no log.
-    const resultadoImagens = await registrarEtapa(
-      pauta.id,
-      "gerar_imagens",
-      () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador),
-      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-      (r) => r.detalhesLog,
-    );
+    let postId: string;
+    let corpoHtmlParaPublicar: string;
+    let dadosConteudo: { titulo: string; slug: string; metaTitle: string; metaDescription: string };
+    let imagemDestacadaId: string | undefined;
+
+    if (postPronto) {
+      postId = postPronto.id;
+      corpoHtmlParaPublicar = postPronto.conteudoHtml;
+      dadosConteudo = { titulo: postPronto.titulo, slug: postPronto.slug, metaTitle: postPronto.metaTitle, metaDescription: postPronto.metaDescription };
+      imagemDestacadaId = postPronto.imagemDestaqueMediaId ?? undefined;
+    } else {
+      // Cada etapa é envolvida por registrarEtapa (Task 3) — grava início/fim/sucesso em
+      // pautas_execucao_log, alimentando o Monitor de execução e o Painel de Custo (spec seção 6).
+      // Etapas gerar_conteudo/revisar passam um extrator de tokens porque Escritor/Revisor
+      // retornam `usage` junto do resultado de negócio (mudança desta mesma task).
+      const checklist = await registrarEtapa(pauta.id, "buscar_checklist", () => carregarChecklistAtivo(propriedadeId));
+
+      // Fase 3 (personas ricas), Task 5, spec seção 7 — pauta.personaId só existe quando a pauta
+      // nasceu do terceiro caminho do Estrategista (persona sorteada, Task 4); pautas antigas/
+      // manuais (pendente/reclaim) têm personaId null e não pagam o custo de uma query extra aqui —
+      // sem carregarPersona nesse caso, `persona` fica null e o Escritor mantém o prompt de antes
+      // desta task (ver escritor.ts).
+      const persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
+
+      const { resultado: conteudo } = await registrarEtapa(
+        pauta.id,
+        "gerar_conteudo",
+        () => gerarConteudo(pauta, checklist, persona, propriedade),
+        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+      );
+
+      // Salva o rascunho ANTES de saber se o Revisor vai aprovar (achado do teste real de ponta a
+      // ponta, 19/08/2026) — se reprovar, a próxima tentativa desta pauta encontra o texto aqui
+      // (pauta.ultimoRascunho) e revisa em vez de reescrever do zero (ver montarPrompt, escritor.ts).
+      // Fora do registrarEtapa de cima de propósito: não é parte do custo/tempo da geração em si.
+      await salvarRascunho(pauta.id, conteudo);
+
+      // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio,
+      // não erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de
+      // log ficaria sucesso: true, detalhes: null, indistinguível de uma revisão realmente
+      // aprovada. Só grava o motivo quando reprovado; aprovado devolve undefined (não escreve nada
+      // em detalhes). postsRecentes (títulos+ângulos dos últimos posts publicados desta
+      // propriedade, pro Revisor julgar originalidade_adequada — spec Fase 4a seção 3.1) —
+      // resolvido na Task 3 via carregarPostsRecentes (repositorio.ts), função dedicada porque
+      // listarPostsPublicados não carrega `angulo` (vive em `pautas`, não em `posts`).
+      // LIMITE_POSTS_RECENTES = 10, "últimos ~10 posts publicados" da spec.
+      const postsRecentes = await carregarPostsRecentes(propriedade.id, LIMITE_POSTS_RECENTES);
+
+      const { resultado: revisao } = await registrarEtapa(
+        pauta.id,
+        "revisar",
+        () => revisarConteudo(conteudo, checklist, propriedade, postsRecentes),
+        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+        (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
+      );
+
+      if (!revisao.aprovado) {
+        await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+        return { status: "reprovado" as const, pautaId: pauta.id };
+      }
+
+      const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
+      // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
+      // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
+      // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
+      const conteudoComLinks = await registrarEtapa(pauta.id, "inserir_links", () =>
+        inserirLinksInternos(conteudo.conteudoHtml, propriedadeId, post.id),
+      );
+      const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
+
+      // Etapa "gerar_imagens" (Task 10, Fase 4a+4b) — capa + imagens secundárias + upload
+      // WordPress + schema Article/Organization embutidos no HTML, entre "sanitizar" e "publicar"
+      // (spec seção 4.7). gerarEEmbutirImagens NUNCA lança (Global Constraint do plano mestre:
+      // falha de imagem não pode bloquear a publicação do texto) — por isso esta etapa sempre é
+      // registrada como sucesso: true; extrairDetalhes grava o que faltou/degradou (capa
+      // reprovada, upload que falhou, zero secundárias aprovadas) na mesma coluna `detalhes` que
+      // as outras etapas usam pra rejeição de negócio, pra não ficar indistinguível de execução
+      // perfeita no log.
+      const resultadoImagens = await registrarEtapa(
+        pauta.id,
+        "gerar_imagens",
+        () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador),
+        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+        (r) => r.detalhesLog,
+      );
+
+      // Persiste o post como PRONTO ASSIM QUE as imagens são geradas, ANTES de tentar publicar —
+      // achado real do teste de ponta a ponta (19/08/2026, pedido do Luiz): antes desta mudança, o
+      // resultado de "gerar_imagens" só era gravado no banco dentro do bloco de sucesso de
+      // "publicar" — se a publicação falhasse por qualquer motivo (visto na prática: credencial
+      // WordPress inválida, 401), as imagens já geradas com sucesso e já enviadas ao
+      // WordPress/Storage eram descartadas, e a próxima tentativa as regenerava do zero.
+      // pronto_para_publicar: true é o que permite `carregarPostProntoParaPublicar` (topo desta
+      // função) encontrar este post numa tentativa futura e pular a geração inteira. `post` já
+      // existe neste ponto (criado logo após a aprovação do Revisor). Try/catch próprio, não pode
+      // propagar: falha em persistir é só uma degradação de "reaproveitamento futuro", não pode
+      // derrubar a tentativa de publicação que vem a seguir.
+      try {
+        await atualizarStatusPost(post.id, post.status, {
+          conteudoHtml: resultadoImagens.corpoHtmlFinal,
+          imagemDestaqueUrl: resultadoImagens.imagemDestaqueUrl ?? undefined,
+          imagemDestaqueAlt: resultadoImagens.imagemDestaqueAlt ?? undefined,
+          imagemDestaqueSlug: resultadoImagens.imagemDestaqueSlug ?? undefined,
+          imagemDestaqueStorageUrl: resultadoImagens.imagemDestaqueStorageUrl ?? undefined,
+          imagensSecundarias: resultadoImagens.imagensSecundariasPersistir,
+          imagemDestaqueMediaId: resultadoImagens.capaMediaId,
+          prontoParaPublicar: true,
+        });
+      } catch (erroPersistirImagens) {
+        console.error(`Pauta ${pauta.id}: falha ao persistir post pronto antes de publicar (não bloqueia a publicação):`, erroPersistirImagens);
+      }
+
+      postId = post.id;
+      corpoHtmlParaPublicar = resultadoImagens.corpoHtmlFinal;
+      dadosConteudo = { titulo: conteudo.titulo, slug: conteudo.slug, metaTitle: conteudo.metaTitle, metaDescription: conteudo.metaDescription };
+      imagemDestacadaId = resultadoImagens.capaMediaId;
+    }
 
     // Etapa "publicar" envolve criar rascunho + verificar + aprovar/publicar como uma unidade só.
     // Decisão desta task: uma rejeição de negócio (verificacao.ok === false) não é uma exceção
@@ -501,13 +555,13 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         // "sem imagem destacada", ver canais/wordpress.ts).
         const rascunho = await adaptador.criarRascunho(
           {
-            titulo: conteudo.titulo,
-            corpoHtml: resultadoImagens.corpoHtmlFinal,
-            slug: conteudo.slug,
-            metaTitle: conteudo.metaTitle,
-            metaDescription: conteudo.metaDescription,
+            titulo: dadosConteudo.titulo,
+            corpoHtml: corpoHtmlParaPublicar,
+            slug: dadosConteudo.slug,
+            metaTitle: dadosConteudo.metaTitle,
+            metaDescription: dadosConteudo.metaDescription,
           },
-          resultadoImagens.capaMediaId,
+          imagemDestacadaId,
         );
 
         const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
@@ -523,7 +577,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     );
 
     if (!resultadoPublicacao.sucesso) {
-      await atualizarStatusPost(post.id, "falhou");
+      await atualizarStatusPost(postId, "falhou");
       await registrarReprovacaoPauta(pauta.id, resultadoPublicacao.detalhes);
       return { status: "reprovado" as const, pautaId: pauta.id };
     }
@@ -560,24 +614,19 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         return;
       }
 
-      // Metadados do post local (canais/publicado_em/HTML final/imagens, Task 10) são secundários —
-      // a pauta já está marcada como publicada acima, então uma falha aqui não reabre risco de
-      // duplicidade. Só logamos. conteudoHtml é resultadoImagens.corpoHtmlFinal (não mais
-      // corpoHtmlSanitizado puro): o que de fato foi publicado, com imagens secundárias + schema
-      // Article/Organization já embutidos. Campos de imagem `?? undefined`: ResultadoGeracaoImagens
-      // usa `null` pra "sem capa" (mesma convenção do resto do módulo, ver PautaCarregada.
-      // ultimoRascunho), atualizarStatusPost usa `undefined` pra "não escrever essa coluna" —
-      // conversão explícita nas bordas entre os dois contratos.
+      // Metadados do post local (canais/publicado_em/HTML final, Task 10) são secundários — a
+      // pauta já está marcada como publicada acima, então uma falha aqui não reabre risco de
+      // duplicidade. Só logamos. conteudoHtml é corpoHtmlParaPublicar (não mais corpoHtmlSanitizado
+      // puro): o que de fato foi publicado, com imagens secundárias + schema Article/Organization
+      // já embutidos (seja gerado agora ou reaproveitado de uma tentativa anterior). Campos de
+      // imagem NÃO repetidos aqui (mudança de 19/08/2026, pedido do Luiz): já foram persistidos
+      // logo após "gerar_imagens" (ou já vinham prontos do reaproveitamento) — reescrever os
+      // mesmos valores aqui seria só uma duplicação redundante, não uma correção de nada.
       try {
-        await atualizarStatusPost(post.id, "publicado", {
+        await atualizarStatusPost(postId, "publicado", {
           canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
           publicadoEm: new Date().toISOString(),
-          conteudoHtml: resultadoImagens.corpoHtmlFinal,
-          imagemDestaqueUrl: resultadoImagens.imagemDestaqueUrl ?? undefined,
-          imagemDestaqueAlt: resultadoImagens.imagemDestaqueAlt ?? undefined,
-          imagemDestaqueSlug: resultadoImagens.imagemDestaqueSlug ?? undefined,
-          imagemDestaqueStorageUrl: resultadoImagens.imagemDestaqueStorageUrl ?? undefined,
-          imagensSecundarias: resultadoImagens.imagensSecundariasPersistir,
+          conteudoHtml: corpoHtmlParaPublicar,
         });
       } catch (erroAtualizarPost) {
         console.error(
