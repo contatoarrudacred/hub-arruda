@@ -35,15 +35,15 @@ async function processarDocumentoAssinado(assinafyDocumentId: string): Promise<v
       return;
     }
 
-    await atualizarStatusContrato(contrato.id, "assinado", { assinadoEm: new Date().toISOString() });
+    await atualizarStatusContrato(contrato.id, "aguardando_assinaturas", { assinadoEm: new Date().toISOString() });
     await sincronizarEtapaKanban(contrato.oportunidadeId, "pagamento");
 
     // Encadeia a criação da cobrança na Asaas — só quando a conta estiver configurada (sem
-    // ASAAS_API_KEY, a venda fica parada em "assinado" até alguém rodar isso manualmente depois).
+    // ASAAS_API_KEY, a venda fica parada em "aguardando_assinaturas" até alguém rodar isso manualmente depois).
     if (process.env.ASAAS_API_KEY) {
       try {
-        const { criarCobrancasDoContrato } = await import("@/lib/asaas/adapter");
-        await criarCobrancasDoContrato(contrato.id);
+        const { tentarGerarFinanceiro } = await import("@/lib/vendas/progressao");
+        await tentarGerarFinanceiro(contrato.id);
       } catch (erroAsaas) {
         console.error("[webhook assinafy] contrato assinado, mas falhou ao criar cobrança na Asaas:", erroAsaas);
       }

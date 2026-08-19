@@ -36,7 +36,7 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
 
   await solicitarAssinatura(documento.id, signerIds);
 
-  await atualizarStatusContrato(contratoId, "aguardando_assinatura", {
+  await atualizarStatusContrato(contratoId, "aguardando_assinaturas", {
     assinafyDocumentId: documento.id,
     enviadoEm: new Date().toISOString(),
   });

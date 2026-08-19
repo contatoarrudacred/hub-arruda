@@ -226,10 +226,10 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
     const pdf = await gerarPdfContrato(html);
     const { path } = await uploadPdfContrato(contratoId, pdf);
     const pdfUrl = await gerarUrlAssinadaContrato(path);
-    await atualizarStatusContrato(contratoId, "contrato_gerado", { pdfUrl: path });
+    await atualizarStatusContrato(contratoId, "emitindo_contrato", { pdfUrl: path });
 
     // 7) Avança sozinho pra assinatura eletrônica quando a Assinafy já estiver configurada — sem
-    // conta ainda (ASSINAFY_API_KEY vazia), a venda só fica parada em "contrato_gerado" até
+    // conta ainda (ASSINAFY_API_KEY vazia), a venda só fica parada em "emitindo_contrato" até
     // alguém rodar isso manualmente depois (não quebra o Fechamento de Venda por causa disso).
     if (process.env.ASSINAFY_API_KEY) {
       try {

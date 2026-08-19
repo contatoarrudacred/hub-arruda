@@ -381,9 +381,9 @@ export function DetalhesVendaClient({ oportunidade, pessoa, contrato, timeline, 
             )}
           </div>
 
-          {contrato.status === "aguardando_assinatura" && <PainelAssinatura contrato={contrato} pessoa={pessoa} />}
+          {contrato.status === "aguardando_assinaturas" && <PainelAssinatura contrato={contrato} pessoa={pessoa} />}
 
-          {(contrato.status === "parcelas_emitidas" || contrato.status === "aguardando_pagamento" || contrato.status === "concluida") &&
+          {(contrato.status === "aguardando_pagamento" || contrato.status === "concluida") &&
             oportunidade.produtoTipo !== "comissionado" && <PainelParcelasCliente contrato={contrato} pessoa={pessoa} />}
 
           {oportunidade.produtoTipo === "comissionado" && comissoes.length > 0 && (

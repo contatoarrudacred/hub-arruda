@@ -47,7 +47,6 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
     if (parcela.numero === 1) linkPrimeiraParcela = cobranca.invoiceUrl;
   }
 
-  await atualizarStatusContrato(contratoId, "parcelas_emitidas");
   await atualizarStatusContrato(contratoId, "aguardando_pagamento");
 
   if (linkPrimeiraParcela) {
