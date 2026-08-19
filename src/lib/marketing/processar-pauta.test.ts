@@ -268,7 +268,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 1000, outputTokens: 2000 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: true, score: 92, motivo: null },
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 500, outputTokens: 50 },
     });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
@@ -338,7 +345,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 1000, outputTokens: 2000 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: true, score: 92, motivo: null },
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 500, outputTokens: 50 },
     });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
@@ -400,7 +414,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 1000, outputTokens: 2000 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: true, score: 92, motivo: null },
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 500, outputTokens: 50 },
     });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
@@ -466,7 +487,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 1000, outputTokens: 2000 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: true, score: 92, motivo: null },
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 500, outputTokens: 50 },
     });
     vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
@@ -512,7 +540,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 300, outputTokens: 100 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: false, score: 40, motivo: "Muito curto." },
+      resultado: {
+        aprovado: false,
+        score: 40,
+        motivo: "Muito curto.",
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 200, outputTokens: 20 },
     });
     const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
@@ -560,7 +595,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 300, outputTokens: 100 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: false, score: 40, motivo: "Muito curto." },
+      resultado: {
+        aprovado: false,
+        score: 40,
+        motivo: "Muito curto.",
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 200, outputTokens: 20 },
     });
     vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
@@ -590,7 +632,14 @@ describe("processarProximaPauta", () => {
       usage: { inputTokens: 300, outputTokens: 100 },
     });
     vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
-      resultado: { aprovado: false, score: 40, motivo: "Muito curto." },
+      resultado: {
+        aprovado: false,
+        score: 40,
+        motivo: "Muito curto.",
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
       usage: { inputTokens: 200, outputTokens: 20 },
     });
     vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);

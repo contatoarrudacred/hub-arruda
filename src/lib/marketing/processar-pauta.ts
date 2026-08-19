@@ -155,10 +155,21 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     // erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de log
     // ficaria sucesso: true, detalhes: null, indistinguível de uma revisão realmente aprovada. Só
     // grava o motivo quando reprovado; aprovado devolve undefined (não escreve nada em detalhes).
+    // postsRecentes (títulos+ângulos dos últimos ~10 posts publicados desta propriedade, pro
+    // Revisor julgar originalidade_adequada — spec Fase 4a, seção 3.1) ainda não tem uma função de
+    // repositório própria: `listarPostsPublicados` (repositorio.ts) devolve `PostAdmin[]`, que não
+    // carrega `angulo` (esse campo vive em `pautas`, não em `posts` — exigiria um join que ainda
+    // não existe). Construir esse join é trabalho da Task 3, não desta. Até lá, `[]` é seguro: com
+    // a lista vazia o prompt do Revisor simplesmente não tem posts anteriores pra comparar, e
+    // `checarOriginalidade` (default true) segue avaliando o que o modelo devolver normalmente —
+    // não bloqueia nem quebra a Task 2.
+    // TODO(Task 3): substituir por posts publicados reais desta propriedade (titulo + angulo).
+    const postsRecentes: { titulo: string; angulo: string }[] = [];
+
     const { resultado: revisao } = await registrarEtapa(
       pauta.id,
       "revisar",
-      () => revisarConteudo(conteudo, checklist),
+      () => revisarConteudo(conteudo, checklist, propriedade, postsRecentes),
       (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
       (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
     );

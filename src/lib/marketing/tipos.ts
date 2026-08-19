@@ -65,6 +65,19 @@ export type PropriedadeCarregada = {
    * WORDPRESS_USUARIO/WORDPRESS_SENHA_APP, comportamento da Fase 1 preservado).
    */
   credenciaisCanais?: { wordpress?: { usuario: string; senhaCifrada: string } };
+  /**
+   * Calibração do Revisor por propriedade (Fase 4a, spec seção 3.1.1, 19/08/2026) —
+   * `config_pipeline`, mesmo jsonb de `maxTentativas`/`postsPorDia`/`janelaPublicacao`. Todos
+   * opcionais e com default aplicado em `revisor.ts` (não aqui) pra propriedade criada antes desta
+   * feature continuar se comportando exatamente como hoje: `scoreMinimoAprovacao` default 80,
+   * `rigorYmyl` default "medio", os três `checar*` default `true` (gate ativo por padrão —
+   * propriedade desliga explicitamente o que não quer checar).
+   */
+  scoreMinimoAprovacao?: number;
+  rigorYmyl?: "alto" | "medio" | "baixo" | "desativado";
+  checarPrecisaoFactual?: boolean;
+  checarFontesEspecificas?: boolean;
+  checarOriginalidade?: boolean;
 };
 
 /** Saída do Escritor — o rascunho completo antes de qualquer revisão. */
@@ -81,6 +94,15 @@ export type ResultadoRevisao = {
   aprovado: boolean;
   score: number;
   motivo: string | null;
+  /**
+   * Três dimensões novas (Fase 4a, spec seção 3.1, 19/08/2026) — gates multiplicativos, não
+   * ponderados no score: `aprovado` exige `score >= scoreMinimoAprovacao` E cada um destes três
+   * (quando o `checar*` correspondente da propriedade está ativo) ser `true`. Um score alto não
+   * compensa `precisaoFactualAdequada: false` — ver calcularAprovacao em revisor.ts.
+   */
+  precisaoFactualAdequada: boolean;
+  fontesEspecificas: boolean;
+  originalidadeAdequada: boolean;
 };
 
 /**
