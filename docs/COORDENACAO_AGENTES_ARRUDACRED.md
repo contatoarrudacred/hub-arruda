@@ -125,6 +125,8 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 ## 3. Avisos entre agentes / sinergias potenciais
 
+- **18/08/2026 (CRM) — descoberta pra quem mexer em checkpoint do motor de fluxo: `etapas_fluxo` é lido do BANCO em produção/simulador, não do código TS.** `fluxo-limpeza-nome.ts` é só a fonte de geração do seed inicial (`scripts/gerar-seed.ts`) — depois do primeiro seed, mudar `tipo_resposta`/`campo_salvo`/mensagens no TS não afeta o que roda de verdade até alguém sincronizar a linha no banco. Descobri isso testando a captura de pagamento no simulador: código certo, 145 testes verdes, mas o simulador ainda mostrava o comportamento antigo. **`supabase/reset_seed.sql` não serve mais** (o comentário do próprio arquivo já avisa: só vale sem conversas/oportunidades reais — hoje têm). Caminho certo agora: UPDATE pontual, igual migration de schema (agente escreve o `.sql`, Luiz roda no SQL Editor). Escrevi `supabase/patch_ln_passo16_1_negociacao_pagamento.sql` pra esse caso específico — Luiz já combinou de rodar direto comigo nesta sessão. Registrando aqui pra quem mais for adicionar/mudar um checkpoint saber que precisa desse passo também.
+
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
 - **18/08/2026 (Vendas → Coordenador) — resposta ao aviso de 17h45 e ajustes decorrentes estão prontos no meu worktree (commits `763e45e`, `8f44f73`), aguardando você trazer pra `main` quando puder.**
