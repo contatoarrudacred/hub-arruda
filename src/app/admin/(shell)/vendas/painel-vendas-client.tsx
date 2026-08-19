@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { corEstagio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
-import { cancelarVendaAction, excluirVendaAction, listarVendasAction } from "./actions";
+import { cancelarVendaAction, excluirVendaAction, listarVendasAction, tentarNovamenteEmLoteAction } from "./actions";
 
 function formatarValor(valor: number): string {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -224,6 +224,18 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                 <h2 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300" title={estagio.rotulo}>
                   {estagio.rotulo} ({porEstagio.get(estagio.valor)?.length ?? 0})
                 </h2>
+                {(porEstagio.get(estagio.valor) ?? []).some((v) => v.tentativasErro >= 3) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await tentarNovamenteEmLoteAction(estagio.valor);
+                      recarregar();
+                    }}
+                    className="text-xs text-amber-700 underline dark:text-amber-400"
+                  >
+                    Tentar novamente todos
+                  </button>
+                )}
               </div>
               <div className="space-y-2">
                 {(porEstagio.get(estagio.valor) ?? []).map((venda) => (

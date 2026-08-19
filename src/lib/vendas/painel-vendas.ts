@@ -6,6 +6,8 @@ export type VendaResumo = {
   oportunidadeId: string;
   status: StatusContrato;
   motivoCancelamento: string | null;
+  ultimoErro: string | null;
+  tentativasErro: number;
   valorTotal: number;
   pessoaNome: string;
   pessoaDocumento: string;
@@ -18,6 +20,8 @@ type LinhaVendaBruta = {
   oportunidade_id: string;
   status: StatusContrato;
   motivo_cancelamento: string | null;
+  ultimo_erro: string | null;
+  tentativas_erro: number;
   valor_total: number;
   created_at: string;
   oportunidades:
@@ -37,7 +41,7 @@ export async function listarVendas(): Promise<VendaResumo[]> {
   const { data, error } = await supabase
     .from("contratos")
     .select(
-      "id, oportunidade_id, status, motivo_cancelamento, valor_total, created_at, oportunidades(pessoas(nome_razao_social, documento), produtos(nome))",
+      "id, oportunidade_id, status, motivo_cancelamento, valor_total, created_at, ultimo_erro, tentativas_erro, oportunidades(pessoas(nome_razao_social, documento), produtos(nome))",
     )
     .order("created_at", { ascending: false });
   if (error) {
@@ -53,6 +57,8 @@ export async function listarVendas(): Promise<VendaResumo[]> {
       oportunidadeId: linha.oportunidade_id,
       status: linha.status,
       motivoCancelamento: linha.motivo_cancelamento,
+      ultimoErro: linha.ultimo_erro,
+      tentativasErro: linha.tentativas_erro,
       valorTotal: linha.valor_total,
       pessoaNome: oportunidade?.pessoas?.nome_razao_social ?? "",
       pessoaDocumento: oportunidade?.pessoas?.documento ?? "",

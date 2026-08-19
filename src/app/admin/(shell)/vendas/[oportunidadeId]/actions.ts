@@ -71,3 +71,13 @@ export async function cancelarVendaDetalhesAction(contratoId: string, motivo: st
     return { sucesso: false, erro: mensagemErro(erro, "Falha ao cancelar a venda.") };
   }
 }
+
+export async function tentarNovamenteAction(contratoId: string): Promise<ResultadoAcao> {
+  try {
+    const { tentarNovamente } = await import("@/lib/vendas/progressao");
+    await tentarNovamente(contratoId);
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao tentar novamente.") };
+  }
+}

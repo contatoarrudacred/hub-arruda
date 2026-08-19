@@ -17,6 +17,7 @@ import {
   cancelarVendaDetalhesAction,
   marcarComissaoRecebidaAction,
   reenviarLinkAction,
+  tentarNovamenteAction,
 } from "./actions";
 
 const campo =
@@ -311,6 +312,40 @@ function BotaoCancelar({ contratoId, onCancelado }: { contratoId: string; onCanc
   );
 }
 
+function PainelErroTentativas({ contrato, onTentou }: { contrato: Contrato; onTentou: () => void }) {
+  const [tentando, setTentando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function tentar() {
+    setTentando(true);
+    setErro(null);
+    const resultado = await tentarNovamenteAction(contrato.id);
+    setTentando(false);
+    if (!resultado.sucesso) {
+      setErro(resultado.erro);
+      return;
+    }
+    onTentou();
+  }
+
+  return (
+    <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm dark:border-red-700 dark:bg-red-950">
+      <p className="text-red-700 dark:text-red-400">{contrato.ultimoErro}</p>
+      {contrato.tentativasErro >= 3 && (
+        <button
+          type="button"
+          onClick={tentar}
+          disabled={tentando}
+          className="mt-2 text-xs font-medium text-red-700 underline dark:text-red-400"
+        >
+          {tentando ? "Tentando..." : "Tentar novamente"}
+        </button>
+      )}
+      {erro && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erro}</p>}
+    </div>
+  );
+}
+
 type Props = {
   oportunidade: OportunidadeFechamento;
   pessoa: PessoaCompleta;
@@ -359,6 +394,8 @@ export function DetalhesVendaClient({ oportunidade, pessoa, contrato, timeline, 
 
       {contrato && (
         <>
+          {contrato.ultimoErro && <PainelErroTentativas contrato={contrato} onTentou={recarregarPagina} />}
+
           <div className={cardBase}>
             <div className="flex items-center justify-between">
               <span

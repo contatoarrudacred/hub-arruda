@@ -1,5 +1,6 @@
 "use server";
 
+import type { StatusContrato } from "@/lib/vendas/contratos";
 import { cancelarVenda, excluirVenda, listarVendas, type VendaResumo } from "@/lib/vendas/painel-vendas";
 
 export async function listarVendasAction(): Promise<VendaResumo[]> {
@@ -24,4 +25,18 @@ export async function excluirVendaAction(contratoId: string): Promise<ResultadoA
   } catch {
     return { sucesso: false, erro: "Falha ao excluir a venda. Tente novamente." };
   }
+}
+
+export async function tentarNovamenteEmLoteAction(status: StatusContrato): Promise<{ total: number }> {
+  const { createClient } = await import("@/lib/supabase/server");
+  const { tentarNovamente } = await import("@/lib/vendas/progressao");
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.from("contratos").select("id").eq("status", status).gte("tentativas_erro", 3);
+  if (error) throw new Error(`Falha ao buscar cards travados: ${error.message}`);
+
+  for (const linha of data ?? []) {
+    await tentarNovamente(linha.id);
+  }
+  return { total: data?.length ?? 0 };
 }
