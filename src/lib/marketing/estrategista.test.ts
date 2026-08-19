@@ -7,6 +7,7 @@ import type { PautaCarregada, PersonaAtiva, PersonaCarregada } from "./tipos";
 const pautaPendenteFalsa: PautaCarregada = {
   id: "pauta-1",
   matrizConteudoId: "matriz-1",
+  personaId: null,
   palavraChavePrincipal: "limpar nome serasa",
   palavrasSecundarias: [],
   angulo: "passo_a_passo",

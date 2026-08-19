@@ -32,8 +32,13 @@ import type {
   TipoConteudo,
 } from "./tipos";
 
+// persona_id incluído (Fase 3, Task 5) — gap deixado pela Task 4: criarPautaDePersona já gravava
+// a coluna no insert, mas nenhum consumidor de PautaCarregada a selecionava/mapeava de volta, então
+// `pauta.personaId` nunca chegava até processar-pauta.ts (que precisa dele pra decidir se carrega
+// a persona completa pro Escritor, spec seção 7). Nulo em pautas antigas/manuais — a coluna aceita
+// null (migration da Task 1).
 const CAMPOS_PAUTA =
-  "id, matriz_conteudo_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao";
+  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao";
 
 // Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
 // porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
@@ -46,6 +51,7 @@ export const RECLAIM_MINUTOS = 10;
 function mapearPauta(data: {
   id: string;
   matriz_conteudo_id: string;
+  persona_id?: string | null;
   palavra_chave_principal: string;
   palavras_secundarias: unknown;
   angulo: string;
@@ -59,6 +65,10 @@ function mapearPauta(data: {
   return {
     id: data.id,
     matrizConteudoId: data.matriz_conteudo_id,
+    // `?? null` cobre tanto ausência do campo (fixtures antigas de teste sem persona_id) quanto
+    // undefined vindo do PostgREST — mesma convenção de null-safety já usada nos demais campos
+    // opcionais deste mapeamento.
+    personaId: data.persona_id ?? null,
     palavraChavePrincipal: data.palavra_chave_principal,
     palavrasSecundarias: (data.palavras_secundarias as string[]) ?? [],
     angulo: data.angulo,

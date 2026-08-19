@@ -15,6 +15,7 @@ import { sanitizarConteudoHtml } from "./sanitizar-html";
 import {
   atualizarStatusPost,
   carregarChecklistAtivo,
+  carregarPersona,
   carregarPropriedade,
   contarPostsPublicadosDesde,
   criarPost,
@@ -117,10 +118,17 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     // `usage` junto do resultado de negócio (mudança desta mesma task).
     const checklist = await registrarEtapa(pauta.id, "buscar_checklist", () => carregarChecklistAtivo(propriedadeId));
 
+    // Fase 3 (personas ricas), Task 5, spec seção 7 — pauta.personaId só existe quando a pauta
+    // nasceu do terceiro caminho do Estrategista (persona sorteada, Task 4); pautas antigas/
+    // manuais (pendente/reclaim) têm personaId null e não pagam o custo de uma query extra aqui —
+    // sem carregarPersona nesse caso, `persona` fica null e o Escritor mantém o prompt de antes
+    // desta task (ver escritor.ts).
+    const persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
+
     const { resultado: conteudo } = await registrarEtapa(
       pauta.id,
       "gerar_conteudo",
-      () => gerarConteudo(pauta, checklist),
+      () => gerarConteudo(pauta, checklist, persona),
       (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
     );
 

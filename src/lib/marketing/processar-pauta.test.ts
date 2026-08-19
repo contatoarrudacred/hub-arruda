@@ -14,6 +14,7 @@ vi.mock("./links");
 const pautaFalsa = {
   id: "pauta-1",
   matrizConteudoId: "matriz-1",
+  personaId: null,
   palavraChavePrincipal: "limpar nome serasa",
   palavrasSecundarias: [],
   angulo: "passo_a_passo",
@@ -449,6 +450,76 @@ describe("processarProximaPauta", () => {
     // inputTokens/outputTokens também neste cenário (score baixo), não só no de sucesso.
     expect(tokensExtraidos.gerar_conteudo).toEqual({ tokensEntrada: 300, tokensSaida: 100 });
     expect(tokensExtraidos.revisar).toEqual({ tokensEntrada: 200, tokensSaida: 20 });
+  });
+
+  // Fase 3 (personas ricas), Task 5, spec seção 7 — o call-site novo em processar-pauta.ts: quando
+  // a pauta selecionada tem personaId (nasceu do terceiro caminho do Estrategista, Task 4),
+  // carregarPersona é chamado e o resultado passado pro Escritor.
+  it("carrega a persona e passa pro Escritor quando a pauta tem personaId", async () => {
+    const pautaComPersona = { ...pautaFalsa, personaId: "persona-1" };
+    const personaFalsa = {
+      id: "persona-1",
+      nome: "Marcelo Andrade",
+      dorEntrada: "Nome negativado no Serasa há meses.",
+      angulosProntos: [],
+      usadaPelaUltimaVezEm: null,
+      conteudoCompleto: "## Bloco 1 — Ficha rápida\n...",
+    };
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaComPersona);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    const carregarPersonaSpy = vi.spyOn(repositorio, "carregarPersona").mockResolvedValue(personaFalsa);
+    const gerarConteudoSpy = vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      resultado: {
+        titulo: "Rascunho",
+        conteudoHtml: "<p>...</p>",
+        metaTitle: "x",
+        metaDescription: "y",
+        slug: "rascunho",
+      },
+      usage: { inputTokens: 300, outputTokens: 100 },
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: false, score: 40, motivo: "Muito curto." },
+      usage: { inputTokens: 200, outputTokens: 20 },
+    });
+    vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
+    expect(carregarPersonaSpy).toHaveBeenCalledWith("persona-1");
+    expect(gerarConteudoSpy).toHaveBeenCalledWith(pautaComPersona, [], personaFalsa);
+  });
+
+  // Regressão: pauta antiga/manual (personaId null) não deve pagar o custo de carregarPersona nem
+  // quebrar o Escritor — persona chega como null, exatamente como fluía antes desta task.
+  it("não carrega persona quando pauta.personaId é null (regressão)", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    const carregarPersonaSpy = vi.spyOn(repositorio, "carregarPersona");
+    const gerarConteudoSpy = vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      resultado: {
+        titulo: "Rascunho",
+        conteudoHtml: "<p>...</p>",
+        metaTitle: "x",
+        metaDescription: "y",
+        slug: "rascunho",
+      },
+      usage: { inputTokens: 300, outputTokens: 100 },
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: false, score: 40, motivo: "Muito curto." },
+      usage: { inputTokens: 200, outputTokens: 20 },
+    });
+    vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
+    expect(carregarPersonaSpy).not.toHaveBeenCalled();
+    expect(gerarConteudoSpy).toHaveBeenCalledWith(pautaFalsa, [], null);
   });
 
   it("bloqueia sem gerar quando o limite de tentativas já foi esgotado", async () => {

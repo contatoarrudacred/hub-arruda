@@ -10,6 +10,15 @@ export type StatusPost = "rascunho" | "publicado" | "falhou";
 export type PautaCarregada = {
   id: string;
   matrizConteudoId: string;
+  /**
+   * Persona de origem desta pauta (Fase 3, Task 5, 19/08/2026) — `null` em pautas antigas/manuais
+   * que não nasceram de uma persona sorteada (caminho "pendente"/reclaim, `estrategista.ts`);
+   * preenchido quando a pauta nasceu do terceiro caminho (`criarPautaDePersona`, Task 4). É por
+   * este campo que `processar-pauta.ts` decide se carrega a persona completa
+   * (`repositorio.carregarPersona`) pra passar ao Escritor (spec seção 7) — gap deixado pela Task 4
+   * (que gravava `persona_id` no insert mas nunca o selecionava/mapeava de volta) e fechado aqui.
+   */
+  personaId: string | null;
   palavraChavePrincipal: string;
   palavrasSecundarias: string[];
   angulo: string;

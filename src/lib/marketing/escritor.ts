@@ -5,7 +5,7 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ConteudoGerado, ItemChecklistCarregado, PautaCarregada, UsageTokens } from "./tipos";
+import type { ConteudoGerado, ItemChecklistCarregado, PautaCarregada, PersonaCarregada, UsageTokens } from "./tipos";
 
 const MODELO_ESCRITOR = "claude-sonnet-5";
 
@@ -36,7 +36,7 @@ const FERRAMENTA_ESCRITOR = {
   },
 };
 
-function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]): string {
+function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[], persona: PersonaCarregada | null): string {
   const linhasChecklist = checklist.map((c) => `- ${c.item}`).join("\n");
   const linhas = [
     "Você é o Agente Escritor de um pipeline de geração de conteúdo para blog, otimizado tanto para SEO tradicional quanto para citação por IAs (AEO/GEO).",
@@ -53,6 +53,12 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
     "",
     "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível de 40-60 palavras antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
     "",
+    // Fase 3 (personas ricas), Task 5, spec seção 7 — adição aditiva: só entra no prompt quando a
+    // pauta nasceu de uma persona sorteada (pauta.personaId não nulo, ver processar-pauta.ts);
+    // pautas antigas/manuais (persona null) mantêm o prompt idêntico ao de antes desta task, sem
+    // este bloco — nenhuma outra linha acima foi reordenada ou alterada.
+    persona ? `Persona deste post — escreva na voz/vocabulário dela, respeitando o que ela não quer ouvir:\n${persona.conteudoCompleto}` : "",
+    "",
     "Use a ferramenta para registrar o resultado.",
   ];
   return linhas.filter(Boolean).join("\n");
@@ -61,9 +67,10 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
 export async function gerarConteudo(
   pauta: PautaCarregada,
   checklist: ItemChecklistCarregado[],
+  persona: PersonaCarregada | null,
 ): Promise<{ resultado: ConteudoGerado; usage: UsageTokens }> {
   const cliente = obterCliente();
-  const prompt = montarPrompt(pauta, checklist);
+  const prompt = montarPrompt(pauta, checklist, persona);
 
   const resposta = await cliente.messages.create({
     model: MODELO_ESCRITOR,

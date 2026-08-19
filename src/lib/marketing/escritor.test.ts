@@ -1,8 +1,8 @@
 // src/lib/marketing/escritor.test.ts
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import { gerarConteudo } from "./escritor";
-import type { ItemChecklistCarregado, PautaCarregada } from "./tipos";
+import type { ItemChecklistCarregado, PautaCarregada, PersonaCarregada } from "./tipos";
 
 vi.mock("@anthropic-ai/sdk", () => {
   const create = vi.fn();
@@ -16,6 +16,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 const pauta: PautaCarregada = {
   id: "pauta-1",
   matrizConteudoId: "matriz-1",
+  personaId: null,
   palavraChavePrincipal: "limpar nome serasa",
   palavrasSecundarias: ["tirar nome do serasa"],
   angulo: "passo_a_passo",
@@ -27,12 +28,41 @@ const pauta: PautaCarregada = {
   motivoUltimaReprovacao: null,
 };
 
+const pautaDePersona: PautaCarregada = {
+  ...pauta,
+  id: "pauta-2",
+  personaId: "persona-1",
+};
+
+const persona: PersonaCarregada = {
+  id: "persona-1",
+  nome: "Marcelo Andrade",
+  dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
+  angulosProntos: [],
+  usadaPelaUltimaVezEm: null,
+  conteudoCompleto: "## Bloco 1 — Ficha rápida\nMarcelo, 34 anos...\n## Bloco 10 — Vocabulário\nFala 'apertado', evita jargão bancário.",
+};
+
 const checklist: ItemChecklistCarregado[] = [
   { id: "1", item: "H1 com a palavra-chave principal", peso: 10 },
   { id: "2", item: "Mínimo 1.800 palavras", peso: 10 },
 ];
 
 describe("gerarConteudo", () => {
+  // `create` (dentro do mock de @anthropic-ai/sdk) é um único vi.fn() compartilhado pelo módulo
+  // inteiro (fora da factory de vi.mock), reusado por toda instância de Anthropic — inclusive o
+  // singleton cacheado dentro de escritor.ts. Sem limpar entre testes, `mock.calls` acumularia
+  // chamadas de testes anteriores e `calls[0]` deixaria de ser a chamada do teste atual (foi
+  // exatamente o que aconteceu ao inserir o teste de persona no meio da suíte — RED por causa
+  // disso, não por bug de implementação real).
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Regressão (Task 5, Fase 3): com persona `null` (pauta antiga/manual, sem persona_id), o prompt
+  // tem que sair BYTE A BYTE igual ao de antes desta task — sem o bloco de persona, sem espaço em
+  // branco extra. Guardamos o texto exato do prompt (não só `.toContain`) pra qualquer mudança
+  // acidental de formatação introduzida por esta task quebrar o teste.
   it("monta o prompt com a pauta e o checklist, e retorna o conteúdo estruturado da ferramenta", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-test";
     const clienteFalso = new Anthropic({ apiKey: "sk-test" });
@@ -53,16 +83,71 @@ describe("gerarConteudo", () => {
       usage: { input_tokens: 1234, output_tokens: 5678 },
     });
 
-    const { resultado, usage } = await gerarConteudo(pauta, checklist);
+    const { resultado, usage } = await gerarConteudo(pauta, checklist, null);
 
     expect(resultado.titulo).toContain("Serasa");
     expect(resultado.slug).toBe("como-limpar-nome-serasa");
     const argumentosChamada = mockCreate.mock.calls[0][0];
-    expect(argumentosChamada.messages[0].content).toContain("limpar nome serasa");
-    expect(argumentosChamada.messages[0].content).toContain("H1 com a palavra-chave principal");
+    const promptEnviado = argumentosChamada.messages[0].content;
+    expect(promptEnviado).toContain("limpar nome serasa");
+    expect(promptEnviado).toContain("H1 com a palavra-chave principal");
+    expect(promptEnviado).toBe(
+      [
+        "Você é o Agente Escritor de um pipeline de geração de conteúdo para blog, otimizado tanto para SEO tradicional quanto para citação por IAs (AEO/GEO).",
+        "Palavra-chave principal: limpar nome serasa",
+        "Palavras secundárias: tirar nome do serasa",
+        "Ângulo: passo_a_passo",
+        "Funil: topo",
+        "Formato: post_padrao",
+        "Checklist de qualidade obrigatório — todo item precisa ser atendido:",
+        "- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras",
+        "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível de 40-60 palavras antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
+        "Use a ferramenta para registrar o resultado.",
+      ].join("\n"),
+    );
+    expect(promptEnviado).not.toContain("Persona deste post");
     expect(argumentosChamada.max_tokens).toBe(16000);
     expect(usage.inputTokens).toBe(1234);
     expect(usage.outputTokens).toBe(5678);
+  });
+
+  // Novo (Task 5, Fase 3, spec seção 7): com persona não-nula, o prompt ganha o bloco adicional
+  // com `persona.conteudoCompleto`, texto exato de referência da spec — aditivo, sem tocar no
+  // resto do prompt (mesmas linhas do teste de regressão acima, só com o bloco novo inserido antes
+  // da instrução final).
+  it("inclui o bloco de persona no prompt quando uma persona é fornecida", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
+            conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
+            meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+            meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+      usage: { input_tokens: 1234, output_tokens: 5678 },
+    });
+
+    await gerarConteudo(pautaDePersona, checklist, persona);
+
+    const argumentosChamada = mockCreate.mock.calls[0][0];
+    const promptEnviado = argumentosChamada.messages[0].content;
+    expect(promptEnviado).toContain(
+      `Persona deste post — escreva na voz/vocabulário dela, respeitando o que ela não quer ouvir:\n${persona.conteudoCompleto}`,
+    );
+    // A instrução final continua depois do bloco de persona — prova que a adição é ANTES dela, não
+    // uma substituição/reordenação do resto do prompt.
+    expect(promptEnviado.indexOf(persona.conteudoCompleto)).toBeLessThan(promptEnviado.indexOf("Use a ferramenta para registrar o resultado."));
+    // Resto do prompt (pauta/checklist/regra de citabilidade) continua idêntico ao teste de
+    // regressão acima — mesma ordem, nada reescrito.
+    expect(promptEnviado).toContain("Checklist de qualidade obrigatório — todo item precisa ser atendido:\n- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras");
   });
 
   it("lança erro claro quando a resposta é truncada por limite de tokens", async () => {
@@ -85,7 +170,7 @@ describe("gerarConteudo", () => {
       ],
     });
 
-    await expect(gerarConteudo(pauta, checklist)).rejects.toThrow(/truncada por limite de tokens/);
+    await expect(gerarConteudo(pauta, checklist, null)).rejects.toThrow(/truncada por limite de tokens/);
   });
 
   it("lança erro claro quando um campo obrigatório vem ausente/vazio", async () => {
@@ -108,6 +193,6 @@ describe("gerarConteudo", () => {
       ],
     });
 
-    await expect(gerarConteudo(pauta, checklist)).rejects.toThrow(/titulo/);
+    await expect(gerarConteudo(pauta, checklist, null)).rejects.toThrow(/titulo/);
   });
 });
