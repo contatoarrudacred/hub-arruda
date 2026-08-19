@@ -259,4 +259,32 @@ describe("revisarConteudo", () => {
     expect(promptEnviado).toContain("Como Limpar Nome no SPC");
     expect(promptEnviado).toContain("guia passo a passo");
   });
+
+  // Achado do teste de ponta a ponta em produção (19/08/2026): o Revisor, ao "estimar" a extensão
+  // de um texto longo só de olhar o HTML, chutou "~1.400-1.500 palavras" pra um texto com 2.595
+  // palavras reais — reprovação falsa por extensão. Contagem programática elimina essa fonte de
+  // erro; este teste garante que o número correto (excluindo o script JSON-LD, que não é prosa)
+  // chega ao prompt.
+  it("inclui a contagem real de palavras do corpo no prompt, excluindo o script JSON-LD", async () => {
+    const mockCreate = obterMockCreate();
+    mockCreate.mockResolvedValue({
+      content: [
+        { type: "tool_use", input: { score: 90, motivo: null, precisao_factual_adequada: true, fontes_especificas: true, originalidade_adequada: true } },
+      ],
+      usage: { input_tokens: 800, output_tokens: 40 },
+    });
+
+    const conteudoComScript: ConteudoGerado = {
+      ...conteudo,
+      // Corpo com exatamente 4 palavras de prosa + um bloco JSON-LD com dezenas de "palavras" que
+      // não devem entrar na contagem.
+      conteudoHtml: `<h1>Uma duas três quatro</h1><script type="application/ld+json">{"a":"muitas palavras soltas aqui dentro que nao sao prosa real do artigo"}</script>`,
+    };
+
+    await revisarConteudo(conteudoComScript, checklist, propriedadeSemCalibracao, postsRecentesVazio);
+
+    const chamada = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0];
+    const promptEnviado = chamada.messages[0].content as string;
+    expect(promptEnviado).toContain("Contagem REAL de palavras do corpo do artigo (calculada programaticamente, não estime por conta própria): 4 palavras.");
+  });
 });

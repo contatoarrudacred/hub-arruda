@@ -76,7 +76,7 @@ function montarPrompt(
     // idêntico ao de antes desta correção.
     pauta.motivoUltimaReprovacao && pauta.ultimoRascunho
       ? [
-          "Esta é uma revisão — a versão anterior deste post foi reprovada pelo Revisor pelo motivo abaixo. Revise o texto para corrigir ESPECIFICAMENTE esse problema, mantendo o que já está bom (título, estrutura, tom, o que já atende ao checklist) e mudando só o necessário — não reescreva do zero.",
+          "Esta é uma revisão — a versão anterior deste post foi reprovada pelo Revisor pelo motivo abaixo. Sua tarefa é uma EDIÇÃO CIRÚRGICA, não uma reescrita: o motivo abaixo lista os problemas específicos encontrados (pode ser 1 frase, 1 link, 1 número de caracteres do meta title) — mude EXATAMENTE isso e nada além disso. Todo o resto do HTML anterior (frases, links, exemplos, ordem, formatação) deve permanecer IDÊNTICO ao da versão anterior, mesmo que você ache que poderia escrever melhor. Reescrever mais do que o apontado já causou regressão real neste pipeline: numa correção anterior, ao trocar um link só porque era 'genérico demais', o Escritor substituiu por outro link que introduziu um erro factual novo que não existia antes — não repita esse padrão. Se o motivo aponta 2 problemas pontuais, a saída deve divergir do HTML anterior em no máximo essas 2 passagens.",
           "",
           `Motivo da reprovação: ${pauta.motivoUltimaReprovacao}`,
           "",

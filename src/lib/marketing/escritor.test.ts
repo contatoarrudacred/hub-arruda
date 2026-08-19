@@ -294,7 +294,7 @@ describe("gerarConteudo", () => {
     // Instrução de revisão, o motivo, e o conteúdo da versão anterior (título + HTML) precisam
     // estar todos presentes — é isso que dá ao modelo o que editar, em vez de só o que evitar.
     expect(promptEnviado).toContain("Esta é uma revisão");
-    expect(promptEnviado).toContain("não reescreva do zero");
+    expect(promptEnviado).toContain("EDIÇÃO CIRÚRGICA");
     expect(promptEnviado).toContain("Meta title com 62 caracteres, acima do limite de 60.");
     expect(promptEnviado).toContain("Título da versão anterior");
     expect(promptEnviado).toContain("<h1>Título da versão anterior</h1><p>Corpo da versão anterior.</p>");

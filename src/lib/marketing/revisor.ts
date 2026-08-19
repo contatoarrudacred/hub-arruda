@@ -82,6 +82,22 @@ const TEXTOS_RIGOR_YMYL: Record<NonNullable<PropriedadeCarregada["rigorYmyl"]>, 
   desativado: "Rigor YMYL DESATIVADO para esta propriedade: ainda preencha precisao_factual_adequada com uma avaliação honesta, mas este não é o critério prioritário aqui — a calibração desta propriedade pode inclusive não usar este campo na decisão final de aprovação.",
 };
 
+/**
+ * Contagem real de palavras do corpo do artigo — achado do teste de ponta a ponta em produção
+ * (19/08/2026): pedir pro próprio Revisor "estimar" a extensão olhando o HTML produz estimativas
+ * muito abaixo da realidade em textos longos (visto na prática: modelo estimou "~1.400-1.500
+ * palavras" para um texto com 2.595 palavras reais — quase o dobro), reprovando por extensão um
+ * rascunho que já atendia ao mínimo. Contar programaticamente e entregar o número pronto no prompt
+ * elimina essa fonte de erro por inteiro — mesmo princípio de secundarias.ts (Task 8): número que o
+ * código consegue calcular com exatidão não deve ser deixado pro modelo estimar de cabeça. Remove o
+ * bloco `<script>` (JSON-LD do FAQPage/Article, que não é prosa) antes de contar.
+ */
+function contarPalavrasCorpo(html: string): number {
+  const semScript = html.replace(/<script[\s\S]*?<\/script>/gi, " ");
+  const semTags = semScript.replace(/<[^>]+>/g, " ");
+  return semTags.split(/\s+/).filter(Boolean).length;
+}
+
 function montarPrompt(
   conteudo: ConteudoGerado,
   checklist: ItemChecklistCarregado[],
@@ -89,6 +105,7 @@ function montarPrompt(
   postsRecentes: PostRecenteResumo[],
 ): string {
   const linhasChecklist = checklist.map((c) => `- (peso ${c.peso}) ${c.item}`).join("\n");
+  const contagemPalavras = contarPalavrasCorpo(conteudo.conteudoHtml);
   const scoreMinimo = propriedade.scoreMinimoAprovacao ?? SCORE_MINIMO_APROVACAO_PADRAO;
   const textoRigor = TEXTOS_RIGOR_YMYL[propriedade.rigorYmyl ?? "medio"];
   const linhasPostsRecentes = postsRecentes.length
@@ -97,6 +114,8 @@ function montarPrompt(
 
   return [
     "Você é o Agente QA/Revisor de um pipeline de geração de conteúdo. Avalie o rascunho abaixo contra o checklist, incluindo checagem de alucinação factual (dados numéricos citados precisam ser plausíveis, não inventados).",
+    "",
+    `Contagem REAL de palavras do corpo do artigo (calculada programaticamente, não estime por conta própria): ${contagemPalavras} palavras. Use este número exato para avaliar qualquer item do checklist sobre extensão mínima/máxima — não tente contar ou estimar visualmente, o número acima já é preciso.`,
     "",
     `Score mínimo para aprovação: ${scoreMinimo}/100.`,
     "",
@@ -162,7 +181,12 @@ export async function revisarConteudo(
 
   const resposta = await cliente.messages.create({
     model: MODELO_REVISOR,
-    max_tokens: 1000,
+    // 1000 (valor original, núcleo da Fase 1) estourava e cortava o tool_use no meio depois da
+    // Fase 4a: o campo `motivo` passou a exigir diagnóstico + sugestão concreta (bem mais longo
+    // que antes), e a ferramenta ganhou 3 campos booleanos a mais — achado real via teste de
+    // ponta a ponta em produção (19/08/2026): usage.outputTokens batendo exatamente 1000 numa
+    // reprovação sem motivo nenhum registrado, sinal de truncamento, não de decisão do modelo.
+    max_tokens: 2000,
     tools: [FERRAMENTA_REVISOR],
     tool_choice: { type: "tool", name: "registrar_revisao" },
     messages: [{ role: "user", content: prompt }],
