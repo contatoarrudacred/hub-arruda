@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| **Luiz** | CRM | 18/08 (CRM) | 🚨 `ANTHROPIC_API_KEY` ausente nas env vars de produção da Vercel — bot fica mudo em qualquer checkpoint com IA. Precisa adicionar a chave no painel da Vercel | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3 |
 
 ## Fechados hoje
 
