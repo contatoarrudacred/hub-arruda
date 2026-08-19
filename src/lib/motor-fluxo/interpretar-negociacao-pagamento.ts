@@ -113,10 +113,11 @@ export const interpretarNegociacaoPagamento: InterpretadorNegociacaoPagamento = 
     parcelado: dados.forma_pagamento === "parcelado",
   };
 
-  const cliente = obterCliente();
   const prompt = montarPrompt({ etapaAtual, respostaLead, estadoAtual, hojeISO });
 
   try {
+    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
+    const cliente = obterCliente();
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 800,
