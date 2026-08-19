@@ -48,6 +48,26 @@ fontes_especificas: boolean;         // false se alguma fonte citada aponta pra 
 originalidade_adequada: boolean;     // false se, removendo persona e palavra-chave, o post for essencialmente igual a outro já publicado
 ```
 
+### 3.1.1 Calibração por propriedade (decidido 19/08/2026, a pedido do Luiz)
+
+Rigor e limiar não ficam fixos no código — variam por propriedade sem precisar de sessão de código pra ajustar. `config_pipeline` (mesmo jsonb onde já vivem `max_tentativas`/`posts_por_dia`/`janela_publicacao`, tela Propriedades Digitais já existente) ganha:
+
+```typescript
+scoreMinimoAprovacao?: number;        // default 80
+rigorYmyl?: "alto" | "medio" | "baixo" | "desativado"; // default "medio"
+checarPrecisaoFactual?: boolean;      // default true
+checarFontesEspecificas?: boolean;    // default true
+checarOriginalidade?: boolean;        // default true
+```
+
+`rigorYmyl` interpola o texto da instrução no prompt do Revisor (ex.: "alto" = qualquer afirmação sensível sem lastro reprova; "baixo" = só reprova erro factual claro e grave; "desativado" = gate nem entra na decisão) — resolve a pendência de "peso do rigor por propriedade" que a seção 8 desta spec deixava em aberto. Os três `checar*` deixam a propriedade desligar um gate que não faz sentido pra ela (ex.: `originalidade_adequada` pode não valer a pena checar numa propriedade que publica pouco).
+
+**Deliberadamente não é edição de prompt livre** — Luiz não reescreve o texto da instrução via tela. É esse conjunto fechado de parâmetros (número, enum, boolean), sem risco de quebrar a conformidade do `tool_choice` estruturado ou introduzir ambiguidade sem teste cobrindo. Qualquer ajuste na redação real dos critérios continua sendo mudança de código, revisada como o resto do pipeline.
+
+### 3.1.2 Instruções adicionais do Escritor por propriedade
+
+Mesma lógica, aplicada ao Escritor: `config_pipeline` ganha `instrucoesAdicionais?: string` — texto curto, opcional, sempre concatenado como bloco aditivo no fim do prompt (mesmo padrão do bloco de persona/motivo de reprovação, `escritor.ts`), nunca substituindo a estrutura existente. Cobre o caso real ("evite jargão técnico neste site", "sempre mencione X") sem abrir edição da estrutura do prompt em si.
+
 **Regra de aprovação (multiplicativa, não média):**
 
 ```
@@ -56,7 +76,7 @@ aprovado = (score >= 80) E precisao_factual_adequada E fontes_especificas E orig
 
 Qualquer um `false` reprova sozinho, mesmo com score 95 — implementa direto a fórmula da auditoria (seção 24: "SEO BOM + ... + INFORMAÇÃO FACTUALMENTE SEGURA + FONTES ADEQUADAS + ... = PUBLICÁVEL", qualquer ausência vira "REVISÃO NECESSÁRIA").
 
-**Contexto novo no prompt do Revisor:** pra julgar `originalidade_adequada`, precisa ver do que os outros posts já publicados da propriedade tratam — títulos e ângulos dos últimos ~10 posts publicados (`listarPostsPublicados`, já existe, Fase 2 Task 11), não o conteúdo inteiro. Rigor proporcional ao nicho: pesado em financeiro/saúde (YMYL), leve em decoração — como isso se calibra por propriedade fica pro plano detalhar (ex.: flag `ativo`/peso por dimensão no checklist, mesmo padrão de `checklist_qa_itens.peso`).
+**Contexto novo no prompt do Revisor:** pra julgar `originalidade_adequada`, precisa ver do que os outros posts já publicados da propriedade tratam — títulos e ângulos dos últimos ~10 posts publicados (`listarPostsPublicados`, já existe, Fase 2 Task 11), não o conteúdo inteiro. Rigor proporcional ao nicho: pesado em financeiro/saúde (YMYL), leve em decoração — resolvido via calibração por propriedade, seção 3.1.1.
 
 ### 3.2 Sugestão de correção
 
@@ -185,6 +205,7 @@ Mesmo padrão do resto do módulo — `admin_acesso_total` + `fn_auditoria_log()
 ## 7. Plano de testes
 
 - **Revisor (4a):** unitário — score alto + `precisao_factual_adequada: false` reprova mesmo assim; `motivo` contém sugestão, não só diagnóstico (assert de conteúdo, não só presença); regressão dos testes já existentes do Revisor (score/motivo simples).
+- **Calibração por propriedade (4a):** unitário — `scoreMinimoAprovacao` customizado é respeitado (não hardcoded 80); `rigorYmyl: "desativado"` faz o gate não entrar na decisão de aprovação; `checarOriginalidade: false` não bloqueia aprovação mesmo com `originalidade_adequada: false` retornado pelo modelo; ausência de qualquer campo de calibração cai nos defaults (regressão pra propriedades já configuradas sem esses campos).
 - **Autoria (4a):** unitário — `propriedade.autoria` null não quebra a montagem do schema (propriedade sem autor configurado ainda publica, só sem o campo `author`).
 - **Geração de imagem (4b):** mockar a chamada OpenAI nos testes (mesmo padrão de mockar Anthropic já usado no resto do módulo) — sem gastar de verdade em CI. Teste de integração real (1 chamada de verdade) fica pro controller rodar manualmente, mesmo padrão do teste end-to-end da Fase 3.
 - **Revisor de imagem:** unitário — imagem reprovada por alucinação regenera com motivo específico; limite de tentativas de imagem respeitado.
@@ -195,7 +216,6 @@ Mesmo padrão do resto do módulo — `admin_acesso_total` + `fn_auditoria_log()
 
 ## 8. Pendências desta spec
 
-- **Peso do rigor YMYL por propriedade** — como calibrar "pesado em financeiro/saúde, leve em decoração" fica pro plano detalhar (sugestão: reaproveitar o padrão de peso do `checklist_qa_itens`, seção 3.1).
 - **Limite de tentativas de imagem** — sugerido 2 (menor que o do texto), decisão final fica pro plano.
 - **Onde a distribuição roda** — proposto como cron separado (seção 5); alternativa seria disparar no mesmo tick logo após publicar. Fica pro plano decidir com base em como o Vercel/cron-job.org já está configurado hoje.
 - **Sequenciamento de execução** — dado o tamanho (3 sub-fases bem diferentes tecnicamente), o plano de implementação deve considerar se executa 4a → 4b → 4c em sequência ou se paraleliza 4a (mais contido, resolve risco real hoje) enquanto 4c aguarda credenciais.
