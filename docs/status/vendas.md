@@ -1,6 +1,6 @@
 # Status — Vendas
 
-tarefa: Sub-frente Contrato — Tela de Fechamento de Venda concluída (Task 8). Próximo bloco: Assinatura digital (Assinafy)
-desde: 2026-08-18T21:45:00-03:00
-proxima: Task 9/10 (src/lib/assinafy/cliente.ts + adapter.ts), depois webhook (Task 11)
+tarefa: Painel de Vendas construído (lista+Kanban, redesenho de contratos.status pros estágios da venda, separado do Kanban do CRM). Próximo: Detalhes da Venda + Painel Interativo
+desde: 2026-08-19T02:02:00-03:00
+proxima: Detalhes da Venda (/admin/vendas/[oportunidadeId]) com Painel Interativo — depois volta pra Assinafy/Asaas (Tasks 9-14)
 bloqueio:
