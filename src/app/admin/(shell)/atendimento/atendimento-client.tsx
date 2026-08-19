@@ -600,7 +600,9 @@ export function AtendimentoClient({
   const [midiaEmTelaCheia, setMidiaEmTelaCheia] = useState<{ url: string; tipo: "imagem" | "video" } | null>(null);
   const [resetando, setResetando] = useState(false);
   const [erroReset, setErroReset] = useState<string | null>(null);
-  const [bloqueioReset, setBloqueioReset] = useState<{ contratos: number; comissoes: number } | null>(null);
+  const [bloqueioReset, setBloqueioReset] = useState<
+    { tipo: "venda"; contratos: number; comissoes: number } | { tipo: "multiplas"; nomes: string[] } | null
+  >(null);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
   const [indiceResultado, setIndiceResultado] = useState(0);
@@ -750,7 +752,13 @@ export function AtendimentoClient({
     // Pessoa que já gerou contrato/comissão NUNCA é apagada (quebraria registro de venda emitido,
     // decisão do Luiz 19/08/2026) — oferece o reset parcial (só a conversa) em vez de travar calado.
     if (resultado.status === "bloqueado_por_venda") {
-      setBloqueioReset({ contratos: resultado.quantidadeContratos, comissoes: resultado.quantidadeComissoes });
+      setBloqueioReset({ tipo: "venda", contratos: resultado.quantidadeContratos, comissoes: resultado.quantidadeComissoes });
+      return;
+    }
+    // Achado real #2 (19/08/2026): pessoas.whatsapp não tem constraint de único — dois cadastros
+    // diferentes (webhook do WhatsApp, Nova Oportunidade do Vendas) colidiram no mesmo número.
+    if (resultado.status === "multiplas_pessoas") {
+      setBloqueioReset({ tipo: "multiplas", nomes: resultado.nomes });
       return;
     }
     setConfirmandoReset(false);
@@ -2011,12 +2019,22 @@ export function AtendimentoClient({
           {bloqueioReset ? (
             <>
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {detalhe.pessoaNome} já tem venda registrada
+                {bloqueioReset.tipo === "venda" ? `${detalhe.pessoaNome} já tem venda registrada` : "Telefone ligado a mais de um cadastro"}
               </p>
               <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
-                ⚠️ {bloqueioReset.contratos} contrato(s) e {bloqueioReset.comissoes} comissão(ões) já
-                emitidos — o cadastro não pode ser apagado (quebraria esses registros). Dá pra apagar
-                só a conversa: cadastro, oportunidade e contrato/comissão continuam intactos.
+                {bloqueioReset.tipo === "venda" ? (
+                  <>
+                    ⚠️ {bloqueioReset.contratos} contrato(s) e {bloqueioReset.comissoes} comissão(ões) já
+                    emitidos — o cadastro não pode ser apagado (quebraria esses registros). Dá pra apagar
+                    só a conversa: cadastro, oportunidade e contrato/comissão continuam intactos.
+                  </>
+                ) : (
+                  <>
+                    ⚠️ Esse telefone está ligado a mais de um cadastro de pessoa ({bloqueioReset.nomes.join(", ")}) —
+                    não dá pra saber sozinho qual apagar. Dá pra apagar só a conversa: cadastro(s),
+                    oportunidade e contrato/comissão continuam intactos.
+                  </>
+                )}
               </p>
               {erroReset && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{erroReset}</p>}
               <div className="mt-4 flex justify-end gap-2">

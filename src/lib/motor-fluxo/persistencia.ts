@@ -87,11 +87,33 @@ export async function carregarOuCriarConversaWhatsapp(
 ): Promise<ConversaWhatsappCarregada> {
   const supabase = createAdminClient();
 
-  const { data: pessoaExistente } = await supabase
-    .from("pessoas")
-    .select("id")
-    .eq("whatsapp", telefone)
-    .maybeSingle();
+  // Achado real (19/08/2026): `pessoas.whatsapp` não tem constraint de único no banco — um mesmo
+  // número pode acabar ligado a mais de uma pessoa (ex.: cadastro criado pelo webhook do WhatsApp
+  // + cadastro criado depois pela Nova Oportunidade do Vendas usando o mesmo telefone). `.maybeSingle()`
+  // quebra com "multiple rows returned" nesse caso — trocado por uma busca que aceita N linhas e,
+  // se houver mais de uma, prefere a que já tem conversa de WhatsApp ativa (a mais relevante pra
+  // continuar o atendimento); sem nenhuma com conversa ativa, usa a mais recente. Não resolve a
+  // duplicidade em si (isso é uma decisão de produto — precisa de unique constraint ou fluxo de
+  // mesclagem, registrado na coordenação pra decidir com o Luiz/Vendas), só evita que o webhook
+  // pare de responder pro lead por causa disso.
+  const { data: pessoasComTelefone } = await supabase.from("pessoas").select("id").eq("whatsapp", telefone);
+
+  let pessoaExistente: { id: string } | null = null;
+  if (pessoasComTelefone && pessoasComTelefone.length === 1) {
+    pessoaExistente = pessoasComTelefone[0];
+  } else if (pessoasComTelefone && pessoasComTelefone.length > 1) {
+    const ids = pessoasComTelefone.map((p) => p.id);
+    const { data: comConversaAtiva } = await supabase
+      .from("conversas")
+      .select("pessoa_id")
+      .in("pessoa_id", ids)
+      .eq("canal", "whatsapp")
+      .eq("status", "ativa")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    pessoaExistente = comConversaAtiva ? { id: comConversaAtiva.pessoa_id } : pessoasComTelefone[pessoasComTelefone.length - 1];
+  }
 
   if (pessoaExistente) {
     const { data: conversaAtiva } = await supabase

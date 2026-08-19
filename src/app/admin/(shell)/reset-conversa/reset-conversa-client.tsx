@@ -6,12 +6,14 @@ import { resetarApenasConversaAction, resetarConversaAction } from "./actions";
 const campo =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50";
 
+type Bloqueio = { tipo: "venda"; contratos: number; comissoes: number } | { tipo: "multiplas"; nomes: string[] };
+
 export function ResetConversaClient() {
   const [telefone, setTelefone] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [resultado, setResultado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [bloqueio, setBloqueio] = useState<{ contratos: number; comissoes: number } | null>(null);
+  const [bloqueio, setBloqueio] = useState<Bloqueio | null>(null);
 
   async function resetar() {
     setCarregando(true);
@@ -26,7 +28,11 @@ export function ResetConversaClient() {
       return;
     }
     if (r.status === "bloqueado_por_venda") {
-      setBloqueio({ contratos: r.quantidadeContratos, comissoes: r.quantidadeComissoes });
+      setBloqueio({ tipo: "venda", contratos: r.quantidadeContratos, comissoes: r.quantidadeComissoes });
+      return;
+    }
+    if (r.status === "multiplas_pessoas") {
+      setBloqueio({ tipo: "multiplas", nomes: r.nomes });
       return;
     }
     setResultado(
@@ -49,7 +55,7 @@ export function ResetConversaClient() {
     setBloqueio(null);
     setResultado(
       r.status === "apagado"
-        ? "Conversa apagada — cadastro, oportunidade e contrato/comissão continuam intactos. A próxima mensagem desse número no WhatsApp começa do zero."
+        ? "Conversa apagada — cadastro(s), oportunidade e contrato/comissão continuam intactos. A próxima mensagem desse número no WhatsApp começa do zero."
         : "Nenhuma conversa encontrada com esse número — nada pra apagar.",
     );
   }
@@ -84,11 +90,18 @@ export function ResetConversaClient() {
 
       {bloqueio && (
         <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
-          <p>
-            ⚠️ Essa pessoa já tem {bloqueio.contratos} contrato(s) e {bloqueio.comissoes} comissão(ões)
-            registrados — o cadastro não pode ser apagado (quebraria esses registros de venda).
-          </p>
-          <p>Quer apagar só a conversa? Cadastro, oportunidade e contrato/comissão continuam intactos.</p>
+          {bloqueio.tipo === "venda" ? (
+            <p>
+              ⚠️ Essa pessoa já tem {bloqueio.contratos} contrato(s) e {bloqueio.comissoes} comissão(ões)
+              registrados — o cadastro não pode ser apagado (quebraria esses registros de venda).
+            </p>
+          ) : (
+            <p>
+              ⚠️ Esse telefone está ligado a mais de um cadastro de pessoa ({bloqueio.nomes.join(", ")}) — não
+              dá pra saber sozinho qual apagar, então não vou arriscar apagar o errado.
+            </p>
+          )}
+          <p>Quer apagar só a conversa? Cadastro(s), oportunidade e contrato/comissão continuam intactos.</p>
           <button
             onClick={resetarApenasConversa}
             disabled={carregando}

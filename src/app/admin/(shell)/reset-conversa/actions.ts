@@ -27,10 +27,18 @@ import { createClient } from "@/lib/supabase/server";
 // a contagem pro usuário decidir; a UI oferece `resetarApenasConversaAction` como alternativa —
 // apaga só `conversas` (e o que cascateia dela: mensagens, followup_emails), mantém pessoa,
 // oportunidade, contrato e comissão intactos.
+//
+// Achado real #2 (19/08/2026, mesmo dia) — `pessoas.whatsapp` não tem constraint de único no
+// banco, então caminhos de cadastro diferentes (webhook do WhatsApp, Nova Oportunidade do Vendas)
+// podem colidir no mesmo número em momentos diferentes, sem se avisar. Aconteceu de verdade com o
+// número de teste do próprio Luiz. `.maybeSingle()` quebra com "multiple rows returned" nesse
+// caso — trocado por uma busca que aceita 0, 1 ou N linhas e nunca decide sozinho qual apagar
+// quando há mais de uma (perigoso demais pra essa ferramenta adivinhar).
 
 export type ResultadoResetarConversa =
   | { status: "apagado_tudo" }
   | { status: "bloqueado_por_venda"; quantidadeContratos: number; quantidadeComissoes: number }
+  | { status: "multiplas_pessoas"; nomes: string[] }
   | { status: "nao_encontrado" }
   | { status: "erro"; mensagem: string };
 
@@ -43,13 +51,13 @@ function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
 }
 
-async function buscarPessoaPorTelefone(
+async function buscarPessoasPorTelefone(
   supabase: Awaited<ReturnType<typeof createClient>>,
   telefone: string,
-): Promise<{ id: string } | null | { erro: string }> {
-  const { data: pessoa, error } = await supabase.from("pessoas").select("id").eq("whatsapp", telefone).maybeSingle();
+): Promise<{ id: string; nome: string }[] | { erro: string }> {
+  const { data, error } = await supabase.from("pessoas").select("id, nome_razao_social").eq("whatsapp", telefone);
   if (error) return { erro: `Falha ao buscar pessoa: ${error.message}` };
-  return pessoa;
+  return (data ?? []).map((p) => ({ id: p.id, nome: p.nome_razao_social }));
 }
 
 export async function resetarConversaAction(telefoneBruto: string): Promise<ResultadoResetarConversa> {
@@ -58,9 +66,16 @@ export async function resetarConversaAction(telefoneBruto: string): Promise<Resu
 
   const supabase = await createClient();
 
-  const pessoa = await buscarPessoaPorTelefone(supabase, telefone);
-  if (pessoa && "erro" in pessoa) return { status: "erro", mensagem: pessoa.erro };
-  if (!pessoa) return { status: "nao_encontrado" };
+  const pessoas = await buscarPessoasPorTelefone(supabase, telefone);
+  if ("erro" in pessoas) return { status: "erro", mensagem: pessoas.erro };
+  if (pessoas.length === 0) return { status: "nao_encontrado" };
+  if (pessoas.length > 1) {
+    // Não decide sozinho qual das duas apagar — apagar a errada por adivinhação é pior do que
+    // travar aqui. "Apagar só a conversa" (abaixo) continua funcionando nesse caso, escopado por
+    // telefone, não por id de pessoa específica.
+    return { status: "multiplas_pessoas", nomes: pessoas.map((p) => p.nome) };
+  }
+  const pessoa = pessoas[0];
 
   const { data: oportunidades, error: erroOportunidades } = await supabase
     .from("oportunidades")
@@ -93,18 +108,27 @@ export async function resetarConversaAction(telefoneBruto: string): Promise<Resu
   return { status: "apagado_tudo" };
 }
 
-/** Alternativa quando `resetarConversaAction` bloqueia por venda existente — apaga só a conversa (cascateia mensagens/followup_emails), mantém pessoa/oportunidade/contrato/comissão intactos. */
+/**
+ * Alternativa quando `resetarConversaAction` bloqueia (venda existente, ou mais de uma pessoa com
+ * o mesmo telefone) — apaga só as conversas ligadas a esse número (cascateia mensagens/
+ * followup_emails), mantém pessoa(s)/oportunidade/contrato/comissão intactos. Escopado por
+ * telefone (todas as pessoas que compartilham o número), não por um id de pessoa específico —
+ * funciona mesmo no caso de duplicidade, sem precisar desambiguar qual pessoa é "a certa".
+ */
 export async function resetarApenasConversaAction(telefoneBruto: string): Promise<ResultadoResetarApenasConversa> {
   const telefone = normalizarTelefone(telefoneBruto);
   if (!telefone) return { status: "erro", mensagem: "Informe um número de telefone." };
 
   const supabase = await createClient();
 
-  const pessoa = await buscarPessoaPorTelefone(supabase, telefone);
-  if (pessoa && "erro" in pessoa) return { status: "erro", mensagem: pessoa.erro };
-  if (!pessoa) return { status: "nao_encontrado" };
+  const pessoas = await buscarPessoasPorTelefone(supabase, telefone);
+  if ("erro" in pessoas) return { status: "erro", mensagem: pessoas.erro };
+  if (pessoas.length === 0) return { status: "nao_encontrado" };
 
-  const { error: erroConversas } = await supabase.from("conversas").delete().eq("pessoa_id", pessoa.id);
+  const { error: erroConversas } = await supabase
+    .from("conversas")
+    .delete()
+    .in("pessoa_id", pessoas.map((p) => p.id));
   if (erroConversas) return { status: "erro", mensagem: `Falha ao apagar conversa: ${erroConversas.message}` };
 
   return { status: "apagado" };
