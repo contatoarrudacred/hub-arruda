@@ -1,6 +1,6 @@
 # Status — CRM
 
-tarefa: Implementar a captura de detalhe de pagamento (plano aprovado, execução inline task-by-task)
-desde: 2026-08-18T20:10:00-03:00
-proxima: Kanban (prioridade seguinte já registrada)
-bloqueio:
+tarefa: Captura de detalhe de pagamento — código pronto/testado/commitado, aguardando Luiz rodar o patch SQL pra verificar no simulador
+desde: 2026-08-18T20:45:00-03:00
+proxima: Verificação final no simulador, depois Kanban
+bloqueio: aguardando Luiz rodar supabase/patch_ln_passo16_1_negociacao_pagamento.sql
