@@ -26,6 +26,7 @@ const pauta: PautaCarregada = {
   status: "em_producao",
   tentativas: 0,
   motivoUltimaReprovacao: null,
+  ultimoRascunho: null,
 };
 
 const pautaDePersona: PautaCarregada = {
@@ -190,6 +191,59 @@ describe("gerarConteudo", () => {
     expect(promptEnviado.indexOf("Contagem de palavras insuficiente")).toBeLessThan(
       promptEnviado.indexOf("Use a ferramenta para registrar o resultado."),
     );
+  });
+
+  // Novo (19/08/2026, mesmo achado acima): quando existe ultimoRascunho salvo (salvarRascunho,
+  // chamado por processar-pauta.ts a cada geração), o prompt pede REVISÃO desse texto específico
+  // em vez do texto genérico "corrija isso" do teste anterior — inclui o HTML da versão anterior
+  // pra o modelo editar em cima, não reescrever do zero.
+  it("pede revisão do rascunho anterior (não reescrita do zero) quando ultimoRascunho está presente junto do motivo", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
+            conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
+            meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+            meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+      usage: { input_tokens: 1234, output_tokens: 5678 },
+    });
+    const pautaComRascunhoAnterior: PautaCarregada = {
+      ...pauta,
+      id: "pauta-4",
+      tentativas: 2,
+      motivoUltimaReprovacao: "Meta title com 62 caracteres, acima do limite de 60.",
+      ultimoRascunho: {
+        titulo: "Título da versão anterior",
+        conteudoHtml: "<h1>Título da versão anterior</h1><p>Corpo da versão anterior.</p>",
+        metaTitle: "Meta title anterior, longo demais pro limite de sessenta",
+        metaDescription: "Meta description anterior.",
+        slug: "titulo-da-versao-anterior",
+      },
+    };
+
+    await gerarConteudo(pautaComRascunhoAnterior, checklist, null);
+
+    const argumentosChamada = mockCreate.mock.calls[0][0];
+    const promptEnviado = argumentosChamada.messages[0].content;
+    // Instrução de revisão, o motivo, e o conteúdo da versão anterior (título + HTML) precisam
+    // estar todos presentes — é isso que dá ao modelo o que editar, em vez de só o que evitar.
+    expect(promptEnviado).toContain("Esta é uma revisão");
+    expect(promptEnviado).toContain("não reescreva do zero");
+    expect(promptEnviado).toContain("Meta title com 62 caracteres, acima do limite de 60.");
+    expect(promptEnviado).toContain("Título da versão anterior");
+    expect(promptEnviado).toContain("<h1>Título da versão anterior</h1><p>Corpo da versão anterior.</p>");
+    // O texto genérico "nova tentativa... corrigir especificamente isso" (sem o rascunho) NÃO deve
+    // aparecer — prova que é um branch diferente, não os dois blocos concatenados.
+    expect(promptEnviado).not.toContain("Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:");
   });
 
   it("lança erro claro quando a resposta é truncada por limite de tokens", async () => {

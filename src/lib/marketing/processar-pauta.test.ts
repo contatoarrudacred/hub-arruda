@@ -1,5 +1,5 @@
 // src/lib/marketing/processar-pauta.test.ts
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cotaDiariaAtingida, credenciaisWordPressDaPropriedade, dentroDaJanela, processarProximaPauta } from "./processar-pauta";
 import * as estrategista from "./estrategista";
 import * as escritor from "./escritor";
@@ -25,6 +25,7 @@ const pautaFalsa = {
   status: "em_producao" as const,
   tentativas: 0,
   motivoUltimaReprovacao: null,
+  ultimoRascunho: null,
 };
 
 const propriedadeFalsa = {
@@ -193,6 +194,14 @@ describe("credenciaisWordPressDaPropriedade", () => {
 });
 
 describe("processarProximaPauta", () => {
+  // salvarRascunho (Fase 3, 19/08/2026) roda em toda tentativa que chega em gerar_conteudo — mock
+  // padrão aqui em vez de em cada teste individualmente (mesmo raciocínio do resto do arquivo: sem
+  // mock explícito, a chamada cairia na implementação real de repositorio.ts e bateria de verdade
+  // no Supabase). Testes que querem verificar a chamada sobrescrevem com seu próprio spy.
+  beforeEach(() => {
+    vi.spyOn(repositorio, "salvarRascunho").mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
@@ -297,6 +306,16 @@ describe("processarProximaPauta", () => {
     // Revisão aprovada e publicação bem-sucedida: nenhum motivo de rejeição de negócio pra gravar.
     expect(detalhesExtraidos.revisar).toBeUndefined();
     expect(detalhesExtraidos.publicar).toBeUndefined();
+    // Fase 3, 19/08/2026: o rascunho é salvo mesmo quando aprova de primeira (salvarRascunho não
+    // é condicional ao resultado da revisão) — próxima seção verifica o caso em que isso importa
+    // de verdade (reprovação).
+    expect(repositorio.salvarRascunho).toHaveBeenCalledWith("pauta-1", {
+      titulo: "Como Limpar o Nome no Serasa",
+      conteudoHtml: "<h1>...</h1>",
+      metaTitle: "Como Limpar Nome no Serasa",
+      metaDescription: "Guia completo.",
+      slug: "como-limpar-nome-serasa",
+    });
   });
 
   it("mantém o resultado publicado sem reprovar quando só o registro de metadados do post falha", async () => {

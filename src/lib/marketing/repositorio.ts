@@ -38,7 +38,7 @@ import type {
 // a persona completa pro Escritor, spec seção 7). Nulo em pautas antigas/manuais — a coluna aceita
 // null (migration da Task 1).
 const CAMPOS_PAUTA =
-  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao";
+  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho";
 
 // Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
 // porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
@@ -47,6 +47,17 @@ const CAMPOS_PAUTA =
 // arquivo é `server-only`, então o valor chega até lá via prop passada pelo page.tsx (Server
 // Component), não por import direto.
 export const RECLAIM_MINUTOS = 10;
+
+// Formato do jsonb ultimo_rascunho (migration 20260819100000) — snake_case porque é gravado/lido
+// direto, sem passar pelo PostgREST (que só converte nomes de coluna, não chaves de dentro de um
+// jsonb).
+type RascunhoBruto = { titulo: string; conteudo_html: string; meta_title: string; meta_description: string; slug: string };
+
+function mapearRascunho(bruto: unknown): ConteudoGerado | null {
+  if (!bruto) return null;
+  const r = bruto as RascunhoBruto;
+  return { titulo: r.titulo, conteudoHtml: r.conteudo_html, metaTitle: r.meta_title, metaDescription: r.meta_description, slug: r.slug };
+}
 
 function mapearPauta(data: {
   id: string;
@@ -61,6 +72,7 @@ function mapearPauta(data: {
   status: PautaCarregada["status"];
   tentativas: number;
   motivo_ultima_reprovacao: string | null;
+  ultimo_rascunho?: unknown;
 }): PautaCarregada {
   return {
     id: data.id,
@@ -78,7 +90,26 @@ function mapearPauta(data: {
     status: data.status,
     tentativas: data.tentativas,
     motivoUltimaReprovacao: data.motivo_ultima_reprovacao,
+    ultimoRascunho: mapearRascunho(data.ultimo_rascunho),
   };
+}
+
+/**
+ * Grava o rascunho recém-gerado pelo Escritor na pauta (Fase 3, 19/08/2026) — chamado a cada
+ * geração, independente de aprovação, pra que uma reprovação subsequente tenha o texto anterior
+ * disponível pra revisão (ver montarPrompt, escritor.ts) em vez de regenerar do zero.
+ */
+export async function salvarRascunho(pautaId: string, rascunho: ConteudoGerado): Promise<void> {
+  const supabase = createAdminClient();
+  const bruto: RascunhoBruto = {
+    titulo: rascunho.titulo,
+    conteudo_html: rascunho.conteudoHtml,
+    meta_title: rascunho.metaTitle,
+    meta_description: rascunho.metaDescription,
+    slug: rascunho.slug,
+  };
+  const { error } = await supabase.from("pautas").update({ ultimo_rascunho: bruto }).eq("id", pautaId);
+  if (error) throw new Error(`Falha ao salvar rascunho da pauta ${pautaId}: ${error.message}`);
 }
 
 /**

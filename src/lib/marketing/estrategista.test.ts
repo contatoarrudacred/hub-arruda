@@ -17,6 +17,7 @@ const pautaPendenteFalsa: PautaCarregada = {
   status: "pendente",
   tentativas: 0,
   motivoUltimaReprovacao: null,
+  ultimoRascunho: null,
 };
 
 const pautaReclaimFalsa: PautaCarregada = {

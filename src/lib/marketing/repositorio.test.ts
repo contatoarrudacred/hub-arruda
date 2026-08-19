@@ -29,9 +29,10 @@ import {
   salvarMatriz,
   salvarPersona,
   salvarPropriedade,
+  salvarRascunho,
 } from "./repositorio";
 import { decifrar } from "./criptografia";
-import type { PersonaFormulario } from "./tipos";
+import type { ConteudoGerado, PersonaFormulario } from "./tipos";
 
 vi.mock("@/lib/supabase/admin");
 
@@ -879,6 +880,81 @@ describe("listarPautasPorStatus", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(listarPautasPorStatus()).rejects.toThrow(/Falha ao listar pautas por status.*erro de teste/);
+  });
+
+  // Fase 3, 19/08/2026 — mapearPauta (usado por listarPautasPorStatus e todo o resto que lê
+  // pautas) ganhou o campo ultimo_rascunho. Testado aqui, no describe que já tem pautaBruta como
+  // fixture central, em vez de duplicar a fixture num describe próprio.
+  it("mapeia ultimo_rascunho pra ultimoRascunho, convertendo as chaves internas pra camelCase", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          {
+            ...pautaBruta,
+            ultimo_rascunho: {
+              titulo: "Título do rascunho",
+              conteudo_html: "<p>Corpo</p>",
+              meta_title: "Meta title",
+              meta_description: "Meta description",
+              slug: "titulo-do-rascunho",
+            },
+          },
+        ],
+        error: null,
+      }),
+    );
+
+    const pautas = await listarPautasPorStatus();
+
+    expect(pautas[0].ultimoRascunho).toEqual({
+      titulo: "Título do rascunho",
+      conteudoHtml: "<p>Corpo</p>",
+      metaTitle: "Meta title",
+      metaDescription: "Meta description",
+      slug: "titulo-do-rascunho",
+    });
+  });
+
+  it("deixa ultimoRascunho null quando ultimo_rascunho é null (pauta ainda sem geração, ou anterior a esta coluna existir)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ ...pautaBruta, ultimo_rascunho: null }], error: null }));
+
+    const pautas = await listarPautasPorStatus();
+
+    expect(pautas[0].ultimoRascunho).toBeNull();
+  });
+});
+
+describe("salvarRascunho", () => {
+  const rascunho: ConteudoGerado = {
+    titulo: "Como Limpar o Nome no Serasa",
+    conteudoHtml: "<article><h1>Como Limpar o Nome no Serasa</h1></article>",
+    metaTitle: "Como Limpar Nome no Serasa | Passo a Passo",
+    metaDescription: "Aprenda o passo a passo completo para limpar seu nome no Serasa.",
+    slug: "como-limpar-nome-serasa",
+  };
+
+  it("grava o rascunho em ultimo_rascunho, convertendo as chaves pra snake_case", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await salvarRascunho("pauta-1", rascunho);
+
+    expect(builder.update).toHaveBeenCalledWith({
+      ultimo_rascunho: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudo_html: "<article><h1>Como Limpar o Nome no Serasa</h1></article>",
+        meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+        meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa.",
+        slug: "como-limpar-nome-serasa",
+      },
+    });
+    expect(builder.eq).toHaveBeenCalledWith("id", "pauta-1");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(salvarRascunho("pauta-1", rascunho)).rejects.toThrow(/Falha ao salvar rascunho da pauta pauta-1.*erro de teste/);
   });
 });
 

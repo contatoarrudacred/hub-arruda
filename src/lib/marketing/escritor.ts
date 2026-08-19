@@ -61,12 +61,26 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
     "",
     // Achado do teste real de ponta a ponta da Fase 3 (19/08/2026): motivoUltimaReprovacao já
     // existia em PautaCarregada desde o núcleo (Task 10), mas nunca era lido aqui — cada retry
-    // regenerava o texto às cegas, sem saber o que o Revisor apontou na tentativa anterior. Só
-    // entra no prompt quando existe motivo (pauta reprovada antes); primeira tentativa continua
-    // com o prompt idêntico ao de antes desta correção.
-    pauta.motivoUltimaReprovacao
-      ? `Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:\n${pauta.motivoUltimaReprovacao}`
-      : "",
+    // regenerava o texto às cegas, sem saber o que o Revisor apontou na tentativa anterior (na
+    // prática, o texto chegou a sair PIOR na tentativa seguinte, não melhor). Correção em duas
+    // camadas: se existe um rascunho anterior salvo (ultimoRascunho, gravado por salvarRascunho em
+    // processar-pauta.ts a cada geração), pede REVISÃO desse texto específico em vez de reescrita —
+    // mantém o que já está bom, corrige só o que falhou. Sem rascunho salvo (pauta antiga de antes
+    // desta coluna existir, ou caso raro em que a geração anterior falhou antes de salvar), cai no
+    // texto só-com-motivo de antes. Sem motivo nenhum (primeira tentativa), nenhum bloco — prompt
+    // idêntico ao de antes desta correção.
+    pauta.motivoUltimaReprovacao && pauta.ultimoRascunho
+      ? [
+          "Esta é uma revisão — a versão anterior deste post foi reprovada pelo Revisor pelo motivo abaixo. Revise o texto para corrigir ESPECIFICAMENTE esse problema, mantendo o que já está bom (título, estrutura, tom, o que já atende ao checklist) e mudando só o necessário — não reescreva do zero.",
+          "",
+          `Motivo da reprovação: ${pauta.motivoUltimaReprovacao}`,
+          "",
+          `Título da versão anterior: ${pauta.ultimoRascunho.titulo}`,
+          `HTML da versão anterior:\n"""\n${pauta.ultimoRascunho.conteudoHtml}\n"""`,
+        ].join("\n")
+      : pauta.motivoUltimaReprovacao
+        ? `Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:\n${pauta.motivoUltimaReprovacao}`
+        : "",
     "",
     "Use a ferramenta para registrar o resultado.",
   ];

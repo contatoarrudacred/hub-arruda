@@ -28,6 +28,14 @@ export type PautaCarregada = {
   status: StatusPauta;
   tentativas: number;
   motivoUltimaReprovacao: string | null;
+  /**
+   * Último rascunho gerado pelo Escritor pra esta pauta (Fase 3, 19/08/2026) — gravado a cada
+   * geração, independente de aprovação (salvarRascunho, repositorio.ts). `null` até a primeira
+   * geração, ou em pautas antigas de antes desta coluna existir. Quando presente junto com
+   * `motivoUltimaReprovacao`, o Escritor revisa este texto em vez de escrever do zero — ver
+   * montarPrompt em escritor.ts.
+   */
+  ultimoRascunho: ConteudoGerado | null;
 };
 
 export type ItemChecklistCarregado = {

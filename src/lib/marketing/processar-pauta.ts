@@ -24,6 +24,7 @@ import {
   marcarPautaPublicada,
   registrarEtapa,
   registrarReprovacaoPauta,
+  salvarRascunho,
 } from "./repositorio";
 import type { JanelaPublicacao, PropriedadeCarregada } from "./tipos";
 
@@ -143,6 +144,12 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       () => gerarConteudo(pauta, checklist, persona),
       (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
     );
+
+    // Salva o rascunho ANTES de saber se o Revisor vai aprovar (achado do teste real de ponta a
+    // ponta, 19/08/2026) — se reprovar, a próxima tentativa desta pauta encontra o texto aqui
+    // (pauta.ultimoRascunho) e revisa em vez de reescrever do zero (ver montarPrompt, escritor.ts).
+    // Fora do registrarEtapa de cima de propósito: não é parte do custo/tempo da geração em si.
+    await salvarRascunho(pauta.id, conteudo);
 
     // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio, não
     // erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de log
