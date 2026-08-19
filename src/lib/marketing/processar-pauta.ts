@@ -20,6 +20,7 @@ import { sanitizarConteudoHtml } from "./sanitizar-html";
 import {
   atualizarStatusPost,
   carregarChecklistAtivo,
+  carregarImagensPostAnterior,
   carregarPersona,
   carregarPostProntoParaPublicar,
   carregarPostsRecentes,
@@ -31,6 +32,7 @@ import {
   registrarEtapa,
   registrarReprovacaoPauta,
   salvarRascunho,
+  type ImagensExistentesPost,
 } from "./repositorio";
 import type { ConteudoGerado, JanelaPublicacao, PautaCarregada, PersonaCarregada, PropriedadeCarregada, UsageTokens } from "./tipos";
 
@@ -261,9 +263,40 @@ async function gerarEEmbutirImagens(
   propriedade: PropriedadeCarregada,
   corpoHtmlSanitizado: string,
   adaptador: ReturnType<typeof criarAdaptadorWordPress>,
+  imagensExistentes: ImagensExistentesPost | null,
 ): Promise<ResultadoGeracaoImagens> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
   const detalhes: string[] = [];
+
+  // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — quando já existem imagens de
+  // uma tentativa anterior desta pauta, reaproveita direto em vez de gerar (e pagar) tudo de novo:
+  // uma correção cirúrgica de texto (ex.: trocar 1 link, ajustar o meta title) não muda o
+  // tema/ângulo do post o suficiente pra invalidar a capa/secundárias já aprovadas. Só remonta o
+  // schema + a inserção das secundárias no HTML NOVO (texto pode ter mudado), sem chamar
+  // gerarCapa/gerarImagensSecundarias/enviarMidia de novo — zero custo de IA/upload aqui.
+  if (imagensExistentes) {
+    const agora = new Date();
+    const schemaArticle = montarSchemaArticle(
+      { titulo: conteudo.titulo, slug: conteudo.slug, urlBase: propriedade.urlBase, imagemDestaqueUrl: imagensExistentes.imagemDestaqueUrl },
+      { autoria: propriedade.autoria, nome: propriedade.nome, urlBase: propriedade.urlBase },
+      { publicadoEm: agora, atualizadoEm: agora },
+    );
+    const schemaOrganization = montarSchemaOrganization({ nome: propriedade.nome, urlBase: propriedade.urlBase });
+    const htmlComSecundarias = inserirImagensSecundariasNoHtml(corpoHtmlSanitizado, imagensExistentes.imagensSecundarias);
+    const corpoHtmlFinal = `${htmlComSecundarias}\n${schemaArticle}\n${schemaOrganization}`;
+
+    return {
+      corpoHtmlFinal,
+      capaMediaId: imagensExistentes.imagemDestaqueMediaId ?? undefined,
+      imagemDestaqueUrl: imagensExistentes.imagemDestaqueUrl,
+      imagemDestaqueAlt: imagensExistentes.imagemDestaqueAlt,
+      imagemDestaqueSlug: imagensExistentes.imagemDestaqueSlug,
+      imagemDestaqueStorageUrl: imagensExistentes.imagemDestaqueStorageUrl,
+      imagensSecundariasPersistir: imagensExistentes.imagensSecundarias,
+      usage,
+      detalhesLog: "imagens reaproveitadas de uma tentativa anterior desta pauta (correção cirúrgica de texto, sem custo novo de geração)",
+    };
+  }
 
   try {
     const capa = await gerarCapa(pauta, conteudo, persona);
@@ -489,6 +522,13 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       );
       const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
 
+      // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — se uma tentativa anterior
+      // desta pauta já gerou imagens (mesmo que a publicação em si nunca tenha chegado a rodar,
+      // como no caso de reprovação de CONTEÚDO que exigiu correção cirúrgica do texto), reaproveita
+      // em vez de gerar de novo. As imagens dependem do tema/ângulo geral do post, não de detalhes
+      // pontuais como um link — uma correção cirúrgica não deveria invalidá-las.
+      const imagensExistentes = await carregarImagensPostAnterior(pauta.id);
+
       // Etapa "gerar_imagens" (Task 10, Fase 4a+4b) — capa + imagens secundárias + upload
       // WordPress + schema Article/Organization embutidos no HTML, entre "sanitizar" e "publicar"
       // (spec seção 4.7). gerarEEmbutirImagens NUNCA lança (Global Constraint do plano mestre:
@@ -500,7 +540,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       const resultadoImagens = await registrarEtapa(
         pauta.id,
         "gerar_imagens",
-        () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador),
+        () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes),
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
         (r) => r.detalhesLog,
       );

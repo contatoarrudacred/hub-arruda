@@ -387,6 +387,75 @@ export async function carregarPostProntoParaPublicar(pautaId: string): Promise<P
 }
 
 /**
+ * Imagens já geradas/enviadas numa tentativa anterior desta pauta (19/08/2026, pedido do Luiz) —
+ * reaproveitadas quando o texto precisa de uma correção cirúrgica (motivo de reprovação sobre o
+ * CONTEÚDO, não relacionado a imagem) mas as imagens em si continuam válidas: elas dependem do
+ * tema/ângulo geral do post, não de detalhes pontuais como um link ou o tamanho do meta title —
+ * uma edição cirúrgica de texto não deveria forçar gerar (e pagar de novo pela) capa+secundárias
+ * do zero. Diferente de `PostProntoParaPublicar`: não exige que o post inteiro esteja pronto pra
+ * publicar, só que já existam imagens salvas de uma tentativa anterior.
+ */
+export type ImagensExistentesPost = {
+  imagemDestaqueUrl: string | null;
+  imagemDestaqueAlt: string | null;
+  imagemDestaqueSlug: string | null;
+  imagemDestaqueStorageUrl: string | null;
+  imagemDestaqueMediaId: string | null;
+  imagensSecundarias: ImagemSecundaria[];
+};
+
+/**
+ * Post mais recente desta pauta que já tem pelo menos uma imagem salva (capa ou secundária),
+ * independente do status (`rascunho` ou `falhou` — nunca `publicado`, que não devia estar
+ * associado a uma pauta que voltou pra "pendente"). `null` quando nenhuma tentativa anterior
+ * chegou a gerar nenhuma imagem ainda (primeira tentativa, ou toda geração de imagem falhou —
+ * degradação aceitável, `gerarEEmbutirImagens` segue seu fluxo normal de gerar do zero nesse caso).
+ */
+export async function carregarImagensPostAnterior(pautaId: string): Promise<ImagensExistentesPost | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("imagem_destaque_url, imagem_destaque_alt, imagem_destaque_slug, imagem_destaque_storage_url, imagem_destaque_media_id, imagens_secundarias")
+    .eq("pauta_id", pautaId)
+    .neq("status", "publicado")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar imagens de tentativa anterior para pauta ${pautaId}: ${error.message}`);
+  if (!data) return null;
+
+  const secundariasBrutas = (data.imagens_secundarias ?? []) as Array<{
+    url: string;
+    alt: string;
+    slug: string;
+    titulo: string;
+    legenda: string;
+    posicao_apos_secao: string;
+    storage_url: string | null;
+  }>;
+  const temImagem = Boolean(data.imagem_destaque_url) || secundariasBrutas.length > 0;
+  if (!temImagem) return null;
+
+  return {
+    imagemDestaqueUrl: data.imagem_destaque_url,
+    imagemDestaqueAlt: data.imagem_destaque_alt,
+    imagemDestaqueSlug: data.imagem_destaque_slug,
+    imagemDestaqueStorageUrl: data.imagem_destaque_storage_url,
+    imagemDestaqueMediaId: data.imagem_destaque_media_id,
+    imagensSecundarias: secundariasBrutas.map((i) => ({
+      url: i.url,
+      alt: i.alt,
+      slug: i.slug,
+      titulo: i.titulo,
+      legenda: i.legenda,
+      posicaoAposSecao: i.posicao_apos_secao,
+      storageUrl: i.storage_url,
+    })),
+  };
+}
+
+/**
  * Até 6 posts publicados da mesma propriedade, mais recentes primeiro — usados pelo Agente de
  * Links (src/lib/marketing/links.ts) pra montar a seção "Posts relacionados" ao final do artigo.
  * A URL vem de canais.wordpress.url (jsonb), preenchido em atualizarStatusPost no momento da

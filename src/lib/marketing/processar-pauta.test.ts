@@ -217,10 +217,11 @@ describe("processarProximaPauta", () => {
   beforeEach(() => {
     vi.spyOn(repositorio, "salvarRascunho").mockResolvedValue(undefined);
     vi.spyOn(repositorio, "carregarPostsRecentes").mockResolvedValue([]);
-    // Reaproveitamento entre tentativas (19/08/2026) — default "nenhum post pronto ainda", mesmo
-    // comportamento de antes desta mudança existir (sempre gera do zero). Testes dedicados de
-    // reaproveitamento (describe "reaproveitamento de post pronto" abaixo) sobrescrevem.
+    // Reaproveitamento entre tentativas (19/08/2026) — default "nenhum post pronto ainda" / "sem
+    // imagens de tentativa anterior", mesmo comportamento de antes desta mudança existir (sempre
+    // gera do zero). Testes dedicados de reaproveitamento sobrescrevem.
     vi.spyOn(repositorio, "carregarPostProntoParaPublicar").mockResolvedValue(null);
+    vi.spyOn(repositorio, "carregarImagensPostAnterior").mockResolvedValue(null);
     // Task 10 — default "sem imagem nenhuma" (mesmo comportamento de antes desta task existir):
     // capa reprovada/sem resultado, zero secundárias aprovadas. Testes dedicados de imagem
     // (describe "gerar_imagens (Task 10)" abaixo) sobrescrevem com seus próprios resultados.
@@ -859,6 +860,72 @@ describe("processarProximaPauta", () => {
         "post-1",
         "publicado",
         expect.objectContaining({ conteudoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>" }),
+      );
+    });
+
+    // Cenário mais sutil que o anterior: o TEXTO precisa mudar (reprovação de conteúdo, motivo
+    // pontual — não existe post "pronto_para_publicar" ainda), mas uma tentativa anterior desta
+    // pauta já gerou imagens. O Escritor/Revisor rodam de novo (o texto muda), mas gerarCapa/
+    // gerarImagensSecundarias/enviarMidia NÃO devem ser chamados — as imagens são reaproveitadas.
+    it("quando o texto precisa de correção cirúrgica mas já existem imagens de uma tentativa anterior, reaproveita as imagens sem gerar de novo", async () => {
+      vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+      vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+      vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+      vi.spyOn(repositorio, "carregarPostProntoParaPublicar").mockResolvedValue(null); // texto ainda não aprovado
+      vi.spyOn(repositorio, "carregarImagensPostAnterior").mockResolvedValue({
+        imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png",
+        imagemDestaqueAlt: "Pessoa aliviada olhando boletos organizados",
+        imagemDestaqueSlug: "capa-serasa",
+        imagemDestaqueStorageUrl: "https://storage.exemplo.com/prop-1/pauta-1/capa-capa-serasa.png",
+        imagemDestaqueMediaId: "media-capa-existente",
+        imagensSecundarias: [],
+      });
+      vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+        resultado: {
+          titulo: "Como Limpar o Nome no Serasa (corrigido)",
+          conteudoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Texto corrigido cirurgicamente.</p>",
+          metaTitle: "Como Limpar Nome no Serasa",
+          metaDescription: "Guia completo.",
+          slug: "como-limpar-nome-serasa",
+        },
+        usage: { inputTokens: 500, outputTokens: 300 },
+      });
+      vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+        resultado: { aprovado: true, score: 92, motivo: null, precisaoFactualAdequada: true, fontesEspecificas: true, originalidadeAdequada: true },
+        usage: { inputTokens: 500, outputTokens: 50 },
+      });
+      vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-2", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+      const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+      vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+      vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>Como Limpar o Nome no Serasa</h1><p>Texto corrigido cirurgicamente.</p>");
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const enviarMidia = vi.fn();
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia,
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+      const { etapasChamadas } = espiarRegistrarEtapa();
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      // O texto RODA de novo (a correção é dele) — todas as etapas normais aparecem.
+      expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar", "inserir_links", "sanitizar", "gerar_imagens", "publicar", "registrar_resultado"]);
+      // Mas nenhuma chamada de geração/upload de imagem acontece — reaproveitadas da tentativa anterior.
+      expect(gerarCapa).not.toHaveBeenCalled();
+      expect(gerarImagensSecundarias).not.toHaveBeenCalled();
+      expect(enviarMidia).not.toHaveBeenCalled();
+      // featured_media reaproveitado sem novo upload.
+      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), "media-capa-existente");
+      const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
+      expect(corpoHtmlPublicado).toContain('"image":"https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"');
+      expect(atualizarStatusPostSpy).toHaveBeenCalledWith(
+        "post-2",
+        "rascunho",
+        expect.objectContaining({ imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png", imagemDestaqueMediaId: "media-capa-existente" }),
       );
     });
   });
