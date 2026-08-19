@@ -70,9 +70,13 @@ export async function listarVendas(): Promise<VendaResumo[]> {
 
 export async function cancelarVenda(contratoId: string, motivo: string): Promise<void> {
   const supabase = await createClient();
+  // Limpa ultimo_erro/tentativas_erro junto — sem isso, uma venda cancelada por causa de um erro
+  // pendente continuava aparecendo vermelha na coluna "Cancelada", com o botão "Tentar novamente
+  // todos" da coluna ativo pra ela (clicar nele só apaga o erro sem retentar nada, já que
+  // tentarNovamente não tem branch pra status "cancelada").
   const { error } = await supabase
     .from("contratos")
-    .update({ status: "cancelada", motivo_cancelamento: motivo })
+    .update({ status: "cancelada", motivo_cancelamento: motivo, ultimo_erro: null, tentativas_erro: 0 })
     .eq("id", contratoId);
   if (error) throw new Error(`Falha ao cancelar venda: ${error.message}`);
 }

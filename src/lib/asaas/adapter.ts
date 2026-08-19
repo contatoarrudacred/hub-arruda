@@ -38,10 +38,11 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
     const checkout = await criarCheckout({
       descricao: `Contrato ${contratoId}`,
       valorTotal: contrato.valorTotal,
-      // NÃO usar contrato.parcelasQtd aqui — pra cartão ela é sempre 1 (só existe uma linha
-      // placeholder em contrato_parcelas, ver comentário da coluna na migration). O parcelamento
-      // real que o cliente escolheu está em maxParcelasCartao; achado real na revisão final da
-      // branch (o valor escolhido nunca chegava na Asaas antes desta correção).
+      // NÃO usar contrato.parcelasQtd aqui — o significado dela pra cartão varia por tela de
+      // origem (Nova Oportunidade: sempre 1, um placeholder; Fechamento de Venda: reflete parcelas
+      // reais calculadas). O parcelamento que vale pro Checkout é sempre maxParcelasCartao,
+      // independente de quem criou o contrato; achado real na revisão final da branch (o valor
+      // escolhido nunca chegava na Asaas antes desta correção).
       maxParcelas: contrato.maxParcelasCartao ?? 1,
       externalReference: contratoId,
       cliente: { nome: pessoa.nomeRazaoSocial, documento: pessoa.documento, email: pessoa.email, telefone: pessoa.whatsapp },
@@ -56,6 +57,13 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
   let linkPrimeiraParcela: string | null = null;
 
   for (const parcela of contrato.parcelas) {
+    // Idempotência: uma retentativa manual (Task 14) pode chamar isto de novo depois de já ter
+    // criado algumas cobranças com sucesso na rodada anterior — pular as que já têm
+    // asaas_payment_id evita duplicar boleto/cobrança na Asaas pro cliente. Achado real da revisão
+    // final da branch: sem isso, o botão "Tentar novamente" (que agora aparece já no 1º erro,
+    // ver Critical 2) recriaria as parcelas que já tinham dado certo antes de uma falha no meio.
+    if (parcela.asaasPaymentId) continue;
+
     const cobranca = await criarCobranca({
       customerId,
       billingType,

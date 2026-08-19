@@ -256,10 +256,10 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                 {(porEstagio.get(estagio.valor) ?? []).map((venda) => (
                   <div
                     key={venda.contratoId}
-                    className={`rounded-lg border p-2 text-xs shadow-sm dark:bg-zinc-800 ${
+                    className={`rounded-lg border p-2 text-xs shadow-sm ${
                       venda.ultimoErro
-                        ? "border-red-300 bg-red-50 dark:border-red-700"
-                        : "border-zinc-200 bg-white dark:border-zinc-700"
+                        ? "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950"
+                        : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-1">

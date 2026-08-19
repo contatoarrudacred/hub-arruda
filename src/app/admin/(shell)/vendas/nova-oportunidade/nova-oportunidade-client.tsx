@@ -99,6 +99,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     const tipo = tipoPessoaPorDocumento(formatado);
     if (!tipo) {
       buscaDocIdRef.current++; // invalida qualquer busca anterior ainda em andamento
+      setBuscandoPessoa(false); // sem isso, "Buscando..." podia ficar preso na tela (achado real)
       return;
     }
 
@@ -229,8 +230,8 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         }
       } else {
         const maxParcelas = Number(maxParcelasCartao);
-        if (!Number.isInteger(maxParcelas) || maxParcelas < 1) {
-          setErro("Informe um número válido de parcelas máximas do cartão.");
+        if (!Number.isInteger(maxParcelas) || maxParcelas < 1 || maxParcelas > 21) {
+          setErro("Parcelas máximas do cartão precisa ser um número entre 1 e 21 (limite da Asaas).");
           return;
         }
         financeiro = { especie: "cartao", maxParcelas };
@@ -531,6 +532,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
                 className={campo}
                 type="number"
                 min={1}
+                max={21}
                 value={maxParcelasCartao}
                 onChange={(e) => setMaxParcelasCartao(e.target.value)}
               />

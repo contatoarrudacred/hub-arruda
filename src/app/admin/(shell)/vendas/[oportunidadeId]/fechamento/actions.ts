@@ -160,6 +160,13 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
       return { sucesso: false, erro: `A soma das parcelas (${somaParcelas}) não bate com o valor total (${valorTotalArredondado}).` };
     }
 
+    // A Asaas só aceita maxInstallmentCount entre 1 e 21 — aqui o parcelamento de cartão vem do
+    // mesmo campo qtdParcelas de boleto/pix (sem limite próprio na UI), então precisa checar antes
+    // de criar o contrato.
+    if (metodoPagamento === "cartao" && (parcelas.length < 1 || parcelas.length > 21)) {
+      return { sucesso: false, erro: "Cartão aceita no máximo 21 parcelas (limite da Asaas) — reduza a quantidade de parcelas." };
+    }
+
     // 4) Cria o contrato + parcelas — o HTML do contrato não é mais montado aqui: tentarEmitirContrato
     // (Step 5 abaixo) reconstrói tudo a partir do banco via montarHtmlContrato, igual à Nova Oportunidade.
     const { contratoId } = await criarContrato({

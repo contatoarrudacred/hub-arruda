@@ -121,6 +121,7 @@ export type ContratoParcela = {
   valor: number;
   vencimentoPrevisto: string;
   status: string;
+  asaasPaymentId: string | null;
 };
 
 export type Contrato = {
@@ -155,6 +156,7 @@ type LinhaContratoParcelaBruta = {
   valor: number;
   vencimento_previsto: string;
   status: string;
+  asaas_payment_id: string | null;
 };
 
 type LinhaContratoBruta = {
@@ -180,7 +182,7 @@ type LinhaContratoBruta = {
 };
 
 const SELECT_CONTRATO =
-  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, max_parcelas_cartao, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, max_parcelas_cartao, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status, asaas_payment_id)";
 
 function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
@@ -209,6 +211,7 @@ function mapearContrato(linha: LinhaContratoBruta): Contrato {
         valor: parcela.valor,
         vencimentoPrevisto: parcela.vencimento_previsto,
         status: parcela.status,
+        asaasPaymentId: parcela.asaas_payment_id,
       }))
       .sort((a, b) => a.numero - b.numero),
   };

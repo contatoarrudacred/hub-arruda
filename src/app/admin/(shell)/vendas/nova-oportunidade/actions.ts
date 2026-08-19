@@ -172,6 +172,12 @@ export async function confirmarNovaOportunidadeAction(
       formaPagamento = "parcelado";
       metodoPagamento = "cartao";
       maxParcelasCartao = entrada.financeiro.maxParcelas;
+      // A Asaas só aceita maxInstallmentCount entre 1 e 21 — defesa no server, não só no client
+      // (que já valida isso, mas não substitui checagem server-side). Sem isso, um valor fora da
+      // faixa só falharia na hora de gerar o Checkout, depois do contrato já criado e assinado.
+      if (!Number.isInteger(maxParcelasCartao) || maxParcelasCartao < 1 || maxParcelasCartao > 21) {
+        return { sucesso: false, erro: "Parcelas máximas do cartão precisa ser um número entre 1 e 21 (limite da Asaas)." };
+      }
       // Cartão não tem tabela de parcelas prévia (ver spec seção 6) — 1 "parcela" placeholder cobrindo
       // o valor total; os títulos reais vêm da Asaas depois que o Checkout resultar num parcelamento.
       // O parcelamento escolhido (maxParcelasCartao) vai separado — parcelas_qtd fica sempre 1 aqui.
