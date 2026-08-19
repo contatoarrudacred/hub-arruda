@@ -135,6 +135,7 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [avisoDocumentoIA, setAvisoDocumentoIA] = useState<string | null>(null);
+  const [mostrarTranscricaoIA, setMostrarTranscricaoIA] = useState(false);
 
   /** Devolve o pessoaId resolvido (ou null) — não só atualiza estado. Necessário pra quem chama
    * (ex.: o Leitor de Documento IA) poder agir imediatamente com o resultado, sem depender de ler
@@ -344,7 +345,87 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-8">
-      <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Nova Oportunidade</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Nova Oportunidade</h1>
+        <button
+          type="button"
+          onClick={() => setMostrarTranscricaoIA((v) => !v)}
+          title="Ler CPF/CNPJ, nome e endereço automaticamente a partir de uma foto/PDF de um documento"
+          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            mostrarTranscricaoIA
+              ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"
+              : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }`}
+        >
+          <span>✨</span> Transcrição com IA
+        </button>
+      </div>
+
+      {mostrarTranscricaoIA && (
+        <div className={secao}>
+          <LeitorDocumentoIA
+            onDadosExtraidos={async (dados, arquivosLidos) => {
+              setAvisoDocumentoIA(null);
+              const ehComprovanteResidencia = dados.tipoDocumento === "comprovante_residencia";
+
+              // Comprovante de residência costuma estar em nome de outra pessoa da família (cônjuge,
+              // pai/mãe) mesmo quando o endereço é mesmo do cliente — nesse caso NÃO mexe em
+              // nome/documento (só o endereço vale), pra não trocar a identidade de quem está sendo
+              // cadastrado. Pedido explícito do Luiz, achado testando em produção.
+              let pessoaIdResolvido = pessoaId;
+              if (!ehComprovanteResidencia) {
+                // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
+                // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso
+                // do leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que
+                // acabou de ser preenchido aqui (achado real da revisão final da branch).
+                if (dados.documento) pessoaIdResolvido = await aoDigitarDocumento(dados.documento);
+                if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
+              }
+
+              const temEnderecoExtraido = [dados.cep, dados.logradouro, dados.bairro, dados.cidade].some((v) => v);
+              if (temEnderecoExtraido) {
+                const preencherEndereco = (atual: ValorEndereco): ValorEndereco => ({
+                  ...atual,
+                  cep: dados.cep || atual.cep,
+                  logradouro: dados.logradouro || atual.logradouro,
+                  numero: dados.numero || atual.numero,
+                  bairro: dados.bairro || atual.bairro,
+                  cidade: dados.cidade || atual.cidade,
+                  uf: dados.uf || atual.uf,
+                });
+                // Numa venda PJ o endereço da EMPRESA não é mais coletado (ver caixa "Dados da
+                // Empresa" abaixo) — o endereço extraído só faz sentido pro representante legal, a
+                // pessoa física de verdade nesse fluxo.
+                if (ehPj) {
+                  setEnderecoRepresentante(preencherEndereco);
+                } else {
+                  setEndereco(preencherEndereco);
+                }
+              }
+
+              if (ehComprovanteResidencia) {
+                setAvisoDocumentoIA(
+                  "Endereço preenchido a partir do comprovante de residência enviado. Comprovantes às vezes estão em nome de outra pessoa da família (cônjuge, pai/mãe) — confira se o endereço corresponde mesmo a quem está sendo cadastrado.",
+                );
+              }
+
+              // Salva os arquivos lidos junto com o cadastro, classificados pela própria IA — só
+              // quando a pessoa já é conhecida nesse momento (pessoa nova ainda não tem id; o aviso
+              // na seção de documentos já explica que fica pra depois, na tela de Detalhes da Venda).
+              if (pessoaIdResolvido && arquivosLidos.length > 0) {
+                const formData = new FormData();
+                arquivosLidos.forEach((arquivo) => formData.append("arquivos", arquivo));
+                await salvarDocumentosExtraidosAction(pessoaIdResolvido, dados.tipoDocumento, formData);
+              }
+            }}
+          />
+          {avisoDocumentoIA && (
+            <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+              ⚠ {avisoDocumentoIA}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className={secao}>
         <label className={rotulo}>Serviço</label>
@@ -365,67 +446,6 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 
       <div className={secao}>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Quem assina o contrato</h2>
-        <LeitorDocumentoIA
-          onDadosExtraidos={async (dados, arquivosLidos) => {
-            setAvisoDocumentoIA(null);
-            const ehComprovanteResidencia = dados.tipoDocumento === "comprovante_residencia";
-
-            // Comprovante de residência costuma estar em nome de outra pessoa da família (cônjuge,
-            // pai/mãe) mesmo quando o endereço é mesmo do cliente — nesse caso NÃO mexe em
-            // nome/documento (só o endereço vale), pra não trocar a identidade de quem está sendo
-            // cadastrado. Pedido explícito do Luiz, achado testando em produção.
-            let pessoaIdResolvido = pessoaId;
-            if (!ehComprovanteResidencia) {
-              // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
-              // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso do
-              // leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que acabou de
-              // ser preenchido aqui (achado real da revisão final da branch).
-              if (dados.documento) pessoaIdResolvido = await aoDigitarDocumento(dados.documento);
-              if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
-            }
-
-            const temEnderecoExtraido = [dados.cep, dados.logradouro, dados.bairro, dados.cidade].some((v) => v);
-            if (temEnderecoExtraido) {
-              const preencherEndereco = (atual: ValorEndereco): ValorEndereco => ({
-                ...atual,
-                cep: dados.cep || atual.cep,
-                logradouro: dados.logradouro || atual.logradouro,
-                numero: dados.numero || atual.numero,
-                bairro: dados.bairro || atual.bairro,
-                cidade: dados.cidade || atual.cidade,
-                uf: dados.uf || atual.uf,
-              });
-              // Numa venda PJ o endereço da EMPRESA não é mais coletado (ver caixa "Dados da
-              // Empresa" abaixo) — o endereço extraído só faz sentido pro representante legal, a
-              // pessoa física de verdade nesse fluxo.
-              if (ehPj) {
-                setEnderecoRepresentante(preencherEndereco);
-              } else {
-                setEndereco(preencherEndereco);
-              }
-            }
-
-            if (ehComprovanteResidencia) {
-              setAvisoDocumentoIA(
-                "Endereço preenchido a partir do comprovante de residência enviado. Comprovantes às vezes estão em nome de outra pessoa da família (cônjuge, pai/mãe) — confira se o endereço corresponde mesmo a quem está sendo cadastrado.",
-              );
-            }
-
-            // Salva os arquivos lidos junto com o cadastro, classificados pela própria IA — só
-            // quando a pessoa já é conhecida nesse momento (pessoa nova ainda não tem id; o aviso na
-            // seção de documentos já explica que fica pra depois, na tela de Detalhes da Venda).
-            if (pessoaIdResolvido && arquivosLidos.length > 0) {
-              const formData = new FormData();
-              arquivosLidos.forEach((arquivo) => formData.append("arquivos", arquivo));
-              await salvarDocumentosExtraidosAction(pessoaIdResolvido, dados.tipoDocumento, formData);
-            }
-          }}
-        />
-        {avisoDocumentoIA && (
-          <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
-            ⚠ {avisoDocumentoIA}
-          </p>
-        )}
 
         {ehPj ? (
           <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
