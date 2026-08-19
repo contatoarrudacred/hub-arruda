@@ -396,7 +396,7 @@ export async function carregarPostsPublicadosDaPropriedade(
  * Formato do jsonb `posts.imagens_secundarias` (migration 20260819110000, Fase 4b) — snake_case,
  * mesma convenção de RascunhoBruto/AutoriaBruta acima (gravado direto, sem passar pelo PostgREST).
  */
-function mapearImagemSecundariaBruta(imagem: ImagemSecundaria): Record<string, string> {
+function mapearImagemSecundariaBruta(imagem: ImagemSecundaria): Record<string, string | null> {
   return {
     url: imagem.url,
     alt: imagem.alt,
@@ -404,6 +404,12 @@ function mapearImagemSecundariaBruta(imagem: ImagemSecundaria): Record<string, s
     titulo: imagem.titulo,
     legenda: imagem.legenda,
     posicao_apos_secao: imagem.posicaoAposSecao,
+    // storage_url (follow-up 19/08/2026, arquivamento no Supabase Storage): null quando o upload
+    // ao Storage falhou ou nem chegou a rodar — grava explicitamente o null (não omite a chave),
+    // diferente do padrão condicional dos campos de imagem de destaque em atualizarStatusPost
+    // logo abaixo, porque aqui o valor entra dentro de um item de array jsonb sempre montado por
+    // inteiro (não há "omitir uma chave" parcial dentro de um elemento de array).
+    storage_url: imagem.storageUrl,
   };
 }
 
@@ -425,6 +431,13 @@ export async function atualizarStatusPost(
     imagemDestaqueUrl?: string;
     imagemDestaqueAlt?: string;
     imagemDestaqueSlug?: string;
+    // Follow-up 19/08/2026 (arquivamento no Storage) — `string | null` na assinatura (diferente
+    // dos 3 campos acima, tipados só `string`) porque este é o único dos 4 campos de imagem cujo
+    // valor "ausente" tem um significado que vale a pena expressar no tipo; na prática, porém, o
+    // chamador (processar-pauta.ts) já converte null->undefined na mesma borda que os outros 3
+    // campos usam (?? undefined), então este campo se comporta de forma idêntica a eles aqui
+    // dentro: ver decisão abaixo, na condição de escrita.
+    imagemDestaqueStorageUrl?: string | null;
     imagensSecundarias?: ImagemSecundaria[];
   },
 ): Promise<void> {
@@ -443,6 +456,18 @@ export async function atualizarStatusPost(
       ...(extra?.imagemDestaqueUrl ? { imagem_destaque_url: extra.imagemDestaqueUrl } : {}),
       ...(extra?.imagemDestaqueAlt ? { imagem_destaque_alt: extra.imagemDestaqueAlt } : {}),
       ...(extra?.imagemDestaqueSlug ? { imagem_destaque_slug: extra.imagemDestaqueSlug } : {}),
+      // Mesmo padrão truthy-check dos 3 campos acima (não um !== undefined explícito) — decisão
+      // deliberada, não um esquecimento: replica a mesma filosofia já aplicada a
+      // imagemDestaqueUrl/Alt/Slug (ver comentário "alt/slug só acompanham a URL quando o upload
+      // de fato teve sucesso" em processar-pauta.ts) — quando esta tentativa não produziu uma cópia
+      // no Storage (capa não gerada, upload falhou, ou o upload ao WordPress em si falhou), a
+      // coluna simplesmente não é tocada, preservando uma cópia arquivada de uma tentativa anterior
+      // bem-sucedida em vez de apagá-la com null. É só um arquivo de "possível uso futuro" — não
+      // há benefício em néla nulificar um arquivo antigo ainda válido só porque esta tentativa não
+      // gerou um novo. Se algum dia for preciso nulificar de verdade (ex.: expurgo manual de um
+      // arquivo), esse caso passa a exigir uma escrita explícita fora deste helper — este helper
+      // continua tratando ausência (undefined/null/string vazia) como "não escrever".
+      ...(extra?.imagemDestaqueStorageUrl ? { imagem_destaque_storage_url: extra.imagemDestaqueStorageUrl } : {}),
       ...(extra?.imagensSecundarias !== undefined
         ? { imagens_secundarias: extra.imagensSecundarias.map(mapearImagemSecundariaBruta) }
         : {}),

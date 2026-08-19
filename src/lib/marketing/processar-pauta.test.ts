@@ -7,6 +7,7 @@ import * as revisor from "./revisor";
 import * as repositorio from "./repositorio";
 import { criarAdaptadorWordPress } from "./canais/wordpress";
 import { cifrar } from "./criptografia";
+import { enviarImagemStorage } from "./imagens/armazenamento";
 import { gerarCapa } from "./imagens/capa";
 import { gerarImagensSecundarias } from "./imagens/secundarias";
 import { inserirLinksInternos } from "./links";
@@ -20,6 +21,10 @@ vi.mock("./links");
 // de verdade, cobertura mais forte do que mockar o schema também.
 vi.mock("./imagens/capa");
 vi.mock("./imagens/secundarias");
+// Follow-up 19/08/2026 (arquivamento no Storage) — armazenamento.ts usa createAdminClient
+// ("server-only"), mesma razão de mockar capa/secundarias acima: sem isto, todo teste desta
+// suíte que passa pela etapa gerar_imagens tentaria bater no Supabase de verdade.
+vi.mock("./imagens/armazenamento");
 
 const pautaFalsa = {
   id: "pauta-1",
@@ -829,6 +834,10 @@ describe("processarProximaPauta", () => {
       vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
       vi.mocked(inserirLinksInternos).mockResolvedValue(CONTEUDO_COM_H2.conteudoHtml);
       vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+      // Storage: sucesso por padrão (URL determinística a partir do caminho recebido) — os testes
+      // desta seção que não são sobre Storage especificamente não precisam se preocupar com isso;
+      // os testes dedicados de Storage abaixo sobrescrevem este mock quando precisam de uma falha.
+      vi.mocked(enviarImagemStorage).mockImplementation(async (_dataUrl, caminho) => ({ url: `https://storage.exemplo.com/${caminho}` }));
     }
 
     it("capa e imagem secundária aprovadas: schema com image, HTML com figure, imagemDestacadaId chega em criarRascunho, posts row com todos os campos de imagem", async () => {
@@ -864,6 +873,7 @@ describe("processarProximaPauta", () => {
             titulo: "Documentos necessários",
             legenda: "RG e CPF em mãos antes de ligar.",
             posicaoAposSecao: "depois da seção sobre documentos necessários",
+            storageUrl: null,
           },
         ],
         usage: { inputTokens: 600, outputTokens: 300 },
@@ -877,6 +887,11 @@ describe("processarProximaPauta", () => {
       expect(enviarMidia).toHaveBeenCalledWith("data:image/png;base64,AAAA", "capa-serasa.png", "Pessoa aliviada olhando boletos organizados");
       expect(enviarMidia).toHaveBeenCalledWith("data:image/png;base64,BBBB", "doc-necessarios.png", "Lista dos documentos necessários");
       expect(criarRascunho).toHaveBeenCalledWith(expect.objectContaining({ slug: "como-limpar-nome-serasa" }), "media-capa");
+
+      // Storage (follow-up 19/08/2026): mesma data URL original enviada ao WordPress, caminho
+      // namespaced por propriedade+pauta (prop-1/pauta-1, ver pautaFalsa/propriedadeFalsa).
+      expect(enviarImagemStorage).toHaveBeenCalledWith("data:image/png;base64,AAAA", "prop-1/pauta-1/capa-capa-serasa.png");
+      expect(enviarImagemStorage).toHaveBeenCalledWith("data:image/png;base64,BBBB", "prop-1/pauta-1/secundaria-doc-necessarios.png");
 
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       // Imagem secundária embutida como <figure> com a URL PÚBLICA (pós-upload), não a data URL.
@@ -895,6 +910,7 @@ describe("processarProximaPauta", () => {
           imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png",
           imagemDestaqueAlt: "Pessoa aliviada olhando boletos organizados",
           imagemDestaqueSlug: "capa-serasa",
+          imagemDestaqueStorageUrl: "https://storage.exemplo.com/prop-1/pauta-1/capa-capa-serasa.png",
           imagensSecundarias: [
             {
               url: "https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png",
@@ -903,6 +919,7 @@ describe("processarProximaPauta", () => {
               titulo: "Documentos necessários",
               legenda: "RG e CPF em mãos antes de ligar.",
               posicaoAposSecao: "depois da seção sobre documentos necessários",
+              storageUrl: "https://storage.exemplo.com/prop-1/pauta-1/secundaria-doc-necessarios.png",
             },
           ],
         }),
@@ -930,6 +947,9 @@ describe("processarProximaPauta", () => {
       expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined);
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).not.toContain('"image":');
+      // Sem capa gerada, o upload ao Storage nem é tentado (nested dentro do try de sucesso do
+      // WordPress, ver gerarEEmbutirImagens) — sem candidatas secundárias, idem.
+      expect(enviarImagemStorage).not.toHaveBeenCalled();
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
         "publicado",
@@ -937,6 +957,7 @@ describe("processarProximaPauta", () => {
           imagemDestaqueUrl: undefined,
           imagemDestaqueAlt: undefined,
           imagemDestaqueSlug: undefined,
+          imagemDestaqueStorageUrl: undefined,
           imagensSecundarias: [],
         }),
       );
@@ -967,6 +988,7 @@ describe("processarProximaPauta", () => {
             titulo: "Documentos necessários",
             legenda: "RG e CPF em mãos antes de ligar.",
             posicaoAposSecao: "depois da seção sobre documentos necessários",
+            storageUrl: null,
           },
           {
             url: "data:image/png;base64,CCCC",
@@ -975,6 +997,7 @@ describe("processarProximaPauta", () => {
             titulo: "Passo a passo",
             legenda: "Ligue e siga as instruções.",
             posicaoAposSecao: "depois da seção passo a passo",
+            storageUrl: null,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -987,15 +1010,126 @@ describe("processarProximaPauta", () => {
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).toContain("<figcaption>RG e CPF em mãos antes de ligar.</figcaption>");
       expect(corpoHtmlPublicado).not.toContain("<figcaption>Ligue e siga as instruções.</figcaption>");
+      // A imagem que falhou no WordPress nem chega a tentar o Storage (nested dentro do try de
+      // sucesso do WordPress) — só a que teve sucesso (doc-necessarios) é tentada.
+      expect(enviarImagemStorage).toHaveBeenCalledTimes(1);
+      expect(enviarImagemStorage).toHaveBeenCalledWith("data:image/png;base64,BBBB", "prop-1/pauta-1/secundaria-doc-necessarios.png");
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
         "publicado",
         expect.objectContaining({
-          imagensSecundarias: [expect.objectContaining({ slug: "doc-necessarios" })],
+          imagensSecundarias: [
+            expect.objectContaining({
+              slug: "doc-necessarios",
+              storageUrl: "https://storage.exemplo.com/prop-1/pauta-1/secundaria-doc-necessarios.png",
+            }),
+          ],
         }),
       );
       // Falha real precisa ficar distinguível no log, não só "sucesso perfeito" (brief da Task 10).
       expect(detalhesExtraidos.gerar_imagens).toContain("passo-a-passo");
+    });
+
+    // "Armadilha real" (brief do follow-up de Storage): `imagem` (e a variável de storageUrl) são
+    // reatribuídas a cada iteração do loop de secundárias em gerarEEmbutirImagens — sem uma
+    // variável NOVA por iteração, a URL de Storage de uma imagem vazaria pra outra. Duas
+    // secundárias aprovadas, uma com sucesso no Storage e outra com falha, ambas com sucesso no
+    // WordPress (senão a falha de Storage nem seria tentada).
+    it("duas imagens secundárias, uma com sucesso e outra com falha no upload ao Storage: cada uma mantém seu próprio storageUrl, sem vazamento entre iterações", async () => {
+      const enviarMidia = vi.fn().mockImplementation(async (_imagemUrl: string, nomeArquivo: string) => ({
+        idRemoto: `media-${nomeArquivo}`,
+        url: `https://teste.exemplo.com/wp-content/uploads/${nomeArquivo}`,
+      }));
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia,
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 } });
+      vi.mocked(gerarImagensSecundarias).mockResolvedValue({
+        resultado: [
+          {
+            url: "data:image/png;base64,BBBB",
+            alt: "Documentos necessários",
+            slug: "doc-necessarios",
+            titulo: "Documentos necessários",
+            legenda: "RG e CPF em mãos antes de ligar.",
+            posicaoAposSecao: "depois da seção sobre documentos necessários",
+            storageUrl: null,
+          },
+          {
+            url: "data:image/png;base64,CCCC",
+            alt: "Passo a passo",
+            slug: "passo-a-passo",
+            titulo: "Passo a passo",
+            legenda: "Ligue e siga as instruções.",
+            posicaoAposSecao: "depois da seção passo a passo",
+            storageUrl: null,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+      // Sobrescreve o stub padrão de sucesso: a primeira candidata (doc-necessarios) sobe com
+      // sucesso, a segunda (passo-a-passo) falha — exatamente o cenário que exercita a armadilha.
+      vi.mocked(enviarImagemStorage).mockImplementation(async (_dataUrl, caminho) => {
+        if (caminho.includes("passo-a-passo")) throw new Error("Storage indisponível");
+        return { url: `https://storage.exemplo.com/${caminho}` };
+      });
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({
+          imagensSecundarias: [
+            expect.objectContaining({
+              slug: "doc-necessarios",
+              storageUrl: "https://storage.exemplo.com/prop-1/pauta-1/secundaria-doc-necessarios.png",
+            }),
+            // A falha da segunda NÃO vaza pra primeira (nem o inverso): cada item carrega só o seu
+            // próprio resultado de Storage.
+            expect.objectContaining({ slug: "passo-a-passo", storageUrl: null }),
+          ],
+        }),
+      );
+    });
+
+    it("upload da capa ao Storage falha: a capa continua publicada normalmente no WordPress, storage fica null, detalhe registrado", async () => {
+      const enviarMidia = vi.fn().mockResolvedValue({ idRemoto: "media-capa", url: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png" });
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia,
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.mocked(gerarCapa).mockResolvedValue({
+        resultado: { url: "data:image/png;base64,AAAA", alt: "Alt capa", slug: "capa-serasa", titulo: "Capa Serasa" },
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+      vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 } });
+      vi.mocked(enviarImagemStorage).mockRejectedValue(new Error("Storage indisponível"));
+      const { detalhesExtraidos } = espiarRegistrarEtapa();
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      // A falha é só do Storage — a capa continua indo pro ar no WordPress normalmente.
+      expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
+        "post-1",
+        "publicado",
+        expect.objectContaining({
+          imagemDestaqueUrl: "https://teste.exemplo.com/wp-content/uploads/capa-serasa.png",
+          imagemDestaqueStorageUrl: undefined,
+        }),
+      );
+      expect(detalhesExtraidos.gerar_imagens).toContain("capa: upload ao Storage falhou");
     });
 
     it("upload da capa (enviarMidia) lança: tratado como 'sem capa', publica normalmente sem lançar", async () => {
@@ -1021,10 +1155,18 @@ describe("processarProximaPauta", () => {
       expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined);
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).not.toContain('"image":');
+      // Upload ao WordPress falhou — o Storage nem chega a ser tentado (nested dentro do try de
+      // sucesso do WordPress, ver gerarEEmbutirImagens).
+      expect(enviarImagemStorage).not.toHaveBeenCalled();
       expect(repositorio.atualizarStatusPost).toHaveBeenCalledWith(
         "post-1",
         "publicado",
-        expect.objectContaining({ imagemDestaqueUrl: undefined, imagemDestaqueAlt: undefined, imagemDestaqueSlug: undefined }),
+        expect.objectContaining({
+          imagemDestaqueUrl: undefined,
+          imagemDestaqueAlt: undefined,
+          imagemDestaqueSlug: undefined,
+          imagemDestaqueStorageUrl: undefined,
+        }),
       );
       expect(detalhesExtraidos.gerar_imagens).toContain("upload ao WordPress falhou");
     });

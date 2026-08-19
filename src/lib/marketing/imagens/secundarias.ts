@@ -374,6 +374,10 @@ export type ImagemSecundaria = {
   titulo: string;
   legenda: string;
   posicaoAposSecao: string;
+  // Cópia arquivada no Supabase Storage (follow-up 19/08/2026, "possível uso futuro") — sempre
+  // null neste ponto: o upload ao Storage acontece depois, em processar-pauta.ts
+  // (gerarEEmbutirImagens), não aqui. Ver src/lib/marketing/imagens/armazenamento.ts.
+  storageUrl: string | null;
 };
 
 /**
@@ -420,6 +424,7 @@ export async function gerarImagensSecundarias(conteudo: ConteudoGerado): Promise
             titulo: candidato.tituloImagem,
             legenda: candidato.legenda,
             posicaoAposSecao: candidato.posicaoSugerida,
+            storageUrl: null,
           });
           break;
         }

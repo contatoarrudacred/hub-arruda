@@ -11,6 +11,7 @@ import { gerarConteudo } from "./escritor";
 import { revisarConteudo } from "./revisor";
 import { criarAdaptadorWordPress, type CredenciaisWordPress } from "./canais/wordpress";
 import { decifrar } from "./criptografia";
+import { enviarImagemStorage } from "./imagens/armazenamento";
 import { gerarCapa } from "./imagens/capa";
 import { gerarImagensSecundarias, type ImagemSecundaria } from "./imagens/secundarias";
 import { inserirLinksInternos } from "./links";
@@ -226,6 +227,13 @@ type ResultadoGeracaoImagens = {
   imagemDestaqueUrl: string | null;
   imagemDestaqueAlt: string | null;
   imagemDestaqueSlug: string | null;
+  // Follow-up 19/08/2026 (pedido do Luiz): cópia arquivada no Supabase Storage, "possível uso
+  // futuro" — estritamente aditiva, nunca lida por mais nada neste pipeline hoje. Independente de
+  // imagemDestaqueUrl/Alt/Slug: aqueles 3 vêm do upload ao WORDPRESS, este vem de um upload ao
+  // STORAGE separado (ver enviarImagemStorage), que só é tentado depois que o upload ao WordPress
+  // já teve sucesso (ver gerarEEmbutirImagens abaixo) — mas o próprio upload ao Storage tem seu
+  // try/catch independente, então pode ficar null mesmo quando a capa foi publicada com sucesso.
+  imagemDestaqueStorageUrl: string | null;
   imagensSecundariasPersistir: ImagemSecundaria[];
   usage: UsageTokens;
   detalhesLog: string | undefined;
@@ -265,11 +273,28 @@ async function gerarEEmbutirImagens(
 
     let capaMediaId: string | undefined;
     let capaUrlPublica: string | null = null;
+    // Follow-up 19/08/2026 (arquivamento no Storage) — null até prova em contrário; só é preenchida
+    // dentro do try/catch de upload ao WordPress, e só quando ele já teve sucesso (ver comentário
+    // no cabeçalho de ResultadoGeracaoImagens).
+    let capaStorageUrl: string | null = null;
     if (capa.resultado) {
       try {
         const midia = await adaptador.enviarMidia(capa.resultado.url, `${capa.resultado.slug}.png`, capa.resultado.alt);
         capaMediaId = midia.idRemoto;
         capaUrlPublica = midia.url;
+
+        // Upload ao Storage — try/catch PRÓPRIO, separado do upload ao WordPress acima: uma falha
+        // aqui é uma cópia de arquivo que não foi feita, nunca deve derrubar a capa que JÁ subiu
+        // com sucesso ao WordPress (capaMediaId/capaUrlPublica já estão preenchidos nesta altura,
+        // e continuam preenchidos independente do que acontecer daqui pra baixo). Fonte é a data
+        // URL ORIGINAL da OpenAI (capa.resultado.url), não capaUrlPublica (que já é um link http,
+        // não uma data URL — teria que baixar de novo por HTTP, desnecessário).
+        try {
+          const storage = await enviarImagemStorage(capa.resultado.url, `${propriedade.id}/${pauta.id}/capa-${capa.resultado.slug}.png`);
+          capaStorageUrl = storage.url;
+        } catch (erroStorage) {
+          detalhes.push(`capa: upload ao Storage falhou (${mensagemErro(erroStorage)})`);
+        }
       } catch (erro) {
         detalhes.push(`capa: upload ao WordPress falhou (${mensagemErro(erro)})`);
       }
@@ -282,7 +307,21 @@ async function gerarEEmbutirImagens(
       const imagem = secundarias.resultado[indice];
       try {
         const midia = await adaptador.enviarMidia(imagem.url, `${imagem.slug}.png`, imagem.alt);
-        secundariasEmbutidas.push({ ...imagem, url: midia.url });
+
+        // `let` DENTRO do corpo do loop (não fora, antes do `for`) — cada iteração ganha sua
+        // própria variável; sem isso, uma URL de Storage de uma imagem vazaria pra outra candidata
+        // no array final (a mesma armadilha de reusar `imagem` entre iterações, mas para esta
+        // variável nova). Mesmo padrão de try/catch próprio e mesma fonte (data URL original, não
+        // midia.url) da capa acima.
+        let storageUrlSecundaria: string | null = null;
+        try {
+          const storage = await enviarImagemStorage(imagem.url, `${propriedade.id}/${pauta.id}/secundaria-${imagem.slug}.png`);
+          storageUrlSecundaria = storage.url;
+        } catch (erroStorage) {
+          detalhes.push(`imagem secundária ${indice + 1} (${imagem.slug}): upload ao Storage falhou (${mensagemErro(erroStorage)})`);
+        }
+
+        secundariasEmbutidas.push({ ...imagem, url: midia.url, storageUrl: storageUrlSecundaria });
       } catch (erro) {
         detalhes.push(`imagem secundária ${indice + 1} (${imagem.slug}): upload ao WordPress falhou (${mensagemErro(erro)})`);
       }
@@ -324,6 +363,7 @@ async function gerarEEmbutirImagens(
       imagemDestaqueUrl: capaUrlPublica,
       imagemDestaqueAlt: capaUrlPublica ? (capa.resultado?.alt ?? null) : null,
       imagemDestaqueSlug: capaUrlPublica ? (capa.resultado?.slug ?? null) : null,
+      imagemDestaqueStorageUrl: capaStorageUrl,
       imagensSecundariasPersistir: secundariasEmbutidas,
       usage,
       detalhesLog: detalhes.length > 0 ? detalhes.join(" | ") : undefined,
@@ -336,6 +376,7 @@ async function gerarEEmbutirImagens(
       imagemDestaqueUrl: null,
       imagemDestaqueAlt: null,
       imagemDestaqueSlug: null,
+      imagemDestaqueStorageUrl: null,
       imagensSecundariasPersistir: [],
       usage,
       detalhesLog: detalhes.join(" | "),
@@ -535,6 +576,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
           imagemDestaqueUrl: resultadoImagens.imagemDestaqueUrl ?? undefined,
           imagemDestaqueAlt: resultadoImagens.imagemDestaqueAlt ?? undefined,
           imagemDestaqueSlug: resultadoImagens.imagemDestaqueSlug ?? undefined,
+          imagemDestaqueStorageUrl: resultadoImagens.imagemDestaqueStorageUrl ?? undefined,
           imagensSecundarias: resultadoImagens.imagensSecundariasPersistir,
         });
       } catch (erroAtualizarPost) {

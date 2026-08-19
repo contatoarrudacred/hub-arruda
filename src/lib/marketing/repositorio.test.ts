@@ -4,6 +4,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  atualizarStatusPost,
   carregarAngulosUsadosPorPersona,
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
@@ -34,6 +35,7 @@ import {
 } from "./repositorio";
 import { decifrar } from "./criptografia";
 import type { ConteudoGerado, PersonaFormulario } from "./tipos";
+import type { ImagemSecundaria } from "./imagens/secundarias";
 
 vi.mock("@/lib/supabase/admin");
 
@@ -1262,6 +1264,75 @@ describe("salvarRascunho", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(salvarRascunho("pauta-1", rascunho)).rejects.toThrow(/Falha ao salvar rascunho da pauta pauta-1.*erro de teste/);
+  });
+});
+
+// Follow-up 19/08/2026 (arquivamento no Storage, "possível uso futuro") — cobre os dois campos
+// novos: imagem_destaque_storage_url (extra.imagemDestaqueStorageUrl) e a chave storage_url dentro
+// de cada item de imagens_secundarias (mapearImagemSecundariaBruta, função interna não exportada,
+// exercitada aqui só através de atualizarStatusPost).
+describe("atualizarStatusPost", () => {
+  const imagemSecundariaBase: ImagemSecundaria = {
+    url: "https://teste.exemplo.com/doc.png",
+    alt: "Alt",
+    slug: "doc",
+    titulo: "Doc",
+    legenda: "Legenda",
+    posicaoAposSecao: "depois da introdução",
+    storageUrl: null,
+  };
+
+  it("grava imagem_destaque_storage_url quando o campo vem preenchido", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {
+      imagemDestaqueStorageUrl: "https://supabase.exemplo.com/storage/v1/object/public/marketing-imagens/prop-1/pauta-1/capa-x.png",
+    });
+
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imagem_destaque_storage_url: "https://supabase.exemplo.com/storage/v1/object/public/marketing-imagens/prop-1/pauta-1/capa-x.png",
+      }),
+    );
+  });
+
+  it("NÃO grava a coluna quando o campo vem ausente (undefined) — preserva um arquivo de tentativa anterior", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {});
+
+    const chamada = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(chamada).not.toHaveProperty("imagem_destaque_storage_url");
+  });
+
+  it("NÃO grava a coluna quando o campo vem null (mesmo tratamento que undefined, mesma filosofia dos outros 3 campos de imagem)", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", { imagemDestaqueStorageUrl: null });
+
+    const chamada = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(chamada).not.toHaveProperty("imagem_destaque_storage_url");
+  });
+
+  it("imagensSecundarias: cada item ganha a chave storage_url (snake_case), presente ou null", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {
+      imagensSecundarias: [
+        { ...imagemSecundariaBase, slug: "com-storage", storageUrl: "https://storage.exemplo.com/com-storage.png" },
+        { ...imagemSecundariaBase, slug: "sem-storage", storageUrl: null },
+      ],
+    });
+
+    const chamada = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as { imagens_secundarias: Record<string, unknown>[] };
+    expect(chamada.imagens_secundarias).toEqual([
+      expect.objectContaining({ slug: "com-storage", storage_url: "https://storage.exemplo.com/com-storage.png" }),
+      expect.objectContaining({ slug: "sem-storage", storage_url: null }),
+    ]);
   });
 });
 
