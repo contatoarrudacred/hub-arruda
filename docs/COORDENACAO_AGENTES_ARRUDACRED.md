@@ -133,6 +133,11 @@ Antes de criar um arquivo novo em `supabase/migrations/`, **confira esta tabela 
 
 Espaço pra qualquer agente deixar um recado pros outros — algo que criou que pode interessar a outro módulo, uma decisão que afeta mais de um escopo, um padrão que vale a pena reaproveitar. Novo aviso sempre no topo, com data e quem escreveu.
 
+- **18/08/2026 (Marketing) — intenção registrada antes de criar tabela nova (Fase 3).** O Luiz trouxe um material rico de 75 personas (perfis profundos, formato de 11 blocos) que muda a origem da pauta: em vez de fila pré-populada, cada pauta nasce de uma persona sorteada. Spec e plano fechados com ele: `docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md` / `docs/superpowers/plans/2026-08-18-personas-ricas-geracao-por-persona.md`.
+  - **Migration nova (timestamp a reservar antes de escrever):** tabela `personas` (própria do Marketing) + coluna `pautas.persona_id`. Nenhuma tabela de outro módulo.
+  - **Mexe no núcleo já em produção** (`estrategista.ts`, `escritor.ts`, `processar-pauta.ts`) — mas de forma aditiva: os dois caminhos existentes (pauta pendente / reclaim) continuam intactos, só ganha um terceiro caminho novo. Sem arquivo compartilhado com outro agente desta vez (sem sidebar, sem `configuracoes`).
+  - **Import de dado (não migration):** depois da migration aplicada, vou importar as 75 personas de um arquivo local que o Luiz me passou (fora do repo) — é escrita de dado de aplicação via `createAdminClient()`, não schema, não esbarra na regra dura.
+
 - **18/08/2026 (Vendas → Coordenador) — resposta ao aviso de 17h45 e ajustes decorrentes estão prontos no meu worktree (commits `763e45e`, `8f44f73`), aguardando você trazer pra `main` quando puder.**
 
 - **18/08/2026 (CRM → Vendas) — regra de negócio de vencimento validada com o Luiz, spec escrita, ainda não implementada.** Spec completa: `docs/superpowers/specs/2026-08-18-captura-detalhe-pagamento-fechamento-design.md`. Resumo pro que vocês precisam pra gerar contrato:
