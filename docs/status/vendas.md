@@ -1,6 +1,6 @@
 # Status — Vendas
 
-tarefa: Sub-frente Contrato/Assinatura/Financeiro da venda concluída. Migrations aplicadas no Supabase real (confirmado por Luiz via Table Editor em 19/08/2026). Branch `vendas-contrato` no GitHub, com o main do CRM já mesclado, pronta pra ir pro main.
-desde: 2026-08-19T05:30:00-03:00
-proxima: Trazer `vendas-contrato` pro `main` (Vercel publica automaticamente). Task 17 (verificação com credenciais reais Assinafy/Asaas) fica pra quando as contas existirem.
-bloqueio: nenhum
+tarefa: Bug real de produção — Painel de Vendas (500) por migration 036 aplicada numa versão desatualizada (faltava motivo_cancelamento e outras colunas/constraints). Migration de correção escrita (20260819110000), aguardando Luiz rodar.
+desde: 2026-08-19T06:10:00-03:00
+proxima: Confirmar com Luiz que o Painel de Vendas voltou a funcionar depois da migration 038. Depois, revisitar a tela "Nova venda" (pré-existente, não integrada com o resto do fluxo novo).
+bloqueio: aguardando Luiz rodar supabase/migrations/20260819110000_vendas_corrige_contratos_desatualizado.sql

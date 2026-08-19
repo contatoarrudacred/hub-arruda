@@ -1,4 +1,13 @@
 -- ============================================================================
+-- ⚠️ SUPERSEDIDO EM 19/08/2026 — NÃO RODAR MAIS.
+-- Luiz já tinha rodado uma versão anterior da migration 036 em 18/08 (antes
+-- dela mudar de novo no mesmo dia). Rodar este arquivo agora falharia
+-- ("relation already exists"). A correção certa é
+-- supabase/migrations/20260819110000_vendas_corrige_contratos_desatualizado.sql
+-- (só ALTER, não recria nada). A migration 037 (pessoas.rg etc.) já foi
+-- rodada separadamente e está OK. Mantido só como histórico.
+-- ============================================================================
+--
 -- MIGRATIONS PENDENTES — Vendas (Contrato/Assinatura/Financeiro) — rodar no
 -- SQL Editor do Supabase. Projeto hub-arruda (mzvaqjhalynaceecnayt).
 -- Consolidado em 19/08/2026.
