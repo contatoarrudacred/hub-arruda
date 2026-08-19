@@ -143,20 +143,20 @@ export const ETAPAS_ABERTURA_TRIAGEM: DefinicaoEtapa[] = [
   {
     // Justificativa de valor + limite de tentativas — PLANO_MESTRE seção 8.12 (decisão de Luiz,
     // 17/08/2026): pedir e-mail sem dizer pra quê gerava resistência, e o checkpoint não tinha
-    // saída quando o lead recusava/insistia que não tinha. Mensagem agora explica o motivo de
-    // antemão (proposta por escrito, dicas de nome limpo/score, cupons — e pode parar de receber
-    // quando quiser); `opcional_apos_tentativas: 2` garante que nunca trava o funil.
+    // saída quando o lead recusava/insistia que não tinha. `opcional_apos_tentativas: 2` garante
+    // que nunca trava o funil.
+    // Correção 18/08/2026 (Luiz, teste ao vivo): a justificativa saía junto da pergunta, no mesmo
+    // turno, antes do lead ter chance de responder — parecia forçado. Agora só a pergunta é fixa
+    // aqui; a justificativa vira a mensagem de retomada (2ª tentativa em diante), gerada por
+    // criarResolverMensagensDinamicas com base em `dados["_tentativas:abertura_email"]` — só
+    // aparece se o lead não respondeu (ou recusou/questionou o motivo, o que também não bate como
+    // e-mail válido e cai no mesmo caminho de retomada).
     codigo: "abertura_email",
     ordem: 5,
     campoSalvo: "email",
     conteudo: {
       codigo: "abertura_email",
-      mensagens: [
-        t("Pra eu te atender melhor, me confirma também seu e-mail:"),
-        t(
-          "É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
-        ),
-      ],
+      mensagens: [t("Pra eu te atender melhor, me confirma também seu e-mail:")],
       aguarda_resposta: true,
       tipo_resposta: "email",
       proximo_codigo: "triagem_menu",
@@ -912,6 +912,18 @@ export function criarResolverMensagensDinamicas(
   config: ConfigPrecificacaoLimpaNome,
 ) {
   return (codigo: string, dados: DadosConversa): MensagemEtapa[] | null => {
+    // Justificativa do e-mail (correção 18/08/2026) — só entra na 2ª tentativa em diante, quando
+    // `dados["_tentativas:abertura_email"]` já existe (1ª resposta não reconhecida: recusa,
+    // pergunta "pra quê", ou e-mail inválido). Na 1ª pergunta esse campo ainda não existe, então
+    // cai no `null` no fim da função e usa só a pergunta fixa (conteudo.mensagens).
+    if (codigo === "abertura_email" && dados["_tentativas:abertura_email"]) {
+      return [
+        t(
+          "É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
+        ),
+      ];
+    }
+
     if (codigo === "ln_passo6") {
       const tiposLista = (dados.documentos_tipos ?? "").split(",").filter(Boolean);
       const maisDeUm = tiposLista.length > 1;

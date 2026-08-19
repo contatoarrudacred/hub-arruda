@@ -460,11 +460,18 @@ describe("regra de desvio (resposta não reconhecida)", () => {
 });
 
 describe("checkpoint opcional (opcional_apos_tentativas, PLANO_MESTRE seção 8.12)", () => {
-  it("abertura_email: 1ª tentativa não reconhecida repete a pergunta e conta a tentativa em dados", async () => {
+  it("abertura_email: pergunta inicial NÃO inclui a justificativa (correção 18/08/2026 — saía junto antes do lead poder responder)", async () => {
+    const r = await responder("abertura_telefone", {}, "11988887777");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("abertura_email");
+    expect(r.mensagens.some((m) => txt(m).includes("proposta por escrito"))).toBe(false);
+  });
+
+  it("abertura_email: 1ª tentativa não reconhecida repete a pergunta, MOSTRA a justificativa, e conta a tentativa em dados", async () => {
     const r = await responder("abertura_email", {}, "pra que vocês querem meu e-mail?");
     expect(r.naoReconhecido).toBe(true);
     expect(r.etapaFinal?.conteudo.codigo).toBe("abertura_email");
     expect(r.dadosNovos["_tentativas:abertura_email"]).toBe("1");
+    expect(r.mensagens.some((m) => txt(m).includes("proposta por escrito"))).toBe(true);
   });
 
   it("abertura_email: desiste na 2ª tentativa e segue em frente com e-mail vazio, sem travar o funil", async () => {

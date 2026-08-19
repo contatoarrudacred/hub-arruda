@@ -417,7 +417,13 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     const desiste = conteudo.opcional_apos_tentativas != null && tentativas >= conteudo.opcional_apos_tentativas;
 
     if (!desiste) {
-      const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? undefined;
+      // Passa o contador já incrementado pro resolver dinâmico — sem isso, a 1ª retomada via
+      // resolverMensagensDinamicas via `dados` idêntico ao da entrada nova no checkpoint (o
+      // contador só é persistido em `dadosNovos` no final deste bloco), impossibilitando um
+      // checkpoint distinguir "primeira pergunta" de "retomada" (achado real, 18/08/2026 —
+      // abertura_email mostrava a justificativa do e-mail junto da pergunta, na 1ª vez).
+      const dadosComTentativas = { ...dados, [chaveTentativas]: String(tentativas) };
+      const dinamicas = resolverMensagensDinamicas?.(conteudo.codigo, dadosComTentativas) ?? undefined;
       const retomada = substituirVariaveisMensagem(
         mensagemRetomada(conteudo, dinamicas ?? undefined),
         dados,
