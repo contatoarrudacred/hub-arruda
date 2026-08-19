@@ -30,7 +30,16 @@ Depois das 18 tasks implementadas e revisadas individualmente, rodei uma revisã
 
 Mais 4 achados Important corrigidos junto (migration não-idempotente; nome do Leitor de Documento IA sendo apagado; debounce/guarda de resposta obsoleta perdidos na busca por documento; card do Kanban sem indicador visual de erro).
 
-**Pendências que ficaram, registradas — não bloqueiam, mas valem revisitar:**
+**Re-revisão focada nos fixes (mesmo dia)** encontrou 2 achados Important novos — expostos justamente pela correção do Critical 2 (botão de retry agora fácil de clicar, o que tornou alcançável um caminho antes inatingível na prática) — corrigidos no commit `58ef970`:
+- Retentativa manual do boleto/pix podia recriar cobranças já emitidas com sucesso na Asaas antes de uma falha no meio do lote de parcelas (risco de boleto duplicado pro cliente). Corrigido: `contrato_parcelas.asaas_payment_id` agora é lido de volta e o loop pula parcela já cobrada.
+- Parcelamento do cartão sem limite de 1-21 (regra da Asaas) em nenhuma ponta — um valor fora da faixa só falharia depois do contrato assinado. Validado no client e no server, nas duas telas.
+Mais 3 Minors baratos corrigidos junto (indicador "Buscando..." podia ficar preso; card vermelho do Kanban com mesmo fundo do normal no tema escuro; `cancelarVenda` não limpava `ultimo_erro`, deixando venda cancelada aparecer vermelha na coluna errada).
+
+**Pendências que sobraram desta última rodada (Minor, não corrigidas — baixo risco):**
+- Se a busca por documento do Leitor de Documento IA falhar (erro de rede/server), o nome e endereço já extraídos pela IA se perdem (o `await` aborta o callback antes de aplicá-los) — precisa de um `try/catch` em volta.
+- O timer de debounce (300ms) da busca por documento não é cancelado quando o Leitor de Documento IA dispara uma busca direta dentro dessa janela — cenário raro (usuário digita e usa o leitor quase ao mesmo tempo).
+
+**Pendências mais antigas, registradas — não bloqueiam, mas valem revisitar:**
 - **Status transitório "aguardando_assinaturas" quando `ASAAS_API_KEY` não está configurada:** o webhook da Assinafy grava esse status ao confirmar assinatura e só avança pra "gerando_financeiro" se a chave da Asaas existir. Sem ela (estado atual), um contrato assinado fica visualmente indistinguível de um não-assinado, sem erro registrado. Auto-resolve quando o Luiz configurar a conta Asaas real — registrado aqui pra não surpreender ninguém antes disso.
 - **Cadeia PDF+Assinafy sem `maxDuration` explícito nas rotas de Vendas:** se `tentarEmitirContrato` (Puppeteer + upload + Assinafy) estourar o timeout padrão da função, o contrato pode ficar em `emitindo_contrato` sem erro registrado (a função morre no meio, antes do catch rodar). Mitigação futura: mover pra `after()` (padrão já usado nos webhooks) e/ou exportar `maxDuration`. Não corrigido nesta passada — mudança de arquitetura maior, melhor como item isolado.
 - Diversos Minors de polimento (feedback de quantos cards foram retentados em lote; `Record<string,string>` sem exaustividade em `FORMA_PAGAMENTO_LABEL`; logs de debug com dado sensível ainda em `fechamento/actions.ts`) — ver relatório completo da revisão em `.superpowers/sdd/2026-08-19-vendas-nova-oportunidade-kanban/` (workspace local, não versionado).
