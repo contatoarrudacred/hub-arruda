@@ -110,7 +110,7 @@ export function FechamentoVendaClient({
 
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const [resultado, setResultado] = useState<{ pdfUrl: string } | null>(null);
+  const [resultado, setResultado] = useState<{ pdfUrl: string | null } | null>(null);
 
   async function buscarRepresentante(doc: string) {
     const idAtual = ++buscaRepIdRef.current;
@@ -198,10 +198,16 @@ export function FechamentoVendaClient({
   if (resultado) {
     return (
       <div className="max-w-2xl space-y-3 p-8">
-        <p className="text-sm text-emerald-700 dark:text-emerald-400">✓ Contrato gerado.</p>
-        <a href={resultado.pdfUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline dark:text-blue-400">
-          Abrir PDF do contrato
-        </a>
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">✓ Venda registrada.</p>
+        {resultado.pdfUrl ? (
+          <a href={resultado.pdfUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline dark:text-blue-400">
+            Abrir PDF do contrato
+          </a>
+        ) : (
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            PDF ainda sendo gerado (ou precisou de retentativa) — acompanhe na tela de Detalhes da Venda.
+          </p>
+        )}
       </div>
     );
   }

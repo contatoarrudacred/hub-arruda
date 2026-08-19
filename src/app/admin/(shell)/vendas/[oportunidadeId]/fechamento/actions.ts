@@ -1,25 +1,18 @@
 "use server";
 
 import { calcularParcelasContrato, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
+import { buscarTemplateAtivoPorProduto } from "@/lib/vendas/contrato-templates";
 import {
-  montarDadosClienteHtml,
-  montarListaDocumentosHtml,
-  montarTabelaVencimentosHtml,
-  resolverPlaceholders,
-  buscarTemplateAtivoPorProduto,
-  type PessoaContrato,
-} from "@/lib/vendas/contrato-templates";
-import {
-  atualizarStatusContrato,
+  buscarContratoPorId,
   buscarPessoaArrudaCredSignatario,
   criarContrato,
   type FormaPagamento,
   type MetodoPagamento,
 } from "@/lib/vendas/contratos";
 import { salvarEndereco, type EntradaSalvarEndereco } from "@/lib/vendas/endereco";
-import { gerarPdfContrato, gerarUrlAssinadaContrato, uploadPdfContrato } from "@/lib/vendas/geracao-pdf";
+import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
 import { buscarDetalhePagamentoCrm, buscarOportunidadeParaFechamento, salvarDocumentosPacote } from "@/lib/vendas/oportunidades";
-import { atualizarDadosContratoPessoa, buscarPessoaCompleta, buscarPessoaPorDocumento, resolverOuCriarPessoa } from "@/lib/vendas/pessoas";
+import { atualizarDadosContratoPessoa, buscarPessoaPorDocumento, resolverOuCriarPessoa } from "@/lib/vendas/pessoas";
 import { definirRepresentante } from "@/lib/vendas/pessoa-representantes";
 import { tipoPessoaPorDocumento } from "@/lib/vendas/documento";
 
@@ -75,22 +68,8 @@ export type EntradaConfirmarFechamento = {
 };
 
 export type ResultadoConfirmarFechamento =
-  | { sucesso: true; contratoId: string; pdfUrl: string }
+  | { sucesso: true; contratoId: string; pdfUrl: string | null }
   | { sucesso: false; erro: string };
-
-const FORMA_PAGAMENTO_LABEL: Record<MetodoPagamento, string> = { boleto_pix: "Boleto/Pix", cartao: "Cartão de crédito" };
-
-function enderecoParaTexto(endereco: EnderecoEntrada | null): string | null {
-  if (!endereco || !endereco.logradouro) return null;
-  const partes = [
-    `${endereco.logradouro}${endereco.numero ? `, ${endereco.numero}` : ""}`,
-    endereco.complemento || null,
-    endereco.bairro || null,
-    endereco.cidade && endereco.uf ? `${endereco.cidade}/${endereco.uf}` : null,
-    endereco.cep ? `CEP ${endereco.cep}` : null,
-  ].filter(Boolean);
-  return partes.join(" - ");
-}
 
 async function salvarEnderecoSeInformado(pessoaId: string, endereco: EnderecoEntrada | null): Promise<void> {
   if (!endereco || !endereco.logradouro) return;
@@ -106,22 +85,6 @@ async function salvarEnderecoSeInformado(pessoaId: string, endereco: EnderecoEnt
     uf: endereco.uf,
   };
   await salvarEndereco(entrada);
-}
-
-async function montarPessoaContrato(pessoaId: string, endereco: EnderecoEntrada | null): Promise<PessoaContrato> {
-  const pessoa = await buscarPessoaCompleta(pessoaId);
-  if (!pessoa) throw new Error("Pessoa não encontrada.");
-  return {
-    tipoPessoa: pessoa.tipoPessoa,
-    nomeRazaoSocial: pessoa.nomeRazaoSocial,
-    documento: pessoa.documento,
-    email: pessoa.email,
-    whatsapp: pessoa.whatsapp,
-    endereco: enderecoParaTexto(endereco),
-    rg: pessoa.rg,
-    estadoCivil: pessoa.estadoCivil,
-    profissao: pessoa.profissao,
-  };
 }
 
 export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechamento): Promise<ResultadoConfirmarFechamento> {
@@ -197,23 +160,17 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
       return { sucesso: false, erro: `A soma das parcelas (${somaParcelas}) não bate com o valor total (${valorTotalArredondado}).` };
     }
 
-    // 4) Monta os blocos HTML e resolve o template
-    const pessoaSignatario = await montarPessoaContrato(entrada.pessoaId, entrada.endereco);
-    const representante = representanteId ? await montarPessoaContrato(representanteId, entrada.representante?.endereco ?? null) : null;
-
-    const html = resolverPlaceholders(template.conteudoHtml, {
-      dadosCliente: montarDadosClienteHtml(pessoaSignatario, representante),
-      valorTotal: oportunidade.valorEstimado,
-      formaPagamento: FORMA_PAGAMENTO_LABEL[metodoPagamento],
-      tabelaVencimentos: parcelas.length > 1 ? montarTabelaVencimentosHtml(parcelas, FORMA_PAGAMENTO_LABEL[metodoPagamento]) : "",
-      listaDocumentos: montarListaDocumentosHtml(documentosValidos.map((d) => ({ documento: d.documento, nomeRazaoSocial: d.nomeRazaoSocial }))),
-    });
-
-    // 5) Cria o contrato + parcelas
+    // 4) Cria o contrato + parcelas — o HTML do contrato não é mais montado aqui: tentarEmitirContrato
+    // (Step 5 abaixo) reconstrói tudo a partir do banco via montarHtmlContrato, igual à Nova Oportunidade.
     const { contratoId } = await criarContrato({
       oportunidadeId: entrada.oportunidadeId,
       contratoTemplateId: template.id,
-      pessoaSignatarioId: representanteId ?? entrada.pessoaId,
+      // Sempre a pessoa resolvida (PF ou PJ) — nunca o representante. montarHtmlContrato (chamado
+      // por tentarEmitirContrato logo abaixo) decide sozinho, a partir do tipoPessoa de
+      // pessoaSignatarioId, se busca um representante via pessoa_representantes (definirRepresentante
+      // já gravou esse vínculo acima, chaveado pelo id da PJ) — gravar aqui o id do representante
+      // quebraria essa busca e faria o PDF sair sem razão social/CNPJ da empresa.
+      pessoaSignatarioId: entrada.pessoaId,
       pessoaArrudaCredSignatarioId: pessoaArrudaCredId,
       fornecedorId: null,
       formaPagamento,
@@ -222,23 +179,13 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
       parcelas,
     });
 
-    // 6) Gera o PDF e sobe pro Storage
-    const pdf = await gerarPdfContrato(html);
-    const { path } = await uploadPdfContrato(contratoId, pdf);
-    const pdfUrl = await gerarUrlAssinadaContrato(path);
-    await atualizarStatusContrato(contratoId, "emitindo_contrato", { pdfUrl: path });
+    // 5) Gera o PDF (com retry automático) e encadeia envio à Assinafy — mesma orquestração usada
+    // pela Nova Oportunidade, agora que o contrato já nasce em "nova_oportunidade" no Step 4.
+    const { tentarEmitirContrato } = await import("@/lib/vendas/progressao");
+    await tentarEmitirContrato(contratoId);
 
-    // 7) Avança sozinho pra assinatura eletrônica quando a Assinafy já estiver configurada — sem
-    // conta ainda (ASSINAFY_API_KEY vazia), a venda só fica parada em "emitindo_contrato" até
-    // alguém rodar isso manualmente depois (não quebra o Fechamento de Venda por causa disso).
-    if (process.env.ASSINAFY_API_KEY) {
-      try {
-        const { enviarContratoParaAssinatura } = await import("@/lib/assinafy/adapter");
-        await enviarContratoParaAssinatura(contratoId);
-      } catch (erroAssinafy) {
-        console.error("Contrato gerado, mas falhou ao enviar pra assinatura:", erroAssinafy);
-      }
-    }
+    const contratoAtualizado = await buscarContratoPorId(contratoId);
+    const pdfUrl = contratoAtualizado?.pdfUrl ? await gerarUrlAssinadaContrato(contratoAtualizado.pdfUrl) : null;
 
     return { sucesso: true, contratoId, pdfUrl };
   } catch (erro) {
