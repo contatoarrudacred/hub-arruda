@@ -136,6 +136,33 @@ Vale pra **qualquer** tela que cadastra/edita uma Pessoa neste sistema (Forneced
 - **O que Vendas garante:** quando `oportunidades.etapa_kanban = 'ganha'` (produtos `proprio`/`subcontratado`), a Oportunidade já carrega tudo que uma futura `ordens_servico` vai precisar consumir — Pessoa (via `oportunidades.pessoa_id`), Produto (via `oportunidades.produto_id`), e o Fornecedor já escolhido na venda quando aplicável (via `contratos.fornecedor_id`, ver 3.2). Isso é suficiente pro módulo Operação, quando existir, migrar/consumir sem depender de retrabalho em Vendas.
 - Produtos `comissionado` **não** entram nesse handoff (seção 3.4) — sem execução da ArrudaCred, não há OS a criar.
 
+### 3.6 Painel de Vendas (decidido com o Luiz em 19/08/2026)
+
+**A UI do módulo não nasce direto na tela de Fechamento de Venda — tudo começa num "Painel de Vendas"**, com visualização em lista ou Kanban, que dá visibilidade de toda venda em andamento e serve de porta de entrada pra "Nova venda" e "Detalhes da venda".
+
+**Ponto central, confirmado explicitamente com o Luiz: existem DOIS Kanbans diferentes, sem nenhuma relação de leitura entre si.**
+- **Kanban do CRM** (`oportunidades.etapa_kanban`, `src/lib/motor-fluxo/kanban.ts`) — funil de atendimento da Malala, do primeiro contato até `ganha`/`perdida`. Território do CRM; Vendas nunca lê nem depende dele pra tomar decisão.
+- **Kanban de Vendas (Painel de Vendas, este aqui)** — o estágio da venda em si, guardado em `contratos.status` (tabela 100% do Vendas). Só existe *depois* que a Oportunidade chega em `dados_contrato`.
+- **Uma venda originada no CRM aparece nos dois ao mesmo tempo** — a Malala segue conversando com o lead até o fim (precisa saber em que pé está), e a equipe de vendas/operação acompanha pelo Painel de Vendas. Não é dado duplicado: é a mesma venda, vista por duas equipes, em dois quadros com granularidade diferente. **Sincronização é unidirecional** — Vendas empurra uma atualização pontual pro `etapa_kanban` nos marcos-chave (contrato assinado → `pagamento`; 1ª parcela paga → `ganha`; venda cancelada → `perdida`), exatamente como já estava desenhado nos webhooks de Assinafy/Asaas (seção 3.2/3.3) — o CRM nunca escreve nem lê `contratos.status`.
+- **Venda sem funil prévio (criada direto pelo Vendas, sem passar pela Malala) NÃO aparece no Kanban nem em nenhum registro do CRM** — só no Painel de Vendas. O sinal que diferencia as duas origens já existe sem precisar de coluna nova: `criarOportunidadeSemFunilPrevio` nunca cria uma linha em `conversas`, então "existe `conversas.oportunidade_id` pra essa Oportunidade" é a query que o Kanban do CRM usa pra filtrar. Pedido já registrado pro CRM aplicar esse filtro (`docs/COORDENACAO_AGENTES_ARRUDACRED.md`, urgente porque o Kanban deles está em construção).
+
+**Estágios do Kanban de Vendas** (`contratos.status`, 100% automático entre `contrato_gerado` e `parcelas_emitidas` — sem ação humana, avança sozinho em segundos):
+
+| Estágio | O que acontece |
+|---|---|
+| `contrato_gerado` | PDF do contrato pronto (Fechamento de Venda concluído) |
+| `aguardando_assinatura` | Enviado à Assinafy — Painel Interativo mostra quem já assinou / falta assinar |
+| `assinado` | Todos assinaram (cliente + ArrudaCred — auto-assinatura da ArrudaCred a confirmar na API, ver seção 8) |
+| `parcelas_emitidas` | Cobrança criada na Asaas |
+| `aguardando_pagamento` | Link de pagamento reenviado por WhatsApp/e-mail (Camada de Adaptadores de Canal, seção 4) — cartão cobra tudo de uma vez (parcelado em N no cartão), boleto cobra só a 1ª parcela por vez |
+| `concluida` | 1ª parcela paga (webhook Asaas) — dispara promoção a cliente + handoff (seção 3.5) |
+| `cancelada` | Cliente desistiu antes de assinar, ou assinou e não pagou — motivo livre em `contratos.motivo_cancelamento` |
+
+**Telas:**
+- **Painel de Vendas** (`/admin/vendas`) — lista ou Kanban (toggle), todas as vendas com estágio visível. Cada linha/card tem menu de ações: **Detalhes**, **Cancelar**, **Excluir** (Excluir é ação de admin — remove só o registro do Vendas, contrato+parcelas via cascade, nunca a Oportunidade/dado do CRM). Botão "Nova venda" abre `/admin/vendas/nova` (já existe).
+- **Detalhes da Venda** (`/admin/vendas/[oportunidadeId]`) — visão completa da venda. Antes do contrato existir, permite editar (link pra `/fechamento`). Depois de gerado, mostra um **"Painel Interativo"** que muda de acordo com o estágio atual — nos estágios de assinatura/pagamento, é o retrato ao vivo do que a Assinafy/Asaas estão reportando (quem assinou, status da cobrança), não só um texto estático.
+- Telas devem ser amigáveis, limpas, com tooltips ajudando a entender cada estágio — sem exigir que o usuário conheça o "por trás" do sistema pra usar.
+
 ---
 
 ## 4. Integração com o CRM (Tela de Atendimento)
@@ -193,5 +220,7 @@ dados_contrato completo (nome, documento — fornecedor já é implícito via pr
 1. Migração do dado existente `produtos.tipo = 'terceiro'` para `subcontratado`/`comissionado` — precisa decidir caso a caso (Consórcio/Crédito → comissionado; se algum "terceiro" hoje for na real subcontratado, mover).
 2. Texto exato dos templates de contrato por produto — ainda não escrito, fica para quando a frente entrar em implementação.
 3. Confirmação do fornecedor em produto comissionado é manual nesta fase (sem API por administradora) — revalidar se algum fornecedor específico expõe integração própria antes de implementar.
-4. Superfície de tela pra operar oportunidades em fechamento (lista simples vs. esperar o Kanban visual) — decisão de implementação, não de produto.
+4. ~~Superfície de tela pra operar oportunidades em fechamento~~ — **resolvido em 19/08/2026, ver seção 3.6**: Painel de Vendas (lista/Kanban) + Detalhes da Venda, telas dedicadas do Vendas.
 5. Pedido em aberto no CRM (registrado em `docs/COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, 18/08/2026) pra capturar `metodo_pagamento`/parcelas/vencimentos nativamente no bot — acompanhar a resposta deles; não bloqueia a tela de Fechamento de Venda (3.2.1), que resolve a lacuna independente disso.
+6. Pedido urgente em aberto no CRM (registrado 19/08/2026) pra filtrar o Kanban dele por `conversas.oportunidade_id` — vendas sem funil prévio não podem aparecer lá (ver seção 3.6).
+7. **Assinatura automática da ArrudaCred na Assinafy** — o Luiz quer que, assim que o cliente assinar, a ArrudaCred assine sozinha (sem humano abrir o link) via API. Ainda não confirmado se a Assinafy permite isso pro signatário fixo — primeira coisa a verificar na doc/API quando chegar em Assinafy (Task 9/10). Se não der, o signatário da ArrudaCred assina manualmente como qualquer outro (o fluxo automático dos demais estágios não muda).
