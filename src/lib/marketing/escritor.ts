@@ -75,7 +75,15 @@ function montarPrompt(pauta: PautaCarregada, checklist: ItemChecklistCarregado[]
           "",
           `Motivo da reprovação: ${pauta.motivoUltimaReprovacao}`,
           "",
+          // Os quatro campos da versão anterior — não só título/HTML — porque o Revisor avalia
+          // meta_title/meta_description junto do resto (revisor.ts monta o prompt dele com os
+          // quatro campos do ConteudoGerado); uma reprovação por "meta title longo demais" sem o
+          // meta title anterior aqui obrigaria o Escritor a adivinhar o valor problemático em vez
+          // de editá-lo (achado da revisão desta mesma task).
           `Título da versão anterior: ${pauta.ultimoRascunho.titulo}`,
+          `Meta title da versão anterior: ${pauta.ultimoRascunho.metaTitle}`,
+          `Meta description da versão anterior: ${pauta.ultimoRascunho.metaDescription}`,
+          `Slug da versão anterior: ${pauta.ultimoRascunho.slug}`,
           `HTML da versão anterior:\n"""\n${pauta.ultimoRascunho.conteudoHtml}\n"""`,
         ].join("\n")
       : pauta.motivoUltimaReprovacao

@@ -241,6 +241,12 @@ describe("gerarConteudo", () => {
     expect(promptEnviado).toContain("Meta title com 62 caracteres, acima do limite de 60.");
     expect(promptEnviado).toContain("Título da versão anterior");
     expect(promptEnviado).toContain("<h1>Título da versão anterior</h1><p>Corpo da versão anterior.</p>");
+    // Achado da revisão desta task: sem os campos de meta da versão anterior, uma reprovação
+    // especificamente sobre meta title/description obrigaria o Escritor a adivinhar o valor
+    // problemático em vez de editá-lo — os quatro campos precisam estar presentes, não só HTML.
+    expect(promptEnviado).toContain("Meta title anterior, longo demais pro limite de sessenta");
+    expect(promptEnviado).toContain("Meta description anterior.");
+    expect(promptEnviado).toContain("titulo-da-versao-anterior");
     // O texto genérico "nova tentativa... corrigir especificamente isso" (sem o rascunho) NÃO deve
     // aparecer — prova que é um branch diferente, não os dois blocos concatenados.
     expect(promptEnviado).not.toContain("Esta é uma nova tentativa — a versão anterior deste post foi reprovada pelo Revisor pelo seguinte motivo, e esta versão precisa corrigir especificamente isso:");
