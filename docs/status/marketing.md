@@ -1,6 +1,6 @@
 # Status — Marketing
 
-tarefa: Fase 3 completa + validação end-to-end real em produção (6 ciclos reais, 2 personas). 3 gaps achados e corrigidos: credencial WP do banco não era lida, checklist com itens impossíveis pro 1º post (desativados pra arrudacred.com.br), e loop de correção cego (Escritor agora recebe o rascunho anterior + motivo específico e revisa em vez de reescrever — pedido do Luiz). 382/382 testes.
-desde: 2026-08-19T05:00:00-03:00
-proxima: migration 20260819100000 (pautas.ultimo_rascunho) escrita, aguardando o Luiz rodar no SQL Editor; depois disso, testar de novo se o modo de revisão reduz reprovações
+tarefa: Fase 3 completa + validada end-to-end em produção. Fase 4 (YMYL/E-E-A-T + geração de imagens) planejada com o Luiz: auditoria SEO/YMYL registrada como pendência, specs de imagem (capa+secundárias) recebidas e preservadas no repo, fornecedor decidido (Claude pro texto/revisor de imagem, OpenAI GPT Image 2 pros pixels), gap de metadados de imagem (ALT/slug/legenda) apontado pelo Luiz e registrado. Nenhum código da Fase 4 iniciado ainda — só planejamento/documentação.
+desde: 2026-08-19T06:00:00-03:00
+proxima: migration 20260819100000 (pautas.ultimo_rascunho) aguardando o Luiz aplicar; depois, decidir com ele se escreve spec formal da Fase 4 (YMYL/E-E-A-T + imagens) ou segue com outro trabalho primeiro
 bloqueio: aguardando o Coordenador mesclar a branch em main (pedido já no INBOX) + aguardando o Luiz aplicar a migration 20260819100000
