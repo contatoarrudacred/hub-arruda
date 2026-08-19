@@ -1,12 +1,22 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
 import { LeitorDocumentoIA } from "@/components/vendas/leitor-documento-ia";
+import { UploadDocumentosPessoa } from "@/components/vendas/upload-documentos-pessoa";
+import { calcularParcelasContrato, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { tipoPessoaPorDocumento } from "@/lib/vendas/documento";
 import type { ProdutoParaVenda } from "@/lib/vendas/produtos";
-import { buscarPessoaPorDocumentoAction, buscarRazaoSocialAction, type ResultadoBuscarPessoa } from "./actions";
+import {
+  buscarPessoaPorDocumentoAction,
+  buscarRazaoSocialAction,
+  confirmarNovaOportunidadeAction,
+  type EntradaConfirmarNovaOportunidade,
+  type EntradaFinanceiro,
+  type ResultadoBuscarPessoa,
+} from "./actions";
 
 const campo =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50";
@@ -17,15 +27,45 @@ type DadosContratoForm = { nome: string; email: string; whatsapp: string; rg: st
 
 const dadosContratoVazios: DadosContratoForm = { nome: "", email: "", whatsapp: "", rg: "", estadoCivil: "", profissao: "" };
 
+type DocumentoPacoteForm = { documento: string; nomeRazaoSocial: string };
+
+/**
+ * Soma das parcelas em centavos == valor total em centavos — mesma lógica de arredondamento usada
+ * em `fechamento/actions.ts` (seção "3) Resolve forma de pagamento + parcelas"), reaplicada no
+ * client pra pegar divergência antes do round-trip pro servidor.
+ */
+function somaParcelasBateComTotal(parcelas: Parcela[], valorTotal: number): boolean {
+  const somaParcelas = Math.round(parcelas.reduce((acc, p) => acc + p.valor, 0) * 100) / 100;
+  const valorTotalArredondado = Math.round(valorTotal * 100) / 100;
+  return somaParcelas === valorTotalArredondado;
+}
+
 export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVenda[] }) {
+  const router = useRouter();
+
   const [produtoId, setProdutoId] = useState("");
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) ?? null;
+  const ehComissionado = produtoSelecionado?.tipo === "comissionado";
 
   const [documento, setDocumento] = useState("");
   const [pessoaId, setPessoaId] = useState<string | null>(null);
   const [dadosContrato, setDadosContrato] = useState<DadosContratoForm>(dadosContratoVazios);
   const [endereco, setEndereco] = useState<ValorEndereco>(enderecoVazio);
   const [buscandoPessoa, setBuscandoPessoa] = useState(false);
+
+  const [pacote, setPacote] = useState<DocumentoPacoteForm[]>([]);
+
+  const [valorTotal, setValorTotal] = useState("");
+
+  const [especiePagamento, setEspeciePagamento] = useState<"boleto_pix" | "cartao">("boleto_pix");
+  const [formaPagamento, setFormaPagamento] = useState<"avista" | "parcelado">("avista");
+  const [primeiraParcela, setPrimeiraParcela] = useState("");
+  const [qtdParcelas, setQtdParcelas] = useState("2");
+  const [diaAncora, setDiaAncora] = useState<DiaAncora>(10);
+  const [maxParcelasCartao, setMaxParcelasCartao] = useState("12");
+
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
 
   async function aoDigitarDocumento(valor: string) {
     const formatado = formatarCpfCnpj(valor);
@@ -55,6 +95,104 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
       }
     }
     setBuscandoPessoa(false);
+  }
+
+  function adicionarDocumentoPacote() {
+    setPacote((atual) => [...atual, { documento: "", nomeRazaoSocial: "" }]);
+  }
+
+  function removerDocumentoPacote(indice: number) {
+    setPacote((atual) => atual.filter((_, i) => i !== indice));
+  }
+
+  function atualizarDocumentoPacote(indice: number, campoAlterado: "documento" | "nomeRazaoSocial", valor: string) {
+    setPacote((atual) =>
+      atual.map((d, i) => (i === indice ? { ...d, [campoAlterado]: campoAlterado === "documento" ? formatarCpfCnpj(valor) : valor } : d)),
+    );
+  }
+
+  async function confirmar() {
+    setErro(null);
+
+    if (!produtoId) {
+      setErro("Selecione o serviço.");
+      return;
+    }
+    if (!pessoaId && !dadosContrato.nome.trim()) {
+      setErro("Informe o nome completo/razão social de quem assina o contrato.");
+      return;
+    }
+
+    const valorTotalNumero = valorTotal.trim() ? Number(valorTotal.replace(",", ".")) : null;
+
+    let financeiro: EntradaFinanceiro | null = null;
+    if (!ehComissionado) {
+      if (valorTotalNumero === null || Number.isNaN(valorTotalNumero) || valorTotalNumero <= 0) {
+        setErro("Informe o valor total do serviço.");
+        return;
+      }
+      if (!primeiraParcela && especiePagamento === "boleto_pix") {
+        setErro("Informe a data da 1ª parcela.");
+        return;
+      }
+
+      if (especiePagamento === "boleto_pix") {
+        financeiro = {
+          especie: "boleto_pix",
+          formaPagamento,
+          primeiraParcela,
+          qtdParcelas: formaPagamento === "avista" ? 1 : Number(qtdParcelas),
+          diaAncora,
+        };
+
+        // Validação de soma de parcelas == valor total antes de submeter (evita round-trip só pra
+        // descobrir que não bate) — mesma lógica de arredondamento em centavos do Fechamento de Venda.
+        const parcelas: Parcela[] =
+          formaPagamento === "avista"
+            ? [{ numero: 1, valor: valorTotalNumero, vencimento: new Date(primeiraParcela) }]
+            : calcularParcelasContrato(valorTotalNumero, Number(qtdParcelas), new Date(primeiraParcela), diaAncora);
+        if (!somaParcelasBateComTotal(parcelas, valorTotalNumero)) {
+          setErro("A soma das parcelas não bate com o valor total.");
+          return;
+        }
+      } else {
+        const maxParcelas = Number(maxParcelasCartao);
+        if (!Number.isInteger(maxParcelas) || maxParcelas < 1) {
+          setErro("Informe um número válido de parcelas máximas do cartão.");
+          return;
+        }
+        financeiro = { especie: "cartao", maxParcelas };
+      }
+    }
+
+    setEnviando(true);
+    try {
+      const entrada: EntradaConfirmarNovaOportunidade = {
+        produtoId,
+        pessoaId,
+        pessoaNova: pessoaId ? null : { nome: dadosContrato.nome, documento },
+        dadosContrato: {
+          email: dadosContrato.email,
+          whatsapp: dadosContrato.whatsapp,
+          rg: dadosContrato.rg,
+          estadoCivil: dadosContrato.estadoCivil,
+          profissao: dadosContrato.profissao,
+        },
+        endereco: endereco.logradouro ? endereco : null,
+        pacote,
+        valorTotal: valorTotalNumero,
+        financeiro,
+      };
+
+      const resultado = await confirmarNovaOportunidadeAction(entrada);
+      if (!resultado.sucesso) {
+        setErro(resultado.erro);
+        return;
+      }
+      router.push(`/admin/vendas/${resultado.oportunidadeId}`);
+    } finally {
+      setEnviando(false);
+    }
   }
 
   return (
@@ -142,8 +280,131 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         <CampoEndereco value={endereco} onChange={setEndereco} />
       </div>
 
-      {/* Seções de pacote de documentos e financeiro entram na Task 13 — pessoaId acima já fica
-          pronto pra ser consumido pelo submit final daquela task. */}
+      {produtoSelecionado?.exigeListaDocumentos && (
+        <div className={secao}>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Pacote de documentos</h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Este serviço cobre mais de um CPF/CNPJ no mesmo contrato (ex.: cônjuge, empresa do cliente). Adicione cada um abaixo.
+          </p>
+          {pacote.map((doc, indice) => (
+            <div key={indice} className="flex gap-2">
+              <input
+                className={campo}
+                placeholder="CPF ou CNPJ"
+                value={doc.documento}
+                onChange={(e) => atualizarDocumentoPacote(indice, "documento", e.target.value)}
+              />
+              <input
+                className={campo}
+                placeholder="Nome completo ou razão social"
+                value={doc.nomeRazaoSocial}
+                onChange={(e) => atualizarDocumentoPacote(indice, "nomeRazaoSocial", e.target.value)}
+              />
+              <button type="button" onClick={() => removerDocumentoPacote(indice)} className="px-2 text-sm text-red-600 dark:text-red-400">
+                ✕
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={adicionarDocumentoPacote} className="text-sm text-blue-600 dark:text-blue-400">
+            + Adicionar documento
+          </button>
+        </div>
+      )}
+
+      {produtoId && (
+        <div className={secao}>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Valor</h2>
+          <label className={rotulo}>Valor total do serviço</label>
+          <input
+            className={campo}
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="0,00"
+            value={valorTotal}
+            onChange={(e) => setValorTotal(e.target.value)}
+          />
+        </div>
+      )}
+
+      {produtoId && !ehComissionado && (
+        <div className={secao}>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Pagamento</h2>
+          <div className="flex gap-2">
+            <select
+              className={campo}
+              value={especiePagamento}
+              onChange={(e) => setEspeciePagamento(e.target.value as "boleto_pix" | "cartao")}
+            >
+              <option value="boleto_pix">Boleto/Pix</option>
+              <option value="cartao">Cartão de crédito</option>
+            </select>
+            {especiePagamento === "boleto_pix" && (
+              <select className={campo} value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value as "avista" | "parcelado")}>
+                <option value="avista">À vista</option>
+                <option value="parcelado">Parcelado</option>
+              </select>
+            )}
+          </div>
+
+          {especiePagamento === "boleto_pix" ? (
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className={rotulo}>Data da 1ª parcela</label>
+                <input className={campo} type="date" value={primeiraParcela} onChange={(e) => setPrimeiraParcela(e.target.value)} />
+              </div>
+              {formaPagamento === "parcelado" && (
+                <>
+                  <div>
+                    <label className={rotulo}>Qtd. parcelas</label>
+                    <input className={campo} type="number" min={2} value={qtdParcelas} onChange={(e) => setQtdParcelas(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={rotulo}>Dia âncora</label>
+                    <select className={campo} value={diaAncora} onChange={(e) => setDiaAncora(Number(e.target.value) as DiaAncora)}>
+                      <option value={1}>01</option>
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className={rotulo}>Máximo de parcelas no cartão</label>
+              <input
+                className={campo}
+                type="number"
+                min={1}
+                value={maxParcelasCartao}
+                onChange={(e) => setMaxParcelasCartao(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={secao}>
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Documentos de identificação</h2>
+        {pessoaId ? (
+          <UploadDocumentosPessoa pessoaId={pessoaId} />
+        ) : (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Documentos de identificação podem ser enviados depois, na tela de Detalhes da Venda.
+          </p>
+        )}
+      </div>
+
+      {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
+      <button
+        type="button"
+        onClick={confirmar}
+        disabled={enviando}
+        className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+      >
+        {enviando ? "Criando..." : "Criar oportunidade"}
+      </button>
     </div>
   );
 }
