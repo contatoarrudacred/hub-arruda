@@ -68,3 +68,12 @@ export async function gerarUrlAssinadaContrato(caminho: string): Promise<string>
   if (error) throw new Error(`Falha ao gerar URL do contrato: ${error.message}`);
   return data.signedUrl;
 }
+
+/** Baixa o PDF de volta do Storage — usado pelo adapter da Assinafy, que precisa dos bytes do
+ * arquivo pra fazer o upload (não aceita URL, só o arquivo em si). */
+export async function baixarPdfContrato(caminho: string): Promise<Buffer> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.storage.from(BUCKET).download(caminho);
+  if (error) throw new Error(`Falha ao baixar PDF do contrato: ${error.message}`);
+  return Buffer.from(await data.arrayBuffer());
+}

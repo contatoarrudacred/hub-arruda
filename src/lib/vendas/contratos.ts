@@ -79,6 +79,10 @@ export type ContratoParcela = {
 export type Contrato = {
   id: string;
   oportunidadeId: string;
+  contratoTemplateId: string;
+  pessoaSignatarioId: string;
+  pessoaArrudaCredSignatarioId: string;
+  fornecedorId: string | null;
   status: StatusContrato;
   motivoCancelamento: string | null;
   pdfUrl: string | null;
@@ -101,6 +105,10 @@ type LinhaContratoParcelaBruta = {
 type LinhaContratoBruta = {
   id: string;
   oportunidade_id: string;
+  contrato_template_id: string;
+  pessoa_signatario_id: string;
+  pessoa_arrudacred_signatario_id: string;
+  fornecedor_id: string | null;
   status: StatusContrato;
   motivo_cancelamento: string | null;
   pdf_url: string | null;
@@ -113,12 +121,16 @@ type LinhaContratoBruta = {
 };
 
 const SELECT_CONTRATO =
-  "id, oportunidade_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, valor_total, assinafy_document_id, contrato_parcelas(id, numero, valor, vencimento_previsto, status)";
 
 function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
     id: linha.id,
     oportunidadeId: linha.oportunidade_id,
+    contratoTemplateId: linha.contrato_template_id,
+    pessoaSignatarioId: linha.pessoa_signatario_id,
+    pessoaArrudaCredSignatarioId: linha.pessoa_arrudacred_signatario_id,
+    fornecedorId: linha.fornecedor_id,
     status: linha.status,
     motivoCancelamento: linha.motivo_cancelamento,
     pdfUrl: linha.pdf_url,
