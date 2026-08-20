@@ -1,15 +1,42 @@
+import { CARLITO_BOLD_BASE64, CARLITO_ITALIC_BASE64, CARLITO_REGULAR_BASE64 } from "./fonte-carlito";
+
 /**
  * Estilo visual único aplicado a todo documento gerado em PDF (contrato, e futuramente termo de
- * acordo/ficha associativa) — convenção de documento jurídico impresso: fonte serifada, texto
- * justificado, entrelinha confortável, tabelas que não quebram no meio da página, área de
- * assinatura com linha. Aplicado automaticamente na geração do PDF (src/lib/vendas/geracao-pdf.ts)
- * e sob demanda no preview do editor (src/components/vendas/editor-html-contrato.tsx) — não é
+ * acordo/ficha associativa) — texto justificado, entrelinha confortável, tabelas que não quebram
+ * no meio da página. Aplicado automaticamente na geração do PDF (src/lib/vendas/geracao-pdf.ts) e
+ * sob demanda no preview do editor (src/components/vendas/editor-html-contrato.tsx) — não é
  * gravado dentro do conteúdo de cada documento, pra não desatualizar templates já criados quando
  * o visual mudar aqui no futuro (decisão de escopo, 19/08/2026).
+ *
+ * Fonte: pedido do Luiz foi Calibri — proprietária da Microsoft, não pode ser embutida/
+ * redistribuída. Usamos Carlito (SIL Open Font License), a fonte aberta feita pra ser
+ * metricamente idêntica à Calibri (mesmo substituto que o LibreOffice usa). Embutida como
+ * data: URI (fonte-carlito.ts) em vez de depender da fonte estar instalada no ambiente: o
+ * Puppeteer roda em serverless (Vercel) sem nenhuma fonte do sistema — sem isso o PDF real saía
+ * em Open Sans (fallback do @sparticuz/chromium), diferente do que aparecia no preview do editor
+ * (que usa as fontes instaladas na máquina de quem está editando).
  */
 export const ESTILO_DOCUMENTO_CSS = `
+  @font-face {
+    font-family: "Carlito";
+    font-style: normal;
+    font-weight: 400;
+    src: url(data:font/woff2;base64,${CARLITO_REGULAR_BASE64}) format('woff2');
+  }
+  @font-face {
+    font-family: "Carlito";
+    font-style: normal;
+    font-weight: 700;
+    src: url(data:font/woff2;base64,${CARLITO_BOLD_BASE64}) format('woff2');
+  }
+  @font-face {
+    font-family: "Carlito";
+    font-style: italic;
+    font-weight: 400;
+    src: url(data:font/woff2;base64,${CARLITO_ITALIC_BASE64}) format('woff2');
+  }
   body {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: "Carlito", Calibri, Arial, sans-serif;
     font-size: 12pt;
     line-height: 1.3;
     color: #18181b;
