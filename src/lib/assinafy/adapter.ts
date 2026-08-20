@@ -23,18 +23,32 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
   const pdf = await baixarPdfContrato(contrato.pdfUrl);
   const documento = await uploadDocumento(`contrato-${contratoId}.pdf`, pdf);
 
-  const signerIds = await Promise.all(
+  const signatarios = await Promise.all(
     [contrato.pessoaSignatarioId, pessoaArrudaCredSignatarioId].map(async (pessoaId) => {
       const pessoa = await buscarPessoaCompleta(pessoaId);
       if (!pessoa) throw new Error(`Pessoa signatária ${pessoaId} não encontrada.`);
       if (!pessoa.email) throw new Error(`Pessoa "${pessoa.nomeRazaoSocial}" não tem e-mail cadastrado — obrigatório pra assinatura eletrônica.`);
 
       const signatario = await criarSignatario(pessoa.nomeRazaoSocial, pessoa.email);
-      return signatario.id;
+      return { pessoaId, nome: pessoa.nomeRazaoSocial, email: pessoa.email, signerId: signatario.id };
     }),
   );
 
-  await solicitarAssinatura(documento.id, signerIds);
+  // Achado real em produção: o cliente e o signatário da ArrudaCred (configuracoes,
+  // contrato_arrudacred_signatario) podem acabar sendo a MESMA Pessoa (dado de teste, ou erro de
+  // configuração) — a Assinafy rejeita (400 "Existem signatários duplicados") mandar o mesmo id 2x
+  // no mesmo assignment. Deduplica pra nunca quebrar por isso, mas cita os nomes/e-mails no erro se
+  // sobrar só 1 signatário único — normalmente sinal de configuração errada, não comportamento
+  // esperado (um contrato precisa de 2 partes distintas assinando).
+  const signerIdsUnicos = [...new Set(signatarios.map((s) => s.signerId))];
+  if (signerIdsUnicos.length < 2) {
+    const lista = signatarios.map((s) => `${s.nome} <${s.email}>`).join(" e ");
+    throw new Error(
+      `Cliente e signatário da ArrudaCred resolveram pro mesmo signatário na Assinafy (${lista}) — confira se são a mesma Pessoa por engano (comparar o cliente desta venda com a configuração "contrato_arrudacred_signatario" em /admin/configuracoes).`,
+    );
+  }
+
+  await solicitarAssinatura(documento.id, signerIdsUnicos);
 
   await atualizarStatusContrato(contratoId, "aguardando_assinaturas", {
     assinafyDocumentId: documento.id,
