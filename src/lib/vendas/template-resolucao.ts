@@ -307,7 +307,7 @@ export function gerarDadosMockPreview(): DadosResolucaoContrato {
   return {
     dadosCliente: montarDadosClienteHtml(pessoaMock),
     valorTotal: 1500,
-    formaPagamento: "Parcelado em 3x no boleto",
+    formaPagamento: "Parcelado em 3x no boleto/PIX",
     tabelaVencimentos: montarTabelaVencimentosHtml(parcelasMock, "Boleto/Pix"),
     tabelaDocumentos: montarTabelaDocumentosHtml(documentosPacoteMock),
     tabelaContratante: montarTabelaContratanteHtml(pessoaMock),
