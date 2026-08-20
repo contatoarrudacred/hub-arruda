@@ -9,6 +9,7 @@ import { salvarDocumentosExtraidosAction } from "@/components/vendas/upload-pess
 import { calcularParcelasContrato, calcularVencimentosPorAncora, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { tipoPessoaPorDocumento } from "@/lib/vendas/documento";
+import type { EnderecoPessoa } from "@/lib/vendas/endereco";
 import type { ProdutoParaVenda } from "@/lib/vendas/produtos";
 import {
   buscarPessoaPorDocumentoAction,
@@ -53,6 +54,22 @@ function parcelasParaForm(parcelas: Parcela[]): ParcelaForm[] {
 
 function formParaParcelas(form: ParcelaForm[]): Parcela[] {
   return form.map((p) => ({ numero: p.numero, valor: Number(p.valor.replace(",", ".")) || 0, vencimento: new Date(`${p.vencimento}T00:00:00`) }));
+}
+
+/** Converte o endereço já salvo de uma Pessoa encontrada por CPF/CNPJ pro formato do formulário —
+ * mesma conversão que fechamento-client.tsx já faz (lá o endereço vem carregado pelo servidor de
+ * cara; aqui a busca acontece em runtime, ao digitar o documento). */
+function enderecoParaValor(endereco: EnderecoPessoa | null): ValorEndereco {
+  if (!endereco) return enderecoVazio;
+  return {
+    cep: endereco.cep ?? "",
+    logradouro: endereco.logradouro ?? "",
+    numero: endereco.numero ?? "",
+    complemento: endereco.complemento ?? "",
+    bairro: endereco.bairro ?? "",
+    cidade: endereco.cidade ?? "",
+    uf: endereco.uf ?? "",
+  };
 }
 
 export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVenda[] }) {
@@ -201,11 +218,13 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         estadoCivil: resultado.estadoCivil ?? "",
         profissao: resultado.profissao ?? "",
       });
+      setEndereco(enderecoParaValor(resultado.endereco));
       setBuscandoPessoa(false);
       return resultado.id;
     }
 
     setPessoaId(null);
+    setEndereco(enderecoVazio);
     if (tipo === "pj") {
       const razaoSocial = await buscarRazaoSocialAction(formatado);
       if (idAtual !== buscaDocIdRef.current) return null;
@@ -241,6 +260,9 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         estadoCivil: resultado.estadoCivil ?? "",
         profissao: resultado.profissao ?? "",
       });
+      setEnderecoRepresentante(enderecoParaValor(resultado.endereco));
+    } else {
+      setEnderecoRepresentante(enderecoVazio);
     }
   }
 

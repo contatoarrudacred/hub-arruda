@@ -1,6 +1,7 @@
 "use server";
 
 import { buscarRazaoSocialPorCnpj } from "@/lib/vendas/cnpj-publico";
+import { buscarEnderecoPorPessoa, type EnderecoPessoa } from "@/lib/vendas/endereco";
 import { buscarPessoaCompleta, buscarPessoaPorDocumento } from "@/lib/vendas/pessoas";
 
 export type ResultadoBuscarPessoa =
@@ -13,6 +14,7 @@ export type ResultadoBuscarPessoa =
       rg: string | null;
       estadoCivil: string | null;
       profissao: string | null;
+      endereco: EnderecoPessoa | null;
     }
   | { encontrada: false };
 
@@ -22,6 +24,9 @@ export async function buscarPessoaPorDocumentoAction(documento: string): Promise
   // buscarPessoaPorDocumento (PessoaEncontrada) não traz rg/estadoCivil/profissao — busca completa:
   const completa = await buscarPessoaCompleta(pessoa.id);
   if (!completa) return { encontrada: false };
+  // Achado real (Luiz, 20/08/2026): sem isso, o endereço já salvo de uma pessoa existente nunca
+  // aparecia na tela — o campo ficava em branco e o submit não mandava nada pro salvarEndereco.
+  const endereco = await buscarEnderecoPorPessoa(completa.id);
   return {
     encontrada: true,
     id: completa.id,
@@ -31,6 +36,7 @@ export async function buscarPessoaPorDocumentoAction(documento: string): Promise
     rg: completa.rg,
     estadoCivil: completa.estadoCivil,
     profissao: completa.profissao,
+    endereco,
   };
 }
 
