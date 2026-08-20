@@ -10,8 +10,9 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CORES_PASTA, CORES_PASTA_LISTA, COR_PASTA_PADRAO, type CorPasta } from "@/lib/motor-fluxo/cores-pasta";
 import type { FluxoAdmin, PastaAdmin } from "@/lib/motor-fluxo/repositorio-admin";
@@ -244,43 +245,81 @@ export function FluxosClient({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  async function persistir(chaves: string[], novasSecoes: Secao[]) {
+  async function persistirTudo(novasSecoes: Secao[]) {
     const mudancas: { fluxoId: string; pastaId: string | null; posicao: number }[] = [];
-    for (const chave of chaves) {
-      const secao = novasSecoes.find((s) => s.chave === chave);
-      if (!secao) continue;
+    for (const secao of novasSecoes) {
       secao.itens.forEach((f, indice) => mudancas.push({ fluxoId: f.id, pastaId: secao.pastaId, posicao: indice }));
     }
-    if (mudancas.length === 0) return;
     const resultado = await moverEReordenarAction(mudancas);
     if (!resultado.sucesso) console.error(resultado.erro);
   }
 
+  function encontrarContainerDoItem(lista: Secao[], fluxoId: string): string | undefined {
+    return lista.find((s) => s.itens.some((f) => f.id === fluxoId))?.chave;
+  }
+
+  function resolverContainerAlvo(lista: Secao[], overIdBruto: string): string | undefined {
+    if (overIdBruto.startsWith(PREFIXO_CONTAINER)) {
+      const chave = overIdBruto.slice(PREFIXO_CONTAINER.length);
+      return lista.some((s) => s.chave === chave) ? chave : undefined;
+    }
+    return encontrarContainerDoItem(lista, overIdBruto);
+  }
+
+  /** Move o item pro contêiner sob o cursor DURANTE o drag (não só no fim) — sem isso, o dnd-kit
+   * não reconcilia os dois `SortableContext` envolvidos e o drop entre pastas diferentes (ex.: da
+   * raiz pra dentro de uma pasta) simplesmente não registra. Mesmo padrão do exemplo oficial de
+   * "multiple containers" da biblioteca. */
+  function aoPassarPorCima(evento: DragOverEvent) {
+    const { active, over } = evento;
+    if (!over) return;
+    const fluxoId = String(active.id);
+    const overIdBruto = String(over.id);
+    if (fluxoId === overIdBruto) return;
+
+    setSecoes((atual) => {
+      const containerOrigem = encontrarContainerDoItem(atual, fluxoId);
+      const containerDestino = resolverContainerAlvo(atual, overIdBruto);
+      if (!containerOrigem || !containerDestino || containerOrigem === containerDestino) return atual;
+
+      const copia = atual.map((s) => ({ ...s, itens: [...s.itens] }));
+      const origem = copia.find((s) => s.chave === containerOrigem)!;
+      const destino = copia.find((s) => s.chave === containerDestino)!;
+      const indiceOrigem = origem.itens.findIndex((f) => f.id === fluxoId);
+      if (indiceOrigem === -1) return atual;
+      const [item] = origem.itens.splice(indiceOrigem, 1);
+
+      const overIdSemPrefixo = overIdBruto.startsWith(PREFIXO_CONTAINER) ? null : overIdBruto;
+      const indiceDestino = overIdSemPrefixo ? destino.itens.findIndex((f) => f.id === overIdSemPrefixo) : -1;
+      destino.itens.splice(indiceDestino === -1 ? destino.itens.length : indiceDestino, 0, item);
+      return copia;
+    });
+  }
+
+  /** No fim do drag, o item já está no contêiner certo (via aoPassarPorCima) — só falta o ajuste
+   * fino de posição dentro dele (reordenar) e persistir tudo de uma vez (mais simples e robusto do
+   * que rastrear exatamente quais contêineres mudaram). */
   function aoTerminarDrag(evento: DragEndEvent) {
     const { active, over } = evento;
     if (!over) return;
-
     const fluxoId = String(active.id);
     const overIdBruto = String(over.id);
-    const overId = overIdBruto.startsWith(PREFIXO_CONTAINER) ? overIdBruto.slice(PREFIXO_CONTAINER.length) : overIdBruto;
-    if (fluxoId === overId) return;
 
     setSecoes((atual) => {
-      const secaoOrigem = atual.find((s) => s.itens.some((f) => f.id === fluxoId));
-      if (!secaoOrigem) return atual;
-      const secaoDestino = atual.find((s) => s.chave === overId) ?? atual.find((s) => s.itens.some((f) => f.id === overId)) ?? secaoOrigem;
+      const containerAtual = encontrarContainerDoItem(atual, fluxoId);
+      if (!containerAtual) return atual;
 
-      const copia = atual.map((s) => ({ ...s, itens: [...s.itens] }));
-      const origem = copia.find((s) => s.chave === secaoOrigem.chave)!;
-      const destino = copia.find((s) => s.chave === secaoDestino.chave)!;
-      const indiceOrigem = origem.itens.findIndex((f) => f.id === fluxoId);
-      const [item] = origem.itens.splice(indiceOrigem, 1);
-      const indiceOver = destino.itens.findIndex((f) => f.id === overId);
-      const posicaoFinal = indiceOver === -1 ? destino.itens.length : indiceOver;
-      destino.itens.splice(posicaoFinal, 0, item);
+      const secao = atual.find((s) => s.chave === containerAtual)!;
+      const overIdSemPrefixo = overIdBruto.startsWith(PREFIXO_CONTAINER) ? null : overIdBruto;
+      const indiceAntigo = secao.itens.findIndex((f) => f.id === fluxoId);
+      const indiceNovo = overIdSemPrefixo ? secao.itens.findIndex((f) => f.id === overIdSemPrefixo) : indiceAntigo;
 
-      const chavesAfetadas = origem.chave === destino.chave ? [origem.chave] : [origem.chave, destino.chave];
-      void persistir(chavesAfetadas, copia);
+      const copia =
+        indiceNovo !== -1 && indiceAntigo !== indiceNovo
+          ? atual.map((s) => (s.chave === containerAtual ? { ...s, itens: arrayMove(s.itens, indiceAntigo, indiceNovo) } : s))
+          : atual;
+
+      void persistirTudo(copia);
       return copia;
     });
   }
@@ -342,7 +381,7 @@ export function FluxosClient({
         <CriarPastaPopover aoCriar={criarPasta} />
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={aoTerminarDrag}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragOver={aoPassarPorCima} onDragEnd={aoTerminarDrag}>
         <div className="space-y-4">
           {secoes.map((secao) => (
             <SecaoPastaView
