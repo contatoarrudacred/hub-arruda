@@ -1,9 +1,9 @@
 # Status — Vendas
 
-tarefa: Construídas as telas "Produtos & Serviços" e "Template de Documentos" (Configurações → Geral) + migration que generaliza contrato_templates → documento_templates (tipo contrato/termo_acordo/ficha_associativa, produto_id opcional) + estilo de documento único aplicado automaticamente no PDF + botões "Sanitizar" e "Ver como vai ficar" no editor rico. tsc/eslint/vitest (389 testes) limpos, aguardando o Luiz rodar a migration 20260819130000 pra poder testar ao vivo.
-desde: 2026-08-19T23:00:00-03:00
-proxima: depois do Luiz confirmar a migration aplicada e testar as telas novas, fazer a revisão geral do módulo e atualizar a spec/documentação (pedido explícito dele).
-bloqueio: migration 20260819130000_vendas_templates_documentos.sql escrita, aguardando envio ao Luiz — sem ela as telas novas quebram (tabela ainda se chama contrato_templates em produção).
+tarefa: Pipeline de assinatura+cobrança fechada pro lado externo — Assinafy (API key, account id, webhook secret, webhook cadastrado e confirmado apontando certo) e Asaas (API key, webhook secret, eventos cadastrados) configurados de ponta a ponta no Vercel. Corrigidos no caminho: botão de configurar webhook que travava (sem timeout), falso-positivo no checador de status (só validava eventos, não a URL), e URL montada errada quando NEXT_PUBLIC_APP_URL vinha vazia. Template de contrato do Limpa Nome também já está pronto (Luiz).
+desde: 2026-08-20T10:20:00-03:00
+proxima: rodar um teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade) — e só depois fazer a revisão geral do módulo + atualizar spec/documentação (pedido do Luiz).
+bloqueio: nenhum — só falta o teste ao vivo em si, que depende do Luiz assinar/pagar de verdade um documento de teste.
 
 ## Verificação da Task 18 (2026-08-19) — o que foi confirmado e o que ficou pendente
 
