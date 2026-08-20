@@ -84,14 +84,25 @@ export function AssinafyWebhookClient({
   async function configurar() {
     setEnviando(true);
     setResultado(null);
-    const resposta = await configurarWebhookAssinafyAction(email);
-    setEnviando(false);
-    setResultado(
-      resposta.sucesso
-        ? { sucesso: true, mensagem: `Webhook configurado com sucesso, apontando pra ${resposta.url}` }
-        : { sucesso: false, mensagem: resposta.erro },
-    );
-    if (resposta.sucesso) await consultarStatus();
+    // try/finally: sem isso, uma falha inesperada na chamada (ex.: timeout de rede) deixava o
+    // botão preso em "Configurando..." pra sempre, sem nenhuma mensagem de erro — achado real do
+    // Luiz. Com timeout server-side (chamarApi) + maxDuration (page.tsx) a chamada agora sempre
+    // resolve ou rejeita dentro de um tempo previsível, mas o finally garante que a UI destrava
+    // mesmo assim.
+    try {
+      const resposta = await configurarWebhookAssinafyAction(email);
+      setResultado(
+        resposta.sucesso
+          ? { sucesso: true, mensagem: `Webhook configurado com sucesso, apontando pra ${resposta.url}` }
+          : { sucesso: false, mensagem: resposta.erro },
+      );
+      if (resposta.sucesso) await consultarStatus();
+    } catch (erro) {
+      const mensagem = erro instanceof Error ? erro.message : "Falha inesperada ao configurar o webhook.";
+      setResultado({ sucesso: false, mensagem });
+    } finally {
+      setEnviando(false);
+    }
   }
 
   return (

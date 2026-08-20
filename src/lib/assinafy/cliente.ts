@@ -19,10 +19,16 @@ function apiKey(): string {
   return chave;
 }
 
+/** 20s — sem isso, uma chamada que a Assinafy nunca responde trava indefinidamente (só cortaria no
+ * limite da função inteira, muito depois, e sem mensagem de erro clara pro usuário). Achado real:
+ * botão "Configurar webhook" ficou preso em "Configurando..." pra sempre. */
+const TIMEOUT_MS = 20_000;
+
 async function chamarApi(caminho: string, opcoes: RequestInit = {}): Promise<unknown> {
   const resposta = await fetch(`${BASE_URL}${caminho}`, {
     ...opcoes,
     headers: { "X-Api-Key": apiKey(), ...opcoes.headers },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const corpo = await resposta.json().catch(() => null);
   if (!resposta.ok) {
