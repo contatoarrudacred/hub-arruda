@@ -12,13 +12,38 @@ const TIPO_LABEL: Record<TipoTemplateDocumento, string> = {
   ficha_associativa: "Ficha Associativa",
 };
 
-const PLACEHOLDERS = [
-  { chave: "dados_cliente", descricao: "Nome/CPF/RG/estado civil/profissão/e-mail/telefone/endereço (PF), ou razão social/CNPJ + os mesmos dados do representante legal (PJ)." },
-  { chave: "lista_documentos", descricao: "Repete o bloco de dados acima pra cada documento, quando a venda é um pacote com mais de um CPF/CNPJ." },
-  { chave: "valor_total", descricao: "Valor total do contrato, formatado em R$." },
-  { chave: "valor_total_extenso", descricao: "Valor total por extenso (ex.: mil e quinhentos reais)." },
-  { chave: "tabela_vencimentos", descricao: "Tabela com número, vencimento, valor e forma de pagamento de cada parcela." },
-  { chave: "forma_pagamento", descricao: "Texto simples com a forma de pagamento combinada (ex.: Parcelado em 3x, Boleto/Pix)." },
+const GRUPOS_PLACEHOLDERS = [
+  {
+    grupo: "Campos individuais do cliente",
+    itens: [
+      { chave: "cliente_nome", descricao: "Nome completo (PF) ou nome do representante legal (PJ) — quem assina de fato." },
+      { chave: "cliente_documento", descricao: "CPF (PF) ou CPF do representante legal (PJ)." },
+      { chave: "cliente_rg", descricao: "RG de quem assina." },
+      { chave: "cliente_estado_civil", descricao: "Estado civil de quem assina." },
+      { chave: "cliente_profissao", descricao: "Profissão de quem assina." },
+      { chave: "cliente_email", descricao: "E-mail de quem assina." },
+      { chave: "cliente_whatsapp", descricao: "Telefone/WhatsApp de quem assina." },
+      { chave: "cliente_endereco", descricao: "Endereço de quem assina." },
+      { chave: "empresa_razao_social", descricao: "Razão social da empresa — vazio quando o cliente é Pessoa Física." },
+      { chave: "empresa_cnpj", descricao: "CNPJ da empresa — vazio quando o cliente é Pessoa Física." },
+    ],
+  },
+  {
+    grupo: "Blocos prontos",
+    itens: [
+      { chave: "dados_cliente", descricao: "Bloco já formatado com todos os campos acima de uma vez (nome, CPF, RG, endereço...). Alternativa rápida a montar campo a campo." },
+      { chave: "lista_documentos", descricao: "Tabela com documento + nome de cada CPF/CNPJ do pacote, quando a venda cobre mais de um." },
+    ],
+  },
+  {
+    grupo: "Financeiro",
+    itens: [
+      { chave: "valor_total", descricao: "Valor total do contrato, formatado em R$." },
+      { chave: "valor_total_extenso", descricao: "Valor total por extenso (ex.: mil e quinhentos reais)." },
+      { chave: "tabela_vencimentos", descricao: "Tabela com número, vencimento, valor e forma de pagamento de cada parcela." },
+      { chave: "forma_pagamento", descricao: "Texto simples com a forma de pagamento combinada (ex.: Parcelado em 3x, Boleto/Pix)." },
+    ],
+  },
 ] as const;
 
 export function EditarTemplateClient({ template }: { template: TemplateDocumentoCompleto }) {
@@ -78,26 +103,33 @@ export function EditarTemplateClient({ template }: { template: TemplateDocumento
       </div>
 
       {template.tipo === "contrato" && (
-        <div className="w-72 shrink-0 space-y-2">
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Placeholders</h2>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">Clique pra inserir no cursor do editor.</p>
-          <ul className="space-y-2">
-            {PLACEHOLDERS.map((placeholder) => (
-              <li key={placeholder.chave}>
-                <button
-                  type="button"
-                  onMouseDown={(evento) => evento.preventDefault()}
-                  onClick={() => inserirPlaceholder(placeholder.chave)}
-                  className="w-full rounded border border-zinc-300 p-2 text-left text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
-                  <span className="block font-mono font-medium text-zinc-900 dark:text-zinc-50">
-                    {"{{" + placeholder.chave + "}}"}
-                  </span>
-                  <span className="mt-1 block text-zinc-500 dark:text-zinc-400">{placeholder.descricao}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        <div className="w-72 shrink-0 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Placeholders</h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Clique pra inserir no cursor do editor.</p>
+          </div>
+          {GRUPOS_PLACEHOLDERS.map((grupo) => (
+            <div key={grupo.grupo} className="space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{grupo.grupo}</h3>
+              <ul className="space-y-2">
+                {grupo.itens.map((placeholder) => (
+                  <li key={placeholder.chave}>
+                    <button
+                      type="button"
+                      onMouseDown={(evento) => evento.preventDefault()}
+                      onClick={() => inserirPlaceholder(placeholder.chave)}
+                      className="w-full rounded border border-zinc-300 p-2 text-left text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    >
+                      <span className="block font-mono font-medium text-zinc-900 dark:text-zinc-50">
+                        {"{{" + placeholder.chave + "}}"}
+                      </span>
+                      <span className="mt-1 block text-zinc-500 dark:text-zinc-400">{placeholder.descricao}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       )}
     </div>

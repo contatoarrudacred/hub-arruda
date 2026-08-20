@@ -183,6 +183,20 @@ export type DadosResolucaoContrato = {
   formaPagamento: string;
   tabelaVencimentos: string;
   listaDocumentos: string;
+  // Campos granulares — complementam {{dados_cliente}} (bloco pronto) pra quem quer montar o
+  // layout do contrato campo a campo (pedido do Luiz, 19/08/2026: "precisaremos deles separados
+  // e não uma variável única que traz tudo junto"). Vazio ("") quando não se aplica — ver
+  // montarCamposClienteResolucao.
+  clienteNome: string;
+  clienteDocumento: string;
+  clienteRg: string;
+  clienteEstadoCivil: string;
+  clienteProfissao: string;
+  clienteEmail: string;
+  clienteWhatsapp: string;
+  clienteEndereco: string;
+  empresaRazaoSocial: string;
+  empresaCnpj: string;
 };
 
 const PLACEHOLDERS = [
@@ -192,7 +206,25 @@ const PLACEHOLDERS = [
   "tabela_vencimentos",
   "forma_pagamento",
   "lista_documentos",
+  "cliente_nome",
+  "cliente_documento",
+  "cliente_rg",
+  "cliente_estado_civil",
+  "cliente_profissao",
+  "cliente_email",
+  "cliente_whatsapp",
+  "cliente_endereco",
+  "empresa_razao_social",
+  "empresa_cnpj",
 ] as const;
+
+/** Mesmo critério de "—" já usado nos blocos prontos (campo(), abaixo) — aplicado só aos campos
+ * opcionais (rg/estado civil/profissão/e-mail/whatsapp/endereço). Nome/documento nunca ficam
+ * vazios (campo obrigatório), e razão social/CNPJ vazios (PF) ficam "" mesmo — não é dado
+ * "faltando", é "não se aplica", então não faz sentido mostrar travessão. */
+function valorOuTraco(valor: string): string {
+  return valor.trim() ? valor : "—";
+}
 
 /**
  * Resolve os placeholders {{...}} do HTML do template contra os dados já coletados na tela de
@@ -210,6 +242,16 @@ export function resolverPlaceholders(conteudoHtml: string, dados: DadosResolucao
     tabela_vencimentos: dados.tabelaVencimentos,
     forma_pagamento: dados.formaPagamento,
     lista_documentos: dados.listaDocumentos,
+    cliente_nome: dados.clienteNome,
+    cliente_documento: dados.clienteDocumento,
+    cliente_rg: valorOuTraco(dados.clienteRg),
+    cliente_estado_civil: valorOuTraco(dados.clienteEstadoCivil),
+    cliente_profissao: valorOuTraco(dados.clienteProfissao),
+    cliente_email: valorOuTraco(dados.clienteEmail),
+    cliente_whatsapp: valorOuTraco(dados.clienteWhatsapp),
+    cliente_endereco: valorOuTraco(dados.clienteEndereco),
+    empresa_razao_social: dados.empresaRazaoSocial,
+    empresa_cnpj: dados.empresaCnpj,
   };
 
   return PLACEHOLDERS.reduce(
@@ -267,6 +309,49 @@ export function montarDadosClienteHtml(pessoa: PessoaContrato, representante?: P
     "<p><strong>Representada por:</strong></p>",
     montarBlocoPessoaFisica(representante),
   ].join("\n");
+}
+
+export type CamposClienteResolucao = {
+  clienteNome: string;
+  clienteDocumento: string;
+  clienteRg: string;
+  clienteEstadoCivil: string;
+  clienteProfissao: string;
+  clienteEmail: string;
+  clienteWhatsapp: string;
+  clienteEndereco: string;
+  empresaRazaoSocial: string;
+  empresaCnpj: string;
+};
+
+/**
+ * Monta os placeholders granulares de cliente ({{cliente_nome}}, {{cliente_documento}}, etc.) —
+ * complementa {{dados_cliente}} (bloco pronto) pra quem quer montar o layout do contrato campo a
+ * campo, em vez do bloco fixo. PF: cliente_* são os dados da própria pessoa, empresa_* fica vazio
+ * (não se aplica). PJ: cliente_* são do representante legal (quem assina de fato), empresa_* é a
+ * razão social/CNPJ da pessoa jurídica — mesma regra de obrigatoriedade de representante que
+ * montarDadosClienteHtml.
+ */
+export function montarCamposClienteResolucao(pessoa: PessoaContrato, representante?: PessoaContrato | null): CamposClienteResolucao {
+  const pessoaFisica = pessoa.tipoPessoa === "pf" ? pessoa : representante;
+  if (pessoa.tipoPessoa === "pj" && !representante) {
+    throw new Error("Pessoa jurídica precisa de um representante legal pra montar os dados do contrato.");
+  }
+  // pessoaFisica nunca é null aqui: pf usa a própria pessoa, pj já teria lançado acima sem representante.
+  const p = pessoaFisica as PessoaContrato;
+
+  return {
+    clienteNome: p.nomeRazaoSocial,
+    clienteDocumento: p.documento,
+    clienteRg: p.rg ?? "",
+    clienteEstadoCivil: p.estadoCivil ?? "",
+    clienteProfissao: p.profissao ?? "",
+    clienteEmail: p.email ?? "",
+    clienteWhatsapp: p.whatsapp ?? "",
+    clienteEndereco: p.endereco ?? "",
+    empresaRazaoSocial: pessoa.tipoPessoa === "pj" ? pessoa.nomeRazaoSocial : "",
+    empresaCnpj: pessoa.tipoPessoa === "pj" ? pessoa.documento : "",
+  };
 }
 
 export type DocumentoPacote = { documento: string; nomeRazaoSocial: string };

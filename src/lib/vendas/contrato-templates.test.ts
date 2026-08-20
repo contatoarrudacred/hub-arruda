@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  montarCamposClienteResolucao,
   montarDadosClienteHtml,
   montarListaDocumentosHtml,
   montarTabelaVencimentosHtml,
@@ -38,7 +39,33 @@ describe("resolverPlaceholders", () => {
     formaPagamento: "Parcelado em 3x no boleto",
     tabelaVencimentos: "<table><tr><td>1</td></tr></table>",
     listaDocumentos: "",
+    clienteNome: "JOÃO DA SILVA",
+    clienteDocumento: "123.456.789-09",
+    clienteRg: "1.234.567",
+    clienteEstadoCivil: "Casado",
+    clienteProfissao: "Engenheiro",
+    clienteEmail: "joao@example.com",
+    clienteWhatsapp: "(48) 99999-0000",
+    clienteEndereco: "Rua das Flores, 123 — Florianópolis/SC",
+    empresaRazaoSocial: "",
+    empresaCnpj: "",
   };
+
+  it("substitui os placeholders granulares de cliente ({{cliente_nome}}, etc.)", () => {
+    const template = "Eu, {{cliente_nome}}, CPF {{cliente_documento}}, RG {{cliente_rg}}, {{cliente_estado_civil}}, {{cliente_profissao}}.";
+    const resultado = resolverPlaceholders(template, dadosBase);
+    expect(resultado).toBe("Eu, JOÃO DA SILVA, CPF 123.456.789-09, RG 1.234.567, Casado, Engenheiro.");
+  });
+
+  it("substitui empresa_razao_social/empresa_cnpj vazios quando é PF", () => {
+    const resultado = resolverPlaceholders("{{empresa_razao_social}} {{empresa_cnpj}}", dadosBase);
+    expect(resultado).toBe(" ");
+  });
+
+  it("usa travessão quando um campo opcional granular está vazio", () => {
+    const resultado = resolverPlaceholders("Profissão: {{cliente_profissao}}", { ...dadosBase, clienteProfissao: "" });
+    expect(resultado).toBe("Profissão: —");
+  });
 
   it("substitui todos os placeholders conhecidos", () => {
     const template =
@@ -100,6 +127,34 @@ describe("montarDadosClienteHtml", () => {
 
   it("lança erro se Pessoa Jurídica não tiver representante", () => {
     expect(() => montarDadosClienteHtml(pessoaPjBase)).toThrow();
+  });
+});
+
+describe("montarCamposClienteResolucao", () => {
+  it("PF: campos do próprio cliente, empresa_* vazio", () => {
+    const campos = montarCamposClienteResolucao(pessoaPfBase);
+    expect(campos.clienteNome).toBe("JOÃO DA SILVA");
+    expect(campos.clienteDocumento).toBe("123.456.789-09");
+    expect(campos.clienteRg).toBe("1.234.567");
+    expect(campos.empresaRazaoSocial).toBe("");
+    expect(campos.empresaCnpj).toBe("");
+  });
+
+  it("PF: campo opcional ausente vira string vazia (não trava)", () => {
+    const campos = montarCamposClienteResolucao({ ...pessoaPfBase, profissao: null });
+    expect(campos.clienteProfissao).toBe("");
+  });
+
+  it("PJ: cliente_* são do representante, empresa_* é a razão social/CNPJ", () => {
+    const campos = montarCamposClienteResolucao(pessoaPjBase, pessoaPfBase);
+    expect(campos.clienteNome).toBe("JOÃO DA SILVA");
+    expect(campos.clienteDocumento).toBe("123.456.789-09");
+    expect(campos.empresaRazaoSocial).toBe("EMPRESA LTDA");
+    expect(campos.empresaCnpj).toBe("12.345.678/0001-90");
+  });
+
+  it("PJ sem representante lança erro", () => {
+    expect(() => montarCamposClienteResolucao(pessoaPjBase)).toThrow();
   });
 });
 

@@ -1,6 +1,7 @@
 import { atualizarStatusContrato, buscarContratoPorId } from "./contratos";
 import {
   buscarTemplatePorId,
+  montarCamposClienteResolucao,
   montarDadosClienteHtml,
   montarListaDocumentosHtml,
   montarTabelaVencimentosHtml,
@@ -90,6 +91,7 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
     listaDocumentos: montarListaDocumentosHtml(
       documentosPacote.map((d) => ({ documento: d.documento, nomeRazaoSocial: d.nomeRazaoSocial })),
     ),
+    ...montarCamposClienteResolucao(pessoaContrato, representanteContrato),
   });
 }
 
