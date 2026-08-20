@@ -1,9 +1,9 @@
 # Status — Vendas
 
-tarefa: Pipeline de assinatura+cobrança fechada pro lado externo — Assinafy (API key, account id, webhook secret, webhook cadastrado e confirmado apontando certo) e Asaas (API key, webhook secret, eventos cadastrados) configurados de ponta a ponta no Vercel. Corrigidos no caminho: botão de configurar webhook que travava (sem timeout), falso-positivo no checador de status (só validava eventos, não a URL), e URL montada errada quando NEXT_PUBLIC_APP_URL vinha vazia. Template de contrato do Limpa Nome também já está pronto (Luiz).
-desde: 2026-08-20T10:20:00-03:00
-proxima: rodar um teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade) — e só depois fazer a revisão geral do módulo + atualizar spec/documentação (pedido do Luiz).
-bloqueio: nenhum — só falta o teste ao vivo em si, que depende do Luiz assinar/pagar de verdade um documento de teste.
+tarefa: Documentação atualizada (plano mestre seção 11 + spec 2026-08-19, tudo que saiu do previsto registrado) e bug real corrigido: Nova Oportunidade não carregava o endereço já salvo de uma pessoa existente encontrada por CPF/CNPJ (campo ficava em branco, nada era enviado pro salvarEndereco) — corrigido em `actions.ts`/`nova-oportunidade-client.tsx` (commit `497f5d4`), buscando o endereço junto na busca por documento, igual fechamento-client.tsx já fazia. tsc/eslint/vitest limpos (401 testes de Vendas); sem `.env.local` neste worktree pra testar visualmente com Supabase real.
+desde: 2026-08-20T15:45:00-03:00
+proxima: Luiz confirmar o fix testando de novo com uma pessoa já cadastrada, depois rodar o teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade).
+bloqueio: nenhum — falta o teste ao vivo, que depende do Luiz assinar/pagar de verdade um documento de teste.
 
 ## Verificação da Task 18 (2026-08-19) — o que foi confirmado e o que ficou pendente
 
