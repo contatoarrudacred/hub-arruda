@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| **Luiz** | CRM | 19/08 23h50 | Rodar `supabase/migrations/20260819130000_fluxos_pastas.sql` no SQL Editor — libera Pastas de Fluxo (aditiva, sem risco). Código só sobe pra `main` depois de você confirmar | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 2 e 3 |
 
 ## Fechados hoje
 

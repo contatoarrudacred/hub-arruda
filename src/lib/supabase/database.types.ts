@@ -833,6 +833,8 @@ export type Database = {
           created_at: string
           id: string
           nome: string
+          pasta_id: string | null
+          posicao: number
           produto_id: string | null
           updated_at: string
         }
@@ -841,6 +843,8 @@ export type Database = {
           created_at?: string
           id?: string
           nome: string
+          pasta_id?: string | null
+          posicao?: number
           produto_id?: string | null
           updated_at?: string
         }
@@ -849,6 +853,8 @@ export type Database = {
           created_at?: string
           id?: string
           nome?: string
+          pasta_id?: string | null
+          posicao?: number
           produto_id?: string | null
           updated_at?: string
         }
@@ -860,7 +866,41 @@ export type Database = {
             referencedRelation: "produtos"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "fluxos_pasta_id_fkey"
+            columns: ["pasta_id"]
+            isOneToOne: false
+            referencedRelation: "fluxo_pastas"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      fluxo_pastas: {
+        Row: {
+          id: string
+          nome: string
+          cor: string
+          posicao: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          nome: string
+          cor?: string
+          posicao?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          nome?: string
+          cor?: string
+          posicao?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       followup_emails: {
         Row: {

@@ -4,4 +4,4 @@ tarefa: Revisão geral do módulo — plano mestre (seção 11) atualizado com t
 desde: 2026-08-19T23:20:00-03:00
 proxima: Aguardar Luiz testar reset de novo; decisão sobre unique constraint em pessoas.whatsapp; decidir se testa a Evolution API como backup do Zapster antes de desenhar o adapter; depois avaliar se parte pra frente do delay nativo da Zapster
 bloqueio: nenhum — mas ANTHROPIC_API_KEY foi adicionada na Vercel (confirmado por Luiz) e falta confirmar se houve redeploy; patch_abertura_email_justificativa_na_retomada.sql enviado, rodar não confirmado
-turno_fim: 2026-08-19T21:37:29-03:00
+turno_fim: 2026-08-19T23:37:31-03:00
