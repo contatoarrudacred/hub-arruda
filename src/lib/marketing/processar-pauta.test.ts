@@ -363,6 +363,88 @@ describe("processarProximaPauta", () => {
     });
   });
 
+  // Fase 4e, Agente Agendador (20/08/2026) — quando a propriedade tem horários de publicação
+  // configurados, o pipeline agenda em vez de publicar na hora. Sem horários configurados
+  // (propriedadeFalsa, usada em todos os outros testes deste arquivo), o comportamento continua
+  // idêntico ao de antes desta feature — já coberto pelo teste "publica quando a revisão aprova de
+  // primeira" acima e por todo o resto da suíte, que nunca passa agendadoPara pra criarRascunho.
+  it("com horários de publicação configurados, agenda em vez de publicar na hora", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-18T13:00:00Z")); // 10:00 em São Paulo
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue({
+      ...propriedadeFalsa,
+      horariosPublicacao: ["11:00", "15:00"],
+    });
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    vi.spyOn(repositorio, "carregarProximosAgendamentos").mockResolvedValue([]);
+    vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+        relatorio: "Segui o ângulo passo a passo.",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    const { etapasChamadas } = espiarRegistrarEtapa();
+
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      enviarMidia: vi.fn(),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn(),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+    // 11:00 em São Paulo (próximo horário livre, dado que agora são 10:00) = 14:00Z.
+    const agendadoParaEsperado = new Date("2026-08-18T14:00:00.000Z");
+    expect(adaptadorFalso.criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined, agendadoParaEsperado);
+    // Post já foi criado com status "future" — publicar de verdade agora seria o bug que esta
+    // feature existe pra corrigir.
+    expect(adaptadorFalso.aprovarPublicar).not.toHaveBeenCalled();
+    expect(etapasChamadas).toEqual([
+      "buscar_checklist",
+      "gerar_conteudo",
+      "verificar_links",
+      "revisar",
+      "inserir_links",
+      "sanitizar",
+      "gerar_imagens",
+      "agendar",
+      "publicar",
+      "registrar_resultado",
+    ]);
+    expect(atualizarStatusPostSpy).toHaveBeenCalledWith(
+      "post-1",
+      "publicado",
+      expect.objectContaining({
+        agendadoPara: "2026-08-18T14:00:00.000Z",
+        canais: { wordpress: { rascunho_id: "123", status: "agendado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" } },
+      }),
+    );
+  });
+
   // Etapa "verificar_links" (19/08/2026, pedido do Luiz) — achado real de teste em produção: o
   // Revisor gastava uma tentativa inteira reprovando por "fonte específica" quando o link nem
   // sequer existia. Este teste força um link quebrado (fetch mockado retornando 404) e confirma
@@ -948,6 +1030,7 @@ describe("processarProximaPauta", () => {
           metaDescription: "Guia completo.",
         },
         "media-capa-reaproveitada",
+        undefined,
       );
       // atualizarStatusPost só roda 1x aqui (bloco final de sucesso) — sem a chamada extra de
       // persistência de imagens, que só existe no caminho de geração do zero.
@@ -1015,7 +1098,7 @@ describe("processarProximaPauta", () => {
       expect(gerarImagensSecundarias).not.toHaveBeenCalled();
       expect(enviarMidia).not.toHaveBeenCalled();
       // featured_media reaproveitado sem novo upload.
-      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), "media-capa-existente");
+      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), "media-capa-existente", undefined);
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).toContain('"image":"https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"');
       // Capa reaproveitada também é embutida como <figure> no início do corpo (mesma correção do
@@ -1129,7 +1212,7 @@ describe("processarProximaPauta", () => {
       expect(etapasChamadas).toContain("gerar_imagens");
       expect(enviarMidia).toHaveBeenCalledWith("data:image/png;base64,AAAA", "capa-serasa.png", "Pessoa aliviada olhando boletos organizados");
       expect(enviarMidia).toHaveBeenCalledWith("data:image/png;base64,BBBB", "doc-necessarios.png", "Lista dos documentos necessários");
-      expect(criarRascunho).toHaveBeenCalledWith(expect.objectContaining({ slug: "como-limpar-nome-serasa" }), "media-capa");
+      expect(criarRascunho).toHaveBeenCalledWith(expect.objectContaining({ slug: "como-limpar-nome-serasa" }), "media-capa", undefined);
 
       // Storage (follow-up 19/08/2026): mesma data URL original enviada ao WordPress, caminho
       // namespaced por propriedade+pauta (prop-1/pauta-1, ver pautaFalsa/propriedadeFalsa).
@@ -1192,7 +1275,7 @@ describe("processarProximaPauta", () => {
 
       expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
       expect(adaptadorFalso.enviarMidia).not.toHaveBeenCalled();
-      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined);
+      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).not.toContain('"image":');
       // Sem capa gerada, o upload ao Storage nem é tentado (nested dentro do try de sucesso do
@@ -1404,7 +1487,7 @@ describe("processarProximaPauta", () => {
       const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
       expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
-      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined);
+      expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).not.toContain('"image":');
       // Upload ao WordPress falhou — o Storage nem chega a ser tentado (nested dentro do try de

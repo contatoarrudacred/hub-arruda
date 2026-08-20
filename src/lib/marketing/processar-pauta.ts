@@ -6,6 +6,7 @@
 // do cron re-seleciona a mesma pauta e tenta de novo, sem precisar de máquina de estados própria
 // além do que já está no banco (status + tentativas).
 
+import { decidirProximoHorario } from "./agendador";
 import { selecionarPauta } from "./estrategista";
 import { gerarConteudo } from "./escritor";
 import { revisarConteudo } from "./revisor";
@@ -25,6 +26,7 @@ import {
   carregarPersona,
   carregarPostProntoParaPublicar,
   carregarPostsRecentes,
+  carregarProximosAgendamentos,
   carregarPropriedade,
   contarPostsPublicadosDesde,
   criarPost,
@@ -649,6 +651,19 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       imagemDestacadaId = resultadoImagens.capaMediaId;
     }
 
+    // Etapa "agendar" (Fase 4e, Agente Agendador, 20/08/2026) — só roda quando a propriedade tem
+    // horários de publicação configurados; decide o próximo horário livre da agenda ANTES de criar
+    // o rascunho, pra "publicar" já saber se deve criar com status "future" (agendado) ou "draft"
+    // (comportamento anterior, publica na hora). Sem horários configurados, agendadoPara fica
+    // `null` e todo o resto do fluxo abaixo continua idêntico a antes desta feature.
+    let agendadoPara: Date | null = null;
+    if (propriedade.horariosPublicacao?.length) {
+      agendadoPara = await registrarEtapa(pauta.id, "agendar", async () => {
+        const jaAgendados = await carregarProximosAgendamentos(propriedade.id);
+        return decidirProximoHorario(propriedade.horariosPublicacao!, jaAgendados, new Date());
+      });
+    }
+
     // Etapa "publicar" envolve criar rascunho + verificar + aprovar/publicar como uma unidade só.
     // Decisão desta task: uma rejeição de negócio (verificacao.ok === false) não é uma exceção
     // técnica — não lança, só retorna um resultado discriminado (mesma escolha de design aplicada
@@ -674,6 +689,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
             metaDescription: dadosConteudo.metaDescription,
           },
           imagemDestacadaId,
+          agendadoPara ?? undefined,
         );
 
         const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
@@ -681,7 +697,10 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
           return { sucesso: false as const, detalhes: verificacao.detalhes ?? "Rascunho não conforme no WordPress." };
         }
 
-        const publicado = await adaptador.aprovarPublicar(rascunho.idRemoto);
+        // Post agendado (Fase 4e): já foi criado com status "future" acima — chamar aprovarPublicar
+        // agora seria o bug que este trabalho existe pra corrigir (publicaria na hora em vez de
+        // esperar o horário agendado). rascunho.link já é o permalink final (ver criarRascunho).
+        const publicado = agendadoPara ? { urlPublicada: rascunho.link } : await adaptador.aprovarPublicar(rascunho.idRemoto);
         return { sucesso: true as const, rascunho, publicado };
       },
       undefined,
@@ -736,9 +755,16 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // mesmos valores aqui seria só uma duplicação redundante, não uma correção de nada.
       try {
         await atualizarStatusPost(postId, "publicado", {
-          canais: { wordpress: { rascunho_id: rascunho.idRemoto, status: "publicado", url: publicado.urlPublicada } },
+          // Só o status DENTRO do jsonb `canais.wordpress` muda pra "agendado" — `posts.status`
+          // (1º argumento) continua indo pra "publicado" de qualquer forma, mesma decisão de
+          // desenho do plano desta task: nenhum status novo no nível de pauta/post, o pipeline
+          // "termina o trabalho dele" ao criar o agendamento, igual já fazia ao publicar na hora.
+          canais: {
+            wordpress: { rascunho_id: rascunho.idRemoto, status: agendadoPara ? "agendado" : "publicado", url: publicado.urlPublicada },
+          },
           publicadoEm: new Date().toISOString(),
           conteudoHtml: corpoHtmlParaPublicar,
+          agendadoPara: agendadoPara?.toISOString(),
         });
       } catch (erroAtualizarPost) {
         console.error(
