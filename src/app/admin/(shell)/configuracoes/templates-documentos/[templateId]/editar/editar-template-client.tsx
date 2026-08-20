@@ -32,7 +32,7 @@ const GRUPOS_PLACEHOLDERS = [
     grupo: "Blocos prontos",
     itens: [
       { chave: "dados_cliente", descricao: "Bloco já formatado com todos os campos acima de uma vez (nome, CPF, RG, endereço...). Alternativa rápida a montar campo a campo." },
-      { chave: "lista_documentos", descricao: "Tabela com documento + nome de cada CPF/CNPJ do pacote, quando a venda cobre mais de um." },
+      { chave: "tabela_documentos", descricao: "Tabela (CPF/CNPJ + nome/razão social) de cada documento do pacote, quando a venda cobre mais de um." },
     ],
   },
   {

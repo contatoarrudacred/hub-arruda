@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   montarCamposClienteResolucao,
   montarDadosClienteHtml,
-  montarListaDocumentosHtml,
+  montarTabelaDocumentosHtml,
   montarTabelaVencimentosHtml,
   resolverPlaceholders,
   type PessoaContrato,
@@ -38,7 +38,7 @@ describe("resolverPlaceholders", () => {
     valorTotal: 1500,
     formaPagamento: "Parcelado em 3x no boleto",
     tabelaVencimentos: "<table><tr><td>1</td></tr></table>",
-    listaDocumentos: "",
+    tabelaDocumentos: "",
     clienteNome: "JOÃO DA SILVA",
     clienteDocumento: "123.456.789-09",
     clienteRg: "1.234.567",
@@ -86,8 +86,8 @@ describe("resolverPlaceholders", () => {
     expect(resultado).toBe((1500).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
   });
 
-  it("substitui lista_documentos vazia quando não é pacote", () => {
-    const resultado = resolverPlaceholders("Documentos: {{lista_documentos}}", dadosBase);
+  it("substitui tabela_documentos vazia quando não é pacote", () => {
+    const resultado = resolverPlaceholders("Documentos: {{tabela_documentos}}", dadosBase);
     expect(resultado).toBe("Documentos: ");
   });
 
@@ -158,23 +158,23 @@ describe("montarCamposClienteResolucao", () => {
   });
 });
 
-describe("montarListaDocumentosHtml", () => {
+describe("montarTabelaDocumentosHtml", () => {
   it("devolve vazio quando não é pacote (0 ou 1 documento)", () => {
-    expect(montarListaDocumentosHtml([])).toBe("");
-    expect(montarListaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }])).toBe("");
+    expect(montarTabelaDocumentosHtml([])).toBe("");
+    expect(montarTabelaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }])).toBe("");
   });
 
-  it("lista documento + nome de cada item do pacote (sem RG/estado civil/profissão — não existe pra esses)", () => {
-    const html = montarListaDocumentosHtml([
+  it("monta tabela com cabeçalho CPF / CNPJ e NOME / RAZÃO SOCIAL", () => {
+    const html = montarTabelaDocumentosHtml([
       { documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" },
       { documento: "987.654.321-00", nomeRazaoSocial: "MARIA SOUZA" },
     ]);
 
     expect(html).toContain("<table>");
-    expect(html).toContain("123.456.789-09");
-    expect(html).toContain("987.654.321-00");
-    expect(html).toContain("JOÃO DA SILVA");
-    expect(html).toContain("MARIA SOUZA");
+    expect(html).toContain("<th>CPF / CNPJ</th>");
+    expect(html).toContain("<th>NOME / RAZÃO SOCIAL</th>");
+    expect(html).toContain("<tr><td>123.456.789-09</td><td>JOÃO DA SILVA</td></tr>");
+    expect(html).toContain("<tr><td>987.654.321-00</td><td>MARIA SOUZA</td></tr>");
   });
 });
 

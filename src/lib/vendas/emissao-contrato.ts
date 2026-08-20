@@ -3,7 +3,7 @@ import {
   buscarTemplatePorId,
   montarCamposClienteResolucao,
   montarDadosClienteHtml,
-  montarListaDocumentosHtml,
+  montarTabelaDocumentosHtml,
   montarTabelaVencimentosHtml,
   resolverPlaceholders,
   type ParcelaTabela,
@@ -88,7 +88,7 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
     valorTotal: contrato.valorTotal,
     formaPagamento: formaPagamentoLabel,
     tabelaVencimentos: parcelasTabela.length > 1 ? montarTabelaVencimentosHtml(parcelasTabela, formaPagamentoLabel) : "",
-    listaDocumentos: montarListaDocumentosHtml(
+    tabelaDocumentos: montarTabelaDocumentosHtml(
       documentosPacote.map((d) => ({ documento: d.documento, nomeRazaoSocial: d.nomeRazaoSocial })),
     ),
     ...montarCamposClienteResolucao(pessoaContrato, representanteContrato),

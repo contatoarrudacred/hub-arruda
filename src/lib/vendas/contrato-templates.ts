@@ -182,7 +182,7 @@ export type DadosResolucaoContrato = {
   valorTotal: number;
   formaPagamento: string;
   tabelaVencimentos: string;
-  listaDocumentos: string;
+  tabelaDocumentos: string;
   // Campos granulares — complementam {{dados_cliente}} (bloco pronto) pra quem quer montar o
   // layout do contrato campo a campo (pedido do Luiz, 19/08/2026: "precisaremos deles separados
   // e não uma variável única que traz tudo junto"). Vazio ("") quando não se aplica — ver
@@ -205,7 +205,7 @@ const PLACEHOLDERS = [
   "valor_total_extenso",
   "tabela_vencimentos",
   "forma_pagamento",
-  "lista_documentos",
+  "tabela_documentos",
   "cliente_nome",
   "cliente_documento",
   "cliente_rg",
@@ -228,8 +228,8 @@ function valorOuTraco(valor: string): string {
 
 /**
  * Resolve os placeholders {{...}} do HTML do template contra os dados já coletados na tela de
- * Fechamento de Venda. Os blocos HTML de dados_cliente/lista_documentos/tabela_vencimentos já
- * chegam prontos (montados por montarDadosClienteHtml/montarListaDocumentosHtml/
+ * Fechamento de Venda. Os blocos HTML de dados_cliente/tabela_documentos/tabela_vencimentos já
+ * chegam prontos (montados por montarDadosClienteHtml/montarTabelaDocumentosHtml/
  * montarTabelaVencimentosHtml) — esta função só faz a substituição final, continua pura.
  */
 export function resolverPlaceholders(conteudoHtml: string, dados: DadosResolucaoContrato): string {
@@ -241,7 +241,7 @@ export function resolverPlaceholders(conteudoHtml: string, dados: DadosResolucao
     valor_total_extenso: valorPorExtenso(dados.valorTotal),
     tabela_vencimentos: dados.tabelaVencimentos,
     forma_pagamento: dados.formaPagamento,
-    lista_documentos: dados.listaDocumentos,
+    tabela_documentos: dados.tabelaDocumentos,
     cliente_nome: dados.clienteNome,
     cliente_documento: dados.clienteDocumento,
     cliente_rg: valorOuTraco(dados.clienteRg),
@@ -357,21 +357,21 @@ export function montarCamposClienteResolucao(pessoa: PessoaContrato, representan
 export type DocumentoPacote = { documento: string; nomeRazaoSocial: string };
 
 /**
- * Monta {{lista_documentos}} — lista simples de documento + nome/razão social de cada CPF/CNPJ
- * coberto pelo contrato. **Decisão de escopo (Luiz, 18/08/2026): só temos dado completo (RG/estado
- * civil/profissão/endereço) de quem assina o contrato — os demais documentos do pacote só têm
- * documento + nome, e é só isso que existe pra mostrar aqui.** Devolve string vazia quando não é
- * pacote (0 ou 1 documento — nesse caso os dados já estão em {{dados_cliente}}, não precisa
+ * Monta {{tabela_documentos}} — tabela de duas colunas (CPF/CNPJ, nome/razão social) de cada
+ * documento coberto pelo contrato. **Decisão de escopo (Luiz, 18/08/2026): só temos dado completo
+ * (RG/estado civil/profissão/endereço) de quem assina o contrato — os demais documentos do pacote
+ * só têm documento + nome, e é só isso que existe pra mostrar aqui.** Devolve string vazia quando
+ * não é pacote (0 ou 1 documento — nesse caso os dados já estão em {{dados_cliente}}, não precisa
  * repetir).
  */
-export function montarListaDocumentosHtml(documentos: DocumentoPacote[]): string {
+export function montarTabelaDocumentosHtml(documentos: DocumentoPacote[]): string {
   if (documentos.length <= 1) return "";
 
   const linhas = documentos
     .map((doc) => `<tr><td>${doc.documento}</td><td>${doc.nomeRazaoSocial}</td></tr>`)
     .join("\n");
 
-  return `<table><thead><tr><th>Documento</th><th>Nome/Razão social</th></tr></thead><tbody>\n${linhas}\n</tbody></table>`;
+  return `<table><thead><tr><th>CPF / CNPJ</th><th>NOME / RAZÃO SOCIAL</th></tr></thead><tbody>\n${linhas}\n</tbody></table>`;
 }
 
 export type ParcelaTabela = { numero: number; valor: number; vencimento: Date };
