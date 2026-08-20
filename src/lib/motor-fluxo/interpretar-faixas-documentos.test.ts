@@ -83,6 +83,12 @@ describe("validarEscolhaFaixaMenu (rodada 1 do menu fechado, ln_passo6)", () => 
     });
   });
 
+  it("acima do corte (opção virtual, spec 2026-08-20-agendamento-consultor-alto-valor.md) — não precisa de índice", () => {
+    expect(validarEscolhaFaixaMenu({ status: "acima_do_corte", indice_faixa: 0 }, 5)).toEqual({
+      tipo: "acima_do_corte",
+    });
+  });
+
   it("índice fora do range do menu vira nao_entendi (alucinação)", () => {
     expect(validarEscolhaFaixaMenu({ status: "faixa_escolhida", indice_faixa: 9 }, 5)).toEqual({ tipo: "nao_entendi" });
   });

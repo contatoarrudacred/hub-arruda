@@ -25,6 +25,7 @@ export type UsuarioSistema = {
   nome: string;
   email: string;
   corBadge: CorBadge;
+  ehConsultor: boolean;
 };
 
 /**
@@ -42,7 +43,7 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
 
   const { data: existente, error: erroExistente } = await supabase
     .from("usuarios_sistema")
-    .select("id, email, cor_badge, pessoas(nome_razao_social)")
+    .select("id, email, cor_badge, eh_consultor, pessoas(nome_razao_social)")
     .eq("auth_user_id", user.id)
     .maybeSingle();
   // Erro de verdade (ex.: coluna renomeada/removida, RLS bloqueando) não pode ser tratado como
@@ -52,7 +53,13 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
   if (existente) {
     const pessoa = existente.pessoas as unknown as { nome_razao_social: string } | null;
     const cor = ehCorBadgeValida(existente.cor_badge) ? existente.cor_badge : "azul";
-    return { id: existente.id, email: existente.email, nome: pessoa?.nome_razao_social ?? existente.email, corBadge: cor };
+    return {
+      id: existente.id,
+      email: existente.email,
+      nome: pessoa?.nome_razao_social ?? existente.email,
+      corBadge: cor,
+      ehConsultor: existente.eh_consultor,
+    };
   }
 
   // Pode existir um registro antigo com o mesmo e-mail mas auth_user_id desatualizado (ex.: o
@@ -63,7 +70,7 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
   if (user.email) {
     const { data: porEmail, error: erroPorEmail } = await supabase
       .from("usuarios_sistema")
-      .select("id, email, cor_badge, pessoas(nome_razao_social)")
+      .select("id, email, cor_badge, eh_consultor, pessoas(nome_razao_social)")
       .eq("email", user.email)
       .maybeSingle();
     if (erroPorEmail) throw new Error(`Falha ao buscar usuário do sistema por e-mail: ${erroPorEmail.message}`);
@@ -75,7 +82,13 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
       if (erroRealinho) throw new Error(`Falha ao realinhar usuário do sistema: ${erroRealinho.message}`);
       const pessoa = porEmail.pessoas as unknown as { nome_razao_social: string } | null;
       const cor = ehCorBadgeValida(porEmail.cor_badge) ? porEmail.cor_badge : "azul";
-      return { id: porEmail.id, email: porEmail.email, nome: pessoa?.nome_razao_social ?? porEmail.email, corBadge: cor };
+      return {
+        id: porEmail.id,
+        email: porEmail.email,
+        nome: pessoa?.nome_razao_social ?? porEmail.email,
+        corBadge: cor,
+        ehConsultor: porEmail.eh_consultor,
+      };
     }
   }
 
@@ -94,7 +107,7 @@ export async function obterUsuarioSistemaAtual(): Promise<UsuarioSistema> {
     .single();
   if (erroUsuario || !usuario) throw new Error(`Falha ao criar usuário do sistema: ${erroUsuario?.message}`);
 
-  return { id: usuario.id, email: user.email ?? "", nome: nomeInicial, corBadge: "azul" };
+  return { id: usuario.id, email: user.email ?? "", nome: nomeInicial, corBadge: "azul", ehConsultor: false };
 }
 
 /** Todos os atendentes humanos cadastrados — usado pros filtros rápidos ("Minhas" / "[Fulano]"). */
@@ -102,14 +115,146 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("usuarios_sistema")
-    .select("id, email, cor_badge, pessoas(nome_razao_social)")
+    .select("id, email, cor_badge, eh_consultor, pessoas(nome_razao_social)")
     .eq("ativo", true);
   if (error) throw new Error(`Falha ao listar usuários do sistema: ${error.message}`);
   return (data ?? []).map((linha) => {
     const pessoa = linha.pessoas as unknown as { nome_razao_social: string } | null;
     const cor = ehCorBadgeValida(linha.cor_badge) ? linha.cor_badge : "azul";
-    return { id: linha.id, email: linha.email, nome: pessoa?.nome_razao_social ?? linha.email, corBadge: cor };
+    return {
+      id: linha.id,
+      email: linha.email,
+      nome: pessoa?.nome_razao_social ?? linha.email,
+      corBadge: cor,
+      ehConsultor: linha.eh_consultor,
+    };
   });
+}
+
+// --- Agendamento com consultor (spec 2026-08-20-agendamento-consultor-alto-valor.md) -----------
+
+export async function definirConsultor(usuarioId: string, ehConsultor: boolean): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("usuarios_sistema").update({ eh_consultor: ehConsultor }).eq("id", usuarioId);
+  if (error) throw new Error(`Falha ao atualizar consultor: ${error.message}`);
+}
+
+export type LinhaDisponibilidade = { diaSemana: number; horaInicio: number; horaFim: number; ativo: boolean };
+
+/** Disponibilidade de um consultor, sempre as 7 linhas (0=domingo..6=sábado) — dia sem linha configurada vem com `ativo:false` e a janela padrão (10-21h) só como valor inicial de edição. */
+export async function listarDisponibilidadeConsultor(usuarioId: string): Promise<LinhaDisponibilidade[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("disponibilidade_atendente")
+    .select("dia_semana, hora_inicio, hora_fim, ativo")
+    .eq("usuario_sistema_id", usuarioId);
+  if (error) throw new Error(`Falha ao listar disponibilidade: ${error.message}`);
+
+  const porDia = new Map((data ?? []).map((linha) => [Number(linha.dia_semana), linha]));
+  return Array.from({ length: 7 }, (_, diaSemana) => {
+    const linha = porDia.get(diaSemana);
+    return {
+      diaSemana,
+      horaInicio: linha ? Number(linha.hora_inicio.split(":")[0]) : 10,
+      horaFim: linha ? Number(linha.hora_fim.split(":")[0]) : diaSemana === 6 ? 15 : 21,
+      ativo: linha?.ativo ?? false,
+    };
+  });
+}
+
+export type AgendamentoConsultor = {
+  id: string;
+  inicio: string;
+  fim: string;
+  status: string;
+  motivo: string;
+  pessoaNome: string;
+  pessoaTelefone: string | null;
+};
+
+/** Agendamentos do consultor logado — passados e futuros, mais recente primeiro. Tela "Minha Agenda" (spec 2026-08-20-agendamento-consultor-alto-valor.md), sem calendário visual — só lista, decisão de Luiz. */
+export async function listarAgendamentosConsultor(usuarioId: string): Promise<AgendamentoConsultor[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agendamentos_consultor")
+    .select("id, inicio, fim, status, motivo, pessoas(nome_razao_social, whatsapp)")
+    .eq("usuario_sistema_id", usuarioId)
+    .order("inicio", { ascending: false });
+  if (error) throw new Error(`Falha ao listar agendamentos: ${error.message}`);
+
+  return (data ?? []).map((linha) => {
+    const pessoa = linha.pessoas as unknown as { nome_razao_social: string; whatsapp: string | null } | null;
+    return {
+      id: linha.id,
+      inicio: linha.inicio,
+      fim: linha.fim,
+      status: linha.status,
+      motivo: linha.motivo,
+      pessoaNome: pessoa?.nome_razao_social ?? "Lead",
+      pessoaTelefone: pessoa?.whatsapp ?? null,
+    };
+  });
+}
+
+export type LembreteAgendamento = { pessoaNome: string; inicio: string; tipo: "15min" | "hora" };
+
+/**
+ * Lembrete pendente do consultor logado — 15 minutos antes do agendamento, ou no horário exato
+ * (spec 2026-08-20-agendamento-consultor-alto-valor.md). Marca o lembrete como enviado na mesma
+ * chamada (nunca repete o mesmo aviso) — chamado por polling do layout raiz do admin, então
+ * concorrência não é uma preocupação real aqui (um usuário só, checando a cada ~30s).
+ */
+export async function buscarLembretePendente(usuarioId: string): Promise<LembreteAgendamento | null> {
+  const supabase = await createClient();
+  const agora = new Date();
+  const em15min = new Date(agora.getTime() + 15 * 60 * 1000);
+
+  const { data, error } = await supabase
+    .from("agendamentos_consultor")
+    .select("id, inicio, fim, lembrete_15min_enviado, lembrete_hora_enviado, pessoas(nome_razao_social)")
+    .eq("usuario_sistema_id", usuarioId)
+    .eq("status", "confirmado")
+    .lte("inicio", em15min.toISOString())
+    .gte("fim", agora.toISOString())
+    .order("inicio", { ascending: true });
+  if (error) throw new Error(`Falha ao buscar lembrete: ${error.message}`);
+
+  for (const linha of data ?? []) {
+    const inicio = new Date(linha.inicio);
+    const pessoa = linha.pessoas as unknown as { nome_razao_social: string } | null;
+    const nome = pessoa?.nome_razao_social ?? "Lead";
+
+    if (!linha.lembrete_hora_enviado && agora >= inicio) {
+      await supabase.from("agendamentos_consultor").update({ lembrete_hora_enviado: true }).eq("id", linha.id);
+      return { pessoaNome: nome, inicio: linha.inicio, tipo: "hora" };
+    }
+    if (!linha.lembrete_15min_enviado && agora < inicio) {
+      await supabase.from("agendamentos_consultor").update({ lembrete_15min_enviado: true }).eq("id", linha.id);
+      return { pessoaNome: nome, inicio: linha.inicio, tipo: "15min" };
+    }
+  }
+  return null;
+}
+
+/** Substitui a disponibilidade inteira do consultor pelas linhas informadas (delete+insert, mais simples que fazer upsert por dia — o volume é sempre no máximo 7 linhas). */
+export async function salvarDisponibilidadeConsultor(usuarioId: string, linhas: LinhaDisponibilidade[]): Promise<void> {
+  const supabase = await createClient();
+  const { error: erroDelete } = await supabase.from("disponibilidade_atendente").delete().eq("usuario_sistema_id", usuarioId);
+  if (erroDelete) throw new Error(`Falha ao limpar disponibilidade anterior: ${erroDelete.message}`);
+
+  const ativas = linhas.filter((l) => l.ativo);
+  if (ativas.length === 0) return;
+
+  const { error: erroInsert } = await supabase.from("disponibilidade_atendente").insert(
+    ativas.map((l) => ({
+      usuario_sistema_id: usuarioId,
+      dia_semana: l.diaSemana,
+      hora_inicio: `${String(l.horaInicio).padStart(2, "0")}:00`,
+      hora_fim: `${String(l.horaFim).padStart(2, "0")}:00`,
+      ativo: true,
+    })),
+  );
+  if (erroInsert) throw new Error(`Falha ao salvar disponibilidade: ${erroInsert.message}`);
 }
 
 export type FiltroConversas =
@@ -329,7 +474,7 @@ export type NotaInterna = {
 
 export type Notificacao = {
   id: string;
-  tipo: "mencao" | "atribuicao";
+  tipo: "mencao" | "atribuicao" | "agendamento";
   conversaId: string;
   pessoaNome: string;
   lida: boolean;
@@ -579,7 +724,7 @@ export async function listarNotificacoes(usuarioId: string): Promise<Notificacao
     const conversaInfo = n.conversas as unknown as { pessoas: { nome_razao_social: string } | null } | null;
     return {
       id: n.id,
-      tipo: n.tipo as "mencao" | "atribuicao",
+      tipo: n.tipo as "mencao" | "atribuicao" | "agendamento",
       conversaId: n.conversa_id,
       pessoaNome: conversaInfo?.pessoas?.nome_razao_social ?? "Contato",
       lida: n.lida,

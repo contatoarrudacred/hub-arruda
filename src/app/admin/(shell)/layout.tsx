@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { LembreteAgendamentoGlobal } from "./lembrete-agendamento-global";
 import { Sidebar } from "./sidebar";
 
 // Layout persistente de /admin/* — barra lateral fixa (identidade navy/dourado combinada com
@@ -13,6 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="flex h-screen overflow-hidden">
       <Sidebar userEmail={user?.email} />
       <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-50 dark:bg-black">{children}</main>
+      <LembreteAgendamentoGlobal />
     </div>
   );
 }

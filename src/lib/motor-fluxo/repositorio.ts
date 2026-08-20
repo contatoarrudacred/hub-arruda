@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { JanelaDisponibilidade, PeriodoOcupado } from "./agenda-consultor";
 import type { ConfigPrecificacaoLimpaNome, FaixaPreco } from "./regras-limpeza-nome";
 import type { ModoRoteamentoLeadNovo, RegraRoteamento } from "./roteamento-lead-novo";
 import type { ConteudoEtapa, EtapaCarregada } from "./tipos";
@@ -235,4 +236,60 @@ export async function listarObjecoesAtivas(): Promise<ObjecaoParaDetectorCarrega
   }
 
   return (data ?? []).map((linha) => ({ id: linha.id, objecao: linha.objecao, comoLidar: linha.como_lidar }));
+}
+
+export type DadosAgendamentoConsultor = {
+  consultorId: string | null;
+  disponibilidade: JanelaDisponibilidade[];
+  agendamentosExistentes: PeriodoOcupado[];
+};
+
+/**
+ * Dados pro fluxo de agendamento com consultor (spec 2026-08-20-agendamento-consultor-alto-valor.md)
+ * — o consultor (`usuarios_sistema.eh_consultor=true`, só um hoje), a disponibilidade dele e os
+ * agendamentos futuros já confirmados (pra `calcularHorariosDisponiveis` não sobrepor). `null` em
+ * `consultorId` quando ainda não existe nenhum consultor marcado — o checkpoint de agendamento
+ * simplesmente não tem horário pra oferecer nesse caso (`ln_agendamento_horario` cai no fallback
+ * "não entendi" por falta de `_agendamento_opcao_N_inicio`, sem quebrar o atendimento).
+ */
+export async function carregarDadosAgendamentoConsultor(): Promise<DadosAgendamentoConsultor> {
+  const supabase = createAdminClient();
+  const { data: consultor, error: erroConsultor } = await supabase
+    .from("usuarios_sistema")
+    .select("id")
+    .eq("eh_consultor", true)
+    .eq("ativo", true)
+    .limit(1)
+    .maybeSingle();
+  if (erroConsultor) throw new Error(`Falha ao carregar consultor: ${erroConsultor.message}`);
+  if (!consultor) return { consultorId: null, disponibilidade: [], agendamentosExistentes: [] };
+
+  const [respostaDisponibilidade, respostaAgendamentos] = await Promise.all([
+    supabase
+      .from("disponibilidade_atendente")
+      .select("dia_semana, hora_inicio, hora_fim")
+      .eq("usuario_sistema_id", consultor.id)
+      .eq("ativo", true),
+    supabase
+      .from("agendamentos_consultor")
+      .select("inicio, fim")
+      .eq("usuario_sistema_id", consultor.id)
+      .eq("status", "confirmado")
+      .gte("inicio", new Date().toISOString()),
+  ]);
+  if (respostaDisponibilidade.error) throw new Error(`Falha ao carregar disponibilidade do consultor: ${respostaDisponibilidade.error.message}`);
+  if (respostaAgendamentos.error) throw new Error(`Falha ao carregar agendamentos do consultor: ${respostaAgendamentos.error.message}`);
+
+  return {
+    consultorId: consultor.id,
+    disponibilidade: (respostaDisponibilidade.data ?? []).map((linha) => ({
+      diaSemana: Number(linha.dia_semana),
+      horaInicio: Number(linha.hora_inicio.split(":")[0]),
+      horaFim: Number(linha.hora_fim.split(":")[0]),
+    })),
+    agendamentosExistentes: (respostaAgendamentos.data ?? []).map((linha) => ({
+      inicio: new Date(linha.inicio),
+      fim: new Date(linha.fim),
+    })),
+  };
 }
