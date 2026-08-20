@@ -70,6 +70,8 @@ const MODULOS: Modulo[] = [
         itens: [
           { tipo: "link", rotulo: "Preços", href: "/admin/precos", icone: "💲" },
           { tipo: "link", rotulo: "Atendentes", href: "/admin/atendentes", icone: "🧑‍💼" },
+          { tipo: "link", rotulo: "Produtos & Serviços", href: "/admin/configuracoes/produtos", icone: "📦" },
+          { tipo: "link", rotulo: "Template de Documentos", href: "/admin/configuracoes/templates-documentos", icone: "📄" },
           { tipo: "link", rotulo: "Configurações gerais", href: "/admin/configuracoes", icone: "🛠️" },
         ],
       },

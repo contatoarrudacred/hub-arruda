@@ -9,6 +9,7 @@ import {
   type PessoaContrato,
 } from "./contrato-templates";
 import { buscarEnderecoPorPessoa } from "./endereco";
+import { envolverComEstiloDocumento } from "./estilo-documento";
 import { gerarPdfContrato, uploadPdfContrato } from "./geracao-pdf";
 import { listarDocumentosPacote } from "./oportunidades";
 import { buscarPessoaCompleta } from "./pessoas";
@@ -97,7 +98,7 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
  * `atualizarStatusContrato` aqui só reafirma esse mesmo status pra poder gravar `pdfUrl` junto. */
 export async function gerarEEmitirContrato(contratoId: string): Promise<void> {
   const html = await montarHtmlContrato(contratoId);
-  const pdf = await gerarPdfContrato(html);
+  const pdf = await gerarPdfContrato(envolverComEstiloDocumento(html));
   const { path } = await uploadPdfContrato(contratoId, pdf);
   await atualizarStatusContrato(contratoId, "emitindo_contrato", { pdfUrl: path });
 }
