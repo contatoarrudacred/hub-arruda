@@ -4,4 +4,4 @@ tarefa: Pastas de Fluxo em /admin/fluxos — concluída. Migration `202608191300
 desde: 2026-08-20T00:05:00-03:00
 proxima: Voltar pro reset-conversa (aguardando teste do Luiz), decisão sobre unique constraint em pessoas.whatsapp, e avaliar Evolution API como backup do Zapster
 bloqueio: nenhum — ANTHROPIC_API_KEY foi adicionada na Vercel (confirmado por Luiz) e falta confirmar se houve redeploy; patch_abertura_email_justificativa_na_retomada.sql enviado, rodar não confirmado
-turno_fim: 2026-08-19T23:45:57-03:00
+turno_fim: 2026-08-20T13:36:07-03:00
