@@ -231,12 +231,15 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
       )}
 
       {visao === "kanban" && vendas.length > 0 && (
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div className="flex gap-4 overflow-x-auto pb-4">
           {ESTAGIOS_VENDA.map((estagio) => (
-            <div key={estagio.valor} className="w-64 shrink-0 space-y-2 rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
-              <div className="flex items-center gap-2 px-1">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: estagio.cor }} />
-                <h2 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300" title={estagio.rotulo}>
+            <div
+              key={estagio.valor}
+              className="flex w-64 shrink-0 flex-col divide-y divide-zinc-200 rounded-md border border-zinc-200 bg-zinc-50 text-xs shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              <div className="flex items-center gap-2 p-2">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: estagio.cor }} />
+                <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" title={estagio.rotulo}>
                   {estagio.rotulo} ({porEstagio.get(estagio.valor)?.length ?? 0})
                 </h2>
                 {(porEstagio.get(estagio.valor) ?? []).some((v) => v.ultimoErro) && (
@@ -246,17 +249,17 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                       await tentarNovamenteEmLoteAction(estagio.valor);
                       recarregar();
                     }}
-                    className="text-xs text-amber-700 underline dark:text-amber-400"
+                    className="ml-auto text-xs text-amber-700 underline dark:text-amber-400"
                   >
                     Tentar novamente todos
                   </button>
                 )}
               </div>
-              <div className="space-y-2">
+              <div className="flex max-h-[70vh] flex-col gap-2 overflow-y-auto p-2">
                 {(porEstagio.get(estagio.valor) ?? []).map((venda) => (
                   <div
                     key={venda.contratoId}
-                    className={`rounded-lg border p-2 text-xs shadow-sm ${
+                    className={`rounded-md border p-3 shadow-sm ${
                       venda.ultimoErro
                         ? "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950"
                         : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"
