@@ -28,7 +28,7 @@ export async function enviarImagemTemplate(arquivo: Blob, nomeArquivo: string): 
 export type TipoTemplateDocumento = "contrato" | "termo_acordo" | "ficha_associativa";
 
 // Tabela renomeada de contrato_templates -> documento_templates pela migration
-// 20260819130000_vendas_templates_documentos.sql (generaliza pra além de contrato — ver
+// 20260819130001_vendas_templates_documentos.sql (generaliza pra além de contrato — ver
 // docs/COORDENACAO_AGENTES_ARRUDACRED.md seção 2). Ainda não aplicada/regenerada no
 // database.types.ts, então o nome da tabela e as colunas novas (tipo, nome) passam por uma
 // variável não-literal — mesmo contorno já usado em src/lib/vendas/produtos.ts pra
