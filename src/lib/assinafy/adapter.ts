@@ -1,7 +1,19 @@
 import { criarSignatario, solicitarAssinatura, uploadDocumento } from "./cliente";
 import { buscarContratoPorId, atualizarStatusContrato } from "@/lib/vendas/contratos";
 import { baixarPdfContrato } from "@/lib/vendas/geracao-pdf";
+import { buscarOportunidadeParaFechamento } from "@/lib/vendas/oportunidades";
 import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
+
+/**
+ * Remove acentos e qualquer caractere que não seja letra/número — usado só pra montar o nome do
+ * arquivo do PDF (pedido do Luiz, 20/08/2026), nunca pro conteúdo/nome exibido em outro lugar.
+ * NFD decompõe cada letra acentuada em base + marcador de acentuação separado (ex.: "é" vira "e" +
+ * um marcador não-alfanumérico) — o filtro alfanumérico abaixo já descarta esse marcador junto
+ * com espaço/pontuação, sem precisar de uma segunda regex só pra faixa de acentuação Unicode.
+ */
+function normalizarParaNomeArquivo(texto: string): string {
+  return texto.normalize("NFD").replace(/[^a-zA-Z0-9]/g, "");
+}
 
 /**
  * Envia o contrato pra assinatura eletrônica: baixa o PDF já gerado, sobe pra Assinafy, cria os 2
@@ -20,12 +32,23 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
   const pessoaArrudaCredSignatarioId = contrato.pessoaArrudaCredSignatarioId;
   if (!pessoaArrudaCredSignatarioId) throw new Error("Venda comissionada não tem assinatura eletrônica — não deveria chegar aqui.");
 
-  const pdf = await baixarPdfContrato(contrato.pdfUrl);
-  const documento = await uploadDocumento(`contrato-${contratoId}.pdf`, pdf);
+  const [pdf, oportunidade, pessoaCliente] = await Promise.all([
+    baixarPdfContrato(contrato.pdfUrl),
+    buscarOportunidadeParaFechamento(contrato.oportunidadeId),
+    buscarPessoaCompleta(contrato.pessoaSignatarioId),
+  ]);
+  if (!pessoaCliente) throw new Error(`Pessoa signatária ${contrato.pessoaSignatarioId} não encontrada.`);
+
+  // "contrato-arrudacred-<cliente>-<serviço>-<timestamp>.pdf" (pedido do Luiz, 20/08/2026) — antes
+  // era só "contrato-<uuid>.pdf", sem nenhum jeito de identificar de que venda era só olhando o
+  // nome na Assinafy.
+  const nomeArquivo = `contrato-arrudacred-${normalizarParaNomeArquivo(pessoaCliente.nomeRazaoSocial)}-${normalizarParaNomeArquivo(oportunidade?.produtoNome ?? "servico")}-${Date.now()}.pdf`;
+  const documento = await uploadDocumento(nomeArquivo, pdf);
 
   const signatarios = await Promise.all(
     [contrato.pessoaSignatarioId, pessoaArrudaCredSignatarioId].map(async (pessoaId) => {
-      const pessoa = await buscarPessoaCompleta(pessoaId);
+      // Reaproveita a pessoa do cliente já buscada acima (Promise.all) em vez de buscar de novo.
+      const pessoa = pessoaId === contrato.pessoaSignatarioId ? pessoaCliente : await buscarPessoaCompleta(pessoaId);
       if (!pessoa) throw new Error(`Pessoa signatária ${pessoaId} não encontrada.`);
       if (!pessoa.email) throw new Error(`Pessoa "${pessoa.nomeRazaoSocial}" não tem e-mail cadastrado — obrigatório pra assinatura eletrônica.`);
 
