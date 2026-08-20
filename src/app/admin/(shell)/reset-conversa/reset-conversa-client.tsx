@@ -6,7 +6,10 @@ import { resetarApenasConversaAction, resetarConversaAction } from "./actions";
 const campo =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50";
 
-type Bloqueio = { tipo: "venda"; contratos: number; comissoes: number } | { tipo: "multiplas"; nomes: string[] };
+type Bloqueio =
+  | { tipo: "venda"; contratos: number; comissoes: number }
+  | { tipo: "usuario_sistema"; email: string }
+  | { tipo: "multiplas"; nomes: string[] };
 
 export function ResetConversaClient() {
   const [telefone, setTelefone] = useState("");
@@ -29,6 +32,10 @@ export function ResetConversaClient() {
     }
     if (r.status === "bloqueado_por_venda") {
       setBloqueio({ tipo: "venda", contratos: r.quantidadeContratos, comissoes: r.quantidadeComissoes });
+      return;
+    }
+    if (r.status === "bloqueado_por_usuario_sistema") {
+      setBloqueio({ tipo: "usuario_sistema", email: r.email });
       return;
     }
     if (r.status === "multiplas_pessoas") {
@@ -94,6 +101,11 @@ export function ResetConversaClient() {
             <p>
               ⚠️ Essa pessoa já tem {bloqueio.contratos} contrato(s) e {bloqueio.comissoes} comissão(ões)
               registrados — o cadastro não pode ser apagado (quebraria esses registros de venda).
+            </p>
+          ) : bloqueio.tipo === "usuario_sistema" ? (
+            <p>
+              ⚠️ Esse telefone está ligado ao cadastro de um usuário do sistema ({bloqueio.email}) — o
+              cadastro não pode ser apagado (é um login de admin, não um lead de teste).
             </p>
           ) : (
             <p>
