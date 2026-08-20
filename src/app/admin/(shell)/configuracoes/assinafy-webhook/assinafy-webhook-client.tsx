@@ -9,6 +9,13 @@ const campo =
 
 const EVENTOS_ESPERADOS = ["document_ready", "signer_rejected_document"];
 
+// NEXT_PUBLIC_* é embutido no bundle do client em build time — mesma variável usada no server
+// (actions.ts) pra montar a URL que registramos. Comparado aqui pra pegar o caso real que
+// aconteceu: uma assinatura de webhook antiga (de outro sistema, apontando pra outro lugar)
+// "parecia" configurada certo só porque os nomes dos eventos batiam — sem checar a URL, o status
+// dava falso positivo.
+const PREFIXO_URL_ESPERADA = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/webhooks/assinafy`;
+
 function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | undefined; erro: string | null }) {
   if (erro) {
     return (
@@ -31,17 +38,24 @@ function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | 
   }
 
   const eventosFaltando = EVENTOS_ESPERADOS.filter((e) => !status.events.includes(e));
-  const tudoCerto = status.ativo && eventosFaltando.length === 0;
+  const urlBate = status.url.startsWith(PREFIXO_URL_ESPERADA);
+  const tudoCerto = status.ativo && eventosFaltando.length === 0 && urlBate;
 
   return (
     <div
       className={`space-y-1 rounded-lg border p-3 text-sm ${
         tudoCerto
           ? "border-green-300 bg-green-50 text-green-800 dark:border-green-700 dark:bg-green-950 dark:text-green-300"
-          : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          : "border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950 dark:text-red-300"
       }`}
     >
-      <p className="font-medium">{tudoCerto ? "✅ Webhook configurado corretamente" : "⚠ Webhook cadastrado, mas incompleto"}</p>
+      <p className="font-medium">
+        {tudoCerto
+          ? "✅ Webhook configurado corretamente"
+          : !urlBate
+            ? "🚫 URL cadastrada não é a nossa — esse webhook não vai avisar o sistema"
+            : "⚠ Webhook cadastrado, mas incompleto"}
+      </p>
       <p>
         Ativo: <strong>{status.ativo ? "sim" : "não"}</strong>
       </p>
@@ -51,6 +65,12 @@ function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | 
       </p>
       <p className="break-all">
         URL: <code>{status.url}</code>
+        {!urlBate && (
+          <>
+            {" "}
+            — esperada: <code>{PREFIXO_URL_ESPERADA}</code>
+          </>
+        )}
       </p>
       <p>E-mail: {status.email}</p>
       <p className="text-xs opacity-80">Atualizado em: {new Date(status.atualizadoEm).toLocaleString("pt-BR")}</p>
