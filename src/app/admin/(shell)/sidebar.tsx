@@ -42,8 +42,8 @@ const MODULOS: Modulo[] = [
     rotulo: "Vendas",
     icone: "💰",
     itens: [
-      { tipo: "em_breve", rotulo: "Dashboard", icone: "📊" },
-      { tipo: "link", rotulo: "Nova venda", href: "/admin/vendas/nova", icone: "🧾" },
+      { tipo: "link", rotulo: "Painel de Vendas", href: "/admin/vendas", icone: "📊" },
+      { tipo: "link", rotulo: "Nova Oportunidade", href: "/admin/vendas/nova-oportunidade", icone: "🧾" },
       { tipo: "link", rotulo: "Fornecedores", href: "/admin/fornecedores", icone: "🏭" },
     ],
   },
@@ -70,6 +70,8 @@ const MODULOS: Modulo[] = [
         itens: [
           { tipo: "link", rotulo: "Preços", href: "/admin/precos", icone: "💲" },
           { tipo: "link", rotulo: "Atendentes", href: "/admin/atendentes", icone: "🧑‍💼" },
+          { tipo: "link", rotulo: "Produtos & Serviços", href: "/admin/configuracoes/produtos", icone: "📦" },
+          { tipo: "link", rotulo: "Template de Documentos", href: "/admin/configuracoes/templates-documentos", icone: "📄" },
           { tipo: "link", rotulo: "Configurações gerais", href: "/admin/configuracoes", icone: "🛠️" },
         ],
       },

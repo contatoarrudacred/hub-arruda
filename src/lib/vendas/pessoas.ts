@@ -41,6 +41,67 @@ export async function buscarPessoaPorDocumento(documento: string): Promise<Pesso
   };
 }
 
+export type PessoaCompleta = {
+  id: string;
+  tipoPessoa: "pf" | "pj";
+  nomeRazaoSocial: string;
+  documento: string;
+  email: string | null;
+  whatsapp: string | null;
+  rg: string | null;
+  estadoCivil: string | null;
+  profissao: string | null;
+};
+
+export async function buscarPessoaCompleta(pessoaId: string): Promise<PessoaCompleta | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pessoas")
+    .select("id, tipo_pessoa, nome_razao_social, documento, email, whatsapp, rg, estado_civil, profissao")
+    .eq("id", pessoaId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar pessoa: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    tipoPessoa: data.tipo_pessoa as "pf" | "pj",
+    nomeRazaoSocial: data.nome_razao_social,
+    documento: data.documento,
+    email: data.email,
+    whatsapp: data.whatsapp,
+    rg: data.rg,
+    estadoCivil: data.estado_civil,
+    profissao: data.profissao,
+  };
+}
+
+export type EntradaDadosContratoPessoa = {
+  email: string | null;
+  whatsapp: string | null;
+  rg: string | null;
+  estadoCivil: string | null;
+  profissao: string | null;
+};
+
+/** Atualiza os campos de uma Pessoa exigidos pelo contrato (Fechamento de Venda) — RG/estado
+ * civil/profissão só fazem sentido pra Pessoa Física (signatário PF, ou representante legal de
+ * uma PJ), mas a função não valida isso — quem chama decide quando usar. */
+export async function atualizarDadosContratoPessoa(pessoaId: string, entrada: EntradaDadosContratoPessoa): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("pessoas")
+    .update({
+      email: entrada.email,
+      whatsapp: entrada.whatsapp,
+      rg: entrada.rg,
+      estado_civil: entrada.estadoCivil,
+      profissao: entrada.profissao,
+    })
+    .eq("id", pessoaId);
+  if (error) throw new Error(`Falha ao atualizar dados da pessoa: ${error.message}`);
+}
+
 export type EntradaCriarPessoa = {
   nome: string;
   documento: string;
@@ -51,6 +112,7 @@ export type EntradaCriarPessoa = {
 export async function criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: string }> {
   const documentoNormalizado = normalizarDocumento(entrada.documento);
   const tipoPessoa = tipoPessoaPorDocumento(documentoNormalizado);
+  console.log("[DEBUG criarPessoa] documento normalizado:", documentoNormalizado, "tipo:", tipoPessoa);
   if (!tipoPessoa) throw new Error("Documento inválido — não é um CPF nem CNPJ válido.");
 
   const supabase = await createClient();
@@ -65,7 +127,11 @@ export async function criarPessoa(entrada: EntradaCriarPessoa): Promise<{ id: st
     })
     .select("id")
     .single();
-  if (error) throw new Error(`Falha ao criar pessoa: ${error.message}`);
+  if (error) {
+    console.error("[DEBUG criarPessoa] erro do Supabase:", JSON.stringify(error));
+    throw new Error(`Falha ao criar pessoa: ${error.message}`);
+  }
+  console.log("[DEBUG criarPessoa] pessoa criada com id:", data.id);
   return { id: data.id };
 }
 
@@ -77,22 +143,28 @@ export type EntradaResolverOuCriarPessoa = {
 export type ResultadoResolverPessoa = { sucesso: true; pessoaId: string } | { sucesso: false; erro: string };
 
 export async function resolverOuCriarPessoa(entrada: EntradaResolverOuCriarPessoa): Promise<ResultadoResolverPessoa> {
+  console.log("[DEBUG resolverOuCriarPessoa] entrada:", JSON.stringify(entrada));
   if (entrada.pessoaId) {
+    console.log("[DEBUG resolverOuCriarPessoa] usando pessoaId existente:", entrada.pessoaId);
     return { sucesso: true, pessoaId: entrada.pessoaId };
   }
 
   if (!entrada.pessoaNova) {
+    console.log("[DEBUG resolverOuCriarPessoa] sem pessoaId nem pessoaNova — abortando");
     return { sucesso: false, erro: "Selecione ou cadastre uma Pessoa." };
   }
 
   if (!validarDocumento(entrada.pessoaNova.documento)) {
+    console.log("[DEBUG resolverOuCriarPessoa] documento invalido:", entrada.pessoaNova.documento);
     return { sucesso: false, erro: "CPF/CNPJ inválido." };
   }
   if (!entrada.pessoaNova.nome.trim()) {
+    console.log("[DEBUG resolverOuCriarPessoa] nome vazio");
     return { sucesso: false, erro: "Nome é obrigatório." };
   }
 
   const pessoaExistente = await buscarPessoaPorDocumento(entrada.pessoaNova.documento);
+  console.log("[DEBUG resolverOuCriarPessoa] pessoaExistente:", pessoaExistente ? pessoaExistente.id : null);
   if (pessoaExistente) {
     return { sucesso: true, pessoaId: pessoaExistente.id };
   }

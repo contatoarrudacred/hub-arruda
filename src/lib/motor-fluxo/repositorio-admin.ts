@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { tipoEtapaDb } from "./db";
 import type { ConteudoEtapa } from "./tipos";
+import { COR_PASTA_PADRAO, ehCorPastaValida, type CorPasta } from "./cores-pasta";
 
 // Camada de I/O usada pelo painel admin (leitura E escrita) — separada de repositorio.ts, que é
 // só leitura e serve o motor de fluxo em tempo real. Usa o cliente autenticado (cookie de sessão),
@@ -12,11 +13,14 @@ import type { ConteudoEtapa } from "./tipos";
 // (nível único ADMIN/MASTER hoje, MODELAGEM_DADOS_ARRUDACRED.md) — sem essa política o acesso seria
 // negado por padrão (Supabase liga RLS automaticamente em toda tabela nova).
 
-export type FluxoAdmin = { id: string; nome: string; produtoId: string | null };
+export type FluxoAdmin = { id: string; nome: string; produtoId: string | null; pastaId: string | null; posicao: number };
 
 export async function listarFluxos(): Promise<FluxoAdmin[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("fluxos").select("id, nome, produto_id").order("nome");
+  const { data, error } = await supabase
+    .from("fluxos")
+    .select("id, nome, produto_id, pasta_id, posicao")
+    .order("posicao");
 
   if (error) {
     throw new Error(`Falha ao listar fluxos: ${error.message}`);
@@ -26,7 +30,90 @@ export async function listarFluxos(): Promise<FluxoAdmin[]> {
     id: linha.id,
     nome: linha.nome,
     produtoId: linha.produto_id,
+    pastaId: linha.pasta_id,
+    posicao: linha.posicao,
   }));
+}
+
+export async function renomearFluxo(fluxoId: string, novoNome: string): Promise<void> {
+  const nome = novoNome.trim();
+  if (!nome) throw new Error("Nome do fluxo não pode ficar vazio.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("fluxos").update({ nome }).eq("id", fluxoId);
+  if (error) throw new Error(`Falha ao renomear fluxo: ${error.message}`);
+}
+
+// ============================================================================
+// Pastas de Fluxo — categorização + ordem manual, ver
+// docs/superpowers/specs/2026-08-19-fluxos-pastas-design.md
+// ============================================================================
+
+export type PastaAdmin = { id: string; nome: string; cor: CorPasta; posicao: number };
+
+export async function listarPastas(): Promise<PastaAdmin[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("fluxo_pastas").select("id, nome, cor, posicao").order("posicao");
+  if (error) throw new Error(`Falha ao listar pastas: ${error.message}`);
+
+  return (data ?? []).map((linha) => ({
+    id: linha.id,
+    nome: linha.nome,
+    cor: ehCorPastaValida(linha.cor) ? linha.cor : COR_PASTA_PADRAO,
+    posicao: linha.posicao,
+  }));
+}
+
+export async function criarPasta(nome: string, cor: CorPasta): Promise<{ id: string }> {
+  const nomeLimpo = nome.trim();
+  if (!nomeLimpo) throw new Error("Nome da pasta não pode ficar vazio.");
+  const supabase = await createClient();
+
+  const { data: existentes, error: erroContagem } = await supabase.from("fluxo_pastas").select("posicao").order("posicao", { ascending: false }).limit(1);
+  if (erroContagem) throw new Error(`Falha ao criar pasta: ${erroContagem.message}`);
+  const proximaPosicao = existentes && existentes.length > 0 ? existentes[0].posicao + 1 : 0;
+
+  const { data, error } = await supabase
+    .from("fluxo_pastas")
+    .insert({ nome: nomeLimpo, cor, posicao: proximaPosicao })
+    .select("id")
+    .single();
+  if (error) throw new Error(`Falha ao criar pasta: ${error.message}`);
+  return { id: data.id };
+}
+
+export async function renomearPasta(pastaId: string, novoNome: string): Promise<void> {
+  const nome = novoNome.trim();
+  if (!nome) throw new Error("Nome da pasta não pode ficar vazio.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("fluxo_pastas").update({ nome }).eq("id", pastaId);
+  if (error) throw new Error(`Falha ao renomear pasta: ${error.message}`);
+}
+
+export async function definirCorPasta(pastaId: string, cor: CorPasta): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("fluxo_pastas").update({ cor }).eq("id", pastaId);
+  if (error) throw new Error(`Falha ao alterar cor da pasta: ${error.message}`);
+}
+
+export async function excluirPasta(pastaId: string): Promise<void> {
+  const supabase = await createClient();
+  // ON DELETE SET NULL em fluxos.pasta_id — os fluxos dessa pasta voltam pra raiz sozinhos.
+  const { error } = await supabase.from("fluxo_pastas").delete().eq("id", pastaId);
+  if (error) throw new Error(`Falha ao excluir pasta: ${error.message}`);
+}
+
+/** Recebe a lista final (em ordem) de fluxos de 1 ou 2 escopos afetados por um drag (reordenar
+ * dentro da mesma seção = 1 escopo; mover pra outra pasta/raiz = escopo de origem + destino) e
+ * regrava pasta_id/posicao de cada um numa passada. Posição sempre recalculada como 0,1,2... —
+ * sem gaps fracionários, sem depender do estado anterior. */
+export async function moverEReordenarFluxos(mudancas: { fluxoId: string; pastaId: string | null; posicao: number }[]): Promise<void> {
+  if (mudancas.length === 0) return;
+  const supabase = await createClient();
+  const resultados = await Promise.all(
+    mudancas.map((m) => supabase.from("fluxos").update({ pasta_id: m.pastaId, posicao: m.posicao }).eq("id", m.fluxoId)),
+  );
+  const primeiroErro = resultados.find((r) => r.error);
+  if (primeiroErro?.error) throw new Error(`Falha ao mover/reordenar fluxos: ${primeiroErro.error.message}`);
 }
 
 export type EtapaAdmin = {

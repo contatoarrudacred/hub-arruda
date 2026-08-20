@@ -1,30 +1,61 @@
 "use client";
 
 import { useState } from "react";
-import { resetarConversaAction } from "./actions";
+import { resetarApenasConversaAction, resetarConversaAction } from "./actions";
 
 const campo =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50";
+
+type Bloqueio = { tipo: "venda"; contratos: number; comissoes: number } | { tipo: "multiplas"; nomes: string[] };
 
 export function ResetConversaClient() {
   const [telefone, setTelefone] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [resultado, setResultado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [bloqueio, setBloqueio] = useState<Bloqueio | null>(null);
 
   async function resetar() {
     setCarregando(true);
     setResultado(null);
     setErro(null);
+    setBloqueio(null);
     const r = await resetarConversaAction(telefone);
     setCarregando(false);
-    if (!r.sucesso) {
-      setErro(r.erro);
+
+    if (r.status === "erro") {
+      setErro(r.mensagem);
+      return;
+    }
+    if (r.status === "bloqueado_por_venda") {
+      setBloqueio({ tipo: "venda", contratos: r.quantidadeContratos, comissoes: r.quantidadeComissoes });
+      return;
+    }
+    if (r.status === "multiplas_pessoas") {
+      setBloqueio({ tipo: "multiplas", nomes: r.nomes });
       return;
     }
     setResultado(
-      r.encontrado
+      r.status === "apagado_tudo"
         ? "Conversa apagada. A próxima mensagem desse número no WhatsApp começa do zero."
+        : "Nenhuma conversa encontrada com esse número — nada pra apagar.",
+    );
+  }
+
+  async function resetarApenasConversa() {
+    setCarregando(true);
+    setErro(null);
+    const r = await resetarApenasConversaAction(telefone);
+    setCarregando(false);
+
+    if (r.status === "erro") {
+      setErro(r.mensagem);
+      return;
+    }
+    setBloqueio(null);
+    setResultado(
+      r.status === "apagado"
+        ? "Conversa apagada — cadastro(s), oportunidade e contrato/comissão continuam intactos. A próxima mensagem desse número no WhatsApp começa do zero."
         : "Nenhuma conversa encontrada com esse número — nada pra apagar.",
     );
   }
@@ -56,6 +87,30 @@ export function ResetConversaClient() {
       >
         {carregando ? "Apagando..." : "Resetar conversa"}
       </button>
+
+      {bloqueio && (
+        <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+          {bloqueio.tipo === "venda" ? (
+            <p>
+              ⚠️ Essa pessoa já tem {bloqueio.contratos} contrato(s) e {bloqueio.comissoes} comissão(ões)
+              registrados — o cadastro não pode ser apagado (quebraria esses registros de venda).
+            </p>
+          ) : (
+            <p>
+              ⚠️ Esse telefone está ligado a mais de um cadastro de pessoa ({bloqueio.nomes.join(", ")}) — não
+              dá pra saber sozinho qual apagar, então não vou arriscar apagar o errado.
+            </p>
+          )}
+          <p>Quer apagar só a conversa? Cadastro(s), oportunidade e contrato/comissão continuam intactos.</p>
+          <button
+            onClick={resetarApenasConversa}
+            disabled={carregando}
+            className="rounded-full bg-amber-600 px-4 py-1.5 text-sm text-white shadow disabled:opacity-40"
+          >
+            {carregando ? "Apagando..." : "Apagar só a conversa"}
+          </button>
+        </div>
+      )}
 
       {resultado && <p className="text-sm text-emerald-600 dark:text-emerald-400">{resultado}</p>}
       {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}

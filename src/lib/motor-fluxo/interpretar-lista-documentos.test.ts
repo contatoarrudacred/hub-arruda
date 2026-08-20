@@ -25,7 +25,7 @@ describe("validarRespostaListaDocumentos", () => {
     expect(r).toEqual({ status: "completo", itens: [{ tipo: "cpf" }] });
   });
 
-  it("incompleto: repassa a pergunta de esclarecimento gerada pela IA", () => {
+  it("incompleto sem proposta de contagem: repassa a pergunta, dadosParciais só com a pergunta pendente", () => {
     const r = validarRespostaListaDocumentos({
       status: "incompleto",
       quantidade_cpf: 0,
@@ -35,6 +35,25 @@ describe("validarRespostaListaDocumentos", () => {
     expect(r).toEqual({
       status: "incompleto",
       perguntaEsclarecimento: "Você quer limpar quantos CPFs ou CNPJs, exatamente?",
+      dadosParciais: { _doc_pergunta_pendente: "Você quer limpar quantos CPFs ou CNPJs, exatamente?" },
+    });
+  });
+
+  it("incompleto propondo contagem específica (caso do log real, 19/08/2026): dadosParciais carrega a proposta pro próximo turno confirmar", () => {
+    const r = validarRespostaListaDocumentos({
+      status: "incompleto",
+      quantidade_cpf: 1,
+      quantidade_cnpj: 1,
+      pergunta_esclarecimento: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+    });
+    expect(r).toEqual({
+      status: "incompleto",
+      perguntaEsclarecimento: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+      dadosParciais: {
+        _doc_pergunta_pendente: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+        _doc_cpf_proposto: "1",
+        _doc_cnpj_proposto: "1",
+      },
     });
   });
 

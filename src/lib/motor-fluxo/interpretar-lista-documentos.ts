@@ -3,6 +3,19 @@
 // tem 3: completo / incompleto (pede esclarecimento específico) / não entendi — decisão de Luiz
 // (17/08/2026): "a IA só pode dar checkpoint depois de ter entendido exatamente o que o lead
 // precisa e ter informações suficientes pra gerar proposta".
+//
+// Reescrito 19/08/2026 (Luiz, "corrigir tudo de forma global", log real de produção) — 2 problemas
+// achados num atendimento real ("meu cpf e o cnpj da minha mulher" → a Malala questionou de quem
+// era a empresa, depois confirmou "1 CPF e 1 CNPJ, é isso?" e ainda assim voltou a perguntar
+// quantos CPFs/CNPJs depois do lead responder "sim"):
+// 1. O prompt pedia "certeza real" demais, puxando detalhe irrelevante (de quem é a empresa, se
+//    ela também precisa limpar) que não muda quantos documentos limpar — corrigido com instrução
+//    explícita pra inferir direto e nunca perguntar isso.
+// 2. O interpretador não recebia `dados` (zero memória entre turnos) — "sim" confirmando uma
+//    contagem proposta no turno anterior caía contra a pergunta ORIGINAL estática, sem sentido
+//    nenhum pra IA. Corrigido com o mesmo padrão de `dadosParciais` já usado em
+//    `interpretar-faixas-documentos.ts`: quando propõe uma contagem específica pra confirmar, essa
+//    proposta (e a pergunta feita) atravessam o turno em `dados`.
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
@@ -11,7 +24,7 @@ import {
   validarRespostaListaDocumentos,
   type RespostaBrutaListaDocumentos,
 } from "./interpretar-lista-documentos-validacao";
-import type { EtapaCarregada, InterpretadorListaDocumentos } from "./tipos";
+import type { DadosConversa, EtapaCarregada, InterpretadorListaDocumentos } from "./tipos";
 
 const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
 
@@ -37,43 +50,62 @@ const FERRAMENTA = {
         type: "string",
         enum: ["completo", "incompleto", "nao_entendi"],
         description:
-          "'completo' só quando der pra saber com certeza quantos CPFs e quantos CNPJs o lead quer limpar. 'incompleto' quando entendeu que o lead quer limpar mais de um documento (ou não deixou claro) mas falta saber quantos/quais tipos — gere uma pergunta de esclarecimento específica. 'nao_entendi' quando a resposta não tem nada a ver com quantidade/tipo de documento.",
+          "'completo' quando der pra inferir com confiança razoável quantos CPFs e quantos CNPJs (não precisa certeza absoluta — 'meu cpf e o cnpj da minha mulher' já é 1 CPF + 1 CNPJ). 'incompleto' só quando genuinamente não der pra saber a contagem — gere uma pergunta de esclarecimento bem específica. 'nao_entendi' quando a resposta não tem nada a ver com quantidade/tipo de documento.",
       },
       quantidade_cpf: {
         type: "integer",
-        description: "Quantos CPFs o lead quer limpar. 0 se nenhum. Só preencher com certeza quando status=completo.",
+        description:
+          "Quantos CPFs o lead quer limpar. Preencha com o valor final quando status=completo. Quando status=incompleto E você estiver propondo uma contagem específica pra confirmar (ex.: pergunta 'Você quer limpar 1 CPF e 1 CNPJ, é isso?'), preencha com o número PROPOSTO — o sistema lembra disso pro próximo turno. Nos outros casos, 0.",
       },
       quantidade_cnpj: {
         type: "integer",
-        description: "Quantos CNPJs o lead quer limpar. 0 se nenhum. Só preencher com certeza quando status=completo.",
+        description: "Mesma regra de quantidade_cpf, mas pra CNPJ.",
       },
       pergunta_esclarecimento: {
         type: "string",
         description:
-          "Só quando status=incompleto: uma pergunta curta e específica em português, no tom da Malala (consultora ArrudaCred), perguntando exatamente o que falta saber — nunca repita a pergunta original genérica.",
+          "Só quando status=incompleto: uma pergunta curta e específica em português, no tom da Malala. Se for confirmar uma contagem que você já entendeu (o caso mais comum), faça UMA pergunta simples de sim/não (ex.: 'Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?') — nunca acrescente alternativa extra tipo 'ou precisa limpar mais documentos?', isso só confunde. Nunca repita a pergunta original genérica.",
       },
     },
     required: ["status", "quantidade_cpf", "quantidade_cnpj", "pergunta_esclarecimento"],
   },
 };
 
-function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string }): string {
-  const { etapaAtual, respostaLead } = params;
+function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string; dados: DadosConversa }): string {
+  const { etapaAtual, respostaLead, dados } = params;
   const pergunta = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
 
-  return [
+  const linhas: string[] = [
     "Você ajuda a entender quantos documentos (CPF e/ou CNPJ) um lead quer limpar num atendimento automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). O lead pode pedir só 1 documento, ou um 'pacote' com vários (ex.: '2 CPF e 1 CNPJ da minha empresa').",
     "",
     `Pergunta feita ao lead:\n"""\n${pergunta}\n"""`,
+  ];
+
+  // Memória entre turnos (19/08/2026) — sem isto, uma resposta tipo "sim" confirmando uma proposta
+  // do turno anterior cai contra a pergunta ORIGINAL acima, sem contexto nenhum do que está sendo
+  // confirmado.
+  const perguntaPendente = dados._doc_pergunta_pendente;
+  if (perguntaPendente) {
+    const cpfProposto = dados._doc_cpf_proposto ?? "0";
+    const cnpjProposto = dados._doc_cnpj_proposto ?? "0";
+    linhas.push(
+      "",
+      `Você já tinha perguntado ao lead: "${perguntaPendente}" — propondo ${cpfProposto} CPF(s) e ${cnpjProposto} CNPJ(s). Se a resposta abaixo confirma isso (mesmo que seja só "sim", "isso", "correto" ou parecido), marque completo usando esses números. Se o lead corrigir ou der informação nova, use o que ele disse agora em vez da proposta.`,
+    );
+  }
+
+  linhas.push(
     "",
     `Resposta do lead: "${respostaLead}"`,
     "",
-    "Use a ferramenta pra registrar o resultado. Só marque 'completo' quando tiver certeza real da quantidade de cada tipo — é melhor pedir esclarecimento (status=incompleto, com uma pergunta específica) do que adivinhar errado e gerar uma proposta pro número errado de documentos.",
-  ].join("\n");
+    "Use a ferramenta pra registrar o resultado. PREFIRA marcar completo sempre que conseguir inferir a contagem com confiança razoável — não perca tempo perguntando detalhe que não muda QUANTOS documentos limpar (de quem é a empresa, se outra pessoa também precisa limpar o nome dela, etc. — isso não importa aqui, não pergunte). Só marque incompleto quando genuinamente não der pra saber quantos CPFs e quantos CNPJs.",
+  );
+
+  return linhas.join("\n");
 }
 
-export const interpretarListaDocumentos: InterpretadorListaDocumentos = async ({ etapaAtual, respostaLead }) => {
-  const prompt = montarPrompt({ etapaAtual, respostaLead });
+export const interpretarListaDocumentos: InterpretadorListaDocumentos = async ({ etapaAtual, respostaLead, dados }) => {
+  const prompt = montarPrompt({ etapaAtual, respostaLead, dados });
 
   try {
     // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
 import { avancarConversa, iniciarFluxo, saudacaoPorHorario } from "@/lib/motor-fluxo/engine";
 import {
@@ -7,16 +7,19 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
-import { interpretarFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
+import { criarInterpretadorFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
 import {
+  aindaEhTokenAtual,
   capturarFotoPerfilSeNecessario,
   carregarOuCriarConversaWhatsapp,
   correlacionarCliqueRastreio,
   detectarEMarcarObjecaoPendente,
+  escreverTokenBuffer,
   extrairCodigoRastreio,
   marcarStatusMensagem,
+  montarRespostaConcatenadaDesdeUltimaFala,
   registrarMensagemLead,
   registrarTurnoMalala,
 } from "@/lib/motor-fluxo/persistencia";
@@ -32,8 +35,15 @@ import { transcreverAudio } from "@/lib/motor-fluxo/transcricao-audio";
 import { enviarSequenciaWhatsapp } from "@/lib/whatsapp/enviar";
 
 // Delay/digitando entre mensagens (ver enviarSequenciaWhatsapp) pode somar alguns segundos por
-// turno — maxDuration maior evita que a função seja encerrada no meio de uma sequência de envio.
-export const maxDuration = 60;
+// turno, e agora soma também o debounce de entrada (DEBOUNCE_MS abaixo) — maxDuration maior evita
+// que a função seja encerrada no meio de uma sequência de envio.
+export const maxDuration = 120;
+
+// Debounce de mensagens seguidas do lead (19/08/2026, Luiz: "vamos corrigir tudo mas de forma
+// global" — log real mostrou o lead respondendo em 2 mensagens seguidas, cada uma virando um
+// turno do motor separado, cego pra outra). Ver escreverTokenBuffer/aindaEhTokenAtual
+// (persistencia.ts) e o comentário em processarMensagemRecebida abaixo.
+const DEBOUNCE_MS = 3500;
 
 // Webhook de entrada do WhatsApp real (Fase 7, Zapster, modo não-oficial). Mesmo motor que o
 // /simulador usa (ver actions.ts) — a diferença é que aqui não existe client guardando
@@ -66,6 +76,7 @@ async function montarDependencias() {
     etapasPorCodigo,
     resolverMensagensDinamicas: criarResolverMensagensDinamicas(faixas, config),
     calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas),
+    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas),
   };
 }
 
@@ -116,6 +127,15 @@ async function processarAudioRecebido(telefone: string, audioUrl: string, fotoPe
  * `processarAudioRecebido` abaixo) — a mensagem do lead fica ligada ao áudio original na timeline
  * (toca + mostra a transcrição como legenda), mas o texto transcrito é o que roda no motor,
  * igualzinho a uma mensagem digitada.
+ *
+ * Debounce de mensagens seguidas (19/08/2026) — depois de registrar a mensagem, espera
+ * DEBOUNCE_MS antes de rodar o motor. Se outra mensagem do mesmo lead chegar nesse meio tempo (ela
+ * roda esta mesma função de novo, numa invocação separada — cada webhook é uma invocação nova, sem
+ * estado compartilhado), o token da conversa é sobrescrito e ESTA invocação desiste sem fazer nada
+ * — quem processa o turno é sempre a invocação da mensagem MAIS RECENTE, usando o texto de TODAS as
+ * mensagens acumuladas desde a última fala da Malala (`montarRespostaConcatenadaDesdeUltimaFala`).
+ * Resolve o caso real de produção onde "só meu cpf e o cnpj dela" + "nome dela está limpo" (2
+ * mensagens seguidas) viravam 2 turnos do motor, cada um cego pro outro.
  */
 async function processarMensagemRecebida(
   telefone: string,
@@ -129,7 +149,8 @@ async function processarMensagemRecebida(
   const { texto, codigo: codigoRastreio } = extrairCodigoRastreio(textoRecebido);
 
   try {
-    const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados } = await montarDependencias();
+    const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos } =
+      await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
     await capturarFotoPerfilSeNecessario(estado.pessoaId, fotoPerfil);
 
@@ -148,21 +169,31 @@ async function processarMensagemRecebida(
       return;
     }
 
+    // A mensagem é registrada JÁ (Tela de Atendimento mostra na hora, e o card "Novo Lead" existe
+    // mesmo sem resposta automática) — só rodar o motor em cima dela que espera o debounce abaixo.
+    await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
+
+    const token = randomUUID();
+    await escreverTokenBuffer(estado.conversaId, token);
+    await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS));
+    if (!(await aindaEhTokenAtual(estado.conversaId, token))) return;
+
+    const textoConcatenado = await montarRespostaConcatenadaDesdeUltimaFala(estado.conversaId);
+    if (!textoConcatenado) return;
+
     let resultado;
     let dadosNovos;
     if (estado.etapaAtualCodigo === null) {
-      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
-
       // Roteamento de lead novo (Bloco D/Fase 4, TELA_ATENDIMENTO_ARRUDACRED.md seção 5-B) — decide
       // em qual etapa iniciar, ou se não deve responder sozinho (modo "manual", ou "palavra_chave"
-      // sem nenhuma regra batendo). A mensagem já foi registrada acima em qualquer caso — o card
-      // "Novo Lead" existe mesmo sem resposta automática.
+      // sem nenhuma regra batendo). Usa o texto CONCATENADO (ex.: "oi" + "quero limpar meu nome" em
+      // 2 mensagens seguidas) — mais contexto pra decidir do que só a última mensagem isolada.
       const { modo, etapaFixaCodigo } = await carregarConfigRoteamento();
       const regras = modo === "palavra_chave" ? await listarRegrasRoteamentoAtivas() : [];
-      const etapaInicial = resolverEtapaInicialLeadNovo(texto, modo, etapaFixaCodigo, regras);
+      const etapaInicial = resolverEtapaInicialLeadNovo(textoConcatenado, modo, etapaFixaCodigo, regras);
       if (etapaInicial === null) return;
 
-      const dadosIniciais = criarExtratorAbertura()(texto);
+      const dadosIniciais = criarExtratorAbertura()(textoConcatenado);
       // O canal já forneceu o telefone (é de onde a mensagem veio) — não faz sentido perguntar de
       // novo (regra de checkpoint já respondido, engine.ts). Só o canal WhatsApp faz isso; outros
       // canais (widget do site, por exemplo) continuam perguntando normalmente.
@@ -173,12 +204,11 @@ async function processarMensagemRecebida(
       dadosNovos = dadosIniciais;
     } else {
       const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
-      await registrarMensagemLead(estado.conversaId, texto, midiaUrl, midiaTipo);
       resultado = await avancarConversa({
         etapaAtual,
         etapasPorCodigo,
         dados: estado.dados,
-        respostaLead: texto,
+        respostaLead: textoConcatenado,
         resolverMensagensDinamicas,
         calcularDadosDerivados,
         interpretarComIA,

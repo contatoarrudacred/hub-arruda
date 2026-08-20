@@ -1,19 +1,50 @@
-// Interpretador especializado de `tipo_resposta: "faixas_documentos"` (suporte a "pacote" — Bloco
-// C, PLANO_MESTRE seção 11). Extrai a faixa de valor de TODOS os documentos de uma resposta livre
-// só (decisão de Luiz, 17/08/2026: uma pergunta só, não um checkpoint por documento). Mesma
-// filosofia de 3 saídas de interpretar-lista-documentos.ts — só dá "completo" quando tiver um
-// valor (ou "não sei" explícito) pra cada documento já sabido em `dados.documentos_tipos`.
+// Interpretador especializado de `tipo_resposta: "faixas_documentos"` (checkpoint ln_passo6).
+//
+// Menu fechado (correção 18/08/2026, Luiz) — 2 rodadas, mesma faixa assumida pra TODOS os
+// documentos (confirmada por Luiz: "faremos a pergunta dessa forma pressupondo que todos os
+// documentos estão na mesma faixa"):
+//   1) Lead escolhe uma opção do menu numerado (formatarMenuFaixas) -> Malala confirma
+//      (montarMensagemConfirmacaoFaixa), sem gravar nada ainda.
+//   2) Lead confirma -> "completo", valor representativo da faixa pra cada documento.
+//      Lead NÃO confirma -> cai pro extrator livre por documento (lógica antiga, pré-18/08), que
+//      já suporta "explicar até ela entender qual a faixa de cada doc" via incompleto/nao_entendi.
+//      Lead pede a consulta paga (R$39/doc) em qualquer rodada -> escala pra atendimento humano.
+//
+// Como o interpretador só recebe `dados` (sem histórico de turnos), o estado atravessa o turno via
+// campos provisórios em `dados` (mesmo padrão de negociacao_pagamento): `_faixa_provisoria_indice`
+// (índice escolhido, aguardando confirmação), `_faixas_modo_livre` ("1" depois que o lead não
+// confirma — a partir daí sempre extrai texto livre, nunca mais volta a tratar a resposta como
+// escolha de menu) e `_faixas_parcial_valores` (19/08/2026 — o valor já entendido de CADA
+// documento no modo livre, acumulado entre tentativas; sem isso o interpretador esquecia o que já
+// tinha sido dito e ficava em loop pedindo o mesmo documento pra sempre).
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { textoDeMensagem } from "./engine";
 import {
-  validarRespostaFaixasDocumentos,
-  type RespostaBrutaFaixasDocumentos,
+  codificarParcialFaixas,
+  decodificarParcialFaixas,
+  mesclarAtualizacoesParciais,
+  validarConfirmacaoFaixa,
+  validarEscolhaFaixaMenu,
+  type ItemAtualizacaoParcial,
+  type RespostaBrutaConfirmacaoFaixa,
+  type RespostaBrutaEscolhaFaixaMenu,
+  type RespostaBrutaModoLivre,
 } from "./interpretar-faixas-documentos-validacao";
-import type { EtapaCarregada, InterpretadorFaixasDocumentos } from "./tipos";
+import { formatarMenuFaixas, montarMensagemConfirmacaoFaixa, ordenarFaixasPreco, valorRepresentativoFaixa, type FaixaPreco } from "./regras-limpeza-nome";
+import type {
+  DadosConversa,
+  EtapaCarregada,
+  FaixaDocumentoCapturada,
+  InterpretadorFaixasDocumentos,
+  ResultadoInterpretacaoFaixasDocumentos,
+} from "./tipos";
 
 const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
+
+const MENSAGEM_CONSULTA_PAGA =
+  "Sem problema! Podemos fazer uma consulta oficial pra saber o valor exato — ela custa R$39 por documento. Se preferir seguir com uma estimativa por faixa, é só me dizer 👍";
 
 let clienteSingleton: Anthropic | null = null;
 
@@ -26,11 +57,141 @@ function obterCliente(): Anthropic {
   return clienteSingleton;
 }
 
-function ferramenta(tiposEsperados: ("cpf" | "cnpj")[]) {
+// --- Rodada 1: escolha de faixa no menu fechado ---------------------------------------------
+
+function ferramentaEscolhaMenu(qtdFaixas: number) {
   return {
-    name: "interpretar_faixas_documentos",
+    name: "interpretar_escolha_faixa",
     description:
-      "Registra a faixa de valor aproximada de cada documento que o lead quer limpar, ou pede esclarecimento quando falta informação de algum.",
+      "Identifica qual opção do menu numerado o lead escolheu pra descrever a faixa de restrição (a mesma faixa vale pra todos os documentos dele), ou se ele quer a consulta oficial paga, ou se a resposta não bate com nenhuma opção do menu.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        status: {
+          type: "string",
+          enum: ["faixa_escolhida", "quer_consulta_paga", "nao_entendi"],
+          description:
+            "'faixa_escolhida' quando o lead indicou claramente uma das opções do menu (por número, ou descrevendo um valor que cai numa faixa). 'quer_consulta_paga' quando ele pede a consulta oficial/paga em vez de estimar. 'nao_entendi' quando a resposta não tem nada a ver com isso.",
+        },
+        indice_faixa: {
+          type: "number",
+          description: `Número da opção escolhida no menu, de 1 a ${qtdFaixas} — só preencher com certeza quando status=faixa_escolhida.`,
+        },
+      },
+      required: ["status", "indice_faixa"],
+    },
+  };
+}
+
+function montarPromptEscolhaMenu(params: { menu: string; respostaLead: string }): string {
+  return [
+    "Você ajuda a entender qual faixa de valor de restrição um lead escolheu, num atendimento automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). O lead já viu este menu numerado:",
+    "",
+    params.menu,
+    "",
+    `Resposta do lead: "${params.respostaLead}"`,
+    "",
+    "O lead pode responder com o número da opção, escrevendo o texto da opção, ou descrevendo um valor aproximado que se encaixe numa das faixas acima (ex.: 'uns 15 mil' cai na faixa que cobre 15 mil). Use a ferramenta pra registrar o resultado.",
+  ].join("\n");
+}
+
+async function interpretarEscolhaMenu(params: {
+  menu: string;
+  respostaLead: string;
+  qtdFaixas: number;
+}): Promise<ReturnType<typeof validarEscolhaFaixaMenu>> {
+  try {
+    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
+    const cliente = obterCliente();
+    const resposta = await cliente.messages.create({
+      model: MODELO_INTERPRETACAO,
+      max_tokens: 400,
+      tools: [ferramentaEscolhaMenu(params.qtdFaixas)],
+      tool_choice: { type: "tool", name: "interpretar_escolha_faixa" },
+      messages: [{ role: "user", content: montarPromptEscolhaMenu(params) }],
+    });
+
+    const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return { tipo: "nao_entendi" };
+
+    const bruta = blocoFerramenta.input as RespostaBrutaEscolhaFaixaMenu;
+    return validarEscolhaFaixaMenu(bruta, params.qtdFaixas);
+  } catch (e) {
+    console.error("[interpretar-faixas-documentos] erro ao chamar Claude (escolha de menu):", e);
+    return { tipo: "nao_entendi" };
+  }
+}
+
+// --- Rodada 2: confirmação da faixa escolhida ------------------------------------------------
+
+function ferramentaConfirmacaoFaixa() {
+  return {
+    name: "interpretar_confirmacao_faixa",
+    description:
+      "Identifica se o lead confirmou a faixa de restrição proposta pela Malala, se ele pediu a consulta oficial paga, ou se ele não confirmou (nesse caso ele provavelmente está explicando os valores reais, que serão tratados à parte).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        status: { type: "string", enum: ["confirmado", "quer_consulta_paga", "nao_confirmado"] },
+      },
+      required: ["status"],
+    },
+  };
+}
+
+function montarPromptConfirmacaoFaixa(params: { perguntaConfirmacao: string; respostaLead: string }): string {
+  return [
+    "Você ajuda a entender se um lead confirmou uma faixa de restrição estimada, num atendimento automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). A Malala perguntou:",
+    "",
+    `"""\n${params.perguntaConfirmacao}\n"""`,
+    "",
+    `Resposta do lead: "${params.respostaLead}"`,
+    "",
+    "Use a ferramenta pra registrar se ele confirmou, se pediu a consulta oficial paga (R$39/documento), ou se não confirmou (qualquer coisa diferente de uma confirmação clara — inclusive quando ele começa a explicar valores diferentes).",
+  ].join("\n");
+}
+
+async function interpretarConfirmacao(params: {
+  perguntaConfirmacao: string;
+  respostaLead: string;
+}): Promise<ReturnType<typeof validarConfirmacaoFaixa>> {
+  try {
+    const cliente = obterCliente();
+    const resposta = await cliente.messages.create({
+      model: MODELO_INTERPRETACAO,
+      max_tokens: 200,
+      tools: [ferramentaConfirmacaoFaixa()],
+      tool_choice: { type: "tool", name: "interpretar_confirmacao_faixa" },
+      messages: [{ role: "user", content: montarPromptConfirmacaoFaixa(params) }],
+    });
+
+    const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return "nao_confirmado";
+
+    const bruta = blocoFerramenta.input as RespostaBrutaConfirmacaoFaixa;
+    return validarConfirmacaoFaixa(bruta);
+  } catch (e) {
+    console.error("[interpretar-faixas-documentos] erro ao chamar Claude (confirmação):", e);
+    return "nao_confirmado";
+  }
+}
+
+// --- Modo livre: extrai valor por documento de texto livre, acumulando entre tentativas --------
+//
+// Reescrito 19/08/2026 (Luiz, log real de produção) — a versão anterior pedia TODOS os documentos
+// numa resposta só, sem lembrar nada de tentativas passadas: cada resposta caía contra a pergunta
+// ORIGINAL do zero, então uma resposta clara tipo "menos de 10" (respondendo "e o segundo CPF?")
+// nunca fechava o checkpoint — a Malala esquecia o primeiro CPF (já confirmado 2 mensagens antes)
+// e voltava a perguntar "e o segundo CPF?" pra sempre, em loop. Agora o interpretador só precisa
+// dizer o que a resposta ATUAL esclarece ou corrige (`atualizacoes`, por índice) — a mesclagem com
+// o que já era sabido é feita em código (`mesclarAtualizacoesParciais`), nunca esquecida.
+
+function ferramentaModoLivre(tiposEsperados: ("cpf" | "cnpj")[]) {
+  const legenda = tiposEsperados.map((t, i) => `${i + 1}=${t.toUpperCase()}`).join(", ");
+  return {
+    name: "atualizar_faixas_documentos",
+    description:
+      "Registra as atualizações de valor de restrição que a resposta do lead traz pra cada documento — só o que essa resposta esclarece ou corrige, nunca repetindo o que já era sabido.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -38,14 +199,15 @@ function ferramenta(tiposEsperados: ("cpf" | "cnpj")[]) {
           type: "string",
           enum: ["completo", "incompleto", "nao_entendi"],
           description:
-            "'completo' só quando tiver um valor aproximado (ou 'não sei' explícito) pra CADA UM dos documentos. 'incompleto' quando faltar informação de pelo menos um documento — gere uma pergunta de esclarecimento específica pedindo só o que falta. 'nao_entendi' quando a resposta não tem nada a ver com valores de restrição.",
+            "'completo' se, somando esta resposta ao que já sabíamos, não falta mais nenhum documento. 'incompleto' se ainda faltar pelo menos um. 'nao_entendi' se a resposta não tem nada a ver com valor de restrição — nesse caso 'atualizacoes' fica vazio.",
         },
-        itens: {
+        atualizacoes: {
           type: "array",
-          description: `Exatamente ${tiposEsperados.length} item(ns), nesta ordem exata de tipo: ${tiposEsperados.join(", ")}. Só preencher com certeza quando status=completo.`,
+          description: `Só os documentos que ESTA resposta esclarece ou corrige (pode ser 0, 1, ou vários) — índice de 1 a ${tiposEsperados.length}, nesta ordem: ${legenda}.`,
           items: {
             type: "object",
             properties: {
+              indice: { type: "integer", description: `Posição do documento, de 1 a ${tiposEsperados.length}.` },
               tipo: { type: "string", enum: ["cpf", "cnpj"] },
               sabe_valor: {
                 type: "boolean",
@@ -56,64 +218,181 @@ function ferramenta(tiposEsperados: ("cpf" | "cnpj")[]) {
                 description: "Valor aproximado em reais pra este documento. 0 quando sabe_valor=false.",
               },
             },
-            required: ["tipo", "sabe_valor", "valor_aproximado"],
+            required: ["indice", "tipo", "sabe_valor", "valor_aproximado"],
           },
         },
         pergunta_esclarecimento: {
           type: "string",
           description:
-            "Só quando status=incompleto: pergunta curta e específica em português, no tom da Malala, pedindo só a informação que falta (não repita a pergunta original inteira).",
+            "Só quando ainda faltar informação depois desta resposta: pergunta curta e específica em português, no tom da Malala, pedindo só o que falta — NUNCA pergunte de novo algo que já sabemos (ver 'o que já sabemos' no prompt).",
         },
       },
-      required: ["status", "itens", "pergunta_esclarecimento"],
+      required: ["status", "atualizacoes", "pergunta_esclarecimento"],
     },
   };
 }
 
-function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string; tiposEsperados: ("cpf" | "cnpj")[] }): string {
-  const { etapaAtual, respostaLead, tiposEsperados } = params;
+function montarPromptModoLivre(params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  tiposEsperados: ("cpf" | "cnpj")[];
+  parcialAnterior: (FaixaDocumentoCapturada | null)[];
+}): string {
+  const { etapaAtual, respostaLead, tiposEsperados, parcialAnterior } = params;
   const pergunta = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
-  const listaDocumentos = tiposEsperados.map((tipo, i) => `${i + 1}. ${tipo.toUpperCase()}`).join("\n");
+  const linhasConhecidas = tiposEsperados
+    .map((tipo, i) => {
+      const rotulo = `${i + 1}. ${tipo.toUpperCase()}`;
+      const item = parcialAnterior[i];
+      if (item === null) return `${rotulo}: ainda não sabemos o valor.`;
+      if (item.valorAproximado === null) return `${rotulo}: o lead já disse "não sei" (resposta final, válida).`;
+      return `${rotulo}: R$ ${item.valorAproximado} (entendido até agora — se a resposta do lead corrigir ESTE documento, atualize).`;
+    })
+    .join("\n");
 
   return [
-    "Você ajuda a entender a faixa de valor de restrição de cada documento que um lead quer limpar, num atendimento automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito).",
+    "Você ajuda a entender a faixa de valor de restrição de cada documento que um lead quer limpar, num atendimento automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). Esta é uma conversa em andamento — o lead já respondeu sobre alguns documentos antes.",
     "",
-    `Documentos já confirmados nesta conversa, nesta ordem:\n${listaDocumentos}`,
+    `O que já sabemos sobre cada documento, nesta ordem:\n${linhasConhecidas}`,
     "",
-    `Pergunta feita ao lead:\n"""\n${pergunta}\n"""`,
+    `Pergunta feita originalmente ao lead:\n"""\n${pergunta}\n"""`,
     "",
-    `Resposta do lead: "${respostaLead}"`,
+    `Resposta do lead agora: "${respostaLead}"`,
     "",
-    "O lead pode responder com valores aproximados por extenso, com gírias, ou dizer 'não sei' pra qualquer documento (isso é uma resposta válida, não bloqueia o status completo). Use a ferramenta pra registrar o resultado, na mesma ordem dos documentos listados acima. Só marque 'completo' quando tiver informação (valor OU 'não sei' explícito) de TODOS os documentos — é melhor pedir esclarecimento do que assumir errado.",
+    "Use a ferramenta pra registrar SÓ o que esta resposta esclarece ou corrige — não repita o que já sabíamos e não foi mencionado agora. Se o lead corrigir um valor que já tínhamos (ex.: 'não, o do meu filho é menos de 10'), inclua uma atualização só pra aquele índice. PREFIRA extrair o que der com confiança razoável — não exija precisão além do que o lead deu, e não peça nenhum detalhe que não seja o valor aproximado (não pergunte de quem é o documento, forma de pagamento, ou qualquer coisa que não mude o valor).",
   ].join("\n");
 }
 
-export const interpretarFaixasDocumentos: InterpretadorFaixasDocumentos = async ({ etapaAtual, respostaLead, dados }) => {
-  const tiposEsperados = (dados.documentos_tipos ?? "")
-    .split(",")
-    .filter((t): t is "cpf" | "cnpj" => t === "cpf" || t === "cnpj");
-  if (tiposEsperados.length === 0) return { status: "nao_entendi" };
+async function interpretarModoLivre(params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  tiposEsperados: ("cpf" | "cnpj")[];
+  dados: DadosConversa;
+  dadosExtras: DadosConversa;
+}): Promise<ResultadoInterpretacaoFaixasDocumentos> {
+  const { etapaAtual, respostaLead, tiposEsperados, dados, dadosExtras } = params;
+  const parcialAnterior = decodificarParcialFaixas(dados._faixas_parcial_valores ?? "", tiposEsperados);
+  const nadaSabidoAinda = parcialAnterior.every((item) => item === null);
 
-  const prompt = montarPrompt({ etapaAtual, respostaLead, tiposEsperados });
+  const construir = (atualizacoes: ItemAtualizacaoParcial[], perguntaSugerida: string | undefined): ResultadoInterpretacaoFaixasDocumentos => {
+    const mesclado = mesclarAtualizacoesParciais(parcialAnterior, atualizacoes, tiposEsperados);
+    if (mesclado.every((item): item is FaixaDocumentoCapturada => item !== null)) {
+      return { status: "completo", itens: mesclado };
+    }
+    const pergunta = perguntaSugerida?.trim() || "Só falta confirmar o valor aproximado (ou 'não sei') do(s) documento(s) que ainda faltam — pode me dizer?";
+    return {
+      status: "incompleto",
+      perguntaEsclarecimento: pergunta,
+      dadosParciais: { ...dadosExtras, _faixas_parcial_valores: codificarParcialFaixas(mesclado) },
+    };
+  };
 
   try {
-    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
     const cliente = obterCliente();
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 800,
-      tools: [ferramenta(tiposEsperados)],
-      tool_choice: { type: "tool", name: "interpretar_faixas_documentos" },
-      messages: [{ role: "user", content: prompt }],
+      tools: [ferramentaModoLivre(tiposEsperados)],
+      tool_choice: { type: "tool", name: "atualizar_faixas_documentos" },
+      messages: [{ role: "user", content: montarPromptModoLivre({ etapaAtual, respostaLead, tiposEsperados, parcialAnterior }) }],
     });
 
     const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
-    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return { status: "nao_entendi" };
+    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") {
+      // Falha bruta da IA — se já tínhamos progresso, não descarta: repete o que falta em vez de
+      // voltar pro fallback genérico (que reexibiria o menu do ln_passo6, perdendo o contexto).
+      if (nadaSabidoAinda) return { status: "nao_entendi" };
+      return construir([], undefined);
+    }
 
-    const bruta = blocoFerramenta.input as RespostaBrutaFaixasDocumentos;
-    return validarRespostaFaixasDocumentos(bruta, tiposEsperados);
+    const bruta = blocoFerramenta.input as RespostaBrutaModoLivre;
+    if ((!bruta.atualizacoes || bruta.atualizacoes.length === 0) && nadaSabidoAinda) {
+      return { status: "nao_entendi" };
+    }
+    return construir(bruta.atualizacoes ?? [], bruta.pergunta_esclarecimento);
   } catch (e) {
-    console.error("[interpretar-faixas-documentos] erro ao chamar Claude:", e);
-    return { status: "nao_entendi" };
+    console.error("[interpretar-faixas-documentos] erro ao chamar Claude (modo livre):", e);
+    if (nadaSabidoAinda) return { status: "nao_entendi" };
+    return construir([], undefined);
   }
-};
+}
+
+// --- Fábrica -----------------------------------------------------------------------------------
+
+export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[]): InterpretadorFaixasDocumentos {
+  const faixasOrdenadas = ordenarFaixasPreco(faixasPrecos);
+  const menu = formatarMenuFaixas(faixasPrecos);
+
+  return async ({ etapaAtual, respostaLead, dados }) => {
+    const tiposEsperados = (dados.documentos_tipos ?? "")
+      .split(",")
+      .filter((t): t is "cpf" | "cnpj" => t === "cpf" || t === "cnpj");
+    if (tiposEsperados.length === 0) return { status: "nao_entendi" };
+
+    if (dados._faixas_modo_livre === "1") {
+      return await interpretarModoLivre({ etapaAtual, respostaLead, tiposEsperados, dados, dadosExtras: { _faixas_modo_livre: "1" } });
+    }
+
+    if (dados._faixa_provisoria_indice) {
+      const indice = Number(dados._faixa_provisoria_indice);
+      const faixa = faixasOrdenadas[indice];
+      if (!faixa) {
+        // estado provisório inconsistente (defensivo) — trata como se a rodada de confirmação não existisse.
+        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados });
+      }
+
+      const perguntaConfirmacao = montarMensagemConfirmacaoFaixa(faixa, indice === 0, tiposEsperados);
+      const confirmacao = await interpretarConfirmacao({ perguntaConfirmacao, respostaLead });
+
+      if (confirmacao === "confirmado") {
+        const valor = valorRepresentativoFaixa(faixa);
+        return { status: "completo", itens: tiposEsperados.map((tipo) => ({ tipo, valorAproximado: valor })) };
+      }
+      if (confirmacao === "quer_consulta_paga") {
+        return { status: "escalar_consulta_paga", mensagem: MENSAGEM_CONSULTA_PAGA };
+      }
+
+      // não confirmado — a resposta provavelmente já é a explicação dos valores reais. Em vez de
+      // descartar o turno, entra em modo livre já SEMEADO com o valor que estava sendo proposto pra
+      // TODOS os documentos (era a faixa que ia valer "pra cada um deles") — assim "não, o do meu
+      // filho é menos de 10" só precisa corrigir o índice mencionado, o resto fica como estava.
+      const valorProposto = valorRepresentativoFaixa(faixa);
+      const dadosComSeed: DadosConversa = {
+        ...dados,
+        _faixas_parcial_valores: codificarParcialFaixas(tiposEsperados.map((tipo) => ({ tipo, valorAproximado: valorProposto }))),
+      };
+      return await interpretarModoLivre({
+        etapaAtual,
+        respostaLead,
+        tiposEsperados,
+        dados: dadosComSeed,
+        dadosExtras: { _faixa_provisoria_indice: "", _faixas_modo_livre: "1" },
+      });
+    }
+
+    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados });
+  };
+}
+
+async function escolherFaixaDoMenu(params: {
+  menu: string;
+  faixasOrdenadas: FaixaPreco[];
+  respostaLead: string;
+  tiposEsperados: ("cpf" | "cnpj")[];
+}): Promise<ResultadoInterpretacaoFaixasDocumentos> {
+  const { menu, faixasOrdenadas, respostaLead, tiposEsperados } = params;
+  const escolha = await interpretarEscolhaMenu({ menu, respostaLead, qtdFaixas: faixasOrdenadas.length });
+
+  if (escolha.tipo === "quer_consulta_paga") {
+    return { status: "escalar_consulta_paga", mensagem: MENSAGEM_CONSULTA_PAGA };
+  }
+  if (escolha.tipo === "nao_entendi") return { status: "nao_entendi" };
+
+  const faixa = faixasOrdenadas[escolha.indice];
+  const perguntaEsclarecimento = montarMensagemConfirmacaoFaixa(faixa, escolha.indice === 0, tiposEsperados);
+  return {
+    status: "incompleto",
+    perguntaEsclarecimento,
+    dadosParciais: { _faixa_provisoria_indice: String(escolha.indice) },
+  };
+}

@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarEmailBoasVindasSeNecessario } from "@/lib/email/boas-vindas";
 import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
+import { concatenarMensagensLead } from "./buffer-mensagens";
 import { substituirVariaveisTexto } from "./engine";
 import {
   ehUltimoItemDaAgenda,
@@ -86,11 +87,33 @@ export async function carregarOuCriarConversaWhatsapp(
 ): Promise<ConversaWhatsappCarregada> {
   const supabase = createAdminClient();
 
-  const { data: pessoaExistente } = await supabase
-    .from("pessoas")
-    .select("id")
-    .eq("whatsapp", telefone)
-    .maybeSingle();
+  // Achado real (19/08/2026): `pessoas.whatsapp` não tem constraint de único no banco — um mesmo
+  // número pode acabar ligado a mais de uma pessoa (ex.: cadastro criado pelo webhook do WhatsApp
+  // + cadastro criado depois pela Nova Oportunidade do Vendas usando o mesmo telefone). `.maybeSingle()`
+  // quebra com "multiple rows returned" nesse caso — trocado por uma busca que aceita N linhas e,
+  // se houver mais de uma, prefere a que já tem conversa de WhatsApp ativa (a mais relevante pra
+  // continuar o atendimento); sem nenhuma com conversa ativa, usa a mais recente. Não resolve a
+  // duplicidade em si (isso é uma decisão de produto — precisa de unique constraint ou fluxo de
+  // mesclagem, registrado na coordenação pra decidir com o Luiz/Vendas), só evita que o webhook
+  // pare de responder pro lead por causa disso.
+  const { data: pessoasComTelefone } = await supabase.from("pessoas").select("id").eq("whatsapp", telefone);
+
+  let pessoaExistente: { id: string } | null = null;
+  if (pessoasComTelefone && pessoasComTelefone.length === 1) {
+    pessoaExistente = pessoasComTelefone[0];
+  } else if (pessoasComTelefone && pessoasComTelefone.length > 1) {
+    const ids = pessoasComTelefone.map((p) => p.id);
+    const { data: comConversaAtiva } = await supabase
+      .from("conversas")
+      .select("pessoa_id")
+      .in("pessoa_id", ids)
+      .eq("canal", "whatsapp")
+      .eq("status", "ativa")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    pessoaExistente = comConversaAtiva ? { id: comConversaAtiva.pessoa_id } : pessoasComTelefone[pessoasComTelefone.length - 1];
+  }
 
   if (pessoaExistente) {
     const { data: conversaAtiva } = await supabase
@@ -232,6 +255,60 @@ export async function registrarMensagemLead(
   }
 }
 
+/**
+ * Escreve o token de debounce (19/08/2026, "corrigir tudo de forma global" — mensagens seguidas do
+ * lead viravam turnos separados do motor, cegos um pro outro). Cada mensagem que chega sobrescreve
+ * o token da conversa; quem espera e relê o MESMO valor que escreveu é quem processa o turno (ver
+ * `aindaEhTokenAtual` e o webhook, `route.ts`).
+ */
+export async function escreverTokenBuffer(conversaId: string, token: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("conversas").update({ buffer_token: token }).eq("id", conversaId);
+  if (error) throw new Error(`Falha ao gravar token de buffer: ${error.message}`);
+}
+
+/** true só se `buffer_token` da conversa ainda for exatamente o token informado — false quando uma mensagem mais nova já sobrescreveu (essa invocação desiste, a mais nova processa tudo). */
+export async function aindaEhTokenAtual(conversaId: string, token: string): Promise<boolean> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("conversas").select("buffer_token").eq("id", conversaId).single();
+  if (error) throw new Error(`Falha ao reler token de buffer: ${error.message}`);
+  return data?.buffer_token === token;
+}
+
+/**
+ * Todo texto que o lead mandou desde a última fala da Malala nesta conversa (ou desde o início,
+ * se a Malala ainda não falou nada) — a "janela" que o debounce concatena num turno só. Ignora
+ * mensagens sem texto (mídia sem legenda): elas não alimentam o motor de qualquer forma.
+ */
+export async function montarRespostaConcatenadaDesdeUltimaFala(conversaId: string): Promise<string> {
+  const supabase = createAdminClient();
+
+  const { data: ultimaMalala, error: erroUltimaMalala } = await supabase
+    .from("mensagens")
+    .select("enviado_em")
+    .eq("conversa_id", conversaId)
+    .eq("remetente", "malala")
+    .order("enviado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroUltimaMalala) throw new Error(`Falha ao buscar última mensagem da Malala: ${erroUltimaMalala.message}`);
+
+  let query = supabase
+    .from("mensagens")
+    .select("conteudo, enviado_em")
+    .eq("conversa_id", conversaId)
+    .eq("remetente", "lead")
+    .order("enviado_em", { ascending: true });
+  if (ultimaMalala?.enviado_em) {
+    query = query.gt("enviado_em", ultimaMalala.enviado_em);
+  }
+
+  const { data: mensagensLead, error: erroMensagensLead } = await query;
+  if (erroMensagensLead) throw new Error(`Falha ao buscar mensagens do lead pra concatenar: ${erroMensagensLead.message}`);
+
+  return concatenarMensagensLead(mensagensLead ?? []);
+}
+
 /** Marca `conversas.estagnado_desde` (selo de risco de esfriar, sinal 3) se ainda não estiver marcada — nunca sobrescreve uma pendência já aberta, a data precisa refletir quando ela começou de verdade. */
 async function marcarEstagnadaSeNecessario(conversaId: string): Promise<void> {
   const supabase = createAdminClient();
@@ -368,7 +445,15 @@ export async function registrarTurnoMalala(params: {
   }
 
   if (resultado.mensagens.length > 0) {
-    const linhas = resultado.mensagens.map((item: MensagemEnviada) => {
+    // `enviado_em` explícito e crescente (19/08/2026, achado real — log de produção mostrou a
+    // Tela de Atendimento em ordem ERRADA dentro de um mesmo turno, ex.: pergunta de e-mail antes
+    // da saudação/foto). Causa: um único INSERT em lote faz o Postgres avaliar `now()` uma vez só
+    // pra todas as linhas — com timestamp idêntico, a ordem de exibição fica ao sabor de como o
+    // banco devolve as linhas, não da ordem real do array (que já está certa). 50ms de espaçamento
+    // é imperceptível pro usuário mas garante desempate determinístico, sem depender de nenhuma
+    // coluna nova nem de índice sequencial.
+    const agora = Date.now();
+    const linhas = resultado.mensagens.map((item: MensagemEnviada, indice) => {
       const { conteudo, midiaUrl, midiaTipo } = paraColunasMensagem(item.mensagem);
       return {
         conversa_id: conversaId,
@@ -377,6 +462,7 @@ export async function registrarTurnoMalala(params: {
         conteudo,
         midia_url: midiaUrl,
         midia_tipo: midiaTipo,
+        enviado_em: new Date(agora + indice * 50).toISOString(),
       };
     });
     const { error } = await supabase.from("mensagens").insert(linhas);

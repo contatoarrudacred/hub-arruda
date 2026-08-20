@@ -95,6 +95,11 @@ function formatarMil(valor: number): string {
 
 const EMOJIS_NUMERO = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
+/** Mesma ordenação usada no menu (formatarMenuFaixas) e no interpretador (pra o índice escolhido "2" apontar sempre pra mesma faixa nos dois lugares). */
+export function ordenarFaixasPreco(faixas: FaixaPreco[]): FaixaPreco[] {
+  return [...faixas].sort((a, b) => a.faixaMin - b.faixaMin);
+}
+
 /**
  * Rótulo de uma faixa pra menu numerado (checkpoint ln_passo6, correção 18/08/2026 — Luiz pediu
  * menu fechado em vez de pergunta de texto livre). A primeira faixa da lista (menor `faixaMin`) é
@@ -113,13 +118,51 @@ export function formatarLabelFaixa(faixa: FaixaPreco, ehPrimeira: boolean): stri
  * (pra ele conseguir mapear "2" pro intervalo certo), sempre o mesmo texto nos dois lugares.
  */
 export function formatarMenuFaixas(faixas: FaixaPreco[]): string {
-  const ordenadas = [...faixas].sort((a, b) => a.faixaMin - b.faixaMin);
-  return ordenadas
+  return ordenarFaixasPreco(faixas)
     .map((faixa, i) => {
       const emoji = EMOJIS_NUMERO[i] ?? `${i + 1}.`;
       return `${emoji} ${formatarLabelFaixa(faixa, i === 0)}`;
     })
     .join("\n");
+}
+
+/** Mesmos 3 formatos de `formatarLabelFaixa`, mas minúsculo e sem espaço antes do "mil" — o jeito exato que Luiz pediu pra frase de confirmação do ln_passo6 ("entre 10 e 30mil", não "Entre 10 mil e 30 mil"). */
+export function formatarFaixaConfirmacao(faixa: FaixaPreco, ehPrimeira: boolean): string {
+  const mil = (v: number) => `${Math.round(v / 1000)}mil`;
+  if (ehPrimeira) return `menos de ${mil(faixa.faixaMax ?? faixa.faixaMin)}`;
+  if (faixa.faixaMax === null) return `acima de ${mil(faixa.faixaMin)}`;
+  return `entre ${Math.round(faixa.faixaMin / 1000)} e ${mil(faixa.faixaMax)}`;
+}
+
+/** Valor em reais usado pra representar a faixa inteira (preço/parcelas), depois que o lead confirma — ponto médio da faixa (ou o piso, quando não há teto). */
+export function valorRepresentativoFaixa(faixa: FaixaPreco): number {
+  if (faixa.faixaMax === null) return faixa.faixaMin;
+  return Math.round((faixa.faixaMin + faixa.faixaMax) / 2);
+}
+
+/** Conta ocorrências de cada tipo, preservando a ordem de primeira aparição — "cpf,cpf,cnpj" -> [{tipo:"cpf",qtd:2},{tipo:"cnpj",qtd:1}]. */
+function contarDocumentosPorTipo(tipos: ("cpf" | "cnpj")[]): { tipo: "cpf" | "cnpj"; qtd: number }[] {
+  const ordem: ("cpf" | "cnpj")[] = [];
+  const contagem = new Map<"cpf" | "cnpj", number>();
+  for (const tipo of tipos) {
+    if (!contagem.has(tipo)) ordem.push(tipo);
+    contagem.set(tipo, (contagem.get(tipo) ?? 0) + 1);
+  }
+  return ordem.map((tipo) => ({ tipo, qtd: contagem.get(tipo) ?? 0 }));
+}
+
+/**
+ * Mensagem de confirmação do ln_passo6 (formato exato pedido por Luiz, 18/08/2026) — depois que o
+ * lead escolhe uma faixa do menu, a Malala confirma antes de seguir assumindo que TODOS os
+ * documentos estão nesta mesma faixa. Ex.: "Só confirmando: Limpeza de nome para *01 CPF e 01
+ * CNPJ* com restrições entre 10 e 30mil em *cada um deles*.\n👉 *Está correto?*"
+ */
+export function montarMensagemConfirmacaoFaixa(faixa: FaixaPreco, ehPrimeira: boolean, tiposDocumentos: ("cpf" | "cnpj")[]): string {
+  const listaDocs = contarDocumentosPorTipo(tiposDocumentos)
+    .map((g) => `${String(g.qtd).padStart(2, "0")} ${g.tipo.toUpperCase()}`)
+    .join(" e ");
+  const sufixo = tiposDocumentos.length > 1 ? " em *cada um deles*" : "";
+  return `Só confirmando: Limpeza de nome para *${listaDocs}* com restrições ${formatarFaixaConfirmacao(faixa, ehPrimeira)}${sufixo}.\n👉 *Está correto?*`;
 }
 
 /** Data ISO (YYYY-MM-DD) formatada como DD/MM/AA — usado na mensagem de confirmação de pagamento. */

@@ -459,6 +459,63 @@ describe("regra de desvio (resposta não reconhecida)", () => {
   });
 });
 
+describe("lista_documentos — memória entre turnos (correção 19/08/2026, log real de produção)", () => {
+  it("incompleto com contagem proposta: dadosNovos carrega a proposta pro próximo turno confirmar", async () => {
+    const interpretarListaDocumentos = async () => ({
+      status: "incompleto" as const,
+      perguntaEsclarecimento: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+      dadosParciais: {
+        _doc_pergunta_pendente: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+        _doc_cpf_proposto: "1",
+        _doc_cnpj_proposto: "1",
+      },
+    });
+    const r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo4"],
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "meu cpf e o cnpj da minha mulher",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarListaDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(r.naoReconhecido).toBe(true);
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo4");
+    expect(r.dadosNovos).toEqual({
+      _doc_pergunta_pendente: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+      _doc_cpf_proposto: "1",
+      _doc_cnpj_proposto: "1",
+    });
+    expect(txt(r.mensagens[0])).toContain("1 CPF e 1 CNPJ");
+  });
+
+  it("no turno seguinte, a proposta e a pergunta pendente chegam em `dados` pro interpretador confirmar", async () => {
+    let dadosRecebidos: DadosConversa | undefined;
+    const interpretarListaDocumentos = async ({ dados }: { dados: DadosConversa }) => {
+      dadosRecebidos = dados;
+      return { status: "completo" as const, itens: [{ tipo: "cpf" as const }, { tipo: "cnpj" as const }] };
+    };
+    await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo4"],
+      etapasPorCodigo,
+      dados: {
+        _doc_pergunta_pendente: "Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?",
+        _doc_cpf_proposto: "1",
+        _doc_cnpj_proposto: "1",
+      },
+      respostaLead: "sim",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarListaDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(dadosRecebidos?._doc_pergunta_pendente).toBe("Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?");
+    expect(dadosRecebidos?._doc_cpf_proposto).toBe("1");
+    expect(dadosRecebidos?._doc_cnpj_proposto).toBe("1");
+  });
+});
+
 describe("checkpoint opcional (opcional_apos_tentativas, PLANO_MESTRE seção 8.12)", () => {
   it("abertura_email: pergunta inicial NÃO inclui a justificativa (correção 18/08/2026 — saía junto antes do lead poder responder)", async () => {
     const r = await responder("abertura_telefone", {}, "11988887777");

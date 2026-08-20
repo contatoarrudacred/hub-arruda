@@ -7,10 +7,17 @@ import { createClient } from "@/lib/supabase/server";
 import { referenciasDeConteudo } from "@/lib/motor-fluxo/db";
 import {
   carregarResumoDeTodasEtapas,
+  criarPasta as criarPastaRepo,
+  definirCorPasta as definirCorPastaRepo,
   excluirEtapa as excluirEtapaRepo,
+  excluirPasta as excluirPastaRepo,
+  moverEReordenarFluxos as moverEReordenarFluxosRepo,
+  renomearFluxo as renomearFluxoRepo,
+  renomearPasta as renomearPastaRepo,
   salvarEtapa as salvarEtapaRepo,
   type EntradaSalvarEtapa,
 } from "@/lib/motor-fluxo/repositorio-admin";
+import { ehCorPastaValida } from "@/lib/motor-fluxo/cores-pasta";
 import type { ConteudoEtapa } from "@/lib/motor-fluxo/tipos";
 
 export type ResultadoSalvar = { sucesso: true; id: string } | { sucesso: false; erro: string };
@@ -111,4 +118,79 @@ export async function uploadMidiaAction(formData: FormData): Promise<ResultadoUp
 
   const { data } = supabase.storage.from(BUCKET_MIDIA_FLUXO).getPublicUrl(nomeArquivo);
   return { sucesso: true, url: data.publicUrl };
+}
+
+// ============================================================================
+// Pastas de Fluxo — docs/superpowers/specs/2026-08-19-fluxos-pastas-design.md
+// ============================================================================
+
+export type ResultadoAcao = { sucesso: true } | { sucesso: false; erro: string };
+export type ResultadoCriarPasta = { sucesso: true; id: string } | { sucesso: false; erro: string };
+
+export async function renomearFluxoAction(fluxoId: string, novoNome: string): Promise<ResultadoAcao> {
+  try {
+    await renomearFluxoRepo(fluxoId, novoNome);
+    revalidatePath("/admin/fluxos");
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: erro instanceof Error ? erro.message : "Falha ao renomear fluxo." };
+  }
+}
+
+export async function criarPastaAction(nome: string, cor: string): Promise<ResultadoCriarPasta> {
+  if (!ehCorPastaValida(cor)) {
+    return { sucesso: false, erro: "Cor inválida." };
+  }
+  try {
+    const resultado = await criarPastaRepo(nome, cor);
+    revalidatePath("/admin/fluxos");
+    return { sucesso: true, id: resultado.id };
+  } catch (erro) {
+    return { sucesso: false, erro: erro instanceof Error ? erro.message : "Falha ao criar pasta." };
+  }
+}
+
+export async function renomearPastaAction(pastaId: string, novoNome: string): Promise<ResultadoAcao> {
+  try {
+    await renomearPastaRepo(pastaId, novoNome);
+    revalidatePath("/admin/fluxos");
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: erro instanceof Error ? erro.message : "Falha ao renomear pasta." };
+  }
+}
+
+export async function definirCorPastaAction(pastaId: string, cor: string): Promise<ResultadoAcao> {
+  if (!ehCorPastaValida(cor)) {
+    return { sucesso: false, erro: "Cor inválida." };
+  }
+  try {
+    await definirCorPastaRepo(pastaId, cor);
+    revalidatePath("/admin/fluxos");
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: erro instanceof Error ? erro.message : "Falha ao alterar cor da pasta." };
+  }
+}
+
+export async function excluirPastaAction(pastaId: string): Promise<ResultadoAcao> {
+  try {
+    await excluirPastaRepo(pastaId);
+    revalidatePath("/admin/fluxos");
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: erro instanceof Error ? erro.message : "Falha ao excluir pasta." };
+  }
+}
+
+export async function moverEReordenarAction(
+  mudancas: { fluxoId: string; pastaId: string | null; posicao: number }[],
+): Promise<ResultadoAcao> {
+  try {
+    await moverEReordenarFluxosRepo(mudancas);
+    revalidatePath("/admin/fluxos");
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: erro instanceof Error ? erro.message : "Falha ao mover/reordenar fluxos." };
+  }
 }

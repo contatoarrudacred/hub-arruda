@@ -128,13 +128,49 @@ Vale pra **qualquer** tela que cadastra/edita uma Pessoa neste sistema (Forneced
 - **Ação "Confirmar venda"** (produtos comissionados): hoje não existe integração automatizada com cada administradora/banco que avise a ArrudaCred sozinha — é uma ação manual do admin, que precisa informar **a data em que o cliente assinou com o fornecedor** (o dado real que baseia o cálculo de vencimento — pode ser anterior a hoje, se o fornecedor demorou pra avisar). Ao confirmar, o sistema gera de uma vez todas as parcelas de `comissoes_fornecedor_receber` a partir da regra em `fornecedor_produtos`. Fica registrado como suposição a validar quando a frente for implementada — se algum fornecedor específico expuser API própria no futuro, isso vira automatizável sem redesenhar o modelo (só passa a preencher a data de referência sozinho, em vez de pedir pro admin).
 - **"Ganha" da Oportunidade comissionada = confirmação do fornecedor**, não o recebimento da comissão em si (diferente do modelo `proprio`/`subcontratado`, onde Ganha = dinheiro do cliente confirmado).
 - **Sem handoff pra Operação** — sem execução da ArrudaCred, não há o que rastrear em Operação.
-- **Sem Contrato/Assinafy** — o contrato de verdade é entre cliente e fornecedor, fora do sistema.
+- **Sem Contrato/Assinafy** — o contrato de verdade é entre cliente e fornecedor, fora do sistema. Isso **não** significa que a venda fica invisível no Painel de Vendas — ela aparece lá igual às demais, só que com um caminho automático mais curto (ver seção 3.6): como só vira registro depois de já aprovada pelo fornecedor, ela nasce direto em `aguardando_pagamento` (pulando os estágios de contrato/assinatura, que não existem aqui) e avança pra `concluida` quando a 1ª parcela da comissão é recebida.
 
 ### 3.5 Handoff — sinal para o módulo Operação
 
 - **Schema de `ordens_servico` fica fora desta spec** — decisão de Luiz: os campos, o formato de lote/individual, o fluxo de envio ao fornecedor e o acompanhamento de execução são detalhados junto com o desenho do módulo Operação, não aqui. O rascunho em `PARCEIROS_AFILIADOS_ARRUDACRED.md` continua sendo só um rascunho, não confirmado nem estendido por esta spec.
 - **O que Vendas garante:** quando `oportunidades.etapa_kanban = 'ganha'` (produtos `proprio`/`subcontratado`), a Oportunidade já carrega tudo que uma futura `ordens_servico` vai precisar consumir — Pessoa (via `oportunidades.pessoa_id`), Produto (via `oportunidades.produto_id`), e o Fornecedor já escolhido na venda quando aplicável (via `contratos.fornecedor_id`, ver 3.2). Isso é suficiente pro módulo Operação, quando existir, migrar/consumir sem depender de retrabalho em Vendas.
 - Produtos `comissionado` **não** entram nesse handoff (seção 3.4) — sem execução da ArrudaCred, não há OS a criar.
+
+### 3.6 Painel de Vendas (decidido com o Luiz em 19/08/2026)
+
+**A UI do módulo não nasce direto na tela de Fechamento de Venda — tudo começa num "Painel de Vendas"**, com visualização em lista ou Kanban, que dá visibilidade de toda venda em andamento e serve de porta de entrada pra "Nova venda" e "Detalhes da venda".
+
+**Ponto central, confirmado explicitamente com o Luiz: existem DOIS Kanbans diferentes, sem nenhuma relação de leitura entre si.**
+- **Kanban do CRM** (`oportunidades.etapa_kanban`, `src/lib/motor-fluxo/kanban.ts`) — funil de atendimento da Malala, do primeiro contato até `ganha`/`perdida`. Território do CRM; Vendas nunca lê nem depende dele pra tomar decisão.
+- **Kanban de Vendas (Painel de Vendas, este aqui)** — o estágio da venda em si, guardado em `contratos.status` (tabela 100% do Vendas). Só existe *depois* que a Oportunidade chega em `dados_contrato`.
+- **Uma venda originada no CRM aparece nos dois ao mesmo tempo** — a Malala segue conversando com o lead até o fim (precisa saber em que pé está), e a equipe de vendas/operação acompanha pelo Painel de Vendas. Não é dado duplicado: é a mesma venda, vista por duas equipes, em dois quadros com granularidade diferente. **Sincronização é unidirecional** — Vendas empurra uma atualização pontual pro `etapa_kanban` nos marcos-chave (contrato assinado → `pagamento`; 1ª parcela paga → `ganha`; venda cancelada → `perdida`), exatamente como já estava desenhado nos webhooks de Assinafy/Asaas (seção 3.2/3.3) — o CRM nunca escreve nem lê `contratos.status`.
+- **Venda sem funil prévio (criada direto pelo Vendas, sem passar pela Malala) NÃO aparece no Kanban nem em nenhum registro do CRM** — só no Painel de Vendas. O sinal que diferencia as duas origens já existe sem precisar de coluna nova: `criarOportunidadeSemFunilPrevio` nunca cria uma linha em `conversas`, então "existe `conversas.oportunidade_id` pra essa Oportunidade" é a query que o Kanban do CRM usa pra filtrar. Pedido já registrado pro CRM aplicar esse filtro (`docs/COORDENACAO_AGENTES_ARRUDACRED.md`, urgente porque o Kanban deles está em construção).
+
+**Estágios do Kanban de Vendas** (`contratos.status`, 100% automático entre `contrato_gerado` e `parcelas_emitidas` — sem ação humana, avança sozinho em segundos):
+
+| Estágio | O que acontece |
+|---|---|
+| `contrato_gerado` | PDF do contrato pronto (Fechamento de Venda concluído) |
+| `aguardando_assinatura` | Enviado à Assinafy — Painel Interativo mostra quem já assinou / falta assinar |
+| `assinado` | Todos assinaram (cliente + ArrudaCred — auto-assinatura da ArrudaCred a confirmar na API, ver seção 8) |
+| `parcelas_emitidas` | Cobrança criada na Asaas |
+| `aguardando_pagamento` | Link de pagamento reenviado por WhatsApp/e-mail (Camada de Adaptadores de Canal, seção 4) — cartão cobra tudo de uma vez (parcelado em N no cartão), boleto cobra só a 1ª parcela por vez |
+| `concluida` | 1ª parcela paga (webhook Asaas) — dispara promoção a cliente + handoff (seção 3.5) |
+| `cancelada` | Cliente desistiu antes de assinar, ou assinou e não pagou — motivo livre em `contratos.motivo_cancelamento` |
+
+**Produto `comissionado` usa o mesmo Kanban de Vendas, sem estágio novo** (decidido com o Luiz em 19/08/2026 — inicialmente cogitado um estágio `aguardando_confirmacao_fornecedor`, descartado): como a ação "Confirmar venda" (seção 3.4) só roda depois que o fornecedor **já aprovou** a venda, não existe fase de espera a modelar — o registro nasce direto em `aguardando_pagamento` (pulando `contrato_gerado`/`aguardando_assinatura`/`assinado`/`parcelas_emitidas`, que não existem pra esse tipo de produto) e avança pra `concluida` quando a 1ª parcela da comissão do fornecedor é marcada como recebida (ação manual do admin, sem webhook de fornecedor).
+
+**Telas:**
+- **Painel de Vendas** (`/admin/vendas`) — lista ou Kanban (toggle), todas as vendas com estágio visível. Cada linha/card tem menu de ações: **Detalhes**, **Cancelar**, **Excluir** (Excluir é ação de admin — remove só o registro do Vendas, contrato+parcelas via cascade, nunca a Oportunidade/dado do CRM). Botão "Nova venda" abre `/admin/vendas/nova` (já existe).
+- **Confirmar venda** (`/admin/vendas/[oportunidadeId]/confirmar-comissionada`) — equivalente ao Fechamento de Venda, só que pro caminho comissionado: sem contrato/PDF, só pede a data em que o cliente assinou com o fornecedor e gera as parcelas de comissão (seção 3.4).
+- **Detalhes da Venda** (`/admin/vendas/[oportunidadeId]`) — visão completa da venda. Antes do registro existir, mostra link pra continuar (`/fechamento` ou `/confirmar-comissionada`, conforme `produtos.tipo`). Depois de existir, mostra um **"Painel Interativo"** que muda de acordo com o estágio atual:
+  - Fonte de dado é o banco (atualizado pelos webhooks), **não** a API ao vivo por padrão — decisão confirmada com o Luiz em 19/08/2026 (custo/latência de chamar Assinafy/Asaas a cada abertura de tela não compensa). Cada painel tem um botão **"Verificar agora"** que aí sim consulta a API na hora (`buscarDocumento` na Assinafy, `buscarCobranca` na Asaas) — é nesse momento que aparece o link individual de assinatura/cobrança (não fica persistido em nenhuma tabela, é sempre buscado fresco quando precisa reenviar).
+  - `aguardando_assinatura`: lista quem já assinou / falta assinar; reenvio (WhatsApp/e-mail/copiar link) só pro signatário cliente — o signatário da ArrudaCred não recebe reenvio por esses canais.
+  - `aguardando_pagamento`/`parcelas_emitidas`: tabela de parcelas com reenvio de link de pagamento (WhatsApp/e-mail/copiar) por parcela ainda não paga.
+  - Comissionado (`aguardando_pagamento`): tabela de `comissoes_fornecedor_receber` com botão **"Marcar recebida"** em vez de link — não há link de pagamento nesse caminho, quem paga é o fornecedor pra ArrudaCred.
+  - **Histórico**: timeline lida de `auditoria_log` (sem tabela nova) — um evento por avanço de estágio do contrato, parcela paga, comissão recebida.
+  - **Cancelar venda** duplicado aqui (mesma ação do Painel de Vendas).
+- Telas devem ser amigáveis, limpas, com tooltips ajudando a entender cada estágio — sem exigir que o usuário conheça o "por trás" do sistema pra usar.
 
 ---
 
@@ -165,15 +201,17 @@ dados_contrato completo (nome, documento, endereço, forma de pagamento)
 
 ```
 dados_contrato completo (nome, documento — fornecedor já é implícito via produtos.fornecedor_id)
-  → registra venda (sem contrato/Assinafy)
-  → aguarda confirmação do fornecedor (manual, hoje)
-  → [confirmação registrada] → gera comissoes_fornecedor_receber (a partir de fornecedor_produtos)
-     → etapa_kanban = 'ganha'
+  → aguarda aprovação do fornecedor, fora do sistema (nada registrado em Vendas ainda)
+  → [fornecedor aprova] → ação "Confirmar venda" (manual, admin informa a data de assinatura cliente×fornecedor)
+     → gera comissoes_fornecedor_receber (a partir de fornecedor_produtos)
+     → cria o registro em contratos direto em status = 'aguardando_pagamento' (Painel de Vendas, seção 3.6)
+     → etapa_kanban (CRM) = 'ganha'
      → promove Pessoa a cliente
      → (sem handoff pra Operação)
+  → [1ª parcela da comissão recebida, marcado manualmente] → contratos.status = 'concluida'
 ```
 
-**Nova subetapa de Kanban necessária:** `aguardando_confirmacao_fornecedor` (entre `dados_contrato` e `ganha`, substituindo `assinatura_digital`/`pagamento` no caminho comissionado).
+**Sem subetapa nova no Kanban do CRM** (`src/lib/motor-fluxo/kanban.ts` não é tocado) — o estágio da venda comissionada vive só em `contratos.status` (Painel de Vendas, seção 3.6), igual proprio/subcontratado; só que entrando direto em `aguardando_pagamento` em vez de `contrato_gerado`, já que não existe fase de contrato/assinatura pra esse tipo de produto.
 
 ---
 
@@ -193,5 +231,7 @@ dados_contrato completo (nome, documento — fornecedor já é implícito via pr
 1. Migração do dado existente `produtos.tipo = 'terceiro'` para `subcontratado`/`comissionado` — precisa decidir caso a caso (Consórcio/Crédito → comissionado; se algum "terceiro" hoje for na real subcontratado, mover).
 2. Texto exato dos templates de contrato por produto — ainda não escrito, fica para quando a frente entrar em implementação.
 3. Confirmação do fornecedor em produto comissionado é manual nesta fase (sem API por administradora) — revalidar se algum fornecedor específico expõe integração própria antes de implementar.
-4. Superfície de tela pra operar oportunidades em fechamento (lista simples vs. esperar o Kanban visual) — decisão de implementação, não de produto.
+4. ~~Superfície de tela pra operar oportunidades em fechamento~~ — **resolvido em 19/08/2026, ver seção 3.6**: Painel de Vendas (lista/Kanban) + Detalhes da Venda, telas dedicadas do Vendas.
 5. Pedido em aberto no CRM (registrado em `docs/COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, 18/08/2026) pra capturar `metodo_pagamento`/parcelas/vencimentos nativamente no bot — acompanhar a resposta deles; não bloqueia a tela de Fechamento de Venda (3.2.1), que resolve a lacuna independente disso.
+6. Pedido urgente em aberto no CRM (registrado 19/08/2026) pra filtrar o Kanban dele por `conversas.oportunidade_id` — vendas sem funil prévio não podem aparecer lá (ver seção 3.6).
+7. **Assinatura automática da ArrudaCred na Assinafy** — o Luiz quer que, assim que o cliente assinar, a ArrudaCred assine sozinha (sem humano abrir o link) via API. Ainda não confirmado se a Assinafy permite isso pro signatário fixo — primeira coisa a verificar na doc/API quando chegar em Assinafy (Task 9/10). Se não der, o signatário da ArrudaCred assina manualmente como qualquer outro (o fluxo automático dos demais estágios não muda).
