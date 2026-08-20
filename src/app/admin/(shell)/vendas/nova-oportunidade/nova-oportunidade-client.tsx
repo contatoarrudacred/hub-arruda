@@ -365,6 +365,10 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
         pessoaId,
         pessoaNova: pessoaId ? null : { nome: dadosContrato.nome, documento },
         dadosContrato: {
+          // Manda o nome mesmo quando a pessoa já existe (pessoaId setado) — o campo é editável na
+          // tela nos dois casos, e sem isso uma correção de nome numa pessoa já cadastrada nunca
+          // chegava no servidor (achado real, Luiz 20/08/2026: contrato saía com o nome antigo).
+          nome: dadosContrato.nome,
           email: dadosContrato.email,
           whatsapp: dadosContrato.whatsapp,
           rg: dadosContrato.rg,

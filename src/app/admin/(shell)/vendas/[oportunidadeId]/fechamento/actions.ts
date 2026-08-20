@@ -105,7 +105,9 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
     console.log("[DEBUG confirmarFechamento] pessoaArrudaCredId:", pessoaArrudaCredId);
 
     // 1) Salva dados de contrato + endereço do signatário (e do representante, se PJ)
-    await atualizarDadosContratoPessoa(entrada.pessoaId, entrada.dadosContrato);
+    // Nome do signatário não é editável nesta tela (só exibido, ver fechamento-client.tsx) —
+    // nada a sincronizar aqui, diferente da Nova Oportunidade.
+    await atualizarDadosContratoPessoa(entrada.pessoaId, { ...entrada.dadosContrato, nome: null });
     await salvarEnderecoSeInformado(entrada.pessoaId, entrada.endereco);
 
     let representanteId: string | null = null;
@@ -120,7 +122,7 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
 
       representanteId = resolvido.pessoaId;
       await definirRepresentante(entrada.pessoaId, representanteId);
-      await atualizarDadosContratoPessoa(representanteId, entrada.representante.dadosContrato);
+      await atualizarDadosContratoPessoa(representanteId, { ...entrada.representante.dadosContrato, nome: null });
       await salvarEnderecoSeInformado(representanteId, entrada.representante.endereco);
     }
 
