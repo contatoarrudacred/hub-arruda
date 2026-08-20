@@ -1,14 +1,17 @@
 import { atualizarStatusContrato, buscarContratoPorId } from "./contratos";
 import {
   buscarTemplatePorId,
+  montarCamposClienteResolucao,
   montarDadosClienteHtml,
-  montarListaDocumentosHtml,
+  montarTabelaContratanteHtml,
+  montarTabelaDocumentosHtml,
   montarTabelaVencimentosHtml,
   resolverPlaceholders,
   type ParcelaTabela,
   type PessoaContrato,
 } from "./contrato-templates";
 import { buscarEnderecoPorPessoa } from "./endereco";
+import { envolverComEstiloDocumento } from "./estilo-documento";
 import { gerarPdfContrato, uploadPdfContrato } from "./geracao-pdf";
 import { listarDocumentosPacote } from "./oportunidades";
 import { buscarPessoaCompleta } from "./pessoas";
@@ -86,9 +89,11 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
     valorTotal: contrato.valorTotal,
     formaPagamento: formaPagamentoLabel,
     tabelaVencimentos: parcelasTabela.length > 1 ? montarTabelaVencimentosHtml(parcelasTabela, formaPagamentoLabel) : "",
-    listaDocumentos: montarListaDocumentosHtml(
+    tabelaDocumentos: montarTabelaDocumentosHtml(
       documentosPacote.map((d) => ({ documento: d.documento, nomeRazaoSocial: d.nomeRazaoSocial })),
     ),
+    tabelaContratante: montarTabelaContratanteHtml(pessoaContrato, representanteContrato),
+    ...montarCamposClienteResolucao(pessoaContrato, representanteContrato),
   });
 }
 
@@ -97,7 +102,7 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
  * `atualizarStatusContrato` aqui só reafirma esse mesmo status pra poder gravar `pdfUrl` junto. */
 export async function gerarEEmitirContrato(contratoId: string): Promise<void> {
   const html = await montarHtmlContrato(contratoId);
-  const pdf = await gerarPdfContrato(html);
+  const pdf = await gerarPdfContrato(envolverComEstiloDocumento(html));
   const { path } = await uploadPdfContrato(contratoId, pdf);
   await atualizarStatusContrato(contratoId, "emitindo_contrato", { pdfUrl: path });
 }

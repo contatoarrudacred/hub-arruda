@@ -9,6 +9,9 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useState } from "react";
+import { envolverComEstiloDocumentoPreview } from "@/lib/vendas/estilo-documento";
+import { gerarDadosMockPreview, resolverPlaceholders } from "@/lib/vendas/template-resolucao";
+import { sanitizarHtml } from "./sanitizar-html";
 
 const FONTES = ["Arial", "Georgia", "Times New Roman", "Courier New"];
 const CORES = ["#18181b", "#dc2626", "#2563eb", "#16a34a"];
@@ -52,6 +55,7 @@ type Props = {
 
 export function EditorHtmlContrato({ valorInicial, aoMudar, aoEnviarImagem, aoInicializar }: Props) {
   const [enviandoImagem, setEnviandoImagem] = useState(false);
+  const [preview, setPreview] = useState(false);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -80,6 +84,11 @@ export function EditorHtmlContrato({ valorInicial, aoMudar, aoEnviarImagem, aoIn
   }, [editor]);
 
   if (!editor) return null;
+
+  function sanitizar() {
+    if (!editor) return;
+    editor.chain().focus().setContent(sanitizarHtml(editor.getHTML())).run();
+  }
 
   async function inserirImagem(evento: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = evento.target.files?.[0];
@@ -187,8 +196,25 @@ export function EditorHtmlContrato({ valorInicial, aoMudar, aoEnviarImagem, aoIn
           {enviandoImagem ? "Enviando..." : "Imagem"}
           <input type="file" accept="image/*" className="hidden" disabled={enviandoImagem} onChange={inserirImagem} />
         </label>
+        <span className="mx-1 h-5 w-px bg-zinc-300 dark:bg-zinc-700" />
+        <BotaoBarra ativo={false} aoClicar={sanitizar}>
+          🧹 Sanitizar
+        </BotaoBarra>
+        <BotaoBarra ativo={preview} aoClicar={() => setPreview((atual) => !atual)}>
+          {preview ? "✏️ Editar" : "👁️ Ver como vai ficar"}
+        </BotaoBarra>
       </div>
-      <EditorContent editor={editor} />
+      {preview ? (
+        <div className="flex justify-center bg-zinc-100 p-4 dark:bg-zinc-950">
+          <iframe
+            title="Preview do documento"
+            className="h-[600px] w-full max-w-3xl rounded border border-zinc-300 bg-white shadow-sm dark:border-zinc-700"
+            srcDoc={envolverComEstiloDocumentoPreview(resolverPlaceholders(editor.getHTML(), gerarDadosMockPreview()))}
+          />
+        </div>
+      ) : (
+        <EditorContent editor={editor} />
+      )}
     </div>
   );
 }

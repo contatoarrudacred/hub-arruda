@@ -1,12 +1,12 @@
 "use server";
 
-import { enviarImagemTemplate, salvarTemplate } from "@/lib/vendas/contrato-templates";
+import { enviarImagemTemplate, salvarConteudoTemplateDocumento } from "@/lib/vendas/contrato-templates";
 
 export type ResultadoSalvarTemplate = { sucesso: true } | { sucesso: false; erro: string };
 
-export async function salvarTemplateAction(produtoId: string, conteudoHtml: string): Promise<ResultadoSalvarTemplate> {
+export async function salvarConteudoTemplateAction(templateId: string, conteudoHtml: string): Promise<ResultadoSalvarTemplate> {
   try {
-    await salvarTemplate(produtoId, conteudoHtml);
+    await salvarConteudoTemplateDocumento(templateId, conteudoHtml);
     return { sucesso: true };
   } catch {
     return { sucesso: false, erro: "Falha ao salvar o template. Tente novamente." };

@@ -1,9 +1,9 @@
 # Status — Vendas
 
-tarefa: Luiz testando Nova Oportunidade em produção — migration aplicada, indo achando bugs reais de uso e pedindo ajustes; corrigindo cada um em tempo real (última rodada: pacote de nomes do Limpa Nome obrigatório + auto-preenchido com o contratante, recálculo automático de vencimentos ao editar a 1ª parcela — commit `5a42b01`, já em main).
-desde: 2026-08-19T18:00:00-03:00
-proxima: confirmar com o Luiz por que a seção "Pacote de documentos" não abriu no teste dele mesmo após ele rodar o UPDATE — provável mismatch de nome do produto na query; pedir SELECT id, nome, exige_lista_documentos FROM produtos pra conferir.
-bloqueio: nenhum — segue reativo aos achados do Luiz em teste ao vivo
+tarefa: Construídas as telas "Produtos & Serviços" e "Template de Documentos" (Configurações → Geral) + migration que generaliza contrato_templates → documento_templates (tipo contrato/termo_acordo/ficha_associativa, produto_id opcional) + estilo de documento único aplicado automaticamente no PDF + botões "Sanitizar" e "Ver como vai ficar" no editor rico. tsc/eslint/vitest (389 testes) limpos, aguardando o Luiz rodar a migration 20260819130000 pra poder testar ao vivo.
+desde: 2026-08-19T23:00:00-03:00
+proxima: depois do Luiz confirmar a migration aplicada e testar as telas novas, fazer a revisão geral do módulo e atualizar a spec/documentação (pedido explícito dele).
+bloqueio: migration 20260819130000_vendas_templates_documentos.sql escrita, aguardando envio ao Luiz — sem ela as telas novas quebram (tabela ainda se chama contrato_templates em produção).
 
 ## Verificação da Task 18 (2026-08-19) — o que foi confirmado e o que ficou pendente
 

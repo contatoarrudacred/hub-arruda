@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  montarCamposClienteResolucao,
   montarDadosClienteHtml,
-  montarListaDocumentosHtml,
+  montarTabelaContratanteHtml,
+  montarTabelaDocumentosHtml,
   montarTabelaVencimentosHtml,
   resolverPlaceholders,
   type PessoaContrato,
@@ -37,8 +39,40 @@ describe("resolverPlaceholders", () => {
     valorTotal: 1500,
     formaPagamento: "Parcelado em 3x no boleto",
     tabelaVencimentos: "<table><tr><td>1</td></tr></table>",
-    listaDocumentos: "",
+    tabelaDocumentos: "",
+    tabelaContratante: "<table><tr><td><strong>Nome Completo</strong></td><td>JOÃO DA SILVA</td></tr></table>",
+    clienteNome: "JOÃO DA SILVA",
+    clienteDocumento: "123.456.789-09",
+    clienteRg: "1.234.567",
+    clienteEstadoCivil: "Casado",
+    clienteProfissao: "Engenheiro",
+    clienteEmail: "joao@example.com",
+    clienteWhatsapp: "(48) 99999-0000",
+    clienteEndereco: "Rua das Flores, 123 — Florianópolis/SC",
+    empresaRazaoSocial: "",
+    empresaCnpj: "",
   };
+
+  it("substitui os placeholders granulares de cliente ({{cliente_nome}}, etc.)", () => {
+    const template = "Eu, {{cliente_nome}}, CPF {{cliente_documento}}, RG {{cliente_rg}}, {{cliente_estado_civil}}, {{cliente_profissao}}.";
+    const resultado = resolverPlaceholders(template, dadosBase);
+    expect(resultado).toBe("Eu, JOÃO DA SILVA, CPF 123.456.789-09, RG 1.234.567, Casado, Engenheiro.");
+  });
+
+  it("substitui empresa_razao_social/empresa_cnpj vazios quando é PF", () => {
+    const resultado = resolverPlaceholders("{{empresa_razao_social}} {{empresa_cnpj}}", dadosBase);
+    expect(resultado).toBe(" ");
+  });
+
+  it("usa travessão quando um campo opcional granular está vazio", () => {
+    const resultado = resolverPlaceholders("Profissão: {{cliente_profissao}}", { ...dadosBase, clienteProfissao: "" });
+    expect(resultado).toBe("Profissão: —");
+  });
+
+  it("substitui {{tabela_contratante}}", () => {
+    const resultado = resolverPlaceholders("{{tabela_contratante}}", dadosBase);
+    expect(resultado).toBe(dadosBase.tabelaContratante);
+  });
 
   it("substitui todos os placeholders conhecidos", () => {
     const template =
@@ -59,8 +93,8 @@ describe("resolverPlaceholders", () => {
     expect(resultado).toBe((1500).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
   });
 
-  it("substitui lista_documentos vazia quando não é pacote", () => {
-    const resultado = resolverPlaceholders("Documentos: {{lista_documentos}}", dadosBase);
+  it("substitui tabela_documentos vazia quando não é pacote", () => {
+    const resultado = resolverPlaceholders("Documentos: {{tabela_documentos}}", dadosBase);
     expect(resultado).toBe("Documentos: ");
   });
 
@@ -103,23 +137,91 @@ describe("montarDadosClienteHtml", () => {
   });
 });
 
-describe("montarListaDocumentosHtml", () => {
-  it("devolve vazio quando não é pacote (0 ou 1 documento)", () => {
-    expect(montarListaDocumentosHtml([])).toBe("");
-    expect(montarListaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }])).toBe("");
+describe("montarCamposClienteResolucao", () => {
+  it("PF: campos do próprio cliente, empresa_* vazio", () => {
+    const campos = montarCamposClienteResolucao(pessoaPfBase);
+    expect(campos.clienteNome).toBe("JOÃO DA SILVA");
+    expect(campos.clienteDocumento).toBe("123.456.789-09");
+    expect(campos.clienteRg).toBe("1.234.567");
+    expect(campos.empresaRazaoSocial).toBe("");
+    expect(campos.empresaCnpj).toBe("");
   });
 
-  it("lista documento + nome de cada item do pacote (sem RG/estado civil/profissão — não existe pra esses)", () => {
-    const html = montarListaDocumentosHtml([
+  it("PF: campo opcional ausente vira string vazia (não trava)", () => {
+    const campos = montarCamposClienteResolucao({ ...pessoaPfBase, profissao: null });
+    expect(campos.clienteProfissao).toBe("");
+  });
+
+  it("PJ: cliente_* são do representante, empresa_* é a razão social/CNPJ", () => {
+    const campos = montarCamposClienteResolucao(pessoaPjBase, pessoaPfBase);
+    expect(campos.clienteNome).toBe("JOÃO DA SILVA");
+    expect(campos.clienteDocumento).toBe("123.456.789-09");
+    expect(campos.empresaRazaoSocial).toBe("EMPRESA LTDA");
+    expect(campos.empresaCnpj).toBe("12.345.678/0001-90");
+  });
+
+  it("PJ sem representante lança erro", () => {
+    expect(() => montarCamposClienteResolucao(pessoaPjBase)).toThrow();
+  });
+});
+
+describe("montarTabelaContratanteHtml", () => {
+  it("PF: uma tabela com rótulo em negrito + valor, na ordem certa", () => {
+    const html = montarTabelaContratanteHtml(pessoaPfBase);
+
+    expect(html).toContain("<table>");
+    expect(html).toContain("<tr><td><strong>Nome Completo</strong></td><td>JOÃO DA SILVA</td></tr>");
+    expect(html).toContain("<tr><td><strong>CPF</strong></td><td>123.456.789-09</td></tr>");
+    expect(html).toContain("<tr><td><strong>RG</strong></td><td>1.234.567</td></tr>");
+    expect(html).toContain("<tr><td><strong>Estado Civil</strong></td><td>Casado</td></tr>");
+    expect(html).toContain("<tr><td><strong>Profissão</strong></td><td>Engenheiro</td></tr>");
+    expect(html).toContain("<tr><td><strong>E-mail</strong></td><td>joao@example.com</td></tr>");
+    expect(html).toContain("<tr><td><strong>Fone/WhatsApp</strong></td><td>(48) 99999-0000</td></tr>");
+    expect(html).toContain("<tr><td><strong>Endereço</strong></td><td>Rua das Flores, 123 — Florianópolis/SC</td></tr>");
+  });
+
+  it("PF: usa travessão quando um campo opcional está vazio", () => {
+    const html = montarTabelaContratanteHtml({ ...pessoaPfBase, profissao: null });
+    expect(html).toContain("<tr><td><strong>Profissão</strong></td><td>—</td></tr>");
+  });
+
+  it("PJ: tabela 2x2 de razão social/CNPJ, texto 'representada por:', depois a tabela do representante", () => {
+    const html = montarTabelaContratanteHtml(pessoaPjBase, pessoaPfBase);
+
+    expect(html).toContain("<tr><td><strong>Razão Social</strong></td><td>EMPRESA LTDA</td></tr>");
+    expect(html).toContain("<tr><td><strong>CNPJ</strong></td><td>12.345.678/0001-90</td></tr>");
+    expect(html).toContain("representada por:");
+    expect(html).toContain("<tr><td><strong>Nome Completo</strong></td><td>JOÃO DA SILVA</td></tr>");
+
+    const posRazaoSocial = html.indexOf("Razão Social");
+    const posRepresentadaPor = html.indexOf("representada por:");
+    const posNomeCompleto = html.indexOf("Nome Completo");
+    expect(posRazaoSocial).toBeLessThan(posRepresentadaPor);
+    expect(posRepresentadaPor).toBeLessThan(posNomeCompleto);
+  });
+
+  it("PJ sem representante lança erro", () => {
+    expect(() => montarTabelaContratanteHtml(pessoaPjBase)).toThrow();
+  });
+});
+
+describe("montarTabelaDocumentosHtml", () => {
+  it("devolve vazio quando não é pacote (0 ou 1 documento)", () => {
+    expect(montarTabelaDocumentosHtml([])).toBe("");
+    expect(montarTabelaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }])).toBe("");
+  });
+
+  it("monta tabela com cabeçalho CPF / CNPJ e NOME / RAZÃO SOCIAL", () => {
+    const html = montarTabelaDocumentosHtml([
       { documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" },
       { documento: "987.654.321-00", nomeRazaoSocial: "MARIA SOUZA" },
     ]);
 
     expect(html).toContain("<table>");
-    expect(html).toContain("123.456.789-09");
-    expect(html).toContain("987.654.321-00");
-    expect(html).toContain("JOÃO DA SILVA");
-    expect(html).toContain("MARIA SOUZA");
+    expect(html).toContain("<th>CPF / CNPJ</th>");
+    expect(html).toContain("<th>NOME / RAZÃO SOCIAL</th>");
+    expect(html).toContain("<tr><td>123.456.789-09</td><td>JOÃO DA SILVA</td></tr>");
+    expect(html).toContain("<tr><td>987.654.321-00</td><td>MARIA SOUZA</td></tr>");
   });
 });
 
