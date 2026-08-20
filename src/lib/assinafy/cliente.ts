@@ -19,10 +19,16 @@ function apiKey(): string {
   return chave;
 }
 
+/** 20s — sem isso, uma chamada que a Assinafy nunca responde trava indefinidamente (só cortaria no
+ * limite da função inteira, muito depois, e sem mensagem de erro clara pro usuário). Achado real:
+ * botão "Configurar webhook" ficou preso em "Configurando..." pra sempre. */
+const TIMEOUT_MS = 20_000;
+
 async function chamarApi(caminho: string, opcoes: RequestInit = {}): Promise<unknown> {
   const resposta = await fetch(`${BASE_URL}${caminho}`, {
     ...opcoes,
     headers: { "X-Api-Key": apiKey(), ...opcoes.headers },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const corpo = await resposta.json().catch(() => null);
   if (!resposta.ok) {
@@ -79,9 +85,13 @@ function mapearDocumento(bruto: Record<string, unknown>): AssinafyDocumento {
 }
 
 /**
- * Upload de um documento (o PDF do contrato já gerado) — a resposta desse endpoint específico vem
- * como objeto direto, sem o envelope {status,message,data} que os outros endpoints usam
- * (inconsistência real da API, confirmada na doc).
+ * Upload de um documento (o PDF do contrato já gerado).
+ *
+ * A doc (docs/api_reference/Assinafy-API-Reference.md) mostra a resposta desse endpoint sem
+ * envelope, com `id` no topo — **não bate com a resposta real** (confirmado em produção,
+ * 20/08/2026: veio envelopada em {status,message,data}, igual todo o resto da API, com o `id`
+ * dentro de `data`). Doc desatualizada/errada só pra esse endpoint específico — corrigido com
+ * base na resposta real, não na doc.
  */
 export async function uploadDocumento(nomeArquivo: string, conteudo: Buffer): Promise<AssinafyDocumento> {
   const formData = new FormData();
@@ -90,21 +100,63 @@ export async function uploadDocumento(nomeArquivo: string, conteudo: Buffer): Pr
   const bruto = (await chamarApi(`/accounts/${accountId()}/documents`, {
     method: "POST",
     body: formData,
-  })) as Record<string, unknown>;
-  return mapearDocumento(bruto);
+  })) as { data?: Record<string, unknown> };
+
+  const documento = bruto.data;
+
+  // Guarda mantida (mesmo já sabendo o formato certo agora) — se a Assinafy voltar a mudar o
+  // formato de novo, falha aqui com a resposta bruta no erro (guardado em contratos.ultimo_erro,
+  // visível no card do Kanban) em vez de um 404 confuso 2 chamadas depois.
+  if (!documento?.id) {
+    throw new Error(`Assinafy não retornou um id de documento após o upload — resposta bruta: ${JSON.stringify(bruto)}`);
+  }
+
+  return mapearDocumento(documento);
 }
 
 export type AssinafySignatario = { id: string; fullName: string; email: string };
 
-/** Cria um signatário — esse endpoint vem envelopado em {status,message,data}. */
-export async function criarSignatario(fullName: string, email: string): Promise<AssinafySignatario> {
-  const bruto = (await chamarApi(`/accounts/${accountId()}/signers`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ full_name: fullName, email }),
-  })) as { data: { id: string; full_name: string; email: string } };
+type SignatarioBruto = { id: string; full_name: string; email: string };
 
-  return { id: bruto.data.id, fullName: bruto.data.full_name, email: bruto.data.email };
+/** `search` filtra por full_name OU email (confirmado na doc) — por isso confere o e-mail exato
+ * no resultado em vez de confiar que o primeiro item bateu certinho. */
+async function buscarSignatarioPorEmail(email: string): Promise<AssinafySignatario | null> {
+  const bruto = (await chamarApi(`/accounts/${accountId()}/signers?search=${encodeURIComponent(email)}`, {
+    method: "GET",
+  })) as { data: SignatarioBruto[] };
+
+  const encontrado = bruto.data.find((s) => s.email.toLowerCase() === email.toLowerCase());
+  return encontrado ? { id: encontrado.id, fullName: encontrado.full_name, email: encontrado.email } : null;
+}
+
+/**
+ * Cria um signatário — idempotente. Achado real em produção: a Assinafy rejeita (400, "Um
+ * signatário com este e-mail já existe") criar de novo um e-mail já cadastrado, e o signatário da
+ * ArrudaCred é o MESMO e-mail em todo contrato — sem isso, toda emissão a partir da segunda
+ * falhava aqui. Busca por e-mail exato primeiro e reaproveita se já existir; só cria de fato se
+ * não encontrar. Fallback: se mesmo assim a criação bater nesse erro específico (corrida rara —
+ * duas emissões concorrentes pro mesmo e-mail), busca de novo em vez de propagar o erro.
+ */
+export async function criarSignatario(fullName: string, email: string): Promise<AssinafySignatario> {
+  const existente = await buscarSignatarioPorEmail(email);
+  if (existente) return existente;
+
+  try {
+    const bruto = (await chamarApi(`/accounts/${accountId()}/signers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName, email }),
+    })) as { data: SignatarioBruto };
+
+    return { id: bruto.data.id, fullName: bruto.data.full_name, email: bruto.data.email };
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : "";
+    if (!mensagem.includes("já existe")) throw erro;
+
+    const encontradoAgora = await buscarSignatarioPorEmail(email);
+    if (!encontradoAgora) throw erro;
+    return encontradoAgora;
+  }
 }
 
 /** Solicita assinatura via método "virtual" (sem input do signatário além de assinar — não usa
@@ -120,6 +172,25 @@ export async function solicitarAssinatura(documentId: string, signerIds: string[
 export async function buscarDocumento(documentId: string): Promise<AssinafyDocumento> {
   const bruto = (await chamarApi(`/documents/${documentId}`, { method: "GET" })) as { data: Record<string, unknown> };
   return mapearDocumento(bruto.data);
+}
+
+export type StatusWebhookAssinafy = { events: string[]; ativo: boolean; url: string; email: string; atualizadoEm: string };
+
+/** Consulta o estado atual da assinatura de webhook da conta — usado pra mostrar na tela se o
+ * setup já foi feito (e pra quê), sem precisar confiar só na mensagem do momento em que o botão
+ * "Configurar" foi clicado. */
+export async function buscarStatusWebhook(): Promise<StatusWebhookAssinafy | null> {
+  const bruto = (await chamarApi(`/accounts/${accountId()}/webhooks/subscriptions`, { method: "GET" })) as {
+    data: { events: string[]; is_active: boolean; url: string; email: string; updated_at: string } | null;
+  };
+  if (!bruto.data) return null;
+  return {
+    events: bruto.data.events,
+    ativo: bruto.data.is_active,
+    url: bruto.data.url,
+    email: bruto.data.email,
+    atualizadoEm: bruto.data.updated_at,
+  };
 }
 
 /** Registra/atualiza a assinatura de webhook da conta — precisa rodar uma vez (setup manual, não

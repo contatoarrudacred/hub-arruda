@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { corEstagio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
@@ -25,11 +26,41 @@ function Badge({ status }: { status: VendaResumo["status"] }) {
 
 function MenuAcoes({ venda, onMudou }: { venda: VendaResumo; onMudou: () => void }) {
   const [aberto, setAberto] = useState(false);
+  const [posicao, setPosicao] = useState<{ top: number; right: number } | null>(null);
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [confirmacaoExcluir, setConfirmacaoExcluir] = useState("");
   const [excluindo, setExcluindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const botaoRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // O menu é renderizado num portal (abaixo) em vez de dentro da coluna do Kanban — a coluna tem
+  // overflow-y-auto pro scroll vertical dos cards, e por regra do CSS (um eixo não-visible força o
+  // outro a virar "auto" também) isso corta qualquer coisa que estoure a largura da coluna, tipo
+  // este menu de 256px numa coluna estreita. Achado real do Luiz: menu aparecia preso/cortado.
+  // Posição calculada a partir do botão (coordenadas de viewport, position: fixed) — funciona
+  // igual não importa o quão apertada seja a coluna.
+  function alternar() {
+    if (aberto) {
+      setAberto(false);
+      return;
+    }
+    const rect = botaoRef.current?.getBoundingClientRect();
+    if (rect) setPosicao({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setAberto(true);
+  }
+
+  useEffect(() => {
+    if (!aberto) return;
+    function aoClicarFora(evento: MouseEvent) {
+      const alvo = evento.target as Node;
+      if (menuRef.current?.contains(alvo) || botaoRef.current?.contains(alvo)) return;
+      setAberto(false);
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return () => document.removeEventListener("mousedown", aoClicarFora);
+  }, [aberto]);
 
   async function confirmarCancelamento() {
     if (!motivo.trim()) {
@@ -60,75 +91,83 @@ function MenuAcoes({ venda, onMudou }: { venda: VendaResumo; onMudou: () => void
   }
 
   return (
-    <div className="relative">
+    <div>
       <button
+        ref={botaoRef}
         type="button"
-        onClick={() => setAberto((v) => !v)}
+        onClick={alternar}
         title="Ações desta venda"
         className="rounded px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
       >
         ⋮
       </button>
-      {aberto && (
-        <div className="absolute right-0 z-10 mt-1 w-64 space-y-2 rounded-lg border border-zinc-300 bg-white p-3 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          <Link
-            href={`/admin/vendas/${venda.oportunidadeId}`}
-            className="block rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      {aberto &&
+        posicao &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", top: posicao.top, right: posicao.right }}
+            className="z-50 w-64 space-y-2 rounded-lg border border-zinc-300 bg-white p-3 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
           >
-            Detalhes
-          </Link>
-
-          {!cancelando ? (
-            <button
-              type="button"
-              onClick={() => setCancelando(true)}
-              className="block w-full rounded px-2 py-1 text-left text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950"
+            <Link
+              href={`/admin/vendas/${venda.oportunidadeId}`}
+              className="block rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
-              Cancelar venda
-            </button>
-          ) : (
-            <div className="space-y-1 rounded border border-amber-300 p-2 dark:border-amber-700">
-              <label className="text-xs text-zinc-600 dark:text-zinc-400">Motivo do cancelamento</label>
-              <input
-                className="w-full rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
-                value={motivo}
-                onChange={(e) => setMotivo(e.target.value)}
-                placeholder="Ex.: cliente desistiu antes de assinar"
-              />
-              <button type="button" onClick={confirmarCancelamento} className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                Confirmar cancelamento
-              </button>
-            </div>
-          )}
+              Detalhes
+            </Link>
 
-          {!excluindo ? (
-            <button
-              type="button"
-              onClick={() => setExcluindo(true)}
-              title="Ação restrita — apaga o registro da venda de vez, sem volta"
-              className="block w-full rounded px-2 py-1 text-left text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-            >
-              Excluir
-            </button>
-          ) : (
-            <div className="space-y-1 rounded border border-red-300 p-2 dark:border-red-700">
-              <label className="text-xs text-zinc-600 dark:text-zinc-400">
-                Isso apaga a venda de vez, sem volta. Digite <strong>EXCLUIR</strong> pra confirmar.
-              </label>
-              <input
-                className="w-full rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
-                value={confirmacaoExcluir}
-                onChange={(e) => setConfirmacaoExcluir(e.target.value)}
-              />
-              <button type="button" onClick={confirmarExclusao} className="text-xs font-medium text-red-700 dark:text-red-400">
-                Excluir definitivamente
+            {!cancelando ? (
+              <button
+                type="button"
+                onClick={() => setCancelando(true)}
+                className="block w-full rounded px-2 py-1 text-left text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950"
+              >
+                Cancelar venda
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="space-y-1 rounded border border-amber-300 p-2 dark:border-amber-700">
+                <label className="text-xs text-zinc-600 dark:text-zinc-400">Motivo do cancelamento</label>
+                <input
+                  className="w-full rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value)}
+                  placeholder="Ex.: cliente desistiu antes de assinar"
+                />
+                <button type="button" onClick={confirmarCancelamento} className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Confirmar cancelamento
+                </button>
+              </div>
+            )}
 
-          {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
-        </div>
-      )}
+            {!excluindo ? (
+              <button
+                type="button"
+                onClick={() => setExcluindo(true)}
+                title="Ação restrita — apaga o registro da venda de vez, sem volta"
+                className="block w-full rounded px-2 py-1 text-left text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+              >
+                Excluir
+              </button>
+            ) : (
+              <div className="space-y-1 rounded border border-red-300 p-2 dark:border-red-700">
+                <label className="text-xs text-zinc-600 dark:text-zinc-400">
+                  Isso apaga a venda de vez, sem volta. Digite <strong>EXCLUIR</strong> pra confirmar.
+                </label>
+                <input
+                  className="w-full rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                  value={confirmacaoExcluir}
+                  onChange={(e) => setConfirmacaoExcluir(e.target.value)}
+                />
+                <button type="button" onClick={confirmarExclusao} className="text-xs font-medium text-red-700 dark:text-red-400">
+                  Excluir definitivamente
+                </button>
+              </div>
+            )}
+
+            {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
