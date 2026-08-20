@@ -38,6 +38,7 @@ import { createClient } from "@/lib/supabase/server";
 export type ResultadoResetarConversa =
   | { status: "apagado_tudo" }
   | { status: "bloqueado_por_venda"; quantidadeContratos: number; quantidadeComissoes: number }
+  | { status: "bloqueado_por_usuario_sistema"; email: string }
   | { status: "multiplas_pessoas"; nomes: string[] }
   | { status: "nao_encontrado" }
   | { status: "erro"; mensagem: string };
@@ -100,6 +101,19 @@ export async function resetarConversaAction(telefoneBruto: string): Promise<Resu
     if (quantidadeContratos > 0 || quantidadeComissoes > 0) {
       return { status: "bloqueado_por_venda", quantidadeContratos, quantidadeComissoes };
     }
+  }
+
+  // Achado real (20/08/2026): pessoa vinculada a um login de admin (`usuarios_sistema.pessoa_id`)
+  // também bloqueia por FK, igual venda — antes disso vazava o erro cru do Postgres na tela em vez
+  // de explicar. Checa ANTES de tentar apagar, mesmo padrão de contratos/comissões acima.
+  const { data: usuarioVinculado, error: erroUsuario } = await supabase
+    .from("usuarios_sistema")
+    .select("email")
+    .eq("pessoa_id", pessoa.id)
+    .maybeSingle();
+  if (erroUsuario) return { status: "erro", mensagem: `Falha ao checar usuário do sistema: ${erroUsuario.message}` };
+  if (usuarioVinculado) {
+    return { status: "bloqueado_por_usuario_sistema", email: usuarioVinculado.email };
   }
 
   const { error: erroPessoaDel } = await supabase.from("pessoas").delete().eq("id", pessoa.id);

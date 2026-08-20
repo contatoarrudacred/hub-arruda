@@ -601,7 +601,10 @@ export function AtendimentoClient({
   const [resetando, setResetando] = useState(false);
   const [erroReset, setErroReset] = useState<string | null>(null);
   const [bloqueioReset, setBloqueioReset] = useState<
-    { tipo: "venda"; contratos: number; comissoes: number } | { tipo: "multiplas"; nomes: string[] } | null
+    | { tipo: "venda"; contratos: number; comissoes: number }
+    | { tipo: "usuario_sistema"; email: string }
+    | { tipo: "multiplas"; nomes: string[] }
+    | null
   >(null);
   const [buscaConversaAberta, setBuscaConversaAberta] = useState(false);
   const [termoBuscaConversa, setTermoBuscaConversa] = useState("");
@@ -753,6 +756,12 @@ export function AtendimentoClient({
     // decisão do Luiz 19/08/2026) — oferece o reset parcial (só a conversa) em vez de travar calado.
     if (resultado.status === "bloqueado_por_venda") {
       setBloqueioReset({ tipo: "venda", contratos: resultado.quantidadeContratos, comissoes: resultado.quantidadeComissoes });
+      return;
+    }
+    // Achado real #3 (20/08/2026): pessoa vinculada a um login de admin (usuarios_sistema.pessoa_id)
+    // também bloqueia por FK, igual venda — antes vazava o erro cru do Postgres pro usuário.
+    if (resultado.status === "bloqueado_por_usuario_sistema") {
+      setBloqueioReset({ tipo: "usuario_sistema", email: resultado.email });
       return;
     }
     // Achado real #2 (19/08/2026): pessoas.whatsapp não tem constraint de único — dois cadastros
@@ -2019,7 +2028,11 @@ export function AtendimentoClient({
           {bloqueioReset ? (
             <>
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {bloqueioReset.tipo === "venda" ? `${detalhe.pessoaNome} já tem venda registrada` : "Telefone ligado a mais de um cadastro"}
+                {bloqueioReset.tipo === "venda"
+                  ? `${detalhe.pessoaNome} já tem venda registrada`
+                  : bloqueioReset.tipo === "usuario_sistema"
+                    ? "Telefone ligado a um usuário do sistema"
+                    : "Telefone ligado a mais de um cadastro"}
               </p>
               <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
                 {bloqueioReset.tipo === "venda" ? (
@@ -2027,6 +2040,12 @@ export function AtendimentoClient({
                     ⚠️ {bloqueioReset.contratos} contrato(s) e {bloqueioReset.comissoes} comissão(ões) já
                     emitidos — o cadastro não pode ser apagado (quebraria esses registros). Dá pra apagar
                     só a conversa: cadastro, oportunidade e contrato/comissão continuam intactos.
+                  </>
+                ) : bloqueioReset.tipo === "usuario_sistema" ? (
+                  <>
+                    ⚠️ Esse telefone está ligado ao cadastro de um usuário do sistema ({bloqueioReset.email}) —
+                    o cadastro não pode ser apagado (é um login de admin, não um lead de teste). Dá pra
+                    apagar só a conversa: cadastro, oportunidade e contrato/comissão continuam intactos.
                   </>
                 ) : (
                   <>
