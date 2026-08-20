@@ -11,7 +11,7 @@ export const ESTILO_DOCUMENTO_CSS = `
   body {
     font-family: Georgia, "Times New Roman", serif;
     font-size: 12pt;
-    line-height: 1.6;
+    line-height: 1.3;
     color: #18181b;
     background: #ffffff;
     margin: 0;
@@ -19,7 +19,7 @@ export const ESTILO_DOCUMENTO_CSS = `
   }
   p {
     text-align: justify;
-    margin: 0 0 12px 0;
+    margin: 0 0 8px 0;
     /* Evita "linha órfã" — 1 linha isolada sozinha no topo/rodapé de uma página quando o
        parágrafo é cortado ao meio pela quebra de página do PDF. */
     orphans: 3;
@@ -46,10 +46,11 @@ export const ESTILO_DOCUMENTO_CSS = `
     padding: 6px 8px;
     text-align: left;
     font-size: 11pt;
+    line-height: 1.3;
   }
   th { background: #f4f4f5; font-weight: bold; }
   img { max-width: 100%; page-break-inside: avoid; }
-  ul, ol { margin: 0 0 12px 0; padding-left: 24px; }
+  ul, ol { margin: 0 0 8px 0; padding-left: 24px; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
