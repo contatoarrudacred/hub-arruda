@@ -121,3 +121,19 @@ export async function buscarDocumento(documentId: string): Promise<AssinafyDocum
   const bruto = (await chamarApi(`/documents/${documentId}`, { method: "GET" })) as { data: Record<string, unknown> };
   return mapearDocumento(bruto.data);
 }
+
+/** Registra/atualiza a assinatura de webhook da conta — precisa rodar uma vez (setup manual, não
+ * automático) pra Assinafy começar a mandar `document_ready`/`signer_rejected_document` pra nós.
+ * Sem HMAC nativo (confirmado na doc) — o segredo vai como query param na própria `url`. */
+export async function configurarWebhook(url: string, email: string): Promise<void> {
+  await chamarApi(`/accounts/${accountId()}/webhooks/subscriptions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      events: ["document_ready", "signer_rejected_document"],
+      is_active: true,
+      url,
+      email,
+    }),
+  });
+}
