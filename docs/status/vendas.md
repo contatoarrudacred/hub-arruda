@@ -1,9 +1,9 @@
 # Status — Vendas
 
-tarefa: Redesenho Nova Oportunidade + Kanban de Vendas — as 18 tasks do plano implementadas e revisadas (subagent-driven-development), código publicado em main. Verificação manual ponta a ponta (Task 18) ainda não rodou de verdade — sem .env.local neste worktree, e a migration 20260819120000 ainda não foi aplicada em produção.
-desde: 2026-08-19T12:00:00-03:00
-proxima: Luiz aplicar a migration 20260819120000_vendas_nova_oportunidade_kanban.sql (SQL Editor) e configurar contrato_arrudacred_signatario se ainda não tiver; depois disso, rodar o roteiro de verificação manual da Task 18 (docs/superpowers/plans/2026-08-19-vendas-nova-oportunidade-kanban.md)
-bloqueio: verificação manual ponta a ponta depende da migration aplicada + deploy real — não dá pra confirmar no navegador a partir deste worktree
+tarefa: Luiz testando Nova Oportunidade em produção — migration aplicada, indo achando bugs reais de uso e pedindo ajustes; corrigindo cada um em tempo real (última rodada: pacote de nomes do Limpa Nome obrigatório + auto-preenchido com o contratante, recálculo automático de vencimentos ao editar a 1ª parcela — commit `5a42b01`, já em main).
+desde: 2026-08-19T18:00:00-03:00
+proxima: confirmar com o Luiz por que a seção "Pacote de documentos" não abriu no teste dele mesmo após ele rodar o UPDATE — provável mismatch de nome do produto na query; pedir SELECT id, nome, exige_lista_documentos FROM produtos pra conferir.
+bloqueio: nenhum — segue reativo aos achados do Luiz em teste ao vivo
 
 ## Verificação da Task 18 (2026-08-19) — o que foi confirmado e o que ficou pendente
 
