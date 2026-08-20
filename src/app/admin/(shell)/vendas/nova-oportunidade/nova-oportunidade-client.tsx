@@ -1,12 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CampoEndereco, enderecoVazio, type ValorEndereco } from "@/components/vendas/campo-endereco";
 import { LeitorDocumentoIA } from "@/components/vendas/leitor-documento-ia";
 import { UploadDocumentosPessoa } from "@/components/vendas/upload-documentos-pessoa";
 import { salvarDocumentosExtraidosAction } from "@/components/vendas/upload-pessoa-actions";
-import { calcularParcelasContrato, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
+import { calcularParcelasContrato, calcularVencimentosPorAncora, type DiaAncora, type Parcela } from "@/lib/vendas/calculo-parcelas";
 import { formatarCpfCnpj } from "@/lib/vendas/mascaras";
 import { tipoPessoaPorDocumento } from "@/lib/vendas/documento";
 import type { ProdutoParaVenda } from "@/lib/vendas/produtos";
@@ -87,6 +87,24 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
 
   const [pacote, setPacote] = useState<DocumentoPacoteForm[]>([]);
 
+  // Assim que o pacote de documentos vira relevante (produto exige) e já temos documento+nome do
+  // contratante, pré-preenche a 1ª linha com os dados dele — 99% das vezes ele é um dos nomes do
+  // pacote (pedido do Luiz). Só acontece uma vez por sessão de preenchimento (ref-guard dentro do
+  // efeito) — depois disso o usuário tem controle total (pode excluir se não for o caso, sem a
+  // linha voltar sozinha).
+  const pacoteAutoPreenchidoRef = useRef(false);
+  useEffect(() => {
+    if (
+      !pacoteAutoPreenchidoRef.current &&
+      produtoSelecionado?.exigeListaDocumentos &&
+      documento.trim() &&
+      dadosContrato.nome.trim()
+    ) {
+      pacoteAutoPreenchidoRef.current = true;
+      setPacote((atual) => (atual.length === 0 ? [{ documento, nomeRazaoSocial: dadosContrato.nome }] : atual));
+    }
+  }, [produtoSelecionado?.exigeListaDocumentos, documento, dadosContrato.nome]);
+
   const [valorTotal, setValorTotal] = useState("");
 
   const [especiePagamento, setEspeciePagamento] = useState<"boleto_pix" | "cartao">("boleto_pix");
@@ -129,6 +147,16 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
   }
 
   function atualizarParcelaBoleto(indice: number, campoAlterado: "valor" | "vencimento", valor: string) {
+    // Mudar a data da 1ª parcela recalcula as datas das demais (pelo dia-âncora), mantendo os
+    // valores já editados — pedido do Luiz, testando em produção. Editar qualquer outro campo
+    // (valor de qualquer parcela, ou data de uma parcela que não a 1ª) só mexe naquela célula.
+    if (indice === 0 && campoAlterado === "vencimento" && valor) {
+      setParcelasBoleto((atual) => {
+        const novosVencimentos = calcularVencimentosPorAncora(new Date(`${valor}T00:00:00`), diaAncora, atual.length);
+        return atual.map((p, i) => ({ ...p, vencimento: novosVencimentos[i].toISOString().slice(0, 10) }));
+      });
+      return;
+    }
     setParcelasBoleto((atual) => atual.map((p, i) => (i === indice ? { ...p, [campoAlterado]: valor } : p)));
   }
 
@@ -251,6 +279,16 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
     if (ehPj && !ehComissionado) {
       if (!representanteEncontrado && !representanteNome.trim()) {
         setErro("Informe o representante legal da empresa (nome ou CPF de alguém já cadastrado).");
+        return;
+      }
+    }
+
+    // Produto exige a lista de nomes cobertos pelo contrato (ex.: Limpeza de Nome) — pelo menos um
+    // nome válido é obrigatório, não é mais opcional pra esses serviços. Pedido do Luiz.
+    if (produtoSelecionado?.exigeListaDocumentos) {
+      const pacoteValido = pacote.filter((d) => d.documento.trim() && d.nomeRazaoSocial.trim());
+      if (pacoteValido.length === 0) {
+        setErro("Este serviço exige a lista de nomes cobertos pelo contrato — informe ao menos um (CPF/CNPJ + nome).");
         return;
       }
     }

@@ -85,6 +85,17 @@ export async function confirmarNovaOportunidadeAction(
     const { salvarEndereco } = await import("@/lib/vendas/endereco");
     const { salvarDocumentosPacote } = await import("@/lib/vendas/oportunidades");
     const { tipoPessoaPorDocumento } = await import("@/lib/vendas/documento");
+    const { buscarProdutoParaVenda } = await import("@/lib/vendas/produtos");
+
+    const produtoSelecionado = await buscarProdutoParaVenda(entrada.produtoId);
+    // Mesma checagem do client (nova-oportunidade-client.tsx, confirmar()) — defesa no server, não só
+    // no client, já que o client não é fronteira de segurança/corretude.
+    if (produtoSelecionado?.exigeListaDocumentos) {
+      const pacoteValido = entrada.pacote.filter((d) => d.documento.trim() && d.nomeRazaoSocial.trim());
+      if (pacoteValido.length === 0) {
+        return { sucesso: false, erro: "Este serviço exige a lista de nomes cobertos pelo contrato — informe ao menos um (CPF/CNPJ + nome)." };
+      }
+    }
 
     const pessoa = await resolverOuCriarPessoa({ pessoaId: entrada.pessoaId, pessoaNova: entrada.pessoaNova });
     if (!pessoa.sucesso) return { sucesso: false, erro: pessoa.erro };
