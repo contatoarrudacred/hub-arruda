@@ -9,7 +9,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useState } from "react";
-import { envolverComEstiloDocumento } from "@/lib/vendas/estilo-documento";
+import { envolverComEstiloDocumentoPreview } from "@/lib/vendas/estilo-documento";
 import { sanitizarHtml } from "./sanitizar-html";
 
 const FONTES = ["Arial", "Georgia", "Times New Roman", "Courier New"];
@@ -204,11 +204,13 @@ export function EditorHtmlContrato({ valorInicial, aoMudar, aoEnviarImagem, aoIn
         </BotaoBarra>
       </div>
       {preview ? (
-        <iframe
-          title="Preview do documento"
-          className="h-[600px] w-full bg-white"
-          srcDoc={envolverComEstiloDocumento(editor.getHTML())}
-        />
+        <div className="flex justify-center bg-zinc-100 p-4 dark:bg-zinc-950">
+          <iframe
+            title="Preview do documento"
+            className="h-[600px] w-full max-w-3xl rounded border border-zinc-300 bg-white shadow-sm dark:border-zinc-700"
+            srcDoc={envolverComEstiloDocumentoPreview(editor.getHTML())}
+          />
+        </div>
       ) : (
         <EditorContent editor={editor} />
       )}

@@ -1,5 +1,6 @@
 import type { Browser } from "puppeteer-core";
 import { createClient } from "@/lib/supabase/server";
+import { MARGENS_PDF_MM } from "./estilo-documento";
 
 const BUCKET = "contratos";
 
@@ -44,7 +45,12 @@ export async function gerarPdfContrato(html: string): Promise<Buffer> {
     const pdf = await page.pdf({
       format: "a4",
       printBackground: true,
-      margin: { top: "20mm", bottom: "20mm", left: "18mm", right: "18mm" },
+      margin: {
+        top: `${MARGENS_PDF_MM.top}mm`,
+        bottom: `${MARGENS_PDF_MM.bottom}mm`,
+        left: `${MARGENS_PDF_MM.left}mm`,
+        right: `${MARGENS_PDF_MM.right}mm`,
+      },
     });
     return Buffer.from(pdf);
   } finally {
