@@ -10,6 +10,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
+| Coordenador | Marketing | 19/08 | Fase 3 (personas ricas) **e agora também Fase 4a+4b (precisão editorial + imagens)** completas nesta mesma branch — 454/454 testes, `tsc`/`eslint`/`next build` limpos. Preciso que você traga `worktree-pipeline-conteudo-marketing-nucleo` pro fluxo sincroniza→testa→fast-forward. **Antes disso**, a migration `20260819110000_marketing_autoria_e_imagens.sql` precisa ir ao Luiz (aditiva, sem `drop`) — sem ela as features novas não funcionam em produção mesmo depois de mesclar. | Seção 3 de `COORDENACAO_AGENTES_ARRUDACRED.md`, entradas "19/08/2026 (Marketing → Coordenador/Luiz) — Fase 4a+4b..." e "...Fase 3..." |
 
 ## Fechados hoje
 

@@ -3,22 +3,29 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cifrar } from "./criptografia";
 import type {
+  AutoriaPropriedade,
   ConteudoGerado,
   DadosItemChecklist,
   DadosMatriz,
   DadosPropriedade,
+  DetalhesPostVisualizacao,
   DuracaoMediaPorEtapa,
-  EtapaConcluida,
-  EtapaEmAndamento,
   EtapaLog,
+  EtapaTimeline,
+  FunilPauta,
   ItemChecklistAdmin,
   ItemChecklistCarregado,
   JanelaPublicacao,
   MatrizAdmin,
   PautaCarregada,
+  PautaConcluida,
+  PautaEmAndamento,
+  PersonaAtiva,
+  PersonaCarregada,
   PersonaFormulario,
   PostAdmin,
   PostCriado,
+  PostProntoParaPublicar,
   PostRelacionado,
   PropriedadeAdmin,
   PropriedadeCarregada,
@@ -26,10 +33,21 @@ import type {
   ResumoVisaoGeral,
   StatusPauta,
   StatusPost,
+  TipoConteudo,
 } from "./tipos";
+// Tipo da imagem secundária (Fase 4b, Task 8) importado do próprio orquestrador em vez de
+// duplicado aqui — reaproveita a mesma forma que processar-pauta.ts (Task 10) já recebe de
+// gerarImagensSecundarias, sem uma segunda definição que possa divergir. Sem ciclo de import:
+// imagens/secundarias.ts só importa de "../tipos", nunca deste arquivo.
+import type { ImagemSecundaria } from "./imagens/secundarias";
 
+// persona_id incluído (Fase 3, Task 5) — gap deixado pela Task 4: criarPautaDePersona já gravava
+// a coluna no insert, mas nenhum consumidor de PautaCarregada a selecionava/mapeava de volta, então
+// `pauta.personaId` nunca chegava até processar-pauta.ts (que precisa dele pra decidir se carrega
+// a persona completa pro Escritor, spec seção 7). Nulo em pautas antigas/manuais — a coluna aceita
+// null (migration da Task 1).
 const CAMPOS_PAUTA =
-  "id, matriz_conteudo_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao";
+  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho";
 
 // Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
 // porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
@@ -39,9 +57,50 @@ const CAMPOS_PAUTA =
 // Component), não por import direto.
 export const RECLAIM_MINUTOS = 10;
 
+// Formato do jsonb ultimo_rascunho (migration 20260819100000) — snake_case porque é gravado/lido
+// direto, sem passar pelo PostgREST (que só converte nomes de coluna, não chaves de dentro de um
+// jsonb).
+type RascunhoBruto = { titulo: string; conteudo_html: string; meta_title: string; meta_description: string; slug: string };
+
+function mapearRascunho(bruto: unknown): ConteudoGerado | null {
+  if (!bruto) return null;
+  const r = bruto as RascunhoBruto;
+  return { titulo: r.titulo, conteudoHtml: r.conteudo_html, metaTitle: r.meta_title, metaDescription: r.meta_description, slug: r.slug };
+}
+
+// Formato do jsonb propriedades_digitais.autoria (migration 20260819110000, Fase 4a Task 1) —
+// snake_case, mesma convenção de RascunhoBruto acima (gravado/lido direto, sem passar pelo
+// PostgREST). Ver comment on column na migration pra shape completo.
+type AutoriaBruta = {
+  nome: string;
+  foto_url: string;
+  bio: string;
+  especialidade: string;
+  empresa: string;
+  credenciais: string[];
+  perfis_profissionais: string[];
+};
+
+/** `null` quando a propriedade não tem autoria configurada ainda (coluna nula) — ver
+ * AutoriaPropriedade em tipos.ts e a spec Fase 4a seção 3.3. */
+function mapearAutoria(bruto: unknown): AutoriaPropriedade | null {
+  if (!bruto) return null;
+  const a = bruto as AutoriaBruta;
+  return {
+    nome: a.nome,
+    fotoUrl: a.foto_url,
+    bio: a.bio,
+    especialidade: a.especialidade,
+    empresa: a.empresa,
+    credenciais: a.credenciais,
+    perfisProfissionais: a.perfis_profissionais,
+  };
+}
+
 function mapearPauta(data: {
   id: string;
   matriz_conteudo_id: string;
+  persona_id?: string | null;
   palavra_chave_principal: string;
   palavras_secundarias: unknown;
   angulo: string;
@@ -51,10 +110,15 @@ function mapearPauta(data: {
   status: PautaCarregada["status"];
   tentativas: number;
   motivo_ultima_reprovacao: string | null;
+  ultimo_rascunho?: unknown;
 }): PautaCarregada {
   return {
     id: data.id,
     matrizConteudoId: data.matriz_conteudo_id,
+    // `?? null` cobre tanto ausência do campo (fixtures antigas de teste sem persona_id) quanto
+    // undefined vindo do PostgREST — mesma convenção de null-safety já usada nos demais campos
+    // opcionais deste mapeamento.
+    personaId: data.persona_id ?? null,
     palavraChavePrincipal: data.palavra_chave_principal,
     palavrasSecundarias: (data.palavras_secundarias as string[]) ?? [],
     angulo: data.angulo,
@@ -64,7 +128,26 @@ function mapearPauta(data: {
     status: data.status,
     tentativas: data.tentativas,
     motivoUltimaReprovacao: data.motivo_ultima_reprovacao,
+    ultimoRascunho: mapearRascunho(data.ultimo_rascunho),
   };
+}
+
+/**
+ * Grava o rascunho recém-gerado pelo Escritor na pauta (Fase 3, 19/08/2026) — chamado a cada
+ * geração, independente de aprovação, pra que uma reprovação subsequente tenha o texto anterior
+ * disponível pra revisão (ver montarPrompt, escritor.ts) em vez de regenerar do zero.
+ */
+export async function salvarRascunho(pautaId: string, rascunho: ConteudoGerado): Promise<void> {
+  const supabase = createAdminClient();
+  const bruto: RascunhoBruto = {
+    titulo: rascunho.titulo,
+    conteudo_html: rascunho.conteudoHtml,
+    meta_title: rascunho.metaTitle,
+    meta_description: rascunho.metaDescription,
+    slug: rascunho.slug,
+  };
+  const { error } = await supabase.from("pautas").update({ ultimo_rascunho: bruto }).eq("id", pautaId);
+  if (error) throw new Error(`Falha ao salvar rascunho da pauta ${pautaId}: ${error.message}`);
 }
 
 /**
@@ -126,7 +209,7 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("propriedades_digitais")
-    .select("id, nome, url_base, tipo_cms, config_pipeline")
+    .select("id, nome, url_base, tipo_cms, config_pipeline, credenciais_canais, autoria")
     .eq("id", propriedadeId)
     .single();
 
@@ -135,6 +218,16 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
   // Reaproveita o mesmo parser de config_pipeline usado pelas telas de admin (mapearConfigPipeline,
   // definido mais abaixo neste arquivo) — evita duas leituras divergentes do mesmo jsonb.
   const config = mapearConfigPipeline(data.config_pipeline);
+
+  // Só repassa o canal wordpress, cifrado — decifrar é responsabilidade de quem usa (processar-
+  // pauta.ts), no momento exato da chamada à API, não aqui (mesmo princípio de mapearCredenciais,
+  // que nunca expõe a senha decifrada pra tela de admin).
+  const credenciaisBrutas = (data.credenciais_canais as Record<string, { usuario?: string; senha_cifrada?: string }> | null) ?? {};
+  const wordpress = credenciaisBrutas.wordpress;
+  const credenciaisCanais = wordpress?.senha_cifrada
+    ? { wordpress: { usuario: wordpress.usuario ?? "", senhaCifrada: wordpress.senha_cifrada } }
+    : undefined;
+
   return {
     id: data.id,
     nome: data.nome,
@@ -143,6 +236,20 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
     maxTentativas: config.maxTentativas,
     postsPorDia: config.postsPorDia ?? undefined,
     janelaPublicacao: config.janelaPublicacao ?? undefined,
+    credenciaisCanais,
+    autoria: mapearAutoria(data.autoria),
+    // Passthrough puro — SEM `?? default` aqui. O default de cada campo (80/"medio"/true) é
+    // responsabilidade exclusiva de revisor.ts (SCORE_MINIMO_APROVACAO_PADRAO, calcularAprovacao,
+    // montarPrompt) — ver Fase 4a Task 2. Inventar um segundo default nesta camada seria uma
+    // segunda fonte de verdade podendo divergir silenciosamente da primeira.
+    scoreMinimoAprovacao: config.scoreMinimoAprovacao,
+    rigorYmyl: config.rigorYmyl,
+    checarPrecisaoFactual: config.checarPrecisaoFactual,
+    checarFontesEspecificas: config.checarFontesEspecificas,
+    checarOriginalidade: config.checarOriginalidade,
+    // Fase 4a, Task 4, spec seção 3.1.2 — mesmo passthrough puro dos campos acima, sem default
+    // nesta camada (lido direto por montarPrompt em escritor.ts).
+    instrucoesAdicionais: config.instrucoesAdicionais,
   };
 }
 
@@ -167,12 +274,12 @@ export async function carregarChecklistAtivo(propriedadeId: string): Promise<Ite
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("checklist_qa_itens")
-    .select("id, item, peso")
+    .select("id, item, peso, item_para_revisor")
     .eq("propriedade_id", propriedadeId)
     .eq("ativo", true);
 
   if (error) throw new Error(`Falha ao carregar checklist da propriedade ${propriedadeId}: ${error.message}`);
-  return (data ?? []).map((linha) => ({ id: linha.id, item: linha.item, peso: linha.peso }));
+  return (data ?? []).map((linha) => ({ id: linha.id, item: linha.item, peso: linha.peso, itemParaRevisor: linha.item_para_revisor }));
 }
 
 export async function marcarPautaEmProducao(pautaId: string): Promise<void> {
@@ -247,6 +354,176 @@ export async function criarPost(params: {
 }
 
 /**
+ * Post já preparado (pronto_para_publicar = true) pra esta pauta, se existir — reaproveitamento
+ * entre tentativas (19/08/2026). `status = "rascunho"`: só reaproveita post que nunca chegou a
+ * publicar de verdade (um post "publicado" não devia estar associado a uma pauta que voltou pra
+ * "pendente" — cenário que não deveria acontecer, mas o filtro protege mesmo assim). Mais recente
+ * primeiro + `limit(1)`: uma pauta pode, em teoria, ter mais de um post ao longo de tentativas
+ * diferentes (cada `criarPost` insere uma linha nova) — sempre o mais recente é o que reflete a
+ * tentativa mais avançada.
+ */
+export async function carregarPostProntoParaPublicar(pautaId: string): Promise<PostProntoParaPublicar | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, titulo, conteudo_html, meta_title, meta_description, slug, imagem_destaque_media_id")
+    .eq("pauta_id", pautaId)
+    .eq("status", "rascunho")
+    .eq("pronto_para_publicar", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar post pronto para pauta ${pautaId}: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    titulo: data.titulo,
+    conteudoHtml: data.conteudo_html,
+    metaTitle: data.meta_title,
+    metaDescription: data.meta_description,
+    slug: data.slug,
+    imagemDestaqueMediaId: data.imagem_destaque_media_id,
+  };
+}
+
+/**
+ * Imagens já geradas/enviadas numa tentativa anterior desta pauta (19/08/2026, pedido do Luiz) —
+ * reaproveitadas quando o texto precisa de uma correção cirúrgica (motivo de reprovação sobre o
+ * CONTEÚDO, não relacionado a imagem) mas as imagens em si continuam válidas: elas dependem do
+ * tema/ângulo geral do post, não de detalhes pontuais como um link ou o tamanho do meta title —
+ * uma edição cirúrgica de texto não deveria forçar gerar (e pagar de novo pela) capa+secundárias
+ * do zero. Diferente de `PostProntoParaPublicar`: não exige que o post inteiro esteja pronto pra
+ * publicar, só que já existam imagens salvas de uma tentativa anterior.
+ */
+export type ImagensExistentesPost = {
+  imagemDestaqueUrl: string | null;
+  imagemDestaqueAlt: string | null;
+  imagemDestaqueSlug: string | null;
+  imagemDestaqueStorageUrl: string | null;
+  imagemDestaqueMediaId: string | null;
+  imagensSecundarias: ImagemSecundaria[];
+};
+
+/**
+ * Post mais recente desta pauta que já tem pelo menos uma imagem salva (capa ou secundária),
+ * independente do status (`rascunho` ou `falhou` — nunca `publicado`, que não devia estar
+ * associado a uma pauta que voltou pra "pendente"). `null` quando nenhuma tentativa anterior
+ * chegou a gerar nenhuma imagem ainda (primeira tentativa, ou toda geração de imagem falhou —
+ * degradação aceitável, `gerarEEmbutirImagens` segue seu fluxo normal de gerar do zero nesse caso).
+ */
+export async function carregarImagensPostAnterior(pautaId: string): Promise<ImagensExistentesPost | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("imagem_destaque_url, imagem_destaque_alt, imagem_destaque_slug, imagem_destaque_storage_url, imagem_destaque_media_id, imagens_secundarias")
+    .eq("pauta_id", pautaId)
+    .neq("status", "publicado")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar imagens de tentativa anterior para pauta ${pautaId}: ${error.message}`);
+  if (!data) return null;
+
+  const secundariasBrutas = (data.imagens_secundarias ?? []) as Array<{
+    url: string;
+    alt: string;
+    slug: string;
+    titulo: string;
+    legenda: string;
+    posicao_apos_secao: string;
+    storage_url: string | null;
+  }>;
+  const temImagem = Boolean(data.imagem_destaque_url) || secundariasBrutas.length > 0;
+  if (!temImagem) return null;
+
+  return {
+    imagemDestaqueUrl: data.imagem_destaque_url,
+    imagemDestaqueAlt: data.imagem_destaque_alt,
+    imagemDestaqueSlug: data.imagem_destaque_slug,
+    imagemDestaqueStorageUrl: data.imagem_destaque_storage_url,
+    imagemDestaqueMediaId: data.imagem_destaque_media_id,
+    imagensSecundarias: secundariasBrutas.map((i) => ({
+      url: i.url,
+      alt: i.alt,
+      slug: i.slug,
+      titulo: i.titulo,
+      legenda: i.legenda,
+      posicaoAposSecao: i.posicao_apos_secao,
+      storageUrl: i.storage_url,
+    })),
+  };
+}
+
+/**
+ * Dados pro botão "Visualizar Post" do Monitor de execução (19/08/2026, pedido do Luiz) — busca a
+ * pauta + persona (se houver) + o post mais recente dela (qualquer status: rascunho em andamento
+ * ou já publicado), pra montar o quadro-resumo + preview do post na modal. `post: null` quando o
+ * Escritor ainda não rodou nesta pauta (nenhuma linha em `posts` ainda).
+ */
+export async function carregarDetalhesPostVisualizacao(pautaId: string): Promise<DetalhesPostVisualizacao | null> {
+  const supabase = createAdminClient();
+  const { data: pauta, error: erroPauta } = await supabase
+    .from("pautas")
+    .select("id, palavra_chave_principal, angulo, geografia, funil, tipo_conteudo, status, tentativas, persona_id")
+    .eq("id", pautaId)
+    .maybeSingle();
+  if (erroPauta) throw new Error(`Falha ao carregar pauta ${pautaId} para visualização: ${erroPauta.message}`);
+  if (!pauta) return null;
+
+  let personaNome: string | null = null;
+  if (pauta.persona_id) {
+    const { data: persona } = await supabase.from("personas").select("nome").eq("id", pauta.persona_id).maybeSingle();
+    personaNome = persona?.nome ?? null;
+  }
+
+  const { data: post, error: erroPost } = await supabase
+    .from("posts")
+    .select(
+      "titulo, slug, meta_title, meta_description, conteudo_html, status, score_qa, imagem_destaque_url, imagem_destaque_alt, imagens_secundarias, canais",
+    )
+    .eq("pauta_id", pautaId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroPost) throw new Error(`Falha ao carregar post da pauta ${pautaId} para visualização: ${erroPost.message}`);
+
+  const secundariasBrutas = (post?.imagens_secundarias ?? []) as Array<{ url: string; alt: string; legenda: string }>;
+  const canais = (post?.canais ?? null) as { wordpress?: { url?: string } } | null;
+
+  return {
+    pauta: {
+      id: pauta.id,
+      palavraChavePrincipal: pauta.palavra_chave_principal,
+      angulo: pauta.angulo,
+      geografia: pauta.geografia,
+      funil: pauta.funil as FunilPauta,
+      tipoConteudo: pauta.tipo_conteudo as TipoConteudo,
+      status: pauta.status as StatusPauta,
+      tentativas: pauta.tentativas,
+    },
+    personaNome,
+    post: post
+      ? {
+          titulo: post.titulo,
+          slug: post.slug,
+          metaTitle: post.meta_title,
+          metaDescription: post.meta_description,
+          conteudoHtml: post.conteudo_html,
+          status: post.status as StatusPost,
+          scoreQa: post.score_qa,
+          imagemDestaqueUrl: post.imagem_destaque_url,
+          imagemDestaqueAlt: post.imagem_destaque_alt,
+          imagensSecundarias: secundariasBrutas.map((i) => ({ url: i.url, alt: i.alt, legenda: i.legenda })),
+          urlPublicada: canais?.wordpress?.url ?? null,
+        }
+      : null,
+  };
+}
+
+/**
  * Até 6 posts publicados da mesma propriedade, mais recentes primeiro — usados pelo Agente de
  * Links (src/lib/marketing/links.ts) pra montar a seção "Posts relacionados" ao final do artigo.
  * A URL vem de canais.wordpress.url (jsonb), preenchido em atualizarStatusPost no momento da
@@ -288,10 +565,57 @@ export async function carregarPostsPublicadosDaPropriedade(
     .slice(0, MAXIMO_RELACIONADOS);
 }
 
+/**
+ * Formato do jsonb `posts.imagens_secundarias` (migration 20260819110000, Fase 4b) — snake_case,
+ * mesma convenção de RascunhoBruto/AutoriaBruta acima (gravado direto, sem passar pelo PostgREST).
+ */
+function mapearImagemSecundariaBruta(imagem: ImagemSecundaria): Record<string, string | null> {
+  return {
+    url: imagem.url,
+    alt: imagem.alt,
+    slug: imagem.slug,
+    titulo: imagem.titulo,
+    legenda: imagem.legenda,
+    posicao_apos_secao: imagem.posicaoAposSecao,
+    // storage_url (follow-up 19/08/2026, arquivamento no Supabase Storage): null quando o upload
+    // ao Storage falhou ou nem chegou a rodar — grava explicitamente o null (não omite a chave),
+    // diferente do padrão condicional dos campos de imagem de destaque em atualizarStatusPost
+    // logo abaixo, porque aqui o valor entra dentro de um item de array jsonb sempre montado por
+    // inteiro (não há "omitir uma chave" parcial dentro de um elemento de array).
+    storage_url: imagem.storageUrl,
+  };
+}
+
+/**
+ * Estendida na Task 10 (Fase 4a+4b, 19/08/2026) com os 4 campos de imagem — extensão do `extra`
+ * já existente (padrão condicional-write) em vez de uma função nova dedicada: é chamada exatamente
+ * no ponto certo do fluxo (depois de publicar de verdade), com o mesmo formato "grava só o que
+ * veio preenchido" que já serve pra canais/publicadoEm/conteudoHtml. `imagensSecundarias: []` é um
+ * resultado válido e comum (ver ImagemSecundaria/gerarImagensSecundarias) — a checagem usa
+ * `!== undefined`, não truthy, pra não pular a escrita de um array vazio explícito.
+ */
 export async function atualizarStatusPost(
   postId: string,
   status: StatusPost,
-  extra?: { canais?: Record<string, unknown>; publicadoEm?: string; conteudoHtml?: string },
+  extra?: {
+    canais?: Record<string, unknown>;
+    publicadoEm?: string;
+    conteudoHtml?: string;
+    imagemDestaqueUrl?: string;
+    imagemDestaqueAlt?: string;
+    imagemDestaqueSlug?: string;
+    // Follow-up 19/08/2026 (arquivamento no Storage) — `string | null` na assinatura (diferente
+    // dos 3 campos acima, tipados só `string`) porque este é o único dos 4 campos de imagem cujo
+    // valor "ausente" tem um significado que vale a pena expressar no tipo; na prática, porém, o
+    // chamador (processar-pauta.ts) já converte null->undefined na mesma borda que os outros 3
+    // campos usam (?? undefined), então este campo se comporta de forma idêntica a eles aqui
+    // dentro: ver decisão abaixo, na condição de escrita.
+    imagemDestaqueStorageUrl?: string | null;
+    imagensSecundarias?: ImagemSecundaria[];
+    // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — ver carregarPostProntoParaPublicar.
+    prontoParaPublicar?: boolean;
+    imagemDestaqueMediaId?: string;
+  },
 ): Promise<void> {
   const supabase = createAdminClient();
   const { error } = await supabase
@@ -300,10 +624,31 @@ export async function atualizarStatusPost(
       status,
       ...(extra?.canais ? { canais: extra.canais } : {}),
       ...(extra?.publicadoEm ? { publicado_em: extra.publicadoEm } : {}),
-      // Grava o HTML final de verdade publicado (com links internos + sanitização já aplicados) —
-      // sem isto, posts.conteudo_html ficava com a saída crua do Escritor, diferente do que
-      // realmente está no ar no WordPress (auditoria/republicação futura leriam um documento errado).
+      // Grava o HTML final de verdade publicado (com links internos + sanitização + imagens
+      // secundárias + schema Article/Organization já embutidos, Task 10) — sem isto, posts.
+      // conteudo_html ficava desatualizado em relação ao que realmente está no ar no WordPress
+      // (auditoria/republicação futura leriam um documento errado).
       ...(extra?.conteudoHtml ? { conteudo_html: extra.conteudoHtml } : {}),
+      ...(extra?.imagemDestaqueUrl ? { imagem_destaque_url: extra.imagemDestaqueUrl } : {}),
+      ...(extra?.imagemDestaqueAlt ? { imagem_destaque_alt: extra.imagemDestaqueAlt } : {}),
+      ...(extra?.imagemDestaqueSlug ? { imagem_destaque_slug: extra.imagemDestaqueSlug } : {}),
+      // Mesmo padrão truthy-check dos 3 campos acima (não um !== undefined explícito) — decisão
+      // deliberada, não um esquecimento: replica a mesma filosofia já aplicada a
+      // imagemDestaqueUrl/Alt/Slug (ver comentário "alt/slug só acompanham a URL quando o upload
+      // de fato teve sucesso" em processar-pauta.ts) — quando esta tentativa não produziu uma cópia
+      // no Storage (capa não gerada, upload falhou, ou o upload ao WordPress em si falhou), a
+      // coluna simplesmente não é tocada, preservando uma cópia arquivada de uma tentativa anterior
+      // bem-sucedida em vez de apagá-la com null. É só um arquivo de "possível uso futuro" — não
+      // há benefício em néla nulificar um arquivo antigo ainda válido só porque esta tentativa não
+      // gerou um novo. Se algum dia for preciso nulificar de verdade (ex.: expurgo manual de um
+      // arquivo), esse caso passa a exigir uma escrita explícita fora deste helper — este helper
+      // continua tratando ausência (undefined/null/string vazia) como "não escrever".
+      ...(extra?.imagemDestaqueStorageUrl ? { imagem_destaque_storage_url: extra.imagemDestaqueStorageUrl } : {}),
+      ...(extra?.imagensSecundarias !== undefined
+        ? { imagens_secundarias: extra.imagensSecundarias.map(mapearImagemSecundariaBruta) }
+        : {}),
+      ...(extra?.prontoParaPublicar !== undefined ? { pronto_para_publicar: extra.prontoParaPublicar } : {}),
+      ...(extra?.imagemDestaqueMediaId ? { imagem_destaque_media_id: extra.imagemDestaqueMediaId } : {}),
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", postId);
@@ -321,12 +666,41 @@ function mapearConfigPipeline(bruto: unknown): {
   maxTentativas: number;
   postsPorDia: number | null;
   janelaPublicacao: JanelaPublicacao | null;
+  // Os 5 campos de calibração do Revisor (Fase 4a, Task 3, spec seção 3.1.1) — deliberadamente
+  // `| undefined`, NUNCA com fallback pra um valor concreto aqui: quem decide o default (80,
+  // "medio", true) é revisor.ts, não este mapeador. Ver comentário em carregarPropriedade.
+  scoreMinimoAprovacao: number | undefined;
+  rigorYmyl: PropriedadeCarregada["rigorYmyl"];
+  checarPrecisaoFactual: boolean | undefined;
+  checarFontesEspecificas: boolean | undefined;
+  checarOriginalidade: boolean | undefined;
+  // Instruções adicionais do Escritor por propriedade (Fase 4a, Task 4, spec seção 3.1.2) — mesmo
+  // tratamento passthrough dos 5 campos de calibração acima: `| undefined`, sem fallback pra um
+  // valor concreto aqui (não há "outro" default pra este campo, ausência = nenhuma instrução extra).
+  instrucoesAdicionais: string | undefined;
 } {
-  const config = (bruto as { max_tentativas?: number; posts_por_dia?: number | null; janela_publicacao?: JanelaPublicacao | null }) ?? {};
+  const config =
+    (bruto as {
+      max_tentativas?: number;
+      posts_por_dia?: number | null;
+      janela_publicacao?: JanelaPublicacao | null;
+      score_minimo_aprovacao?: number;
+      rigor_ymyl?: PropriedadeCarregada["rigorYmyl"];
+      checar_precisao_factual?: boolean;
+      checar_fontes_especificas?: boolean;
+      checar_originalidade?: boolean;
+      instrucoes_adicionais?: string;
+    }) ?? {};
   return {
     maxTentativas: config.max_tentativas ?? 3,
     postsPorDia: config.posts_por_dia ?? null,
     janelaPublicacao: config.janela_publicacao ?? null,
+    scoreMinimoAprovacao: config.score_minimo_aprovacao,
+    rigorYmyl: config.rigor_ymyl,
+    checarPrecisaoFactual: config.checar_precisao_factual,
+    checarFontesEspecificas: config.checar_fontes_especificas,
+    checarOriginalidade: config.checar_originalidade,
+    instrucoesAdicionais: config.instrucoes_adicionais,
   };
 }
 
@@ -351,6 +725,7 @@ function mapearPropriedadeAdmin(data: {
   ativo: boolean;
   config_pipeline: unknown;
   credenciais_canais: unknown;
+  autoria: unknown;
 }): PropriedadeAdmin {
   const config = mapearConfigPipeline(data.config_pipeline);
   return {
@@ -363,10 +738,11 @@ function mapearPropriedadeAdmin(data: {
     postsPorDia: config.postsPorDia,
     janelaPublicacao: config.janelaPublicacao,
     credenciais: mapearCredenciais(data.credenciais_canais),
+    autoria: mapearAutoria(data.autoria),
   };
 }
 
-const CAMPOS_PROPRIEDADE_ADMIN = "id, nome, url_base, tipo_cms, ativo, config_pipeline, credenciais_canais";
+const CAMPOS_PROPRIEDADE_ADMIN = "id, nome, url_base, tipo_cms, ativo, config_pipeline, credenciais_canais, autoria";
 
 /**
  * Lista as unidades de negócio pro seletor de "dono" da propriedade na tela de Propriedades
@@ -416,11 +792,25 @@ export async function salvarPropriedade(dados: DadosPropriedade): Promise<Propri
     configPipelineExistente = (atual.config_pipeline as Record<string, unknown>) ?? {};
   }
 
+  // Fase 4a, Task 3 (19/08/2026) — os 5 campos de calibração do Revisor, ao contrário de
+  // max_tentativas/posts_por_dia/janela_publicacao acima, são inclusão CONDICIONAL: um chamador
+  // que não informa um desses campos (`dados.scoreMinimoAprovacao === undefined`, caso de toda a
+  // base de código hoje — a tela ainda não os expõe) PRECISA preservar o valor já salvo no
+  // config_pipeline, não apagá-lo. Se fossem escritos incondicionalmente (mesmo padrão de
+  // max_tentativas), toda chamada a salvarPropriedade que não conhece calibração sobrescreveria
+  // silenciosamente `score_minimo_aprovacao`/etc. com `undefined`, que o JSON.stringify do
+  // supabase-js dropa — apagando uma calibração configurada numa sessão anterior. Mesmo raciocínio
+  // já usado abaixo pra pessoaId/unidadeNegocioId.
   const configPipeline = {
     ...configPipelineExistente,
     max_tentativas: dados.maxTentativas,
     posts_por_dia: dados.postsPorDia ?? null,
     janela_publicacao: dados.janelaPublicacao ?? null,
+    ...(dados.scoreMinimoAprovacao !== undefined ? { score_minimo_aprovacao: dados.scoreMinimoAprovacao } : {}),
+    ...(dados.rigorYmyl !== undefined ? { rigor_ymyl: dados.rigorYmyl } : {}),
+    ...(dados.checarPrecisaoFactual !== undefined ? { checar_precisao_factual: dados.checarPrecisaoFactual } : {}),
+    ...(dados.checarFontesEspecificas !== undefined ? { checar_fontes_especificas: dados.checarFontesEspecificas } : {}),
+    ...(dados.checarOriginalidade !== undefined ? { checar_originalidade: dados.checarOriginalidade } : {}),
   };
 
   const linha = {
@@ -431,6 +821,11 @@ export async function salvarPropriedade(dados: DadosPropriedade): Promise<Propri
     config_pipeline: configPipeline,
     ...(dados.pessoaId !== undefined ? { pessoa_id: dados.pessoaId } : {}),
     ...(dados.unidadeNegocioId !== undefined ? { unidade_negocio_id: dados.unidadeNegocioId } : {}),
+    // autoria: coluna própria, não faz parte do config_pipeline (spec seção 3.3 — não é
+    // "configuração do pipeline", é dado de identidade cadastrado por propriedade). `undefined` =
+    // não mexe no valor já salvo; `null` explícito = limpa; objeto = substitui por inteiro (não é
+    // merge parcial de subcampos — autoria é sempre editada/salva como uma unidade só na tela).
+    ...(dados.autoria !== undefined ? { autoria: dados.autoria } : {}),
   };
 
   const query = dados.id
@@ -519,7 +914,17 @@ export async function salvarMatriz(dados: DadosMatriz): Promise<MatrizAdmin> {
   return mapearMatrizAdmin(data as Parameters<typeof mapearMatrizAdmin>[0]);
 }
 
-export async function carregarPersona(matrizId: string): Promise<PersonaFormulario | null> {
+/**
+ * Renomeada de `carregarPersona` pra `carregarPersonaFormulario` (Fase 3, Task 2, 18/08/2026) —
+ * a Fase 3 introduz um `carregarPersona(personaId): Promise<PersonaCarregada>` novo (modelo de
+ * persona rica, tabela `personas`), e o nome `carregarPersona` já estava ocupado por esta função
+ * antiga (persona de 8 campos em `matrizes_conteudo.eixos.persona`, Fase 2). Duas funções com o
+ * mesmo nome e assinaturas incompatíveis não compilam — o nome novo ficou com o contrato que as
+ * Tasks 3/5/6 (ainda não construídas) já assumem literalmente no plano mestre; esta, marcada
+ * obsoleta pela spec de personas ricas (seção 9, "Pendências" — decidir separadamente o destino
+ * da tela `configuracoes/marketing/personas/`), cedeu o nome.
+ */
+export async function carregarPersonaFormulario(matrizId: string): Promise<PersonaFormulario | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase.from("matrizes_conteudo").select("eixos").eq("id", matrizId).single();
   if (error || !data) throw new Error(`Falha ao carregar persona da matriz ${matrizId}: ${error?.message ?? "não encontrada"}`);
@@ -560,11 +965,171 @@ export async function salvarPersona(matrizId: string, persona: PersonaFormulario
   if (error) throw new Error(`Falha ao salvar persona da matriz ${matrizId}: ${error.message}`);
 }
 
+// ---------------------------------------------------------------------------
+// Fase 3 (personas ricas) — Task 2. Ver
+// docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md seções 3 e 5.
+// Substitui o modelo "1 persona por matriz" (funções acima, PersonaFormulario) por N personas
+// ricas por propriedade (tabela `personas`), sorteadas a cada pauta pelo Estrategista (Task 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Personas ativas da propriedade, prontas pro sorteio ponderado do Estrategista (Task 4) — spec
+ * seção 5. Duas queries: (1) personas ativas da propriedade, (2) TODAS as pautas dessas personas
+ * (persona_id, angulo, created_at) numa única chamada com `.in()`, em vez de 1 query por persona —
+ * evita N+1 quando a propriedade tem muitas personas ativas.
+ *
+ * `angulosProntos` é `angulos_prontos` (jsonb da persona) MENOS o conjunto de ângulos já usados
+ * por ela em `pautas` — subtração de conjunto, não um filtro de linha. `[]` não é erro: é o sinal
+ * que a Task 4 usa pra decidir ir pro fallback de IA (Gerador de Ângulo, Task 3) pra essa persona.
+ *
+ * `usadaPelaUltimaVezEm` é o `created_at` mais recente entre as pautas da persona (comparação de
+ * string funciona porque ISO 8601 com mesma largura ordena lexicograficamente igual a
+ * cronologicamente), ou `null` se a persona nunca gerou pauta — usado pelo sorteio ponderado
+ * "menos usada recentemente tem mais peso" (spec seção 5), decisão que fica na Task 4, não aqui.
+ */
+export async function listarPersonasAtivasComAngulosDisponiveis(propriedadeId: string): Promise<PersonaAtiva[]> {
+  const supabase = createAdminClient();
+  const { data: personas, error: erroPersonas } = await supabase
+    .from("personas")
+    .select("id, nome, dor_entrada, angulos_prontos")
+    .eq("propriedade_id", propriedadeId)
+    .eq("ativo", true);
+  if (erroPersonas) throw new Error(`Falha ao listar personas ativas da propriedade ${propriedadeId}: ${erroPersonas.message}`);
+  if (!personas || personas.length === 0) return [];
+
+  const personaIds = personas.map((persona) => persona.id as string);
+  const { data: pautas, error: erroPautas } = await supabase.from("pautas").select("persona_id, angulo, created_at").in("persona_id", personaIds);
+  if (erroPautas) {
+    throw new Error(`Falha ao carregar pautas das personas da propriedade ${propriedadeId}: ${erroPautas.message}`);
+  }
+
+  const angulosUsadosPorPersona = new Map<string, Set<string>>();
+  const ultimoUsoPorPersona = new Map<string, string>();
+  for (const pauta of pautas ?? []) {
+    const personaId = pauta.persona_id as string;
+    const angulo = pauta.angulo as string;
+    const createdAt = pauta.created_at as string;
+
+    const angulosUsados = angulosUsadosPorPersona.get(personaId) ?? new Set<string>();
+    angulosUsados.add(angulo);
+    angulosUsadosPorPersona.set(personaId, angulosUsados);
+
+    const ultimoAtual = ultimoUsoPorPersona.get(personaId);
+    if (!ultimoAtual || createdAt > ultimoAtual) ultimoUsoPorPersona.set(personaId, createdAt);
+  }
+
+  return personas.map((persona) => {
+    const personaId = persona.id as string;
+    const angulosProntos = (persona.angulos_prontos as string[]) ?? [];
+    const angulosUsados = angulosUsadosPorPersona.get(personaId) ?? new Set<string>();
+    return {
+      id: personaId,
+      nome: persona.nome as string,
+      dorEntrada: persona.dor_entrada as string,
+      angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo)),
+      usadaPelaUltimaVezEm: ultimoUsoPorPersona.get(personaId) ?? null,
+    };
+  });
+}
+
+function mapearPersonaCarregada(data: {
+  id: string;
+  nome: string;
+  dor_entrada: string;
+  angulos_prontos: unknown;
+  conteudo_completo: string;
+}): PersonaCarregada {
+  return {
+    id: data.id,
+    nome: data.nome,
+    dorEntrada: data.dor_entrada,
+    angulosProntos: (data.angulos_prontos as string[]) ?? [],
+    // Não computado aqui (exigiria uma 2ª query agregando pautas, igual a
+    // listarPersonasAtivasComAngulosDisponiveis) — nenhum consumidor de carregarPersona (Gerador
+    // de Ângulo, Task 3; Escritor, Task 5) usa usadaPelaUltimaVezEm, só conteudoCompleto. Quem
+    // precisa do sorteio ponderado usa listarPersonasAtivasComAngulosDisponiveis, que já calcula.
+    usadaPelaUltimaVezEm: null,
+    conteudoCompleto: data.conteudo_completo,
+  };
+}
+
+/** Persona completa (com `conteudoCompleto`) pra uma persona já escolhida — usada pelo Gerador de
+ * Ângulo (Task 3, fallback de IA) e pelo Escritor (Task 5, prompt principal, spec seção 7). */
+export async function carregarPersona(personaId: string): Promise<PersonaCarregada> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("personas")
+    .select("id, nome, dor_entrada, angulos_prontos, conteudo_completo")
+    .eq("id", personaId)
+    .single();
+  if (error || !data) throw new Error(`Falha ao carregar persona ${personaId}: ${error?.message ?? "não encontrada"}`);
+  return mapearPersonaCarregada(data as Parameters<typeof mapearPersonaCarregada>[0]);
+}
+
+/**
+ * Todos os ângulos já registrados em `pautas` pra essa persona — prontos do Bloco 11 E gerados
+ * por IA em ciclos anteriores, sem distinção (spec seção 5: "cobre tanto os ângulos prontos
+ * quanto os gerados por IA em ciclos anteriores"). Usado pelo fallback de IA (Gerador de Ângulo,
+ * Task 3) pra nunca repetir um ângulo. Dedup em JS (`Set`), não `distinct` do PostgREST — mesma
+ * decisão de agregação em JS já usada em carregarDuracaoMediaPorEtapa, mantém o fake do query
+ * builder simples (sem precisar de um método `.distinct()` que hoje não existe nele).
+ */
+export async function carregarAngulosUsadosPorPersona(personaId: string): Promise<string[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("pautas").select("angulo").eq("persona_id", personaId);
+  if (error) throw new Error(`Falha ao carregar ângulos usados pela persona ${personaId}: ${error.message}`);
+  return Array.from(new Set((data ?? []).map((linha) => linha.angulo as string)));
+}
+
+/**
+ * Cria uma pauta diretamente a partir de uma persona sorteada (Estrategista, Task 4) — spec
+ * seção 5. Desvio deliberado do caminho antigo (pauta nasce "pendente" e só vira "em_producao"
+ * quando o cron a seleciona via marcarPautaEmProducao, em selecionarProximaPautaPendente): aqui a
+ * pauta nasce DIRETO em "em_producao". Não existe "esperar na fila" neste caminho — o
+ * Estrategista já decidiu produzir agora, no mesmo ciclo em que a criou; gravar "pendente" e
+ * imediatamente sobrescrever pra "em_producao" seria uma segunda escrita sem propósito.
+ *
+ * `geografia`: sempre `null` — decisão explícita da spec (seção 9, Pendências): personas não têm
+ * campo estruturado de geografia (só aparece em texto livre na Ficha Rápida), extrair dali não é
+ * confiável o suficiente pra automatizar.
+ *
+ * `prioridade_score`: omitido do payload de insert — usa o default da coluna (0), igual a toda
+ * pauta criada hoje (nenhum caminho do sistema seta esse campo explicitamente ainda).
+ */
+export async function criarPautaDePersona(params: {
+  matrizConteudoId: string;
+  personaId: string;
+  angulo: string;
+  palavraChavePrincipal: string;
+  palavrasSecundarias: string[];
+  funil: FunilPauta;
+  tipoConteudo: TipoConteudo;
+}): Promise<PautaCarregada> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("pautas")
+    .insert({
+      matriz_conteudo_id: params.matrizConteudoId,
+      persona_id: params.personaId,
+      angulo: params.angulo,
+      palavra_chave_principal: params.palavraChavePrincipal,
+      palavras_secundarias: params.palavrasSecundarias,
+      funil: params.funil,
+      tipo_conteudo: params.tipoConteudo,
+      geografia: null,
+      status: "em_producao",
+    })
+    .select(CAMPOS_PAUTA)
+    .single();
+  if (error || !data) throw new Error(`Falha ao criar pauta a partir da persona ${params.personaId}: ${error?.message ?? "sem retorno"}`);
+  return mapearPauta(data as Parameters<typeof mapearPauta>[0]);
+}
+
 export async function listarChecklistPorPropriedade(propriedadeId: string): Promise<ItemChecklistAdmin[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("checklist_qa_itens")
-    .select("id, propriedade_id, item, peso, ativo")
+    .select("id, propriedade_id, item, peso, ativo, item_para_revisor")
     .eq("propriedade_id", propriedadeId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(`Falha ao listar checklist da propriedade ${propriedadeId}: ${error.message}`);
@@ -574,20 +1139,36 @@ export async function listarChecklistPorPropriedade(propriedadeId: string): Prom
     item: linha.item as string,
     peso: linha.peso as number,
     ativo: linha.ativo as boolean,
+    itemParaRevisor: linha.item_para_revisor as string | null,
   }));
 }
 
 export async function salvarItemChecklist(dados: DadosItemChecklist): Promise<ItemChecklistAdmin> {
   const supabase = createAdminClient();
-  const linha = { propriedade_id: dados.propriedadeId, item: dados.item, peso: dados.peso, ativo: dados.ativo ?? true };
+  const linha = {
+    propriedade_id: dados.propriedadeId,
+    item: dados.item,
+    peso: dados.peso,
+    ativo: dados.ativo ?? true,
+    // Calibração dupla Escritor/Revisor (Fase 4b, 19/08/2026) — "" tratado como null (campo
+    // deixado em branco no formulário = "sem override", não uma string vazia salva no banco).
+    item_para_revisor: dados.itemParaRevisor?.trim() ? dados.itemParaRevisor : null,
+  };
 
   const query = dados.id
     ? supabase.from("checklist_qa_itens").update(linha).eq("id", dados.id)
     : supabase.from("checklist_qa_itens").insert(linha);
 
-  const { data, error } = await query.select("id, propriedade_id, item, peso, ativo").single();
+  const { data, error } = await query.select("id, propriedade_id, item, peso, ativo, item_para_revisor").single();
   if (error || !data) throw new Error(`Falha ao salvar item de checklist "${dados.item}": ${error?.message ?? "sem retorno"}`);
-  return { id: data.id, propriedadeId: data.propriedade_id, item: data.item, peso: data.peso, ativo: data.ativo };
+  return {
+    id: data.id,
+    propriedadeId: data.propriedade_id,
+    item: data.item,
+    peso: data.peso,
+    ativo: data.ativo,
+    itemParaRevisor: data.item_para_revisor,
+  };
 }
 
 export async function excluirItemChecklist(itemId: string): Promise<void> {
@@ -660,6 +1241,46 @@ export async function listarPostsPublicados(propriedadeId?: string): Promise<Pos
 }
 
 /**
+ * Título + ângulo dos últimos `limite` posts publicados da propriedade, mais recentes primeiro —
+ * resolve o TODO(Task 3) deixado por processar-pauta.ts (Fase 4a, spec seção 3.1, "Contexto novo
+ * no prompt do Revisor": o Revisor usa isto pra julgar `originalidade_adequada`).
+ *
+ * Função dedicada, não extensão de `listarPostsPublicados` acima: aquela serve a tela de admin
+ * "Posts Publicados" (Fase 2, Task 11) e devolve `PostAdmin` (id/url/scoreQa/tentativas) — campos
+ * que o Revisor não precisa, e que não carrega `angulo` porque esse campo vive em `pautas`, não em
+ * `posts` (decisão registrada no relatório da Task 2). Estender aquele tipo/consulta só pra este
+ * uso pouparia uma função nova à custa de acoplar dois consumidores com necessidades diferentes ao
+ * mesmo contrato — mais barato manter os dois separados.
+ *
+ * Embed `pautas(angulo)` SEM `!inner` — seguro porque `posts.pauta_id` é
+ * `not null references pautas(id)` (mesma decisão já documentada em listarEtapasConcluidasRecentes
+ * pra `pautas_execucao_log.pauta_id`, também not-null). `[]` (não erro) quando a propriedade não
+ * tem posts publicados ainda — o Revisor trata lista vazia com o texto fixo do prompt (ver
+ * montarPrompt, revisor.ts), continua funcionando normalmente sem contexto de comparação.
+ */
+export async function carregarPostsRecentes(propriedadeId: string, limite: number): Promise<{ titulo: string; angulo: string }[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("titulo, pautas(angulo)")
+    .eq("propriedade_id", propriedadeId)
+    .eq("status", "publicado")
+    .order("publicado_em", { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(`Falha ao carregar posts recentes da propriedade ${propriedadeId}: ${error.message}`);
+
+  return (data ?? []).map((linha) => {
+    // Mesma forma defensiva de mapearNomePauta (acima): o supabase-js tipa embeds belongs-to como
+    // array em alguns casos e como objeto em outros, dependendo da versão/inferência — cobre os
+    // dois. `pautas` nulo/ausente não deveria acontecer (FK not null), mas degrada pra "" em vez de
+    // lançar, na dúvida.
+    const pauta = linha.pautas as { angulo?: string } | { angulo?: string }[] | null;
+    const angulo = Array.isArray(pauta) ? (pauta[0]?.angulo ?? "") : (pauta?.angulo ?? "");
+    return { titulo: linha.titulo as string, angulo };
+  });
+}
+
+/**
  * Envolve uma etapa do pipeline com uma linha de log (início/fim/sucesso/detalhes) —
  * ver spec seção 6. Usada pela Task 5, não pelas telas.
  *
@@ -682,13 +1303,35 @@ export async function listarPostsPublicados(propriedadeId?: string): Promise<Pos
  * motivo da rejeição de negócio (ex. resultado.motivo) na mesma coluna `detalhes` que já é usada
  * pro erro técnico do branch de exceção logo abaixo. Retorno `undefined` = não escreve nada
  * (comportamento idêntico ao de antes deste parâmetro existir).
+ *
+ * `extrairCustoAdicionalUsd` (opcional, 19/08/2026, pedido do Luiz) — custo em USD que NÃO vem de
+ * tokens Anthropic (hoje só a etapa gerar_imagens usa: soma do `custoUsd` real de cada geração via
+ * OpenAI, que antes desta mudança era calculado e descartado, nunca persistido em lugar nenhum).
+ * `custo_usd` gravado na conclusão é sempre `calcularCustoUsdTokens(tokens) + custoAdicional`
+ * (custo de tokens é 0 quando `extrairTokens` não é passado) — alimenta o futuro módulo de
+ * governança de custo transversal (Plano Mestre seção 9); a tela/relatório fica pra depois, mas o
+ * dado precisa existir desde já, no momento em que a chamada de IA acontece.
  */
+const PRECO_USD_POR_MILHAO_TOKENS: Record<string, { entrada: number; saida: number }> = {
+  // claude-sonnet-5 é o único modelo usado em todo o pipeline hoje (Escritor, Revisor, Capa) —
+  // preço sourced na pesquisa de vendor da Fase 4 (19/08/2026): $2/$10 por milhão de tokens.
+  "claude-sonnet-5": { entrada: 2, saida: 10 },
+};
+const MODELO_PADRAO_CUSTO = "claude-sonnet-5";
+
+function calcularCustoUsdTokens(tokens: { tokensEntrada: number; tokensSaida: number } | undefined): number {
+  if (!tokens) return 0;
+  const preco = PRECO_USD_POR_MILHAO_TOKENS[MODELO_PADRAO_CUSTO];
+  return (tokens.tokensEntrada / 1_000_000) * preco.entrada + (tokens.tokensSaida / 1_000_000) * preco.saida;
+}
+
 export async function registrarEtapa<T>(
   pautaId: string,
   etapa: EtapaLog,
   fn: () => Promise<T>,
   extrairTokens?: (resultado: T) => { tokensEntrada: number; tokensSaida: number } | undefined,
   extrairDetalhes?: (resultado: T) => string | undefined,
+  extrairCustoAdicionalUsd?: (resultado: T) => number | undefined,
 ): Promise<T> {
   const supabase = createAdminClient();
   const { data: log, error: erroInsercao } = await supabase
@@ -705,6 +1348,8 @@ export async function registrarEtapa<T>(
     if (log) {
       const tokens = extrairTokens?.(resultado);
       const detalhes = extrairDetalhes?.(resultado);
+      const custoAdicional = extrairCustoAdicionalUsd?.(resultado) ?? 0;
+      const custoUsd = tokens || custoAdicional ? calcularCustoUsdTokens(tokens) + custoAdicional : undefined;
       const { error } = await supabase
         .from("pautas_execucao_log")
         .update({
@@ -712,6 +1357,7 @@ export async function registrarEtapa<T>(
           sucesso: true,
           ...(tokens ? { tokens_entrada: tokens.tokensEntrada, tokens_saida: tokens.tokensSaida } : {}),
           ...(detalhes !== undefined ? { detalhes } : {}),
+          ...(custoUsd !== undefined ? { custo_usd: custoUsd } : {}),
         })
         .eq("id", log.id);
       if (error) console.error(`Falha ao registrar conclusão da etapa ${etapa} da pauta ${pautaId}: ${error.message}`);
@@ -824,69 +1470,109 @@ export async function carregarResumoVisaoGeral(): Promise<ResumoVisaoGeral> {
 // de leitura fora de registrarEtapa/carregarResumoVisaoGeral).
 // ---------------------------------------------------------------------------
 
-function mapearNomePauta(embed: unknown): string {
-  const pauta = embed as { palavra_chave_principal?: string } | { palavra_chave_principal?: string }[] | null;
-  if (Array.isArray(pauta)) return pauta[0]?.palavra_chave_principal ?? "(pauta desconhecida)";
-  return pauta?.palavra_chave_principal ?? "(pauta desconhecida)";
+const STATUS_PAUTA_FINAL: StatusPauta[] = ["publicado", "bloqueada", "rejeitado"];
+
+function mapearEtapaTimeline(linha: {
+  id: string;
+  etapa: EtapaLog;
+  iniciado_em: string;
+  concluido_em: string | null;
+  sucesso: boolean | null;
+  detalhes: string | null;
+}): EtapaTimeline {
+  return {
+    id: linha.id,
+    etapa: linha.etapa,
+    iniciadoEm: linha.iniciado_em,
+    concluidoEm: linha.concluido_em,
+    sucesso: linha.sucesso,
+    detalhes: linha.detalhes,
+  };
 }
 
 /**
- * Etapas de `pautas_execucao_log` ainda sem `concluido_em`, restritas a pautas com
- * `status = em_producao` (join inner com `pautas`, ver spec seção 7) — implementa o bloco "Em
- * andamento agora". Não deduplica por pauta_id: no cenário de reclaim (spec seção 6), uma pauta
- * pode ter DUAS linhas abertas simultaneamente — a órfã (função anterior morreu, nunca fechou a
- * linha) e a da tentativa atual — e mostrar as duas é o comportamento desejado (a órfã aparece
- * naturalmente como "possivelmente travada" na tela, sem precisar de lógica extra aqui).
- *
- * Nota (mesma cautela já registrada em listarPautasPorStatus): o embed `pautas!inner(...)` só foi
- * testado com mock do Supabase (regra dura de migration — tabela pautas_execucao_log ainda não
- * existe em produção) — validar manualmente contra o Postgrest real depois da migration da Task 1
- * ser aplicada, antes de confiar cegamente neste caminho.
+ * Pautas com pelo menos uma tentativa já iniciada e sem desfecho final — implementa o bloco "Em
+ * andamento agora" do Monitor (redesenho de 19/08/2026, pedido do Luiz: 1 card por PAUTA, com uma
+ * timeline de etapas dentro, em vez de 1 card por linha de log). `status IN
+ * ('em_producao', 'pendente')`: uma reprovação de conteúdo volta a pauta pra "pendente" entre
+ * tentativas (ver registrarReprovacaoPauta) — sem incluir esse status aqui, o card sumiria de
+ * "em andamento" e voltaria pra "na fila" a cada retry, exatamente a confusão que este redesenho
+ * existe pra evitar. `tentativas > 0` distingue "pendente aguardando retry" de "pendente nunca
+ * tentada" (que pertence à fila, ver listarPautasPorStatus) sem precisar consultar o log — o
+ * contador já vive na própria pauta.
  */
-export async function listarEtapasEmAndamento(): Promise<EtapaEmAndamento[]> {
+export async function listarPautasEmAndamento(): Promise<PautaEmAndamento[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("pautas_execucao_log")
-    .select("id, pauta_id, etapa, iniciado_em, pautas!inner(palavra_chave_principal, status)")
-    .is("concluido_em", null)
-    .eq("pautas.status", "em_producao")
-    .order("iniciado_em", { ascending: false });
-  if (error) throw new Error(`Falha ao listar etapas em andamento: ${error.message}`);
+  const { data: pautas, error: erroPautas } = await supabase
+    .from("pautas")
+    .select("id, palavra_chave_principal, tentativas")
+    .or("status.eq.em_producao,and(status.eq.pendente,tentativas.gt.0)");
+  if (erroPautas) throw new Error(`Falha ao listar pautas em andamento: ${erroPautas.message}`);
+  if (!pautas || pautas.length === 0) return [];
 
-  return (data ?? []).map((linha) => ({
-    id: linha.id as string,
-    pautaId: linha.pauta_id as string,
-    palavraChavePrincipal: mapearNomePauta((linha as { pautas?: unknown }).pautas),
-    etapa: linha.etapa as EtapaLog,
-    iniciadoEm: linha.iniciado_em as string,
+  const ids = pautas.map((p) => p.id);
+  const { data: logs, error: erroLogs } = await supabase
+    .from("pautas_execucao_log")
+    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes")
+    .in("pauta_id", ids)
+    .order("iniciado_em", { ascending: true });
+  if (erroLogs) throw new Error(`Falha ao listar etapas das pautas em andamento: ${erroLogs.message}`);
+
+  const etapasPorPauta = new Map<string, EtapaTimeline[]>();
+  for (const linha of logs ?? []) {
+    const lista = etapasPorPauta.get(linha.pauta_id as string) ?? [];
+    lista.push(mapearEtapaTimeline(linha as Parameters<typeof mapearEtapaTimeline>[0]));
+    etapasPorPauta.set(linha.pauta_id as string, lista);
+  }
+
+  return pautas.map((p) => ({
+    pautaId: p.id as string,
+    palavraChavePrincipal: p.palavra_chave_principal as string,
+    tentativas: p.tentativas as number,
+    etapas: etapasPorPauta.get(p.id as string) ?? [],
   }));
 }
 
 /**
- * Últimas `limite` etapas concluídas (sucesso ou falha) de `pautas_execucao_log`, mais recentes
- * primeiro — implementa o bloco "Concluídos recentes". `pautas` (embed simples, sem `!inner`) é
- * seguro aqui porque `pauta_id` é `not null references pautas(id)` — toda linha concluída tem uma
- * pauta associada, não precisa de inner join pra filtrar nada.
+ * Últimas `limite` pautas que atingiram um desfecho final (publicada, bloqueada, ou reprovada
+ * sem mais tentativas), mais recentes primeiro — implementa o bloco "Concluídos recentes" (mesmo
+ * redesenho de listarPautasEmAndamento: 1 card por pauta, com o histórico completo de etapas de
+ * todas as tentativas pra expandir). Ordenado por `atualizado_em` da pauta (não pelo log) — é o
+ * timestamp que reflete o instante real do desfecho final, já usado pelo resto do módulo.
  */
-export async function listarEtapasConcluidasRecentes(limite = 20): Promise<EtapaConcluida[]> {
+export async function listarPautasConcluidasRecentes(limite = 20): Promise<PautaConcluida[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("pautas_execucao_log")
-    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes, pautas(palavra_chave_principal)")
-    .not("concluido_em", "is", null)
-    .order("concluido_em", { ascending: false })
+  const { data: pautas, error: erroPautas } = await supabase
+    .from("pautas")
+    .select("id, palavra_chave_principal, status, motivo_ultima_reprovacao, atualizado_em")
+    .in("status", STATUS_PAUTA_FINAL)
+    .order("atualizado_em", { ascending: false })
     .limit(limite);
-  if (error) throw new Error(`Falha ao listar etapas concluídas recentes: ${error.message}`);
+  if (erroPautas) throw new Error(`Falha ao listar pautas concluídas recentes: ${erroPautas.message}`);
+  if (!pautas || pautas.length === 0) return [];
 
-  return (data ?? []).map((linha) => ({
-    id: linha.id as string,
-    pautaId: linha.pauta_id as string,
-    palavraChavePrincipal: mapearNomePauta((linha as { pautas?: unknown }).pautas),
-    etapa: linha.etapa as EtapaLog,
-    iniciadoEm: linha.iniciado_em as string,
-    concluidoEm: linha.concluido_em as string,
-    sucesso: linha.sucesso as boolean | null,
-    detalhes: linha.detalhes as string | null,
+  const ids = pautas.map((p) => p.id);
+  const { data: logs, error: erroLogs } = await supabase
+    .from("pautas_execucao_log")
+    .select("id, pauta_id, etapa, iniciado_em, concluido_em, sucesso, detalhes")
+    .in("pauta_id", ids)
+    .order("iniciado_em", { ascending: true });
+  if (erroLogs) throw new Error(`Falha ao listar etapas das pautas concluídas: ${erroLogs.message}`);
+
+  const etapasPorPauta = new Map<string, EtapaTimeline[]>();
+  for (const linha of logs ?? []) {
+    const lista = etapasPorPauta.get(linha.pauta_id as string) ?? [];
+    lista.push(mapearEtapaTimeline(linha as Parameters<typeof mapearEtapaTimeline>[0]));
+    etapasPorPauta.set(linha.pauta_id as string, lista);
+  }
+
+  return pautas.map((p) => ({
+    pautaId: p.id as string,
+    palavraChavePrincipal: p.palavra_chave_principal as string,
+    status: p.status as StatusPauta,
+    motivoUltimaReprovacao: p.motivo_ultima_reprovacao as string | null,
+    concluidoEm: p.atualizado_em as string,
+    etapas: etapasPorPauta.get(p.id as string) ?? [],
   }));
 }
 

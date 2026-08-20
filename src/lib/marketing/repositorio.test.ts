@@ -4,17 +4,23 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  atualizarStatusPost,
+  carregarAngulosUsadosPorPersona,
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
+  carregarPersonaFormulario,
+  carregarPostsRecentes,
   carregarPropriedade,
   carregarResumoVisaoGeral,
   contarPostsPublicadosDesde,
+  criarPautaDePersona,
   excluirItemChecklist,
   listarChecklistPorPropriedade,
-  listarEtapasConcluidasRecentes,
-  listarEtapasEmAndamento,
   listarMatrizes,
+  listarPautasConcluidasRecentes,
+  listarPautasEmAndamento,
   listarPautasPorStatus,
+  listarPersonasAtivasComAngulosDisponiveis,
   listarPostsPublicados,
   listarPropriedades,
   listarUnidadesNegocio,
@@ -25,9 +31,11 @@ import {
   salvarMatriz,
   salvarPersona,
   salvarPropriedade,
+  salvarRascunho,
 } from "./repositorio";
 import { decifrar } from "./criptografia";
-import type { PersonaFormulario } from "./tipos";
+import type { ConteudoGerado, PersonaFormulario } from "./tipos";
+import type { ImagemSecundaria } from "./imagens/secundarias";
 
 vi.mock("@/lib/supabase/admin");
 
@@ -61,6 +69,7 @@ function criarQueryFalsa(resultado: ResultadoQuery) {
     "in",
     "not",
     "is",
+    "or",
     "update",
     "insert",
     "upsert",
@@ -114,6 +123,7 @@ describe("carregarPropriedade", () => {
       maxTentativas: 5,
       postsPorDia: 3,
       janelaPublicacao: { inicio: "08:00", fim: "20:00" },
+      autoria: null,
     });
   });
 
@@ -140,10 +150,174 @@ describe("carregarPropriedade", () => {
     expect(propriedade.maxTentativas).toBe(3);
   });
 
+  // Gap real deixado pela Fase 2 (Task 5 desta sessão, spec seção 143 do design das telas):
+  // carregarPropriedade nunca selecionava credenciais_canais, então processar-pauta.ts nunca
+  // conseguia usar a credencial cifrada salva pela tela Propriedades Digitais — só o fallback de
+  // env var funcionava, mesmo em produção. Corrigido junto com credenciaisWordPressDaPropriedade
+  // (processar-pauta.ts) nesta mesma sessão.
+  it("mapeia credenciais_canais.wordpress pra credenciaisCanais.wordpress (senha continua cifrada, não decifra aqui)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          credenciais_canais: { wordpress: { usuario: "admin", senha_cifrada: "CIFRADO-XYZ" } },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.credenciaisCanais).toEqual({ wordpress: { usuario: "admin", senhaCifrada: "CIFRADO-XYZ" } });
+  });
+
+  it("deixa credenciaisCanais undefined quando não há senha_cifrada salva pro canal wordpress", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          credenciais_canais: {},
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.credenciaisCanais).toBeUndefined();
+  });
+
   it("lança erro claro quando a propriedade não é encontrada", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: null }));
 
     await expect(carregarPropriedade("prop-x")).rejects.toThrow(/Falha ao carregar propriedade prop-x/);
+  });
+
+  // Fase 4a, Task 3 (19/08/2026) — autoria vive em coluna própria (autoria jsonb), não em
+  // config_pipeline. `null` quando a propriedade não tem autoria configurada, objeto completo
+  // (snake_case do banco -> camelCase do tipo) quando presente.
+  it("mapeia autoria quando presente no banco (snake_case -> camelCase)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          autoria: {
+            nome: "Fulano de Tal",
+            foto_url: "https://exemplo.com/fulano.jpg",
+            bio: "Especialista em recuperação de crédito.",
+            especialidade: "Direito do Consumidor",
+            empresa: "ArrudaCred",
+            credenciais: ["OAB/SP 123456"],
+            perfis_profissionais: ["https://linkedin.com/in/fulano"],
+          },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.autoria).toEqual({
+      nome: "Fulano de Tal",
+      fotoUrl: "https://exemplo.com/fulano.jpg",
+      bio: "Especialista em recuperação de crédito.",
+      especialidade: "Direito do Consumidor",
+      empresa: "ArrudaCred",
+      credenciais: ["OAB/SP 123456"],
+      perfisProfissionais: ["https://linkedin.com/in/fulano"],
+    });
+  });
+
+  it("mapeia autoria como null quando ausente no banco", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+          autoria: null,
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.autoria).toBeNull();
+  });
+
+  // Fase 4a, Task 3 — os 5 campos de calibração do Revisor vivem em config_pipeline, mesmo padrão
+  // de max_tentativas/posts_por_dia/janela_publicacao já mapeados acima.
+  it("mapeia os 5 campos de calibração do Revisor quando presentes no config_pipeline", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: {
+            max_tentativas: 3,
+            score_minimo_aprovacao: 90,
+            rigor_ymyl: "alto",
+            checar_precisao_factual: false,
+            checar_fontes_especificas: true,
+            checar_originalidade: false,
+          },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.scoreMinimoAprovacao).toBe(90);
+    expect(propriedade.rigorYmyl).toBe("alto");
+    expect(propriedade.checarPrecisaoFactual).toBe(false);
+    expect(propriedade.checarFontesEspecificas).toBe(true);
+    expect(propriedade.checarOriginalidade).toBe(false);
+  });
+
+  // Regressão (Task 2 depende disto): propriedade sem NENHUM dos 5 campos de calibração no
+  // config_pipeline precisa continuar produzindo `undefined` nesses 5 campos — NÃO um default
+  // inventado aqui (o default é responsabilidade de revisor.ts, ver calcularAprovacao/montarPrompt).
+  // Repetir o default nesta camada seria uma segunda fonte de verdade, o risco que o brief desta
+  // task pediu pra evitar explicitamente.
+  it("regressão: deixa os 5 campos de calibração undefined quando ausentes do config_pipeline (default é do revisor.ts, não daqui)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3 },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.scoreMinimoAprovacao).toBeUndefined();
+    expect(propriedade.rigorYmyl).toBeUndefined();
+    expect(propriedade.checarPrecisaoFactual).toBeUndefined();
+    expect(propriedade.checarFontesEspecificas).toBeUndefined();
+    expect(propriedade.checarOriginalidade).toBeUndefined();
   });
 });
 
@@ -207,6 +381,7 @@ describe("listarPropriedades", () => {
         postsPorDia: 3,
         janelaPublicacao: { inicio: "08:00", fim: "20:00" },
         credenciais: { wordpress: { usuario: "admin", senhaConfigurada: true } },
+        autoria: null,
       },
     ]);
   });
@@ -235,6 +410,47 @@ describe("listarPropriedades", () => {
     expect(propriedade.postsPorDia).toBeNull();
     expect(propriedade.janelaPublicacao).toBeNull();
     expect(propriedade.credenciais).toEqual({});
+    expect(propriedade.autoria).toBeNull();
+  });
+
+  it("mapeia autoria quando presente (Fase 4a, Task 3)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          {
+            id: "prop-3",
+            nome: "Site Com Autoria",
+            url_base: "https://y.com",
+            tipo_cms: "wordpress",
+            ativo: true,
+            config_pipeline: {},
+            credenciais_canais: {},
+            autoria: {
+              nome: "Fulano",
+              foto_url: "https://y.com/fulano.jpg",
+              bio: "Bio curta.",
+              especialidade: "Crédito",
+              empresa: "ArrudaCred",
+              credenciais: [],
+              perfis_profissionais: [],
+            },
+          },
+        ],
+        error: null,
+      }),
+    );
+
+    const [propriedade] = await listarPropriedades();
+
+    expect(propriedade.autoria).toEqual({
+      nome: "Fulano",
+      fotoUrl: "https://y.com/fulano.jpg",
+      bio: "Bio curta.",
+      especialidade: "Crédito",
+      empresa: "ArrudaCred",
+      credenciais: [],
+      perfisProfissionais: [],
+    });
   });
 
   it("lança erro claro quando a query falha", async () => {
@@ -394,6 +610,150 @@ describe("salvarPropriedade", () => {
     await expect(
       salvarPropriedade({ nome: "X", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3, pessoaId: "p1" }),
     ).rejects.toThrow(/Falha ao salvar propriedade "X".*erro de teste/);
+  });
+
+  // Fase 4a, Task 3 (19/08/2026) — os 5 campos de calibração do Revisor gravam nas mesmas chaves
+  // snake_case que carregarPropriedade lê de volta (score_minimo_aprovacao/rigor_ymyl/checar_*).
+  it("grava os campos de calibração informados no config_pipeline", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarPropriedade({
+      id: "prop-1",
+      nome: "Site",
+      urlBase: "https://x.com",
+      tipoCms: "wordpress",
+      maxTentativas: 3,
+      scoreMinimoAprovacao: 90,
+      rigorYmyl: "alto",
+      checarPrecisaoFactual: false,
+      checarFontesEspecificas: true,
+      checarOriginalidade: false,
+    });
+
+    expect(linhaEscritaGravada?.config_pipeline).toEqual(
+      expect.objectContaining({
+        score_minimo_aprovacao: 90,
+        rigor_ymyl: "alto",
+        checar_precisao_factual: false,
+        checar_fontes_especificas: true,
+        checar_originalidade: false,
+      }),
+    );
+  });
+
+  // Não-regressão (mesmo espírito do teste de canais_distribuicao acima): salvar a propriedade sem
+  // informar os campos de calibração (chamador que ainda não conhece esses campos — caso de toda a
+  // base de código hoje, a tela ainda não os expõe) não pode apagar um valor de calibração já salvo
+  // numa sessão anterior. Diferente de max_tentativas/posts_por_dia (sempre reescritos com o que
+  // vier em `dados`, `?? null` inclusive): calibração ausente em `dados` (undefined) precisa
+  // PRESERVAR o que já estava no config_pipeline, não sobrescrever com undefined/apagar a chave.
+  it("preserva score_minimo_aprovacao já salvo quando a chamada não informa esse campo (não força wipe)", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) {
+        return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3, score_minimo_aprovacao: 90, rigor_ymyl: "alto" } }, error: null });
+      }
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    // Sem nenhum campo de calibração no payload — simula a tela atual, que ainda não os envia.
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 5 });
+
+    expect(linhaEscritaGravada?.config_pipeline).toEqual(
+      expect.objectContaining({ score_minimo_aprovacao: 90, rigor_ymyl: "alto", max_tentativas: 5 }),
+    );
+  });
+
+  // Fase 4a, Task 3 — autoria é coluna própria (não faz parte do config_pipeline).
+  it("grava autoria como coluna própria (fora do config_pipeline) quando informada", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    const autoria = {
+      nome: "Fulano",
+      fotoUrl: "https://x.com/f.jpg",
+      bio: "Bio",
+      especialidade: "Crédito",
+      empresa: "ArrudaCred",
+      credenciais: ["OAB 1"],
+      perfisProfissionais: ["https://linkedin.com/in/fulano"],
+    };
+
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3, autoria });
+
+    expect(linhaEscritaGravada?.autoria).toEqual(autoria);
+    expect(linhaEscritaGravada?.config_pipeline).not.toHaveProperty("autoria");
+  });
+
+  it("não mexe na coluna autoria quando não informada (undefined preserva o valor já salvo)", async () => {
+    let linhaEscritaGravada: Record<string, unknown> | undefined;
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: { id: "prop-1", nome: "Site", url_base: "https://x.com", tipo_cms: "wordpress", ativo: true, config_pipeline: {}, credenciais_canais: {} },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: Record<string, unknown>) => {
+        linhaEscritaGravada = arg;
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3 });
+
+    expect(linhaEscritaGravada).not.toHaveProperty("autoria");
   });
 });
 
@@ -613,17 +973,19 @@ describe("salvarMatriz", () => {
   });
 });
 
-describe("carregarPersona", () => {
+describe("carregarPersonaFormulario", () => {
+  // Renomeada de carregarPersona (Fase 3, Task 2) — nome cedido pro carregarPersona novo da tabela
+  // `personas` (modelo de persona rica). Ver comentário na função em repositorio.ts.
   it("retorna null quando a matriz não tem persona ainda", async () => {
     mockarFrom(criarQueryFalsa({ data: { eixos: { temas: ["x"] } }, error: null }));
 
-    expect(await carregarPersona("matriz-1")).toBeNull();
+    expect(await carregarPersonaFormulario("matriz-1")).toBeNull();
   });
 
   it("retorna a persona com defaults pros campos ausentes", async () => {
     mockarFrom(criarQueryFalsa({ data: { eixos: { persona: { nome: "Consumidor Endividado", tomDeVoz: "acolhedor" } } }, error: null }));
 
-    const persona = await carregarPersona("matriz-1");
+    const persona = await carregarPersonaFormulario("matriz-1");
 
     expect(persona).toEqual({
       nome: "Consumidor Endividado",
@@ -640,7 +1002,7 @@ describe("carregarPersona", () => {
   it("lança erro claro quando a matriz não é encontrada", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: null }));
 
-    await expect(carregarPersona("matriz-x")).rejects.toThrow(/Falha ao carregar persona da matriz matriz-x/);
+    await expect(carregarPersonaFormulario("matriz-x")).rejects.toThrow(/Falha ao carregar persona da matriz matriz-x/);
   });
 });
 
@@ -829,6 +1191,150 @@ describe("listarPautasPorStatus", () => {
 
     await expect(listarPautasPorStatus()).rejects.toThrow(/Falha ao listar pautas por status.*erro de teste/);
   });
+
+  // Fase 3, 19/08/2026 — mapearPauta (usado por listarPautasPorStatus e todo o resto que lê
+  // pautas) ganhou o campo ultimo_rascunho. Testado aqui, no describe que já tem pautaBruta como
+  // fixture central, em vez de duplicar a fixture num describe próprio.
+  it("mapeia ultimo_rascunho pra ultimoRascunho, convertendo as chaves internas pra camelCase", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          {
+            ...pautaBruta,
+            ultimo_rascunho: {
+              titulo: "Título do rascunho",
+              conteudo_html: "<p>Corpo</p>",
+              meta_title: "Meta title",
+              meta_description: "Meta description",
+              slug: "titulo-do-rascunho",
+            },
+          },
+        ],
+        error: null,
+      }),
+    );
+
+    const pautas = await listarPautasPorStatus();
+
+    expect(pautas[0].ultimoRascunho).toEqual({
+      titulo: "Título do rascunho",
+      conteudoHtml: "<p>Corpo</p>",
+      metaTitle: "Meta title",
+      metaDescription: "Meta description",
+      slug: "titulo-do-rascunho",
+    });
+  });
+
+  it("deixa ultimoRascunho null quando ultimo_rascunho é null (pauta ainda sem geração, ou anterior a esta coluna existir)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ ...pautaBruta, ultimo_rascunho: null }], error: null }));
+
+    const pautas = await listarPautasPorStatus();
+
+    expect(pautas[0].ultimoRascunho).toBeNull();
+  });
+});
+
+describe("salvarRascunho", () => {
+  const rascunho: ConteudoGerado = {
+    titulo: "Como Limpar o Nome no Serasa",
+    conteudoHtml: "<article><h1>Como Limpar o Nome no Serasa</h1></article>",
+    metaTitle: "Como Limpar Nome no Serasa | Passo a Passo",
+    metaDescription: "Aprenda o passo a passo completo para limpar seu nome no Serasa.",
+    slug: "como-limpar-nome-serasa",
+  };
+
+  it("grava o rascunho em ultimo_rascunho, convertendo as chaves pra snake_case", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await salvarRascunho("pauta-1", rascunho);
+
+    expect(builder.update).toHaveBeenCalledWith({
+      ultimo_rascunho: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudo_html: "<article><h1>Como Limpar o Nome no Serasa</h1></article>",
+        meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+        meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa.",
+        slug: "como-limpar-nome-serasa",
+      },
+    });
+    expect(builder.eq).toHaveBeenCalledWith("id", "pauta-1");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(salvarRascunho("pauta-1", rascunho)).rejects.toThrow(/Falha ao salvar rascunho da pauta pauta-1.*erro de teste/);
+  });
+});
+
+// Follow-up 19/08/2026 (arquivamento no Storage, "possível uso futuro") — cobre os dois campos
+// novos: imagem_destaque_storage_url (extra.imagemDestaqueStorageUrl) e a chave storage_url dentro
+// de cada item de imagens_secundarias (mapearImagemSecundariaBruta, função interna não exportada,
+// exercitada aqui só através de atualizarStatusPost).
+describe("atualizarStatusPost", () => {
+  const imagemSecundariaBase: ImagemSecundaria = {
+    url: "https://teste.exemplo.com/doc.png",
+    alt: "Alt",
+    slug: "doc",
+    titulo: "Doc",
+    legenda: "Legenda",
+    posicaoAposSecao: "depois da introdução",
+    storageUrl: null,
+  };
+
+  it("grava imagem_destaque_storage_url quando o campo vem preenchido", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {
+      imagemDestaqueStorageUrl: "https://supabase.exemplo.com/storage/v1/object/public/marketing-imagens/prop-1/pauta-1/capa-x.png",
+    });
+
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imagem_destaque_storage_url: "https://supabase.exemplo.com/storage/v1/object/public/marketing-imagens/prop-1/pauta-1/capa-x.png",
+      }),
+    );
+  });
+
+  it("NÃO grava a coluna quando o campo vem ausente (undefined) — preserva um arquivo de tentativa anterior", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {});
+
+    const chamada = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(chamada).not.toHaveProperty("imagem_destaque_storage_url");
+  });
+
+  it("NÃO grava a coluna quando o campo vem null (mesmo tratamento que undefined, mesma filosofia dos outros 3 campos de imagem)", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", { imagemDestaqueStorageUrl: null });
+
+    const chamada = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(chamada).not.toHaveProperty("imagem_destaque_storage_url");
+  });
+
+  it("imagensSecundarias: cada item ganha a chave storage_url (snake_case), presente ou null", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {
+      imagensSecundarias: [
+        { ...imagemSecundariaBase, slug: "com-storage", storageUrl: "https://storage.exemplo.com/com-storage.png" },
+        { ...imagemSecundariaBase, slug: "sem-storage", storageUrl: null },
+      ],
+    });
+
+    const chamada = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as { imagens_secundarias: Record<string, unknown>[] };
+    expect(chamada.imagens_secundarias).toEqual([
+      expect.objectContaining({ slug: "com-storage", storage_url: "https://storage.exemplo.com/com-storage.png" }),
+      expect.objectContaining({ slug: "sem-storage", storage_url: null }),
+    ]);
+  });
 });
 
 describe("reabrirPauta", () => {
@@ -884,6 +1390,69 @@ describe("listarPostsPublicados", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(listarPostsPublicados()).rejects.toThrow(/Falha ao listar posts publicados.*erro de teste/);
+  });
+});
+
+// Fase 4a, Task 3 (19/08/2026) — resolve o TODO deixado pela Task 2 (revisor.test.ts/
+// processar-pauta.ts): título + ângulo dos posts publicados recentes desta propriedade, pro
+// Revisor julgar originalidade_adequada (spec seção 3.1, "Contexto novo no prompt do Revisor").
+// Função dedicada (não extensão de listarPostsPublicados, que serve a tela de admin e não carrega
+// ângulo, campo que vive em `pautas`) — ver decisão registrada no relatório desta task.
+describe("carregarPostsRecentes", () => {
+  it("mapeia titulo/angulo via embed com pautas, mais recentes primeiro", async () => {
+    const builder = criarQueryFalsa({
+      data: [
+        { titulo: "Como Limpar o Nome", pautas: { angulo: "passo_a_passo" } },
+        { titulo: "Score de Crédito Explicado", pautas: { angulo: "mitos_e_verdades" } },
+      ],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const posts = await carregarPostsRecentes("prop-1", 10);
+
+    expect(posts).toEqual([
+      { titulo: "Como Limpar o Nome", angulo: "passo_a_passo" },
+      { titulo: "Score de Crédito Explicado", angulo: "mitos_e_verdades" },
+    ]);
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+    expect(builder.eq).toHaveBeenCalledWith("status", "publicado");
+    expect(builder.order).toHaveBeenCalledWith("publicado_em", { ascending: false });
+  });
+
+  it("respeita o parâmetro limite", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await carregarPostsRecentes("prop-1", 5);
+
+    expect(builder.limit).toHaveBeenCalledWith(5);
+  });
+
+  it("retorna array vazio quando a propriedade não tem posts publicados ainda (não lança)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    await expect(carregarPostsRecentes("prop-1", 10)).resolves.toEqual([]);
+  });
+
+  it("retorna array vazio quando data vem null", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    await expect(carregarPostsRecentes("prop-1", 10)).resolves.toEqual([]);
+  });
+
+  it("é defensivo quando o embed de pauta vem vazio/nulo (angulo cai pra string vazia, não quebra)", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ titulo: "Post Órfão", pautas: null }], error: null }));
+
+    const [post] = await carregarPostsRecentes("prop-1", 10);
+
+    expect(post).toEqual({ titulo: "Post Órfão", angulo: "" });
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPostsRecentes("prop-1", 10)).rejects.toThrow(/Falha ao carregar posts recentes da propriedade prop-1.*erro de teste/);
   });
 });
 
@@ -998,6 +1567,56 @@ describe("registrarEtapa", () => {
     const payload = (builderUpdate.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty("detalhes");
   });
+
+  // Custo em USD (19/08/2026, pedido do Luiz) — antes desta mudança o custo real de chamadas de
+  // IA (Anthropic via tokens, OpenAI via custo direto) era calculado em alguns lugares (ex.:
+  // gerador-imagem-openai.ts) mas nunca persistido, se perdia depois de calculado. Preço de
+  // claude-sonnet-5 usado no cálculo: $2/milhão tokens entrada, $10/milhão tokens saída.
+  it("calcula e persiste custo_usd a partir dos tokens quando um extrator de tokens é passado (sem custo adicional)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    // 1.000.000 tokens de entrada ($2) + 500.000 de saída ($5) = $7.
+    await registrarEtapa(
+      "pauta-1",
+      "gerar_conteudo",
+      async () => ({ usage: { inputTokens: 1_000_000, outputTokens: 500_000 } }),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+    );
+
+    expect(builderUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ custo_usd: 7 }));
+  });
+
+  it("soma custo adicional (ex.: OpenAI) ao custo de tokens quando extrairCustoAdicionalUsd é passado", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    // Tokens: 500.000 entrada ($1) + 100.000 saída ($1) = $2. Mais custo direto de imagem: $0.082
+    // (2 gerações OpenAI). Total esperado: $2.082.
+    await registrarEtapa(
+      "pauta-1",
+      "gerar_imagens",
+      async () => ({ usage: { inputTokens: 500_000, outputTokens: 100_000 }, custoUsdOpenAi: 0.082 }),
+      (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+      undefined,
+      (r) => r.custoUsdOpenAi,
+    );
+
+    expect(builderUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ custo_usd: 2.082 }));
+  });
+
+  it("não grava custo_usd quando nem tokens nem custo adicional são fornecidos (etapas sem custo de IA, ex.: sanitizar)", async () => {
+    const builderInsercao = criarQueryFalsa({ data: { id: "log-1" }, error: null });
+    const builderUpdate = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builderInsercao, builderUpdate);
+
+    await registrarEtapa("pauta-1", "sanitizar", async () => "<h1>...</h1>");
+
+    const payload = (builderUpdate.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("custo_usd");
+  });
 });
 
 describe("carregarResumoVisaoGeral", () => {
@@ -1055,151 +1674,151 @@ describe("carregarResumoVisaoGeral", () => {
 // Task 13 (Monitor de execução, Realtime) — carga inicial dos 3 blocos + estimativa de progresso.
 // ---------------------------------------------------------------------------
 
-describe("listarEtapasEmAndamento", () => {
-  it("mapeia etapas sem concluido_em, resolvendo o nome da pauta via embed", async () => {
-    const builder = criarQueryFalsa({
+describe("listarPautasEmAndamento", () => {
+  // Redesenho de 19/08/2026 (pedido do Luiz): 1 card por PAUTA, não mais por linha de log —
+  // função agora faz 2 queries (pautas, depois pautas_execucao_log) e agrupa em memória.
+
+  it("agrupa etapas por pauta, ordenadas cronologicamente", async () => {
+    const builderPautas = criarQueryFalsa({
+      data: [{ id: "pauta-1", palavra_chave_principal: "limpar nome", tentativas: 1 }],
+      error: null,
+    });
+    const builderLogs = criarQueryFalsa({
       data: [
-        {
-          id: "log-1",
-          pauta_id: "pauta-1",
-          etapa: "gerar_conteudo",
-          iniciado_em: "2026-08-18T10:00:00Z",
-          pautas: { palavra_chave_principal: "limpar nome", status: "em_producao" },
-        },
+        { id: "log-1", pauta_id: "pauta-1", etapa: "buscar_checklist", iniciado_em: "2026-08-18T10:00:00Z", concluido_em: "2026-08-18T10:00:01Z", sucesso: true, detalhes: null },
+        { id: "log-2", pauta_id: "pauta-1", etapa: "gerar_conteudo", iniciado_em: "2026-08-18T10:00:01Z", concluido_em: null, sucesso: null, detalhes: null },
       ],
       error: null,
     });
-    mockarFrom(builder);
+    mockarFrom(builderPautas, builderLogs);
 
-    const etapas = await listarEtapasEmAndamento();
+    const pautas = await listarPautasEmAndamento();
 
-    expect(etapas).toEqual([
+    expect(pautas).toEqual([
       {
-        id: "log-1",
         pautaId: "pauta-1",
         palavraChavePrincipal: "limpar nome",
-        etapa: "gerar_conteudo",
-        iniciadoEm: "2026-08-18T10:00:00Z",
+        tentativas: 1,
+        etapas: [
+          { id: "log-1", etapa: "buscar_checklist", iniciadoEm: "2026-08-18T10:00:00Z", concluidoEm: "2026-08-18T10:00:01Z", sucesso: true, detalhes: null },
+          { id: "log-2", etapa: "gerar_conteudo", iniciadoEm: "2026-08-18T10:00:01Z", concluidoEm: null, sucesso: null, detalhes: null },
+        ],
       },
     ]);
   });
 
-  // As duas asserções protegem a mesma lógica indissociável do embed inner join (mesma lição do
-  // Task 3 sobre listarPautasPorStatus): filtrar por `pautas.status` só é válido no PostgREST se
-  // `pautas!inner(...)` também estiver no select — checar só o `.eq()` não pegaria alguém removendo
-  // o embed do `select()` por engano.
-  it("filtra por concluido_em nulo e pautas.status = em_producao via inner join", async () => {
-    const builder = criarQueryFalsa({ data: [], error: null });
-    mockarFrom(builder);
+  it("filtra pautas por status em_producao OU (pendente com tentativas > 0)", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas);
 
-    await listarEtapasEmAndamento();
+    await listarPautasEmAndamento();
 
-    expect(builder.select).toHaveBeenCalledWith(expect.stringContaining("pautas!inner(palavra_chave_principal, status)"));
-    expect(builder.is).toHaveBeenCalledWith("concluido_em", null);
-    expect(builder.eq).toHaveBeenCalledWith("pautas.status", "em_producao");
+    expect(builderPautas.or).toHaveBeenCalledWith("status.eq.em_producao,and(status.eq.pendente,tentativas.gt.0)");
   });
 
-  it("usa um rótulo de fallback quando o embed de pauta vem vazio (defensivo)", async () => {
-    mockarFrom(
-      criarQueryFalsa({
-        data: [{ id: "log-1", pauta_id: "pauta-1", etapa: "revisar", iniciado_em: "2026-08-18T10:00:00Z", pautas: null }],
-        error: null,
-      }),
-    );
+  it("retorna lista vazia sem consultar o log quando não há pauta em andamento (evita query com .in([]))", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    const from = mockarFrom(builderPautas);
 
-    const [etapa] = await listarEtapasEmAndamento();
-
-    expect(etapa.palavraChavePrincipal).toBe("(pauta desconhecida)");
+    expect(await listarPautasEmAndamento()).toEqual([]);
+    expect(from).toHaveBeenCalledTimes(1);
   });
 
-  it("retorna lista vazia quando não há etapas em andamento", async () => {
-    mockarFrom(criarQueryFalsa({ data: [], error: null }));
-
-    expect(await listarEtapasEmAndamento()).toEqual([]);
-  });
-
-  it("lança erro claro quando a query falha", async () => {
+  it("lança erro claro quando a query de pautas falha", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
-    await expect(listarEtapasEmAndamento()).rejects.toThrow(/Falha ao listar etapas em andamento.*erro de teste/);
+    await expect(listarPautasEmAndamento()).rejects.toThrow(/Falha ao listar pautas em andamento.*erro de teste/);
+  });
+
+  it("lança erro claro quando a query de log falha", async () => {
+    const builderPautas = criarQueryFalsa({ data: [{ id: "pauta-1", palavra_chave_principal: "x", tentativas: 0 }], error: null });
+    const builderLogs = criarQueryFalsa({ data: null, error: erro });
+    mockarFrom(builderPautas, builderLogs);
+
+    await expect(listarPautasEmAndamento()).rejects.toThrow(/Falha ao listar etapas das pautas em andamento.*erro de teste/);
   });
 });
 
-describe("listarEtapasConcluidasRecentes", () => {
-  const linhaBruta = {
-    id: "log-2",
-    pauta_id: "pauta-2",
-    etapa: "publicar",
-    iniciado_em: "2026-08-18T09:00:00Z",
-    concluido_em: "2026-08-18T09:02:30Z",
-    sucesso: true,
-    detalhes: null,
-    pautas: { palavra_chave_principal: "score de crédito" },
-  };
+describe("listarPautasConcluidasRecentes", () => {
+  it("agrupa etapas por pauta concluída, incluindo status/motivo/concluidoEm", async () => {
+    const builderPautas = criarQueryFalsa({
+      data: [{ id: "pauta-2", palavra_chave_principal: "score de crédito", status: "publicado", motivo_ultima_reprovacao: null, atualizado_em: "2026-08-18T09:02:30Z" }],
+      error: null,
+    });
+    const builderLogs = criarQueryFalsa({
+      data: [{ id: "log-2", pauta_id: "pauta-2", etapa: "publicar", iniciado_em: "2026-08-18T09:00:00Z", concluido_em: "2026-08-18T09:02:30Z", sucesso: true, detalhes: null }],
+      error: null,
+    });
+    mockarFrom(builderPautas, builderLogs);
 
-  it("mapeia etapas concluídas com sucesso/detalhes/nome da pauta", async () => {
-    mockarFrom(criarQueryFalsa({ data: [linhaBruta], error: null }));
+    const pautas = await listarPautasConcluidasRecentes();
 
-    const etapas = await listarEtapasConcluidasRecentes();
-
-    expect(etapas).toEqual([
+    expect(pautas).toEqual([
       {
-        id: "log-2",
         pautaId: "pauta-2",
         palavraChavePrincipal: "score de crédito",
-        etapa: "publicar",
-        iniciadoEm: "2026-08-18T09:00:00Z",
+        status: "publicado",
+        motivoUltimaReprovacao: null,
         concluidoEm: "2026-08-18T09:02:30Z",
-        sucesso: true,
-        detalhes: null,
+        etapas: [{ id: "log-2", etapa: "publicar", iniciadoEm: "2026-08-18T09:00:00Z", concluidoEm: "2026-08-18T09:02:30Z", sucesso: true, detalhes: null }],
       },
     ]);
   });
 
-  it("filtra concluido_em não nulo, ordena desc e usa o limite default de 20", async () => {
-    const builder = criarQueryFalsa({ data: [], error: null });
-    mockarFrom(builder);
+  it("filtra status IN (publicado, bloqueada, rejeitado), ordena por atualizado_em desc e usa o limite default de 20", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas);
 
-    await listarEtapasConcluidasRecentes();
+    await listarPautasConcluidasRecentes();
 
-    expect(builder.not).toHaveBeenCalledWith("concluido_em", "is", null);
-    expect(builder.order).toHaveBeenCalledWith("concluido_em", { ascending: false });
-    expect(builder.limit).toHaveBeenCalledWith(20);
+    expect(builderPautas.in).toHaveBeenCalledWith("status", ["publicado", "bloqueada", "rejeitado"]);
+    expect(builderPautas.order).toHaveBeenCalledWith("atualizado_em", { ascending: false });
+    expect(builderPautas.limit).toHaveBeenCalledWith(20);
   });
 
   it("respeita um limite customizado", async () => {
-    const builder = criarQueryFalsa({ data: [], error: null });
-    mockarFrom(builder);
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas);
 
-    await listarEtapasConcluidasRecentes(5);
+    await listarPautasConcluidasRecentes(5);
 
-    expect(builder.limit).toHaveBeenCalledWith(5);
+    expect(builderPautas.limit).toHaveBeenCalledWith(5);
   });
 
-  it("mapeia sucesso false e detalhes preenchidos (etapa que falhou)", async () => {
-    mockarFrom(
-      criarQueryFalsa({
-        data: [{ ...linhaBruta, sucesso: false, detalhes: "Timeout ao publicar no WordPress." }],
-        error: null,
-      }),
-    );
+  it("mapeia motivo de reprovação de uma pauta bloqueada", async () => {
+    const builderPautas = criarQueryFalsa({
+      data: [{ id: "pauta-3", palavra_chave_principal: "y", status: "bloqueada", motivo_ultima_reprovacao: "Limite de tentativas esgotado.", atualizado_em: "2026-08-18T09:00:00Z" }],
+      error: null,
+    });
+    const builderLogs = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builderPautas, builderLogs);
 
-    const [etapa] = await listarEtapasConcluidasRecentes();
+    const [pauta] = await listarPautasConcluidasRecentes();
 
-    expect(etapa.sucesso).toBe(false);
-    expect(etapa.detalhes).toBe("Timeout ao publicar no WordPress.");
+    expect(pauta.status).toBe("bloqueada");
+    expect(pauta.motivoUltimaReprovacao).toBe("Limite de tentativas esgotado.");
   });
 
-  it("retorna lista vazia quando não há etapas concluídas (tabela ainda vazia, migration pendente)", async () => {
-    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+  it("retorna lista vazia sem consultar o log quando não há pauta concluída", async () => {
+    const builderPautas = criarQueryFalsa({ data: [], error: null });
+    const from = mockarFrom(builderPautas);
 
-    expect(await listarEtapasConcluidasRecentes()).toEqual([]);
+    expect(await listarPautasConcluidasRecentes()).toEqual([]);
+    expect(from).toHaveBeenCalledTimes(1);
   });
 
-  it("lança erro claro quando a query falha", async () => {
+  it("lança erro claro quando a query de pautas falha", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
-    await expect(listarEtapasConcluidasRecentes()).rejects.toThrow(/Falha ao listar etapas concluídas recentes.*erro de teste/);
+    await expect(listarPautasConcluidasRecentes()).rejects.toThrow(/Falha ao listar pautas concluídas recentes.*erro de teste/);
+  });
+
+  it("lança erro claro quando a query de log falha", async () => {
+    const builderPautas = criarQueryFalsa({ data: [{ id: "pauta-1", palavra_chave_principal: "x", status: "publicado", motivo_ultima_reprovacao: null, atualizado_em: "2026-08-18T09:00:00Z" }], error: null });
+    const builderLogs = criarQueryFalsa({ data: null, error: erro });
+    mockarFrom(builderPautas, builderLogs);
+
+    await expect(listarPautasConcluidasRecentes()).rejects.toThrow(/Falha ao listar etapas das pautas concluídas.*erro de teste/);
   });
 });
 
@@ -1258,5 +1877,316 @@ describe("carregarDuracaoMediaPorEtapa", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(carregarDuracaoMediaPorEtapa()).rejects.toThrow(/Falha ao carregar duração média por etapa.*erro de teste/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fase 3 (personas ricas) — Task 2. Ver
+// docs/superpowers/specs/2026-08-18-personas-ricas-geracao-por-persona-design.md seções 3 e 5.
+// ---------------------------------------------------------------------------
+
+describe("listarPersonasAtivasComAngulosDisponiveis", () => {
+  // Caso exato do worked example da spec seção 5 / brief da Task 2, Step 2: persona com
+  // angulos_prontos ["A","B","C"] e uma pauta já registrada com angulo "B" pra essa persona deve
+  // devolver angulosProntos ["A","C"] — subtração de conjunto, não é uma query "distinct" simples.
+  it("subtrai os ângulos já usados dos angulos_prontos da persona (worked example da spec)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          {
+            id: "persona-1",
+            nome: "Marcelo Andrade",
+            dor_entrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
+            angulos_prontos: ["A", "B", "C"],
+          },
+        ],
+        error: null,
+      }),
+      criarQueryFalsa({
+        data: [{ persona_id: "persona-1", angulo: "B", created_at: "2026-08-18T10:00:00Z" }],
+        error: null,
+      }),
+    );
+
+    const personas = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(personas).toEqual([
+      {
+        id: "persona-1",
+        nome: "Marcelo Andrade",
+        dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
+        angulosProntos: ["A", "C"],
+        usadaPelaUltimaVezEm: "2026-08-18T10:00:00Z",
+      },
+    ]);
+  });
+
+  // Step 3 do brief: todos os ângulos prontos esgotados não é erro — é o sinal que a Task 4
+  // (Estrategista) usa pra decidir ir pro fallback de IA (Gerador de Ângulo).
+  it("retorna angulosProntos vazio quando todos os ângulos da persona já foram usados (sinal de esgotamento, não erro)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A"] }],
+        error: null,
+      }),
+      criarQueryFalsa({
+        data: [{ persona_id: "persona-1", angulo: "A", created_at: "2026-08-18T10:00:00Z" }],
+        error: null,
+      }),
+    );
+
+    const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(persona.angulosProntos).toEqual([]);
+  });
+
+  it("usadaPelaUltimaVezEm é null quando a persona nunca foi usada em nenhuma pauta", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A", "B"] }], error: null }),
+      criarQueryFalsa({ data: [], error: null }),
+    );
+
+    const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(persona.usadaPelaUltimaVezEm).toBeNull();
+    expect(persona.angulosProntos).toEqual(["A", "B"]);
+  });
+
+  it("usadaPelaUltimaVezEm é o created_at MAIS RECENTE entre as pautas da persona", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: [] }], error: null }),
+      criarQueryFalsa({
+        data: [
+          { persona_id: "persona-1", angulo: "A", created_at: "2026-08-01T10:00:00Z" },
+          { persona_id: "persona-1", angulo: "B", created_at: "2026-08-18T10:00:00Z" },
+          { persona_id: "persona-1", angulo: "C", created_at: "2026-08-10T10:00:00Z" },
+        ],
+        error: null,
+      }),
+    );
+
+    const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(persona.usadaPelaUltimaVezEm).toBe("2026-08-18T10:00:00Z");
+  });
+
+  it("filtra por propriedade_id e ativo = true", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+    expect(builder.eq).toHaveBeenCalledWith("ativo", true);
+  });
+
+  it("retorna lista vazia sem consultar pautas quando a propriedade não tem persona ativa", async () => {
+    const from = mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    const personas = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
+
+    expect(personas).toEqual([]);
+    expect(from).toHaveBeenCalledTimes(1); // não bate em "pautas" sem nenhuma persona pra buscar
+  });
+
+  it("lança erro claro quando a query de personas falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(listarPersonasAtivasComAngulosDisponiveis("prop-1")).rejects.toThrow(
+      /Falha ao listar personas ativas da propriedade prop-1.*erro de teste/,
+    );
+  });
+
+  it("lança erro claro quando a query de pautas (pra calcular ângulos usados) falha", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A"] }], error: null }),
+      criarQueryFalsa({ data: null, error: erro }),
+    );
+
+    await expect(listarPersonasAtivasComAngulosDisponiveis("prop-1")).rejects.toThrow(
+      /Falha ao carregar pautas das personas da propriedade prop-1.*erro de teste/,
+    );
+  });
+});
+
+describe("carregarPersona", () => {
+  it("carrega a persona completa, com conteudoCompleto mapeado", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "persona-1",
+          nome: "Marcelo Andrade",
+          dor_entrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
+          angulos_prontos: ["A", "B"],
+          conteudo_completo: "## Bloco 1 — Ficha rápida\n...",
+        },
+        error: null,
+      }),
+    );
+
+    const persona = await carregarPersona("persona-1");
+
+    expect(persona).toEqual({
+      id: "persona-1",
+      nome: "Marcelo Andrade",
+      dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
+      angulosProntos: ["A", "B"],
+      usadaPelaUltimaVezEm: null,
+      conteudoCompleto: "## Bloco 1 — Ficha rápida\n...",
+    });
+  });
+
+  it("lança erro claro quando a persona não é encontrada", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    await expect(carregarPersona("persona-x")).rejects.toThrow(/Falha ao carregar persona persona-x/);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPersona("persona-1")).rejects.toThrow(/Falha ao carregar persona persona-1.*erro de teste/);
+  });
+});
+
+describe("carregarAngulosUsadosPorPersona", () => {
+  it("lista os ângulos distintos já registrados em pautas pra essa persona", async () => {
+    const builder = criarQueryFalsa({
+      data: [
+        { angulo: "A citação de medo" },
+        { angulo: "B citação de urgência" },
+        { angulo: "A citação de medo" }, // repetido — dedup
+      ],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const angulos = await carregarAngulosUsadosPorPersona("persona-1");
+
+    expect(angulos).toEqual(["A citação de medo", "B citação de urgência"]);
+    expect(builder.eq).toHaveBeenCalledWith("persona_id", "persona-1");
+  });
+
+  it("retorna lista vazia quando a persona nunca foi usada", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await carregarAngulosUsadosPorPersona("persona-1")).toEqual([]);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarAngulosUsadosPorPersona("persona-1")).rejects.toThrow(
+      /Falha ao carregar ângulos usados pela persona persona-1.*erro de teste/,
+    );
+  });
+});
+
+describe("criarPautaDePersona", () => {
+  const paramsBase = {
+    matrizConteudoId: "matriz-1",
+    personaId: "persona-1",
+    angulo: "\"Eles disseram que era golpe. Eu disse: 'vamos ver.'\"",
+    palavraChavePrincipal: "limpar nome negativado",
+    palavrasSecundarias: ["score de crédito", "SPC Serasa"],
+    funil: "topo" as const,
+    tipoConteudo: "post_storytelling" as const,
+  };
+
+  // Step 4 do brief: a pauta nasce DIRETO em em_producao, não pendente — não existe "esperar na
+  // fila" neste caminho (o Estrategista já decidiu produzir agora).
+  it("cria a pauta já com status em_producao (não pendente)", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: ["score de crédito", "SPC Serasa"],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const pauta = await criarPautaDePersona(paramsBase);
+
+    expect(pauta.status).toBe("em_producao");
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        matriz_conteudo_id: "matriz-1",
+        persona_id: "persona-1",
+        angulo: paramsBase.angulo,
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: ["score de crédito", "SPC Serasa"],
+        funil: "topo",
+        tipo_conteudo: "post_storytelling",
+        geografia: null,
+        status: "em_producao",
+      }),
+    );
+  });
+
+  // Spec seção 9, Pendências: personas não têm campo estruturado de geografia — geografia fica
+  // sempre null nas pautas geradas por persona.
+  it("grava geografia como null (decisão explícita da spec — personas não têm geografia estruturada)", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: [],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    await criarPautaDePersona(paramsBase);
+
+    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ geografia: null }));
+  });
+
+  // prioridade_score não é passado no payload — usa o default da coluna (0), igual a toda pauta.
+  it("não envia prioridade_score no payload de insert (usa o default da coluna)", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: [],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    await criarPautaDePersona(paramsBase);
+
+    const payload = (builder.insert as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("prioridade_score");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(criarPautaDePersona(paramsBase)).rejects.toThrow(/Falha ao criar pauta a partir da persona persona-1.*erro de teste/);
   });
 });

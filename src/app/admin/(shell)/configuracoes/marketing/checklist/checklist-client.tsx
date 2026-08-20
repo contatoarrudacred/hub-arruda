@@ -13,6 +13,7 @@ type Rascunho = {
   item: string;
   peso: string;
   ativo: boolean;
+  itemParaRevisor: string;
 };
 
 function paraRascunho(i: ItemChecklistAdmin | null, propriedadeIdPadrao: string): Rascunho {
@@ -22,6 +23,7 @@ function paraRascunho(i: ItemChecklistAdmin | null, propriedadeIdPadrao: string)
     item: i?.item ?? "",
     peso: i ? String(i.peso) : "1",
     ativo: i?.ativo ?? true,
+    itemParaRevisor: i?.itemParaRevisor ?? "",
   };
 }
 
@@ -157,6 +159,7 @@ function CardItem({
       item: r.item,
       peso: Number(r.peso),
       ativo: r.ativo,
+      itemParaRevisor: r.itemParaRevisor.trim() || null,
     });
     setSalvando(false);
 
@@ -201,6 +204,20 @@ function CardItem({
               value={r.item}
               onChange={(e) => setR({ ...r, item: e.target.value })}
               placeholder="ex.: Tem CTA claro no final do texto?"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className={rotulo}>
+              Texto alternativo pro Revisor (opcional)
+              <Ajuda texto="Deixe em branco pra usar o mesmo texto acima nos dois. Preencha quando quiser que o Revisor aceite algo mais tolerante que o alvo pedido ao Escritor — ex.: Escritor mira 'resposta de 40-60 palavras', Revisor aceita '20-80 palavras'. Útil pra faixas numéricas estreitas, que são difíceis de acertar com precisão em todas as seções de um artigo." />
+            </label>
+            <textarea
+              className={campo}
+              rows={2}
+              value={r.itemParaRevisor}
+              onChange={(e) => setR({ ...r, itemParaRevisor: e.target.value })}
+              placeholder="ex.: Resposta direta e extraível (20-80 palavras) logo abaixo de cada H2 — deixe em branco para usar o mesmo texto do item acima"
             />
           </div>
 
