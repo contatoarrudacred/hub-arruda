@@ -68,6 +68,18 @@ const FERRAMENTA_REVISOR = {
   },
 };
 
+// Ferramenta de busca na internet nativa da Anthropic (19/08/2026, pedido do Luiz) — mesma
+// ferramenta já disponível pro Escritor (escritor.ts): o Revisor tem sido pego de surpresa
+// julgando precisão factual/fontes sem poder checar nada de verdade (achado real: aprovou uma
+// citação inventada da "Súmula 548 do STJ" numa rodada por não ter como confirmar o que a súmula
+// realmente diz). Deixa a ferramenta à disposição pra quando o Revisor tiver dúvida real — não é
+// obrigatório usar em toda revisão, só quando uma afirmação específica precisa de confirmação.
+const FERRAMENTA_BUSCA_WEB = {
+  type: "web_search_20250305" as const,
+  name: "web_search" as const,
+  max_uses: 6,
+};
+
 /** Texto de instrução interpolado no prompt a partir de `propriedade.rigorYmyl` — spec seção
  * 3.1.1: "alto" pesa nichos YMYL (financeiro/jurídico/saúde, caso da ArrudaCred), "baixo" é pra
  * nicho de baixo risco, "desativado" mantém o campo preenchido honestamente mas sinaliza que o
@@ -103,6 +115,7 @@ function montarPrompt(
   checklist: ItemChecklistCarregado[],
   propriedade: PropriedadeCarregada,
   postsRecentes: PostRecenteResumo[],
+  numeroTentativa: number,
 ): string {
   // Calibração dupla Escritor/Revisor (Fase 4b, 19/08/2026, pedido do Luiz) — itemParaRevisor,
   // quando preenchido, substitui o texto que o Revisor vê pra este item (ex.: Escritor mira
@@ -110,6 +123,12 @@ function montarPrompt(
   // Escritor (comportamento padrão, idêntico a antes desta calibração existir).
   const linhasChecklist = checklist.map((c) => `- (peso ${c.peso}) ${c.itemParaRevisor ?? c.item}`).join("\n");
   const contagemPalavras = contarPalavrasCorpo(conteudo.conteudoHtml);
+  // Data atual REAL (achado real de teste em produção, 19/08/2026, apontado pelo Luiz): sem isto,
+  // o modelo não tem como saber com segurança "que dia é hoje" e pode julgar uma data válida (ex.:
+  // "fevereiro de 2026", já passada) como "data futura" e reprovar precisao_factual_adequada por
+  // um motivo que não existe — visto na prática. Mesmo princípio de contarPalavrasCorpo: um fato
+  // que o código sabe com exatidão não deve ser deixado pro modelo "lembrar" ou inferir sozinho.
+  const dataAtual = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const scoreMinimo = propriedade.scoreMinimoAprovacao ?? SCORE_MINIMO_APROVACAO_PADRAO;
   const textoRigor = TEXTOS_RIGOR_YMYL[propriedade.rigorYmyl ?? "medio"];
   const linhasPostsRecentes = postsRecentes.length
@@ -127,13 +146,34 @@ function montarPrompt(
     // ninguém tinha avisado. Instrução explícita pra evitar reprovação "em fatias".
     "Revisão sistemática obrigatória: percorra o CHECKLIST INTEIRO, item por item, contra o TEXTO COMPLETO do rascunho (do título ao final do FAQ) antes de decidir o resultado — não pare no primeiro problema encontrado nem generalize a partir de uma amostra. Se o rascunho for reprovado, o motivo precisa listar TODOS os problemas reais encontrados nesta passada completa, não só os 1-2 primeiros — o objetivo é que o Escritor consiga corrigir tudo de uma vez na próxima tentativa, em vez de descobrir um problema novo a cada rodada.",
     "",
+    // Regra dura pedida pelo Luiz (19/08/2026), achado real de teste em produção: o Revisor
+    // convergia bem nos problemas grandes, mas a cada rodada de correção passava a reprovar por um
+    // detalhe cada vez menor (1 link a mais do que o número exato pedido, um link repetido que
+    // ainda assim é específico, uma seção de CTA que tecnicamente não é uma pergunta) — nenhum
+    // desses é um defeito de verdade, mas cada reprovação consome uma tentativa inteira (e o custo
+    // real de tokens de uma rodada completa Escritor+Revisor). Regra explícita de triagem entre
+    // "defeito real" e "poderia melhorar", pra parar de reprovar por coisas que não deveriam
+    // reprovar.
+    'Reprovação só por motivo real: para cada item do checklist e para cada gate (precisão factual, fontes específicas, originalidade), classifique o que encontrar em duas categorias — (a) DEFEITO REAL: compromete a credibilidade, a precisão factual, ou deixa de cumprir de verdade o que o item exige (ex.: um dado inventado, uma fonte que não sustenta a afirmação que ela deveria sustentar, a extensão mínima não atingida, um H1 sem a palavra-chave); (b) PODE MELHORAR: uma nuance estilística ou um detalhe menor que não compromete o objetivo do item (ex.: 1 link a mais ou a menos do que o número exato pedido quando a cobertura de fontes já está adequada, um link específico repetido mais de uma vez, uma seção de CTA que não segue o padrão de resposta-direta por não ser uma pergunta). Só REPROVE (score abaixo do mínimo, ou qualquer um dos três gates booleanos como false) por itens do tipo (a). Itens do tipo (b) devem ser citados no motivo como sugestão de melhoria — útil pro Escritor considerar numa próxima geração do zero — mas NÃO devem, sozinhos, reprovar o rascunho; o score também precisa refletir essa distinção (pequenas melhorias possíveis não derrubam o score sozinhas abaixo do mínimo).',
+    numeroTentativa > 1
+      ? `Esta é a ${numeroTentativa}ª revisão desta pauta — já houve pelo menos uma correção anterior. Aplique a regra acima com atenção redobrada: aprove assim que os únicos problemas remanescentes forem do tipo "pode melhorar" (nenhum defeito real). Insistir em reprovar por causa de itens que não são defeitos de verdade só consome mais uma rodada inteira de tokens sem melhorar o que realmente importa no post.`
+      : "",
+    "",
     `Contagem REAL de palavras do corpo do artigo (calculada programaticamente, não estime por conta própria): ${contagemPalavras} palavras. Use este número exato para avaliar qualquer item do checklist sobre extensão mínima/máxima — não tente contar ou estimar visualmente, o número acima já é preciso.`,
+    "",
+    `Data de hoje (real, calculada pelo sistema — não estime nem assuma outra data): ${dataAtual}. Use esta data como referência pra julgar se qualquer data/período/estatística citada no rascunho é passado, presente ou futuro. Uma data anterior a hoje NÃO é "futura" só porque parece recente — confira contra a data real acima antes de reprovar algo por esse motivo (achado real de teste em produção: o Revisor já reprovou por engano tratando uma data passada como "impossível/futura").`,
     "",
     `Score mínimo para aprovação: ${scoreMinimo}/100.`,
     "",
     textoRigor,
     "",
     "Fontes específicas: reprove fontes_especificas se alguma fonte citada no rascunho apontar pra homepage genérica de um site em vez de uma página ou documento específico (ex.: citar \"gov.br\" solto em vez do link direto pra norma/página que sustenta a afirmação).",
+    "",
+    // Achado real de teste em produção (19/08/2026, pedido do Luiz): o Revisor já aprovou uma
+    // citação jurídica inventada ("Súmula 548 do STJ" atribuída a um prazo que ela não trata) por
+    // não ter como confirmar de verdade o que a fonte citada realmente diz — só julgava por
+    // plausibilidade textual. web_search agora disponível fecha esse gap na origem.
+    "Verificação por busca (use quando tiver dúvida real, não é obrigatório em toda revisão): você tem acesso à ferramenta web_search. Use-a sempre que precisar CONFIRMAR de verdade uma afirmação específica antes de aprovar ou reprovar por causa dela — por exemplo: confirmar que uma súmula/lei/resolução citada realmente trata do assunto atribuído a ela (não assuma pela numeração ou pelo nome que parece plausível); confirmar que um dado numérico/estatística citado bate com uma fonte oficial real; ou confirmar que a página de um link realmente sustenta a afirmação específica do parágrafo onde ele aparece (não só que o domínio é oficial). Não reprove por 'parece inventado' quando dá pra simplesmente checar — e não aprove uma citação duvidosa só porque soa plausível.",
     "",
     "Originalidade: compare o rascunho abaixo com os posts já publicados desta propriedade (títulos e ângulos listados a seguir). Se, removendo a persona e trocando a palavra-chave principal, o rascunho for essencialmente o mesmo conteúdo de um post já publicado, reprove originalidade_adequada.",
     "Posts recentes já publicados desta propriedade:",
@@ -147,7 +187,7 @@ function montarPrompt(
     `Meta description: ${conteudo.metaDescription}`,
     `Conteúdo HTML:\n"""\n${conteudo.conteudoHtml}\n"""`,
     "",
-    "Use a ferramenta para registrar o resultado. Se o rascunho for reprovado (score abaixo do mínimo OU algum dos três campos booleanos for false), o campo motivo é obrigatório e precisa conter, pra CADA problema real encontrado na revisão completa (não só o primeiro), tanto o diagnóstico específico (o que exatamente falhou) quanto uma sugestão concreta do que corrigir — não basta apontar o problema, aponte a correção. O texto será lido tanto por um Escritor automático quanto por um humano revisando manualmente.",
+    "Use a ferramenta para registrar o resultado. Se o rascunho for reprovado (score abaixo do mínimo OU algum dos três campos booleanos for false), o campo motivo é obrigatório e precisa conter, pra CADA problema real encontrado na revisão completa (não só o primeiro), tanto o diagnóstico específico (o que exatamente falhou) quanto uma sugestão concreta do que corrigir — não basta apontar o problema, aponte a correção. O texto será lido tanto por um Escritor automático quanto por um humano revisando manualmente. Depois de pesquisar o que for necessário (se for o caso), você DEVE terminar chamando a ferramenta registrar_revisao com o resultado final — nunca finalize a resposta só com texto.",
   ].join("\n");
 }
 
@@ -187,9 +227,12 @@ export async function revisarConteudo(
   checklist: ItemChecklistCarregado[],
   propriedade: PropriedadeCarregada,
   postsRecentes: PostRecenteResumo[],
+  // numeroTentativa: 1 na primeira geração desta pauta, 2+ a partir da 1ª correção — pedido do
+  // Luiz (19/08/2026), ver "Reprovação só por motivo real" em montarPrompt.
+  numeroTentativa: number,
 ): Promise<{ resultado: ResultadoRevisao; usage: UsageTokens }> {
   const cliente = obterCliente();
-  const prompt = montarPrompt(conteudo, checklist, propriedade, postsRecentes);
+  const prompt = montarPrompt(conteudo, checklist, propriedade, postsRecentes, numeroTentativa);
 
   const resposta = await cliente.messages.create({
     model: MODELO_REVISOR,
@@ -201,14 +244,23 @@ export async function revisarConteudo(
     // idêntico: usage.outputTokens batendo EXATAMENTE no limite numa reprovação sem motivo nenhum
     // registrado — sinal de truncamento do tool_use, não de decisão do modelo. Margem generosa
     // desta vez porque o motivo tende a crescer, não encolher, à medida que o checklist ganha
-    // itens.
-    max_tokens: 4000,
-    tools: [FERRAMENTA_REVISOR],
-    tool_choice: { type: "tool", name: "registrar_revisao" },
+    // itens. 8000 (era 4000) porque resultados de web_search agora também entram na conta — mesmo
+    // raciocínio de escritor.ts, e mesmo teto real do SDK sem streaming (~21333, ver comentário em
+    // escritor.ts) que 8000 fica bem longe de encostar.
+    max_tokens: 8000,
+    tools: [FERRAMENTA_REVISOR, FERRAMENTA_BUSCA_WEB],
+    // tool_choice "auto" (não mais forçado em registrar_revisao) — pedido do Luiz, 19/08/2026:
+    // precisa deixar o modelo livre pra chamar web_search (0 ou mais vezes) ANTES de finalizar com
+    // registrar_revisao; forçar a ferramenta de saída de cara impediria qualquer busca.
+    tool_choice: { type: "auto" },
     messages: [{ role: "user", content: prompt }],
   });
 
-  const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+  // web_search (ferramenta SERVIDOR) aparece no content como blocos `server_tool_use` +
+  // `web_search_tool_result`, tipos distintos de `tool_use` — o find abaixo já ignora esses blocos
+  // sozinho (só bate com a invocação CLIENTE de registrar_revisao); `name` conferido também, por
+  // clareza e como trava extra caso mais ferramentas entrem no futuro (mesmo padrão de escritor.ts).
+  const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use" && b.name === "registrar_revisao");
   if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") {
     throw new Error("Revisor não retornou resultado estruturado.");
   }

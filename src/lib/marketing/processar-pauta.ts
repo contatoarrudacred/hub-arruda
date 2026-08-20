@@ -15,6 +15,7 @@ import { enviarImagemStorage } from "./imagens/armazenamento";
 import { gerarCapa } from "./imagens/capa";
 import { gerarImagensSecundarias, type ImagemSecundaria } from "./imagens/secundarias";
 import { inserirLinksInternos } from "./links";
+import { extrairLinksExternos, verificarLinksExternos } from "./links-externos";
 import { montarSchemaArticle, montarSchemaOrganization } from "./schema-estruturado";
 import { sanitizarConteudoHtml } from "./sanitizar-html";
 import {
@@ -216,6 +217,17 @@ function encontrarPosicaoInsercao(html: string, posicaoSugerida: string): number
   return melhorIndice >= 0 ? secoes[melhorIndice].fim : null;
 }
 
+// Achado real de teste em produção (19/08/2026, pedido do Luiz): a capa só era enviada ao
+// WordPress como `featured_media` (miniatura do post), nunca embutida no HTML do corpo — o tema
+// do site não renderiza o featured_media dentro da página do post, então a capa não aparecia em
+// lugar nenhum pro leitor. Embutida aqui como a PRIMEIRA tag do corpo (antes até do parágrafo de
+// introdução) — como o corpo não tem mais <h1> próprio (ver Regra estrutural de título/H1 em
+// escritor.ts), o resultado visual é: título (H1 automático do WordPress) → capa → introdução.
+function construirFiguraCapa(url: string | null, alt: string): string {
+  if (!url) return "";
+  return `<figure><img src="${url}" alt="${escaparAtributoHtml(alt)}"></figure>\n`;
+}
+
 function inserirImagensSecundariasNoHtml(html: string, imagens: ImagemSecundaria[]): string {
   return imagens.reduce((htmlAtual, imagem) => {
     const figura = `\n<figure><img src="${imagem.url}" alt="${escaparAtributoHtml(imagem.alt)}"><figcaption>${escaparAtributoHtml(imagem.legenda)}</figcaption></figure>\n`;
@@ -288,7 +300,8 @@ async function gerarEEmbutirImagens(
     );
     const schemaOrganization = montarSchemaOrganization({ nome: propriedade.nome, urlBase: propriedade.urlBase });
     const htmlComSecundarias = inserirImagensSecundariasNoHtml(corpoHtmlSanitizado, imagensExistentes.imagensSecundarias);
-    const corpoHtmlFinal = `${htmlComSecundarias}\n${schemaArticle}\n${schemaOrganization}`;
+    const capaEmbutida = construirFiguraCapa(imagensExistentes.imagemDestaqueUrl, imagensExistentes.imagemDestaqueAlt ?? conteudo.titulo);
+    const corpoHtmlFinal = `${capaEmbutida}${htmlComSecundarias}\n${schemaArticle}\n${schemaOrganization}`;
 
     return {
       corpoHtmlFinal,
@@ -394,7 +407,8 @@ async function gerarEEmbutirImagens(
     const schemaOrganization = montarSchemaOrganization({ nome: propriedade.nome, urlBase: propriedade.urlBase });
 
     const htmlComSecundarias = inserirImagensSecundariasNoHtml(corpoHtmlSanitizado, secundariasEmbutidas);
-    const corpoHtmlFinal = `${htmlComSecundarias}\n${schemaArticle}\n${schemaOrganization}`;
+    const capaEmbutida = construirFiguraCapa(capaUrlPublica, capa.resultado?.alt ?? conteudo.titulo);
+    const corpoHtmlFinal = `${capaEmbutida}${htmlComSecundarias}\n${schemaArticle}\n${schemaOrganization}`;
 
     // alt/slug só acompanham a URL quando o upload de fato teve sucesso (capaUrlPublica !== null)
     // — não basta gerarCapa ter produzido um resultado: se o upload falhou, persistir alt/slug sem
@@ -488,11 +502,15 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // desta task (ver escritor.ts).
       const persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
 
+      // extrairDetalhes: relatório do Escritor (19/08/2026, pedido do Luiz) — espelha o motivo do
+      // Revisor na etapa "revisar" logo abaixo, pra dar pra cruzar "o que foi pedido" com "o que o
+      // Escritor diz ter feito" no Monitor de execução.
       const { resultado: conteudo } = await registrarEtapa(
         pauta.id,
         "gerar_conteudo",
         () => gerarConteudo(pauta, checklist, persona, propriedade),
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+        (r) => r.resultado.relatorio,
       );
 
       // Salva o rascunho ANTES de saber se o Revisor vai aprovar (achado do teste real de ponta a
@@ -500,6 +518,43 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // (pauta.ultimoRascunho) e revisa em vez de reescrever do zero (ver montarPrompt, escritor.ts).
       // Fora do registrarEtapa de cima de propósito: não é parte do custo/tempo da geração em si.
       await salvarRascunho(pauta.id, conteudo);
+
+      // Verificação de links externos (19/08/2026, pedido do Luiz) — achado real de teste em
+      // produção: o Revisor gastava uma tentativa INTEIRA reprovando por "fonte específica" quando
+      // o link nem sequer existia (ex.: uma URL do BACEN saiu com o caminho duplicado,
+      // "supervisaosupervisao"). Confere com um request HTTP real ANTES de chegar no Revisor — só 1
+      // tentativa extra de correção (não um loop), pra manter custo/latência previsíveis; se
+      // continuar quebrado mesmo assim, segue pro Revisor do jeito que está (ele tende a pegar via
+      // fontes_especificas de qualquer forma — Global Constraint do plano mestre: esta etapa nunca
+      // trava o pipeline, só tenta uma vez consertar mais barato do que um ciclo de revisão).
+      let conteudoFinal = conteudo;
+      await registrarEtapa(
+        pauta.id,
+        "verificar_links",
+        async () => {
+          const links = extrairLinksExternos(conteudoFinal.conteudoHtml);
+          const quebrados = links.length > 0 ? (await verificarLinksExternos(links)).filter((r) => !r.ok) : [];
+          if (quebrados.length === 0) return { quebrados, usage: { inputTokens: 0, outputTokens: 0 } };
+
+          const motivoLinks = quebrados
+            .map(
+              (l, i) =>
+                `${i + 1}) O link "${l.url}" não respondeu (${l.motivo}) — use a ferramenta de busca na internet pra achar uma URL real e específica que sustente a mesma afirmação do texto, e substitua só esse href. Não altere mais nada do HTML.`,
+            )
+            .join("\n");
+          const { resultado: corrigido, usage } = await gerarConteudo(
+            { ...pauta, motivoUltimaReprovacao: motivoLinks, ultimoRascunho: conteudoFinal },
+            checklist,
+            persona,
+            propriedade,
+          );
+          conteudoFinal = corrigido;
+          await salvarRascunho(pauta.id, conteudoFinal);
+          return { quebrados, usage };
+        },
+        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+        (r) => (r.quebrados.length > 0 ? `Link(s) quebrado(s) encontrado(s) e enviado(s) pro Escritor corrigir: ${r.quebrados.map((l) => `${l.url} (${l.motivo})`).join("; ")}` : undefined),
+      );
 
       // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio,
       // não erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de
@@ -515,7 +570,11 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       const { resultado: revisao } = await registrarEtapa(
         pauta.id,
         "revisar",
-        () => revisarConteudo(conteudo, checklist, propriedade, postsRecentes),
+        // pauta.tentativas conta as tentativas já ESGOTADAS antes desta rodada (0 na 1ª geração) —
+        // +1 dá o número desta revisão em si (1 na primeira, 2+ a partir da 1ª correção), o que
+        // "Reprovação só por motivo real" (revisor.ts) usa pra saber quando aplicar a leniência
+        // reforçada pedida pelo Luiz.
+        () => revisarConteudo(conteudoFinal, checklist, propriedade, postsRecentes, pauta.tentativas + 1),
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
         (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
       );
@@ -525,12 +584,12 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         return { status: "reprovado" as const, pautaId: pauta.id };
       }
 
-      const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo, scoreQa: revisao.score });
+      const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo: conteudoFinal, scoreQa: revisao.score });
       // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
       // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
       // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
       const conteudoComLinks = await registrarEtapa(pauta.id, "inserir_links", () =>
-        inserirLinksInternos(conteudo.conteudoHtml, propriedadeId, post.id),
+        inserirLinksInternos(conteudoFinal.conteudoHtml, propriedadeId, post.id),
       );
       const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
 
@@ -552,7 +611,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       const resultadoImagens = await registrarEtapa(
         pauta.id,
         "gerar_imagens",
-        () => gerarEEmbutirImagens(pauta, conteudo, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes),
+        () => gerarEEmbutirImagens(pauta, conteudoFinal, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes),
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
         (r) => r.detalhesLog,
         (r) => r.custoUsdOpenAi,
@@ -586,7 +645,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
 
       postId = post.id;
       corpoHtmlParaPublicar = resultadoImagens.corpoHtmlFinal;
-      dadosConteudo = { titulo: conteudo.titulo, slug: conteudo.slug, metaTitle: conteudo.metaTitle, metaDescription: conteudo.metaDescription };
+      dadosConteudo = { titulo: conteudoFinal.titulo, slug: conteudoFinal.slug, metaTitle: conteudoFinal.metaTitle, metaDescription: conteudoFinal.metaDescription };
       imagemDestacadaId = resultadoImagens.capaMediaId;
     }
 

@@ -132,6 +132,12 @@ export type ConteudoGerado = {
   metaTitle: string;
   metaDescription: string;
   slug: string;
+  // Relatório do Escritor (19/08/2026, pedido do Luiz) — espelha o `motivo` do Revisor, pra dar
+  // pra cruzar "o que o Revisor pediu" com "o que o Escritor diz ter feito" no Monitor de
+  // execução. Opcional (não `string` puro) porque `ultimoRascunho` é lido de volta de
+  // `posts.ultimo_rascunho` no banco (ver repositorio.ts) — rascunhos salvos antes desta mudança
+  // não têm o campo, e não faz sentido forçar todo call-site de teste a inventar um valor.
+  relatorio?: string;
 };
 
 /** Saída do Revisor. */
@@ -312,6 +318,11 @@ export type PostAdmin = {
 export type EtapaLog =
   | "buscar_checklist"
   | "gerar_conteudo"
+  // Verificação de links externos (19/08/2026, pedido do Luiz) — entre "gerar_conteudo" e
+  // "revisar": confere com um HEAD/GET real se cada link externo que o Escritor citou responde
+  // (200-399), e manda de volta pro Escritor corrigir ANTES de gastar um ciclo de Revisor com um
+  // link que nem existe. Ver verificarLinksExternos em links-externos.ts.
+  | "verificar_links"
   | "revisar"
   | "inserir_links"
   | "sanitizar"
@@ -398,6 +409,39 @@ export type PautaConcluida = {
  * ainda não aplicado em produção, ver Task 1) ou quando uma etapa específica nunca rodou ainda.
  */
 export type DuracaoMediaPorEtapa = Partial<Record<EtapaLog, number>>;
+
+/**
+ * Dados pro botão "Visualizar Post" do Monitor (19/08/2026, pedido do Luiz) — quadro-resumo da
+ * pauta (persona, ângulo, etc.) + o post como está agora (rascunho em andamento OU já publicado),
+ * pra ver o resultado sem sair da tela. `post: null` = a pauta ainda não chegou a gerar nenhum
+ * rascunho (Escritor ainda não rodou nesta tentativa, ou pauta na fila).
+ */
+export type DetalhesPostVisualizacao = {
+  pauta: {
+    id: string;
+    palavraChavePrincipal: string;
+    angulo: string;
+    geografia: string | null;
+    funil: FunilPauta;
+    tipoConteudo: TipoConteudo;
+    status: StatusPauta;
+    tentativas: number;
+  };
+  personaNome: string | null;
+  post: {
+    titulo: string;
+    slug: string;
+    metaTitle: string;
+    metaDescription: string;
+    conteudoHtml: string;
+    status: StatusPost;
+    scoreQa: number | null;
+    imagemDestaqueUrl: string | null;
+    imagemDestaqueAlt: string | null;
+    imagensSecundarias: Array<{ url: string; alt: string; legenda: string }>;
+    urlPublicada: string | null;
+  } | null;
+};
 
 // ---------------------------------------------------------------------------
 // Fase 3 (personas ricas) — Task 2. Ver

@@ -88,12 +88,14 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
             conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
             meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
             meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
             slug: "como-limpar-nome-serasa",
+            relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
           },
         },
       ],
@@ -104,6 +106,9 @@ describe("gerarConteudo", () => {
 
     expect(resultado.titulo).toContain("Serasa");
     expect(resultado.slug).toBe("como-limpar-nome-serasa");
+    // Relatório do Escritor (19/08/2026, pedido do Luiz) — espelha o motivo do Revisor, pra dar
+    // pra cruzar no Monitor de execução o que foi pedido com o que o Escritor diz ter feito.
+    expect(resultado.relatorio).toBe("Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.");
     const argumentosChamada = mockCreate.mock.calls[0][0];
     const promptEnviado = argumentosChamada.messages[0].content;
     expect(promptEnviado).toContain("limpar nome serasa");
@@ -119,13 +124,21 @@ describe("gerarConteudo", () => {
         "Checklist de qualidade obrigatório — todo item precisa ser atendido:",
         "- H1 com a palavra-chave principal\n- Mínimo 1.800 palavras",
         "Regra adicional de citabilidade por IA: logo abaixo de cada H2, inclua uma resposta direta e extraível (contagem de palavras exata definida no item do checklist acima) antes de aprofundar — é a técnica mais concreta para aumentar a chance de citação por ChatGPT/Perplexity/Gemini.",
-        "Regra de precisão em citação normativa: ao citar lei, resolução, artigo ou norma específica, só inclua número/ano se tiver certeza real deles. NUNCA invente ou chute um número de lei/resolução/artigo que pareça plausível — isso é uma alucinação factual grave, pior do que citar a norma de forma mais genérica. Na dúvida, prefira: (a) citar sem o número exato (ex.: \"conforme o Código de Defesa do Consumidor\" em vez de um artigo específico incerto), ou (b) linkar a fonte oficial (Serasa, SPC, Procon, gov.br) sem atribuir um número normativo que você não tem certeza de estar correto.",
+        "Regra de precisão em citação normativa: ao citar lei, resolução, artigo ou norma específica, só inclua número/ano depois de confirmar por busca (ver regra dura abaixo) — NUNCA invente ou chute um número de lei/resolução/artigo/súmula que pareça plausível, isso é uma alucinação factual grave (achado real de teste em produção: uma citação atribuiu incorretamente um prazo à \"Súmula 548 do STJ\", que trata de assunto diferente).",
+        'Regra de verificação de links: para CADA link externo que for incluir no HTML, use a ferramenta web_search pra confirmar que a URL existe de verdade e que a página encontrada realmente sustenta a afirmação do texto — nunca invente ou chute uma URL só porque parece plausível. TÉCNICA DE BUSCA: formule a busca em torno da AFIRMAÇÃO ESPECÍFICA do parágrafo onde o link vai entrar, não só o nome do órgão — isso leva direto à página que sustenta aquela afirmação, em vez de uma homepage genérica. Exemplo: se o parágrafo diz "...Serasa informa mais de 83 milhões de brasileiros negativados...", a busca certa é algo como "quantos negativados tem no Brasil de acordo com o Serasa?" (a pergunta que a própria frase responde), não apenas "Serasa" — o resultado ideal é a página específica que traz esse dado (ex.: https://www.serasa.com.br/limpa-nome-online/blog/mapa-da-inadimplencia-e-renegociacao-de-dividas-no-brasil/), não a homepage do Serasa. A mesma técnica vale pra citação de lei/norma/jurisprudência: antes de citar um número de súmula, resolução ou artigo, busque o texto EXATO da afirmação (ex.: "prazo para baixa de negativação após pagamento súmula STJ") pra confirmar que a norma citada realmente trata desse tema — não assuma que um número que "parece certo" está certo. Depois de pesquisar o que for necessário, você DEVE terminar chamando a ferramenta registrar_conteudo com o resultado final — nunca finalize a resposta só com texto.',
+        "REGRA DURA — nunca inventar, sempre comprovar com link: você NUNCA pode inventar um fato, número, estatística, data, prazo, citação legal/normativa ou afirmação atribuída a um órgão/entidade externa. Toda vez que o texto citar algo como fato — um dado numérico (\"a Serasa aponta X milhões de negativados\"), uma norma (\"conforme o art. Y do CDC\"), uma jurisprudência (\"segundo a Súmula Z do STJ\"), um prazo, ou qualquer afirmação atribuída a uma fonte externa —, essa frase É OBRIGATÓRIA de vir acompanhada de um link pra uma fonte oficial que comprove EXATAMENTE essa afirmação (busque por ela usando a técnica de busca por afirmação específica, acima, ANTES de escrever a frase — nunca depois). Se a busca não encontrar uma fonte oficial que comprove a afirmação específica, você NÃO PODE fazer essa afirmação: reescreva sem o dado/citação específica, ou remova o trecho inteiro. Não existe exceção nem meio-termo — nem um número que 'parece certo', nem uma norma 'que geralmente é essa', nem uma estatística lembrada de memória: toda citação de fato precisa ter uma fonte oficial linkada comprovando ela, sempre, sem exceção.",
+        'REGRA DURA — âncora do link curta (1 a 3 palavras): ao inserir um link externo, a âncora (o texto dentro de <a>...</a>, o trecho que fica clicável/sublinhado) deve ser uma palavra-chave curta — no máximo 1 a 3 palavras, o termo específico que está sendo linkado — NUNCA a frase inteira nem um trecho longo. O resto da frase fica como texto normal, fora do <a>. Exemplo ERRADO: <a href="...">a Serasa informa mais de 83 milhões de brasileiros negativados</a>. Exemplo CERTO: a Serasa informa mais de 83 milhões de brasileiros negativados, segundo o <a href="...">mapa da inadimplência</a> — ou: segundo o <a href="...">Registrato do Banco Central</a>, é possível consultar todas as dívidas em aberto. A âncora deve nomear a FONTE ou o DOCUMENTO específico (ex.: "mapa da inadimplência", "Registrato", "art. 43 do CDC", "Súmula 548"), não repetir o dado ou a afirmação inteira.',
         "Use a ferramenta para registrar o resultado.",
       ].join("\n"),
     );
     expect(promptEnviado).not.toContain("Persona deste post");
     expect(promptEnviado).not.toContain("Instruções adicionais desta propriedade");
-    expect(argumentosChamada.max_tokens).toBe(16000);
+    expect(argumentosChamada.max_tokens).toBe(20000);
+    // web_search (19/08/2026, pedido do Luiz) — disponível junto da ferramenta de saída, e
+    // tool_choice precisa ser "auto" (não mais forçado) pra deixar o modelo livre pra buscar antes
+    // de finalizar.
+    expect(argumentosChamada.tools).toEqual([expect.objectContaining({ name: "registrar_conteudo" }), expect.objectContaining({ name: "web_search", type: "web_search_20250305" })]);
+    expect(argumentosChamada.tool_choice).toEqual({ type: "auto" });
     expect(usage.inputTokens).toBe(1234);
     expect(usage.outputTokens).toBe(5678);
   });
@@ -142,12 +155,14 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
             conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
             meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
             meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
             slug: "como-limpar-nome-serasa",
+            relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
           },
         },
       ],
@@ -180,12 +195,14 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
             conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
             meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
             meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
             slug: "como-limpar-nome-serasa",
+            relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
           },
         },
       ],
@@ -221,12 +238,14 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
             conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
             meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
             meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
             slug: "como-limpar-nome-serasa",
+            relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
           },
         },
       ],
@@ -263,12 +282,14 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
             conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
             meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
             meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
             slug: "como-limpar-nome-serasa",
+            relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
           },
         },
       ],
@@ -319,6 +340,7 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "Como Limpar o Nome no Serasa",
             conteudo_html: "<h1>...",
@@ -342,6 +364,7 @@ describe("gerarConteudo", () => {
       content: [
         {
           type: "tool_use",
+          name: "registrar_conteudo",
           input: {
             titulo: "",
             conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>",
@@ -354,5 +377,67 @@ describe("gerarConteudo", () => {
     });
 
     await expect(gerarConteudo(pauta, checklist, null, propriedade)).rejects.toThrow(/titulo/);
+  });
+
+  // Novo (19/08/2026, pedido do Luiz): relatorio é required na ferramenta igual aos demais campos —
+  // sem ele, o cruzamento com o motivo do Revisor no Monitor não é possível.
+  it("lança erro claro quando o relatório vem ausente", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      stop_reason: "tool_use",
+      content: [
+        {
+          type: "tool_use",
+          name: "registrar_conteudo",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa",
+            conteudo_html: "<p>...</p>",
+            meta_title: "Como Limpar Nome no Serasa",
+            meta_description: "Aprenda o passo a passo completo.",
+            slug: "como-limpar-nome-serasa",
+          },
+        },
+      ],
+    });
+
+    await expect(gerarConteudo(pauta, checklist, null, propriedade)).rejects.toThrow(/relatorio/);
+  });
+
+  // web_search (19/08/2026, pedido do Luiz) — server tool: aparece no content como blocos
+  // `server_tool_use`/`web_search_tool_result`, tipos DIFERENTES de `tool_use`. Este teste garante
+  // que o parsing não confunde essas invocações de busca com a chamada real da ferramenta de saída
+  // — mesmo com blocos de busca ANTES dele no array `content` (ordem real: o modelo busca primeiro,
+  // só depois chama registrar_conteudo).
+  it("ignora blocos server_tool_use/web_search_tool_result e usa o tool_use de registrar_conteudo", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const clienteFalso = new Anthropic({ apiKey: "sk-test" });
+    const mockCreate = clienteFalso.messages.create as unknown as ReturnType<typeof vi.fn>;
+    mockCreate.mockResolvedValue({
+      content: [
+        { type: "text", text: "Vou verificar essa fonte antes de escrever." },
+        { type: "server_tool_use", id: "srvtool_1", name: "web_search", input: { query: "BACEN cadastro positivo" } },
+        { type: "web_search_tool_result", tool_use_id: "srvtool_1", content: [{ type: "web_search_result", title: "BACEN", url: "https://www.bcb.gov.br/real" }] },
+        {
+          type: "tool_use",
+          name: "registrar_conteudo",
+          input: {
+            titulo: "Como Limpar o Nome no Serasa: Passo a Passo Completo",
+            conteudo_html: "<h1>Como Limpar o Nome no Serasa</h1><p>...</p>".repeat(50),
+            meta_title: "Como Limpar Nome no Serasa | Passo a Passo",
+            meta_description: "Aprenda o passo a passo completo para limpar seu nome no Serasa em 2026.",
+            slug: "como-limpar-nome-serasa",
+            relatorio: "Busquei a fonte real do BACEN antes de citar.",
+          },
+        },
+      ],
+      usage: { input_tokens: 1500, output_tokens: 3000 },
+    });
+
+    const { resultado } = await gerarConteudo(pauta, checklist, null, propriedade);
+
+    expect(resultado.titulo).toContain("Serasa");
+    expect(resultado.relatorio).toBe("Busquei a fonte real do BACEN antes de citar.");
   });
 });

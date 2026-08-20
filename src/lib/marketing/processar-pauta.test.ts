@@ -291,6 +291,7 @@ describe("processarProximaPauta", () => {
         metaTitle: "Como Limpar Nome no Serasa",
         metaDescription: "Guia completo.",
         slug: "como-limpar-nome-serasa",
+        relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
       },
       usage: { inputTokens: 1000, outputTokens: 2000 },
     });
@@ -330,6 +331,7 @@ describe("processarProximaPauta", () => {
     expect(etapasChamadas).toEqual([
       "buscar_checklist",
       "gerar_conteudo",
+      "verificar_links",
       "revisar",
       "inserir_links",
       "sanitizar",
@@ -345,6 +347,9 @@ describe("processarProximaPauta", () => {
     // Revisão aprovada e publicação bem-sucedida: nenhum motivo de rejeição de negócio pra gravar.
     expect(detalhesExtraidos.revisar).toBeUndefined();
     expect(detalhesExtraidos.publicar).toBeUndefined();
+    // Relatório do Escritor (19/08/2026, pedido do Luiz) — gravado como detalhes da etapa
+    // gerar_conteudo, pra cruzar no Monitor com o motivo do Revisor.
+    expect(detalhesExtraidos.gerar_conteudo).toBe("Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.");
     // Fase 3, 19/08/2026: o rascunho é salvo mesmo quando aprova de primeira (salvarRascunho não
     // é condicional ao resultado da revisão) — próxima seção verifica o caso em que isso importa
     // de verdade (reprovação).
@@ -354,7 +359,95 @@ describe("processarProximaPauta", () => {
       metaTitle: "Como Limpar Nome no Serasa",
       metaDescription: "Guia completo.",
       slug: "como-limpar-nome-serasa",
+      relatorio: "Segui o ângulo passo a passo, usando fontes do Serasa e do BACEN.",
     });
+  });
+
+  // Etapa "verificar_links" (19/08/2026, pedido do Luiz) — achado real de teste em produção: o
+  // Revisor gastava uma tentativa inteira reprovando por "fonte específica" quando o link nem
+  // sequer existia. Este teste força um link quebrado (fetch mockado retornando 404) e confirma
+  // que: (a) o Escritor é chamado DE NOVO especificamente pra consertar esse link, com o motivo
+  // descrevendo qual link e por quê; (b) o conteúdo CORRIGIDO (não o original) é o que segue pro
+  // Revisor/publicação; (c) o motivo NÃO conta como uma reprovação de negócio de verdade — a pauta
+  // não volta pra "pendente" por causa disso.
+  it("quando um link externo está quebrado, manda de volta pro Escritor consertar ANTES de revisar", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    const gerarConteudoSpy = vi
+      .spyOn(escritor, "gerarConteudo")
+      .mockResolvedValueOnce({
+        resultado: {
+          titulo: "Como Limpar o Nome no Serasa",
+          conteudoHtml: '<p>Veja <a href="https://www.bcb.gov.br/quebrado">o BACEN</a>.</p>',
+          metaTitle: "Como Limpar Nome no Serasa",
+          metaDescription: "Guia completo.",
+          slug: "como-limpar-nome-serasa",
+          relatorio: "Primeira geração.",
+        },
+        usage: { inputTokens: 1000, outputTokens: 2000 },
+      })
+      .mockResolvedValueOnce({
+        resultado: {
+          titulo: "Como Limpar o Nome no Serasa",
+          conteudoHtml: '<p>Veja <a href="https://www.bcb.gov.br/pagina-real">o BACEN</a>.</p>',
+          metaTitle: "Como Limpar Nome no Serasa",
+          metaDescription: "Guia completo.",
+          slug: "como-limpar-nome-serasa",
+          relatorio: "Troquei o link quebrado do BACEN por uma página real, confirmada por busca.",
+        },
+        usage: { inputTokens: 300, outputTokens: 150 },
+      });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: true, score: 92, motivo: null, precisaoFactualAdequada: true, fontesEspecificas: true, originalidadeAdequada: true },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue('<p>Veja <a href="https://www.bcb.gov.br/pagina-real">o BACEN</a>.</p>');
+    const fetchOriginal = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response);
+    const { etapasChamadas, detalhesExtraidos } = espiarRegistrarEtapa();
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      enviarMidia: vi.fn(),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    try {
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      expect(etapasChamadas).toEqual([
+        "buscar_checklist",
+        "gerar_conteudo",
+        "verificar_links",
+        "revisar",
+        "inserir_links",
+        "sanitizar",
+        "gerar_imagens",
+        "publicar",
+        "registrar_resultado",
+      ]);
+      // gerarConteudo chamado DUAS vezes: a geração normal + a correção de link.
+      expect(gerarConteudoSpy).toHaveBeenCalledTimes(2);
+      const [pautaDaCorrecao] = gerarConteudoSpy.mock.calls[1];
+      expect(pautaDaCorrecao.motivoUltimaReprovacao).toContain("https://www.bcb.gov.br/quebrado");
+      expect(pautaDaCorrecao.motivoUltimaReprovacao).toContain("HTTP 404");
+      expect(pautaDaCorrecao.ultimoRascunho?.conteudoHtml).toContain("bcb.gov.br/quebrado");
+      // O HTML CORRIGIDO (com o link real) é o que segue pro resto do pipeline, não o original.
+      expect(inserirLinksInternos).toHaveBeenCalledWith('<p>Veja <a href="https://www.bcb.gov.br/pagina-real">o BACEN</a>.</p>', "prop-1", "post-1");
+      // O relatório de detalhes descreve o link quebrado encontrado, sem contar como reprovação —
+      // a pauta segue direto pra publicação (nenhuma chamada a registrarReprovacaoPauta).
+      expect(detalhesExtraidos.verificar_links).toContain("https://www.bcb.gov.br/quebrado");
+      expect(reprovarSpy).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = fetchOriginal;
+    }
   });
 
   // Fase 4a, Task 3 (19/08/2026): resolve o TODO(Task 3) que a Task 2 deixou — postsRecentes
@@ -407,7 +500,7 @@ describe("processarProximaPauta", () => {
     await processarProximaPauta("matriz-1", "prop-1");
 
     expect(carregarPostsRecentesSpy).toHaveBeenCalledWith("prop-1", 10);
-    expect(revisarConteudoSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), postsRecentesFalsos);
+    expect(revisarConteudoSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), postsRecentesFalsos, expect.anything());
   });
 
   it("mantém o resultado publicado sem reprovar quando só o registro de metadados do post falha", async () => {
@@ -475,6 +568,7 @@ describe("processarProximaPauta", () => {
     expect(etapasChamadas).toEqual([
       "buscar_checklist",
       "gerar_conteudo",
+      "verificar_links",
       "revisar",
       "inserir_links",
       "sanitizar",
@@ -552,6 +646,7 @@ describe("processarProximaPauta", () => {
     expect(etapasChamadas).toEqual([
       "buscar_checklist",
       "gerar_conteudo",
+      "verificar_links",
       "revisar",
       "inserir_links",
       "sanitizar",
@@ -623,6 +718,7 @@ describe("processarProximaPauta", () => {
     expect(etapasChamadas).toEqual([
       "buscar_checklist",
       "gerar_conteudo",
+      "verificar_links",
       "revisar",
       "inserir_links",
       "sanitizar",
@@ -667,7 +763,7 @@ describe("processarProximaPauta", () => {
 
     expect(resultado).toEqual({ status: "reprovado", pautaId: "pauta-1" });
     expect(reprovarSpy).toHaveBeenCalledWith("pauta-1", "Muito curto.");
-    expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar"]);
+    expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "verificar_links", "revisar"]);
     // Important #1 da revisão: o motivo da reprovação por score baixo precisa ir pra pautas_execucao_log
     // (coluna detalhes da etapa "revisar"), mesmo a linha sendo sucesso: true (não é exceção técnica).
     expect(detalhesExtraidos.revisar).toBe("Muito curto.");
@@ -913,7 +1009,7 @@ describe("processarProximaPauta", () => {
 
       expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
       // O texto RODA de novo (a correção é dele) — todas as etapas normais aparecem.
-      expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "revisar", "inserir_links", "sanitizar", "gerar_imagens", "publicar", "registrar_resultado"]);
+      expect(etapasChamadas).toEqual(["buscar_checklist", "gerar_conteudo", "verificar_links", "revisar", "inserir_links", "sanitizar", "gerar_imagens", "publicar", "registrar_resultado"]);
       // Mas nenhuma chamada de geração/upload de imagem acontece — reaproveitadas da tentativa anterior.
       expect(gerarCapa).not.toHaveBeenCalled();
       expect(gerarImagensSecundarias).not.toHaveBeenCalled();
@@ -922,6 +1018,9 @@ describe("processarProximaPauta", () => {
       expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), "media-capa-existente");
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
       expect(corpoHtmlPublicado).toContain('"image":"https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"');
+      // Capa reaproveitada também é embutida como <figure> no início do corpo (mesma correção do
+      // caminho de geração nova, ver teste "capa e imagem secundária aprovadas" abaixo).
+      expect(corpoHtmlPublicado.indexOf('<figure><img src="https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"')).toBe(0);
       expect(atualizarStatusPostSpy).toHaveBeenCalledWith(
         "post-2",
         "rascunho",
@@ -1038,6 +1137,11 @@ describe("processarProximaPauta", () => {
       expect(enviarImagemStorage).toHaveBeenCalledWith("data:image/png;base64,BBBB", "prop-1/pauta-1/secundaria-doc-necessarios.png");
 
       const corpoHtmlPublicado = criarRascunho.mock.calls[0][0].corpoHtml as string;
+      // Capa (19/08/2026, achado de teste em produção): embutida como <figure> logo no INÍCIO do
+      // corpo — antes até da imagem secundária — porque o tema do WordPress não renderiza o
+      // featured_media dentro da página do post; sem isso a capa nunca aparecia pro leitor.
+      expect(corpoHtmlPublicado.indexOf('<figure><img src="https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"')).toBe(0);
+      expect(corpoHtmlPublicado).toContain('<img src="https://teste.exemplo.com/wp-content/uploads/capa-serasa.png" alt="Pessoa aliviada olhando boletos organizados">');
       // Imagem secundária embutida como <figure> com a URL PÚBLICA (pós-upload), não a data URL.
       expect(corpoHtmlPublicado).toContain('<img src="https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png"');
       expect(corpoHtmlPublicado).toContain("<figcaption>RG e CPF em mãos antes de ligar.</figcaption>");

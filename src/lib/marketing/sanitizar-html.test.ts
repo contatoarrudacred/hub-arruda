@@ -18,18 +18,34 @@ describe("sanitizarConteudoHtml", () => {
 
   it("preserva HTML normal de artigo de blog (headings, listas, links, imagens, tabelas)", () => {
     const html =
-      '<h1>Título</h1><h2>Subtítulo</h2><p>Parágrafo com <a href="https://exemplo.com">link</a>.</p>' +
+      '<h2>Subtítulo</h2><p>Parágrafo com <a href="https://exemplo.com">link</a>.</p>' +
       '<ul><li>Item 1</li><li>Item 2</li></ul><img src="https://exemplo.com/img.jpg" alt="Descrição" width="1200" height="628">' +
       "<table><tr><td>Célula</td></tr></table>";
     const resultado = sanitizarConteudoHtml(html);
 
-    expect(resultado).toContain("<h1>Título</h1>");
     expect(resultado).toContain("<h2>Subtítulo</h2>");
     expect(resultado).toContain('href="https://exemplo.com"');
     expect(resultado).toContain("<li>Item 1</li>");
     expect(resultado).toContain('src="https://exemplo.com/img.jpg"');
     expect(resultado).toContain('alt="Descrição"');
     expect(resultado).toContain("<td>Célula</td>");
+  });
+
+  // Achado real de teste em produção (19/08/2026) + decisão do Luiz: o Escritor CONTINUA
+  // escrevendo <h1>título</h1> no corpo (é como o Revisor confirma de verdade que existe um H1 com
+  // a palavra-chave, ver escritor.ts) — o WordPress renderiza o campo `titulo` do post como o H1
+  // real da página (confirmado no HTML de um post publicado), então esse <h1> do corpo duplicaria
+  // o título visualmente se chegasse ao ar. sanitizarConteudoHtml é quem garante que isso nunca
+  // acontece: remove o <h1> por COMPLETO — tag e texto, não só a tag — antes de qualquer coisa
+  // seguir pro WordPress.
+  it("remove o <h1> por completo do corpo — tag e texto — pra nunca duplicar o H1 real da página no WordPress", () => {
+    const resultado = sanitizarConteudoHtml("<h1>Como Limpar o Nome no Serasa</h1><h2>Subtítulo</h2><p>Texto</p>");
+
+    expect(resultado).not.toContain("<h1>");
+    expect(resultado).not.toContain("</h1>");
+    expect(resultado).not.toContain("Como Limpar o Nome no Serasa");
+    expect(resultado).toContain("<h2>Subtítulo</h2>");
+    expect(resultado).toContain("<p>Texto</p>");
   });
 
   it("preserva links mailto: e tel: (CTA pro canal de contato exigido pelo checklist)", () => {
