@@ -1,8 +1,22 @@
 "use server";
 
-import { configurarWebhook } from "@/lib/assinafy/cliente";
+import { buscarStatusWebhook, configurarWebhook, type StatusWebhookAssinafy } from "@/lib/assinafy/cliente";
 
 export type ResultadoConfigurarWebhook = { sucesso: true; url: string } | { sucesso: false; erro: string };
+
+export type ResultadoStatusWebhook = { sucesso: true; status: StatusWebhookAssinafy | null } | { sucesso: false; erro: string };
+
+/** Consulta o estado atual direto na Assinafy — prova concreta de que o setup deu certo (ou não),
+ * em vez de confiar só na mensagem do momento em que o botão foi clicado. */
+export async function buscarStatusWebhookAssinafyAction(): Promise<ResultadoStatusWebhook> {
+  try {
+    const status = await buscarStatusWebhook();
+    return { sucesso: true, status };
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : "Falha ao consultar o status. Tente novamente.";
+    return { sucesso: false, erro: mensagem };
+  }
+}
 
 /** Setup de uma vez só — registra na Assinafy a URL do nosso webhook (document_ready,
  * signer_rejected_document). Sem isso a Assinafy nunca avisa o sistema que alguém assinou. */

@@ -122,6 +122,25 @@ export async function buscarDocumento(documentId: string): Promise<AssinafyDocum
   return mapearDocumento(bruto.data);
 }
 
+export type StatusWebhookAssinafy = { events: string[]; ativo: boolean; url: string; email: string; atualizadoEm: string };
+
+/** Consulta o estado atual da assinatura de webhook da conta — usado pra mostrar na tela se o
+ * setup já foi feito (e pra quê), sem precisar confiar só na mensagem do momento em que o botão
+ * "Configurar" foi clicado. */
+export async function buscarStatusWebhook(): Promise<StatusWebhookAssinafy | null> {
+  const bruto = (await chamarApi(`/accounts/${accountId()}/webhooks/subscriptions`, { method: "GET" })) as {
+    data: { events: string[]; is_active: boolean; url: string; email: string; updated_at: string } | null;
+  };
+  if (!bruto.data) return null;
+  return {
+    events: bruto.data.events,
+    ativo: bruto.data.is_active,
+    url: bruto.data.url,
+    email: bruto.data.email,
+    atualizadoEm: bruto.data.updated_at,
+  };
+}
+
 /** Registra/atualiza a assinatura de webhook da conta — precisa rodar uma vez (setup manual, não
  * automático) pra Assinafy começar a mandar `document_ready`/`signer_rejected_document` pra nós.
  * Sem HMAC nativo (confirmado na doc) — o segredo vai como query param na própria `url`. */
