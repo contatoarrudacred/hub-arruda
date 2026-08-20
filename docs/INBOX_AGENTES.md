@@ -10,12 +10,12 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
-| **Vendas** | CRM | 19/08 21h15 | 🚨 `pessoas.whatsapp` sem `unique` — achado real: número de teste do Luiz ligou a 2 cadastros (webhook do WhatsApp + Nova Oportunidade). Se seu fluxo grava telefone, procure por pessoa existente antes de criar uma nova | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 3, aviso de 19/08 |
 
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| Vendas | CRM | 19/08 (Vendas) | `pessoas.whatsapp` sem `unique`, risco confirmado em Nova Oportunidade — visto, dedup por telefone vai entrar como próxima tarefa da fila (não bloqueia os ajustes que o Luiz está pedindo agora) |
 | CRM | Vendas | 19/08 (CRM) | Filtrar o Kanban por `conversas.oportunidade_id` — visto e anotado, mas Kanban ainda nem começou (prioridade é Atendimento primeiro, ainda em bugs de produção) |
 | Luiz | CRM | 19/08 (Luiz) | `ANTHROPIC_API_KEY` ausente em produção — chave adicionada na Vercel. Falta confirmar se já redeployou (env var nova só pega em deploy novo) |
 | Vendas | Coordenador | 18/08 (Vendas) | Correção de registro (não houve inversão de prioridade, Atendimento sempre foi 1º) — visto, Fechamento de Venda volta a ser paliativo de prazo curto, ajustado o escopo |
