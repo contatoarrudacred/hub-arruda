@@ -102,15 +102,47 @@ export async function uploadDocumento(nomeArquivo: string, conteudo: Buffer): Pr
 
 export type AssinafySignatario = { id: string; fullName: string; email: string };
 
-/** Cria um signatário — esse endpoint vem envelopado em {status,message,data}. */
-export async function criarSignatario(fullName: string, email: string): Promise<AssinafySignatario> {
-  const bruto = (await chamarApi(`/accounts/${accountId()}/signers`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ full_name: fullName, email }),
-  })) as { data: { id: string; full_name: string; email: string } };
+type SignatarioBruto = { id: string; full_name: string; email: string };
 
-  return { id: bruto.data.id, fullName: bruto.data.full_name, email: bruto.data.email };
+/** `search` filtra por full_name OU email (confirmado na doc) — por isso confere o e-mail exato
+ * no resultado em vez de confiar que o primeiro item bateu certinho. */
+async function buscarSignatarioPorEmail(email: string): Promise<AssinafySignatario | null> {
+  const bruto = (await chamarApi(`/accounts/${accountId()}/signers?search=${encodeURIComponent(email)}`, {
+    method: "GET",
+  })) as { data: SignatarioBruto[] };
+
+  const encontrado = bruto.data.find((s) => s.email.toLowerCase() === email.toLowerCase());
+  return encontrado ? { id: encontrado.id, fullName: encontrado.full_name, email: encontrado.email } : null;
+}
+
+/**
+ * Cria um signatário — idempotente. Achado real em produção: a Assinafy rejeita (400, "Um
+ * signatário com este e-mail já existe") criar de novo um e-mail já cadastrado, e o signatário da
+ * ArrudaCred é o MESMO e-mail em todo contrato — sem isso, toda emissão a partir da segunda
+ * falhava aqui. Busca por e-mail exato primeiro e reaproveita se já existir; só cria de fato se
+ * não encontrar. Fallback: se mesmo assim a criação bater nesse erro específico (corrida rara —
+ * duas emissões concorrentes pro mesmo e-mail), busca de novo em vez de propagar o erro.
+ */
+export async function criarSignatario(fullName: string, email: string): Promise<AssinafySignatario> {
+  const existente = await buscarSignatarioPorEmail(email);
+  if (existente) return existente;
+
+  try {
+    const bruto = (await chamarApi(`/accounts/${accountId()}/signers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName, email }),
+    })) as { data: SignatarioBruto };
+
+    return { id: bruto.data.id, fullName: bruto.data.full_name, email: bruto.data.email };
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : "";
+    if (!mensagem.includes("já existe")) throw erro;
+
+    const encontradoAgora = await buscarSignatarioPorEmail(email);
+    if (!encontradoAgora) throw erro;
+    return encontradoAgora;
+  }
 }
 
 /** Solicita assinatura via método "virtual" (sem input do signatário além de assinar — não usa
