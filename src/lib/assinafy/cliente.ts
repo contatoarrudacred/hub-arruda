@@ -85,9 +85,13 @@ function mapearDocumento(bruto: Record<string, unknown>): AssinafyDocumento {
 }
 
 /**
- * Upload de um documento (o PDF do contrato já gerado) — a resposta desse endpoint específico vem
- * como objeto direto, sem o envelope {status,message,data} que os outros endpoints usam
- * (inconsistência real da API, confirmada na doc).
+ * Upload de um documento (o PDF do contrato já gerado).
+ *
+ * A doc (docs/api_reference/Assinafy-API-Reference.md) mostra a resposta desse endpoint sem
+ * envelope, com `id` no topo — **não bate com a resposta real** (confirmado em produção,
+ * 20/08/2026: veio envelopada em {status,message,data}, igual todo o resto da API, com o `id`
+ * dentro de `data`). Doc desatualizada/errada só pra esse endpoint específico — corrigido com
+ * base na resposta real, não na doc.
  */
 export async function uploadDocumento(nomeArquivo: string, conteudo: Buffer): Promise<AssinafyDocumento> {
   const formData = new FormData();
@@ -96,19 +100,18 @@ export async function uploadDocumento(nomeArquivo: string, conteudo: Buffer): Pr
   const bruto = (await chamarApi(`/accounts/${accountId()}/documents`, {
     method: "POST",
     body: formData,
-  })) as Record<string, unknown>;
+  })) as { data?: Record<string, unknown> };
 
-  // Achado real em produção: o upload "funcionou" (2xx) mas o id do documento saiu undefined,
-  // e isso só apareceu 2 chamadas depois como 404 "/documents/undefined/assignments" — sintoma
-  // confuso. Falha aqui, na hora, com a resposta bruta no erro (guardado em contratos.ultimo_erro,
-  // visível no card do Kanban) — é a única forma de saber o formato real que a Assinafy devolveu
-  // sem acesso direto aos logs, já que a doc (confirmada antes) diz que deveria vir com `id` no
-  // topo, sem envelope.
-  if (!bruto.id) {
+  const documento = bruto.data;
+
+  // Guarda mantida (mesmo já sabendo o formato certo agora) — se a Assinafy voltar a mudar o
+  // formato de novo, falha aqui com a resposta bruta no erro (guardado em contratos.ultimo_erro,
+  // visível no card do Kanban) em vez de um 404 confuso 2 chamadas depois.
+  if (!documento?.id) {
     throw new Error(`Assinafy não retornou um id de documento após o upload — resposta bruta: ${JSON.stringify(bruto)}`);
   }
 
-  return mapearDocumento(bruto);
+  return mapearDocumento(documento);
 }
 
 export type AssinafySignatario = { id: string; fullName: string; email: string };
