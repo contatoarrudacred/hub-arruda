@@ -14,7 +14,9 @@ const EVENTOS_ESPERADOS = ["document_ready", "signer_rejected_document"];
 // aconteceu: uma assinatura de webhook antiga (de outro sistema, apontando pra outro lugar)
 // "parecia" configurada certo só porque os nomes dos eventos batiam — sem checar a URL, o status
 // dava falso positivo.
-const PREFIXO_URL_ESPERADA = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/webhooks/assinafy`;
+// Mesma lógica de fallback usada em actions.ts (configurarWebhookAssinafyAction) — precisa bater
+// exatamente, senão essa comparação usa uma base diferente da URL que foi realmente registrada.
+const PREFIXO_URL_ESPERADA = `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"}/api/webhooks/assinafy`;
 
 function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | undefined; erro: string | null }) {
   if (erro) {

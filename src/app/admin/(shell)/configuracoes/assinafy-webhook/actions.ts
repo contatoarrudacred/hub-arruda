@@ -28,8 +28,20 @@ export async function configurarWebhookAssinafyAction(email: string): Promise<Re
     return { sucesso: false, erro: "ASSINAFY_WEBHOOK_SECRET não está configurada no Vercel — adicione antes de continuar." };
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // "?? fallback" só cobre undefined/null — se a env var estiver setada como string vazia
+  // (achado real: foi exatamente isso que causou "não é uma URL válida" na Assinafy), o "??"
+  // não pega, então checa vazio explicitamente também.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
   const url = `${baseUrl}/api/webhooks/assinafy?secret=${encodeURIComponent(segredo)}`;
+
+  try {
+    new URL(url);
+  } catch {
+    return {
+      sucesso: false,
+      erro: `URL montada não é válida: "${url}" — confira o valor de NEXT_PUBLIC_APP_URL no Vercel (precisa começar com https:// e não pode ter espaço).`,
+    };
+  }
 
   try {
     await configurarWebhook(url, email.trim());
