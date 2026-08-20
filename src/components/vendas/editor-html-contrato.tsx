@@ -10,6 +10,7 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useState } from "react";
 import { envolverComEstiloDocumentoPreview } from "@/lib/vendas/estilo-documento";
+import { gerarDadosMockPreview, resolverPlaceholders } from "@/lib/vendas/template-resolucao";
 import { sanitizarHtml } from "./sanitizar-html";
 
 const FONTES = ["Arial", "Georgia", "Times New Roman", "Courier New"];
@@ -208,7 +209,7 @@ export function EditorHtmlContrato({ valorInicial, aoMudar, aoEnviarImagem, aoIn
           <iframe
             title="Preview do documento"
             className="h-[600px] w-full max-w-3xl rounded border border-zinc-300 bg-white shadow-sm dark:border-zinc-700"
-            srcDoc={envolverComEstiloDocumentoPreview(editor.getHTML())}
+            srcDoc={envolverComEstiloDocumentoPreview(resolverPlaceholders(editor.getHTML(), gerarDadosMockPreview()))}
           />
         </div>
       ) : (

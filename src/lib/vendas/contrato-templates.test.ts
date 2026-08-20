@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   montarCamposClienteResolucao,
   montarDadosClienteHtml,
+  montarTabelaContratanteHtml,
   montarTabelaDocumentosHtml,
   montarTabelaVencimentosHtml,
   resolverPlaceholders,
@@ -39,6 +40,7 @@ describe("resolverPlaceholders", () => {
     formaPagamento: "Parcelado em 3x no boleto",
     tabelaVencimentos: "<table><tr><td>1</td></tr></table>",
     tabelaDocumentos: "",
+    tabelaContratante: "<table><tr><td><strong>Nome Completo</strong></td><td>JOÃO DA SILVA</td></tr></table>",
     clienteNome: "JOÃO DA SILVA",
     clienteDocumento: "123.456.789-09",
     clienteRg: "1.234.567",
@@ -65,6 +67,11 @@ describe("resolverPlaceholders", () => {
   it("usa travessão quando um campo opcional granular está vazio", () => {
     const resultado = resolverPlaceholders("Profissão: {{cliente_profissao}}", { ...dadosBase, clienteProfissao: "" });
     expect(resultado).toBe("Profissão: —");
+  });
+
+  it("substitui {{tabela_contratante}}", () => {
+    const resultado = resolverPlaceholders("{{tabela_contratante}}", dadosBase);
+    expect(resultado).toBe(dadosBase.tabelaContratante);
   });
 
   it("substitui todos os placeholders conhecidos", () => {
@@ -155,6 +162,46 @@ describe("montarCamposClienteResolucao", () => {
 
   it("PJ sem representante lança erro", () => {
     expect(() => montarCamposClienteResolucao(pessoaPjBase)).toThrow();
+  });
+});
+
+describe("montarTabelaContratanteHtml", () => {
+  it("PF: uma tabela com rótulo em negrito + valor, na ordem certa", () => {
+    const html = montarTabelaContratanteHtml(pessoaPfBase);
+
+    expect(html).toContain("<table>");
+    expect(html).toContain("<tr><td><strong>Nome Completo</strong></td><td>JOÃO DA SILVA</td></tr>");
+    expect(html).toContain("<tr><td><strong>CPF</strong></td><td>123.456.789-09</td></tr>");
+    expect(html).toContain("<tr><td><strong>RG</strong></td><td>1.234.567</td></tr>");
+    expect(html).toContain("<tr><td><strong>Estado Civil</strong></td><td>Casado</td></tr>");
+    expect(html).toContain("<tr><td><strong>Profissão</strong></td><td>Engenheiro</td></tr>");
+    expect(html).toContain("<tr><td><strong>E-mail</strong></td><td>joao@example.com</td></tr>");
+    expect(html).toContain("<tr><td><strong>Fone/WhatsApp</strong></td><td>(48) 99999-0000</td></tr>");
+    expect(html).toContain("<tr><td><strong>Endereço</strong></td><td>Rua das Flores, 123 — Florianópolis/SC</td></tr>");
+  });
+
+  it("PF: usa travessão quando um campo opcional está vazio", () => {
+    const html = montarTabelaContratanteHtml({ ...pessoaPfBase, profissao: null });
+    expect(html).toContain("<tr><td><strong>Profissão</strong></td><td>—</td></tr>");
+  });
+
+  it("PJ: tabela 2x2 de razão social/CNPJ, texto 'representada por:', depois a tabela do representante", () => {
+    const html = montarTabelaContratanteHtml(pessoaPjBase, pessoaPfBase);
+
+    expect(html).toContain("<tr><td><strong>Razão Social</strong></td><td>EMPRESA LTDA</td></tr>");
+    expect(html).toContain("<tr><td><strong>CNPJ</strong></td><td>12.345.678/0001-90</td></tr>");
+    expect(html).toContain("representada por:");
+    expect(html).toContain("<tr><td><strong>Nome Completo</strong></td><td>JOÃO DA SILVA</td></tr>");
+
+    const posRazaoSocial = html.indexOf("Razão Social");
+    const posRepresentadaPor = html.indexOf("representada por:");
+    const posNomeCompleto = html.indexOf("Nome Completo");
+    expect(posRazaoSocial).toBeLessThan(posRepresentadaPor);
+    expect(posRepresentadaPor).toBeLessThan(posNomeCompleto);
+  });
+
+  it("PJ sem representante lança erro", () => {
+    expect(() => montarTabelaContratanteHtml(pessoaPjBase)).toThrow();
   });
 });
 

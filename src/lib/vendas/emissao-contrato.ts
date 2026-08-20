@@ -3,6 +3,7 @@ import {
   buscarTemplatePorId,
   montarCamposClienteResolucao,
   montarDadosClienteHtml,
+  montarTabelaContratanteHtml,
   montarTabelaDocumentosHtml,
   montarTabelaVencimentosHtml,
   resolverPlaceholders,
@@ -91,6 +92,7 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
     tabelaDocumentos: montarTabelaDocumentosHtml(
       documentosPacote.map((d) => ({ documento: d.documento, nomeRazaoSocial: d.nomeRazaoSocial })),
     ),
+    tabelaContratante: montarTabelaContratanteHtml(pessoaContrato, representanteContrato),
     ...montarCamposClienteResolucao(pessoaContrato, representanteContrato),
   });
 }
