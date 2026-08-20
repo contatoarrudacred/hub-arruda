@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import { corEstagio, ehEstagioTerminal, ESTAGIOS_VENDA, rotuloEstagio } from "./estagio-venda";
 
 describe("estagio-venda", () => {
-  it("tem os 7 estágios na ordem certa, mais cancelada", () => {
+  it("tem os 6 estágios na ordem certa, mais cancelada", () => {
     expect(ESTAGIOS_VENDA.map((e) => e.valor)).toEqual([
       "nova_oportunidade",
       "emitindo_contrato",
-      "envelopando_assinaturas",
       "aguardando_assinaturas",
       "gerando_financeiro",
       "aguardando_pagamento",
@@ -18,7 +17,6 @@ describe("estagio-venda", () => {
   it("rotuloEstagio devolve o texto certo pra cada valor novo", () => {
     expect(rotuloEstagio("nova_oportunidade")).toBe("Nova Oportunidade");
     expect(rotuloEstagio("emitindo_contrato")).toBe("Emitindo Contrato");
-    expect(rotuloEstagio("envelopando_assinaturas")).toBe("Envelopando Assinaturas");
     expect(rotuloEstagio("aguardando_assinaturas")).toBe("Aguardando Assinaturas");
     expect(rotuloEstagio("gerando_financeiro")).toBe("Gerando Financeiro");
   });

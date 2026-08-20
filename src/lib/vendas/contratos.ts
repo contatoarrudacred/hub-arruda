@@ -12,7 +12,6 @@ export type MetodoPagamento = "boleto_pix" | "cartao";
 export type StatusContrato =
   | "nova_oportunidade"
   | "emitindo_contrato"
-  | "envelopando_assinaturas"
   | "aguardando_assinaturas"
   | "gerando_financeiro"
   | "aguardando_pagamento"
@@ -95,8 +94,8 @@ export type EntradaCriarContratoComissionado = {
  * Registro de venda pro Painel de Vendas de um produto comissionado — chamado por
  * confirmarVendaComissionada (src/lib/vendas/comissoes.ts), que só roda depois que o fornecedor já
  * aprovou a venda (não existe fase de espera a modelar aqui). Nasce direto em aguardando_pagamento,
- * pulando as etapas automáticas do Kanban (emitindo_contrato/envelopando_assinaturas/
- * gerando_financeiro) — não existe contrato com a ArrudaCred nesse tipo de produto, por isso contrato_template_id/
+ * pulando as etapas automáticas do Kanban (emitindo_contrato/gerando_financeiro) — não existe
+ * contrato com a ArrudaCred nesse tipo de produto, por isso contrato_template_id/
  * pessoa_arrudacred_signatario_id/forma_pagamento/metodo_pagamento ficam null. Sem
  * contrato_parcelas — o financeiro dessa venda é comissoes_fornecedor_receber.
  */
