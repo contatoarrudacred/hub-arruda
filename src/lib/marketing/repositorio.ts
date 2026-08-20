@@ -8,6 +8,7 @@ import type {
   DadosItemChecklist,
   DadosMatriz,
   DadosPropriedade,
+  DetalhesPostVisualizacao,
   DuracaoMediaPorEtapa,
   EtapaLog,
   EtapaTimeline,
@@ -453,6 +454,72 @@ export async function carregarImagensPostAnterior(pautaId: string): Promise<Imag
       posicaoAposSecao: i.posicao_apos_secao,
       storageUrl: i.storage_url,
     })),
+  };
+}
+
+/**
+ * Dados pro botão "Visualizar Post" do Monitor de execução (19/08/2026, pedido do Luiz) — busca a
+ * pauta + persona (se houver) + o post mais recente dela (qualquer status: rascunho em andamento
+ * ou já publicado), pra montar o quadro-resumo + preview do post na modal. `post: null` quando o
+ * Escritor ainda não rodou nesta pauta (nenhuma linha em `posts` ainda).
+ */
+export async function carregarDetalhesPostVisualizacao(pautaId: string): Promise<DetalhesPostVisualizacao | null> {
+  const supabase = createAdminClient();
+  const { data: pauta, error: erroPauta } = await supabase
+    .from("pautas")
+    .select("id, palavra_chave_principal, angulo, geografia, funil, tipo_conteudo, status, tentativas, persona_id")
+    .eq("id", pautaId)
+    .maybeSingle();
+  if (erroPauta) throw new Error(`Falha ao carregar pauta ${pautaId} para visualização: ${erroPauta.message}`);
+  if (!pauta) return null;
+
+  let personaNome: string | null = null;
+  if (pauta.persona_id) {
+    const { data: persona } = await supabase.from("personas").select("nome").eq("id", pauta.persona_id).maybeSingle();
+    personaNome = persona?.nome ?? null;
+  }
+
+  const { data: post, error: erroPost } = await supabase
+    .from("posts")
+    .select(
+      "titulo, slug, meta_title, meta_description, conteudo_html, status, score_qa, imagem_destaque_url, imagem_destaque_alt, imagens_secundarias, canais",
+    )
+    .eq("pauta_id", pautaId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroPost) throw new Error(`Falha ao carregar post da pauta ${pautaId} para visualização: ${erroPost.message}`);
+
+  const secundariasBrutas = (post?.imagens_secundarias ?? []) as Array<{ url: string; alt: string; legenda: string }>;
+  const canais = (post?.canais ?? null) as { wordpress?: { url?: string } } | null;
+
+  return {
+    pauta: {
+      id: pauta.id,
+      palavraChavePrincipal: pauta.palavra_chave_principal,
+      angulo: pauta.angulo,
+      geografia: pauta.geografia,
+      funil: pauta.funil as FunilPauta,
+      tipoConteudo: pauta.tipo_conteudo as TipoConteudo,
+      status: pauta.status as StatusPauta,
+      tentativas: pauta.tentativas,
+    },
+    personaNome,
+    post: post
+      ? {
+          titulo: post.titulo,
+          slug: post.slug,
+          metaTitle: post.meta_title,
+          metaDescription: post.meta_description,
+          conteudoHtml: post.conteudo_html,
+          status: post.status as StatusPost,
+          scoreQa: post.score_qa,
+          imagemDestaqueUrl: post.imagem_destaque_url,
+          imagemDestaqueAlt: post.imagem_destaque_alt,
+          imagensSecundarias: secundariasBrutas.map((i) => ({ url: i.url, alt: i.alt, legenda: i.legenda })),
+          urlPublicada: canais?.wordpress?.url ?? null,
+        }
+      : null,
   };
 }
 

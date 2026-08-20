@@ -4,18 +4,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ajuda } from "@/components/marketing/ajuda";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  DetalhesPostVisualizacao,
   DuracaoMediaPorEtapa,
   EtapaLog,
   EtapaTimeline,
+  FunilPauta,
   PautaCarregada,
   PautaConcluida,
   PautaEmAndamento,
   StatusPauta,
+  TipoConteudo,
 } from "@/lib/marketing/tipos";
+import { carregarDetalhesPostVisualizacaoAction } from "./actions";
 
 const NOME_ETAPA: Record<EtapaLog, string> = {
   buscar_checklist: "Buscando checklist",
+  // "gerar_conteudo" tem rótulo dinâmico (ver rotularEtapa) — 1ª tentativa é "Gerando", tentativas
+  // seguintes (correção) são "Ajustando". Esta entrada só existe pra Record<EtapaLog, string> ficar
+  // completo; rotularEtapa nunca lê esta chave em produção.
   gerar_conteudo: "Gerando conteúdo (Escritor)",
+  // Verificação de links externos (19/08/2026, pedido do Luiz) — entre gerar_conteudo e revisar,
+  // ver links-externos.ts.
+  verificar_links: "Verificando links externos",
   revisar: "Revisando (Revisor)",
   inserir_links: "Inserindo links internos",
   sanitizar: "Sanitizando HTML",
@@ -34,7 +44,26 @@ const NOME_STATUS_FINAL: Record<StatusPauta, string> = {
   bloqueada: "Bloqueada",
 };
 
+const NOME_FUNIL: Record<FunilPauta, string> = {
+  topo: "Topo de funil",
+  meio: "Meio de funil",
+  fundo: "Fundo de funil",
+};
+
+const NOME_TIPO_CONTEUDO: Record<TipoConteudo, string> = {
+  post_padrao: "Post padrão",
+  post_storytelling: "Post storytelling",
+  pagina_servico: "Página de serviço",
+  pagina_geografica: "Página geográfica",
+  homepage: "Homepage",
+};
+
 const MAX_CONCLUIDOS = 20;
+
+// Acima disto, o texto de detalhes (motivo do Revisor ou relatório do Escritor) começa colapsado
+// com botão "expandir" — pedido do Luiz: esses relatórios tendem a ficar grandes e "tomar conta"
+// da tela quando há vários numa mesma timeline.
+const LIMITE_TEXTO_COLAPSADO = 220;
 
 const cartao =
   "rounded-xl border border-zinc-200 bg-white p-3.5 dark:border-zinc-700 dark:bg-zinc-900";
@@ -110,6 +139,46 @@ function mapearEtapaLinhaBruta(linha: LinhaLogBruta): EtapaTimeline {
   };
 }
 
+/** Rótulo de uma etapa, considerando o número da tentativa a que ela pertence — só
+ * "gerar_conteudo" muda de rótulo (pedido do Luiz, 19/08/2026): o Escritor tem dois papéis, "está
+ * ESCREVENDO pela primeira vez" (1ª tentativa) vs "está AJUSTANDO o que já escreveu, seguindo o
+ * apontamento do Revisor" (tentativas seguintes) — visualmente bem diferente pra quem acompanha o
+ * Monitor ao vivo. */
+function rotularEtapa(etapa: EtapaLog, numeroTentativa: number): string {
+  if (etapa === "gerar_conteudo") {
+    return numeroTentativa <= 1 ? "Gerando conteúdo (Escritor)" : "Ajustando conteúdo (Escritor)";
+  }
+  return NOME_ETAPA[etapa];
+}
+
+type GrupoTentativa = { numero: number; etapas: EtapaTimeline[] };
+
+/**
+ * Agrupa uma timeline plana de etapas por TENTATIVA (pedido do Luiz: rótulos "1ª tentativa", "2ª
+ * tentativa"...) — cada ciclo completo (gerar→revisar→...) começa com "buscar_checklist" (a
+ * primeira etapa que processar-pauta.ts registra em cada iteração do loop, ver processar-pauta.ts),
+ * então usamos essa etapa como fronteira de grupo. Caso raro (caminho de reaproveitamento total —
+ * `posts.pronto_para_publicar`, publica direto sem regenerar nada): as etapas finais (publicar,
+ * registrar_resultado) não vêm precedidas de um novo "buscar_checklist" e acabam anexadas ao último
+ * grupo real — imprecisão aceitável, é o único caso em que uma "tentativa" não tem geração própria.
+ */
+function agruparPorTentativa(etapasOrdenadas: EtapaTimeline[]): GrupoTentativa[] {
+  const grupos: GrupoTentativa[] = [];
+  let atual: EtapaTimeline[] = [];
+  let numero = 0;
+  for (const etapa of etapasOrdenadas) {
+    if (etapa.etapa === "buscar_checklist") {
+      if (atual.length > 0) grupos.push({ numero: numero || 1, etapas: atual });
+      numero += 1;
+      atual = [etapa];
+    } else {
+      atual.push(etapa);
+    }
+  }
+  if (atual.length > 0) grupos.push({ numero: numero || 1, etapas: atual });
+  return grupos;
+}
+
 /**
  * Monitor de execução — redesenho de 19/08/2026 (pedido do Luiz): 1 card por PAUTA em "Em
  * andamento agora" e "Concluídos recentes" (não mais 1 card por linha de log — o desenho anterior
@@ -141,6 +210,9 @@ export function MonitorClient({
   const [concluidos, setConcluidos] = useState<PautaConcluida[]>(concluidosInicial);
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [agora, setAgora] = useState<number>(() => Date.now());
+  // Botão "Visualizar Post" (pedido do Luiz) — guarda só o par (id, rótulo) da pauta aberta na
+  // modal; os dados de fato (quadro-resumo + post) são buscados sob demanda por ModalVisualizarPost.
+  const [visualizando, setVisualizando] = useState<{ pautaId: string; palavraChavePrincipal: string } | null>(null);
 
   // Nomes de pauta conhecidos a partir da carga inicial — um evento de `pautas_execucao_log` sobre
   // uma pauta totalmente nova (criada e já com uma etapa rodando entre a carga inicial e agora)
@@ -282,9 +354,23 @@ export function MonitorClient({
           agora={agora}
           reclaimMinutos={reclaimMinutos}
           duracaoMediaPorEtapa={duracaoMediaPorEtapa}
+          onVisualizarPost={setVisualizando}
         />
-        <SecaoConcluidos pautas={concluidos} expandidos={expandidos} onAlternarExpandido={alternarExpandido} />
+        <SecaoConcluidos
+          pautas={concluidos}
+          expandidos={expandidos}
+          onAlternarExpandido={alternarExpandido}
+          onVisualizarPost={setVisualizando}
+        />
       </div>
+
+      {visualizando && (
+        <ModalVisualizarPost
+          pautaId={visualizando.pautaId}
+          palavraChavePrincipal={visualizando.palavraChavePrincipal}
+          onFechar={() => setVisualizando(null)}
+        />
+      )}
     </div>
   );
 }
@@ -326,16 +412,31 @@ function IconeGirando({ cor }: { cor: string }) {
   );
 }
 
+/** Botão "Visualizar Post" (pedido do Luiz) — igual nos dois tipos de card, sempre no topo. */
+function BotaoVisualizarPost({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    >
+      Visualizar post
+    </button>
+  );
+}
+
 function SecaoEmAndamento({
   pautas,
   agora,
   reclaimMinutos,
   duracaoMediaPorEtapa,
+  onVisualizarPost,
 }: {
   pautas: PautaEmAndamento[];
   agora: number;
   reclaimMinutos: number;
   duracaoMediaPorEtapa: DuracaoMediaPorEtapa;
+  onVisualizarPost: (alvo: { pautaId: string; palavraChavePrincipal: string }) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -354,6 +455,7 @@ function SecaoEmAndamento({
               agora={agora}
               reclaimMinutos={reclaimMinutos}
               duracaoMediaPorEtapa={duracaoMediaPorEtapa}
+              onVisualizarPost={onVisualizarPost}
             />
           ))
         )}
@@ -367,17 +469,21 @@ function CardEmAndamento({
   agora,
   reclaimMinutos,
   duracaoMediaPorEtapa,
+  onVisualizarPost,
 }: {
   pauta: PautaEmAndamento;
   agora: number;
   reclaimMinutos: number;
   duracaoMediaPorEtapa: DuracaoMediaPorEtapa;
+  onVisualizarPost: (alvo: { pautaId: string; palavraChavePrincipal: string }) => void;
 }) {
   const etapasOrdenadas = useMemo(
     () => [...pauta.etapas].sort((a, b) => (paraInstanteOuNulo(a.iniciadoEm) ?? 0) - (paraInstanteOuNulo(b.iniciadoEm) ?? 0)),
     [pauta.etapas],
   );
+  const grupos = useMemo(() => agruparPorTentativa(etapasOrdenadas), [etapasOrdenadas]);
   const etapaAtual = etapasOrdenadas.find((e) => e.concluidoEm === null);
+  const numeroTentativaAtual = grupos.find((g) => g.etapas.some((e) => e.id === etapaAtual?.id))?.numero ?? 1;
   const iniciadoEmMs = etapaAtual ? paraInstanteOuNulo(etapaAtual.iniciadoEm) : null;
   const elapsedMs = iniciadoEmMs !== null ? Math.max(0, agora - iniciadoEmMs) : null;
   const elapsedMinutos = elapsedMs !== null ? elapsedMs / 60_000 : null;
@@ -391,7 +497,7 @@ function CardEmAndamento({
   return (
     <div className={cartao}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{pauta.palavraChavePrincipal}</p>
+        <BotaoVisualizarPost onClick={() => onVisualizarPost({ pautaId: pauta.pautaId, palavraChavePrincipal: pauta.palavraChavePrincipal })} />
         <div className="flex shrink-0 items-center gap-1.5">
           {pauta.tentativas > 0 && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
@@ -411,21 +517,88 @@ function CardEmAndamento({
         </div>
       </div>
 
+      <p className="mt-1.5 text-sm font-medium text-zinc-900 dark:text-zinc-50">{pauta.palavraChavePrincipal}</p>
+
       {progresso !== null && etapaAtual && !travada && (
         <div className="mt-1.5">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
             <div className="h-full rounded-full bg-blue-500 dark:bg-blue-400" style={{ width: `${progresso}%` }} />
           </div>
           <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-            ~{progresso}% do tempo médio de {NOME_ETAPA[etapaAtual.etapa]} (média: {formatarDuracao(mediaSegundos!)})
+            ~{progresso}% do tempo médio de {rotularEtapa(etapaAtual.etapa, numeroTentativaAtual)} (média: {formatarDuracao(mediaSegundos!)})
           </p>
         </div>
       )}
 
-      <div className="mt-2 space-y-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-        {etapasOrdenadas.map((etapa) => (
-          <LinhaTimeline key={etapa.id} etapa={etapa} emAndamento={etapa.id === etapaAtual?.id} travada={etapa.id === etapaAtual?.id && travada} reclaimMinutos={reclaimMinutos} />
+      <div className="mt-2 space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+        {grupos.map((grupo) => (
+          <div key={grupo.numero}>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{grupo.numero}ª tentativa</p>
+            <div className="mt-1 space-y-1.5">
+              {grupo.etapas.map((etapa) => (
+                <LinhaTimeline
+                  key={etapa.id}
+                  etapa={etapa}
+                  numeroTentativa={grupo.numero}
+                  emAndamento={etapa.id === etapaAtual?.id}
+                  travada={etapa.id === etapaAtual?.id && travada}
+                  reclaimMinutos={reclaimMinutos}
+                />
+              ))}
+            </div>
+          </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Texto de detalhes (motivo do Revisor ou relatório do Escritor) — colapsado com botão "expandir"
+ * acima de LIMITE_TEXTO_COLAPSADO caracteres, e um botão "copiar" pra área de transferência
+ * (pedido do Luiz: esses relatórios tendem a ficar grandes e o usuário quer poder colar em outro
+ * lugar pra ler/comparar com calma). */
+function TextoColapsavel({ texto }: { texto: string }) {
+  const [expandido, setExpandido] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const longo = texto.length > LIMITE_TEXTO_COLAPSADO;
+  const exibido = expandido || !longo ? texto : `${texto.slice(0, LIMITE_TEXTO_COLAPSADO).trimEnd()}…`;
+
+  const copiar = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard
+        .writeText(texto)
+        .then(() => {
+          setCopiado(true);
+          setTimeout(() => setCopiado(false), 1500);
+        })
+        .catch(() => {
+          // Clipboard indisponível (ex.: contexto não-seguro/permissão negada) — falha silenciosa,
+          // não vale quebrar a tela por causa de um botão secundário de conveniência.
+        });
+    },
+    [texto],
+  );
+
+  return (
+    <div className="mt-0.5">
+      <p className="whitespace-pre-line text-[11px] text-zinc-500 dark:text-zinc-400">{exibido}</p>
+      <div className="mt-0.5 flex items-center gap-2">
+        {longo && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpandido((v) => !v);
+            }}
+            className="text-[10px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+          >
+            {expandido ? "recolher" : "expandir"}
+          </button>
+        )}
+        <button type="button" onClick={copiar} className="text-[10px] font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+          {copiado ? "copiado!" : "copiar"}
+        </button>
       </div>
     </div>
   );
@@ -435,11 +608,13 @@ function CardEmAndamento({
  * animado) e tempo que levou, exatamente o formato pedido pelo Luiz. */
 function LinhaTimeline({
   etapa,
+  numeroTentativa,
   emAndamento,
   travada,
   reclaimMinutos,
 }: {
   etapa: EtapaTimeline;
+  numeroTentativa: number;
   emAndamento: boolean;
   travada: boolean;
   reclaimMinutos: number;
@@ -450,11 +625,13 @@ function LinhaTimeline({
     concluidoEmMs !== null && iniciadoEmMs !== null ? (concluidoEmMs - iniciadoEmMs) / 1000 : null;
   const horaInicio = iniciadoEmMs !== null ? new Date(iniciadoEmMs).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
 
-  // reprovacaoDeNegocio: sucesso técnico (a chamada rodou sem exceção) mas com `detalhes`
-  // preenchido — é como o pipeline registra uma rejeição de negócio (ex.: Revisor reprovando por
-  // score baixo), diferente de um erro técnico de verdade (sucesso: false). Ver comentário em
-  // registrarEtapa (repositorio.ts).
-  const reprovacaoDeNegocio = etapa.sucesso === true && Boolean(etapa.detalhes);
+  // reprovacaoDeNegocio: só a etapa "revisar" tem essa semântica (sucesso técnico mas reprovação
+  // de conteúdo, ver comentário em registrarEtapa, repositorio.ts). Outras etapas (gerar_conteudo,
+  // gerar_imagens) também preenchem `detalhes` com sucesso:true — mas ali é um RELATÓRIO
+  // informativo (o que foi feito, ou uma degradação aceitável como "capa não subiu"), não uma
+  // rejeição — sem esta checagem por etapa, todo relatório do Escritor apareceria com o ícone de
+  // "reprovado" (🔁) por engano.
+  const reprovacaoDeNegocio = etapa.etapa === "revisar" && etapa.sucesso === true && Boolean(etapa.detalhes);
 
   let icone: React.ReactNode;
   let corTexto = "text-zinc-600 dark:text-zinc-400";
@@ -478,14 +655,15 @@ function LinhaTimeline({
       <span className="mt-0.5 shrink-0">{icone}</span>
       <div className="min-w-0 flex-1">
         <p className={corTexto}>
-          {NOME_ETAPA[etapa.etapa]}
+          {rotularEtapa(etapa.etapa, numeroTentativa)}
           {duracaoSegundos !== null && <span className="text-zinc-400 dark:text-zinc-500"> — {formatarDuracao(duracaoSegundos)}</span>}
           {emAndamento && !travada && <span className="text-zinc-400 dark:text-zinc-500"> — rodando…</span>}
           {travada && <span> — sem conclusão há mais de {reclaimMinutos}min</span>}
         </p>
-        {etapa.detalhes && (etapa.sucesso === false || reprovacaoDeNegocio) && (
-          <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{etapa.detalhes}</p>
-        )}
+        {/* Detalhes aparece sempre que existe — não só em falha/reprovação: é aqui que o relatório
+            do Escritor (o que ele diz ter feito) e o motivo do Revisor (o que ele pediu) ficam
+            visíveis lado a lado na timeline, pra cruzar um com o outro (pedido do Luiz). */}
+        {etapa.detalhes && <TextoColapsavel texto={etapa.detalhes} />}
       </div>
     </div>
   );
@@ -495,10 +673,12 @@ function SecaoConcluidos({
   pautas,
   expandidos,
   onAlternarExpandido,
+  onVisualizarPost,
 }: {
   pautas: PautaConcluida[];
   expandidos: Set<string>;
   onAlternarExpandido: (pautaId: string) => void;
+  onVisualizarPost: (alvo: { pautaId: string; palavraChavePrincipal: string }) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -516,6 +696,7 @@ function SecaoConcluidos({
               pauta={pauta}
               expandido={expandidos.has(pauta.pautaId)}
               onAlternarExpandido={() => onAlternarExpandido(pauta.pautaId)}
+              onVisualizarPost={onVisualizarPost}
             />
           ))
         )}
@@ -528,15 +709,18 @@ function CardConcluido({
   pauta,
   expandido,
   onAlternarExpandido,
+  onVisualizarPost,
 }: {
   pauta: PautaConcluida;
   expandido: boolean;
   onAlternarExpandido: () => void;
+  onVisualizarPost: (alvo: { pautaId: string; palavraChavePrincipal: string }) => void;
 }) {
   const etapasOrdenadas = useMemo(
     () => [...pauta.etapas].sort((a, b) => (paraInstanteOuNulo(a.iniciadoEm) ?? 0) - (paraInstanteOuNulo(b.iniciadoEm) ?? 0)),
     [pauta.etapas],
   );
+  const grupos = useMemo(() => agruparPorTentativa(etapasOrdenadas), [etapasOrdenadas]);
   const primeiraEtapaMs = etapasOrdenadas[0] ? paraInstanteOuNulo(etapasOrdenadas[0].iniciadoEm) : null;
   const concluidoEmMs = paraInstanteOuNulo(pauta.concluidoEm);
   const tempoTotalSegundos = primeiraEtapaMs !== null && concluidoEmMs !== null ? (concluidoEmMs - primeiraEtapaMs) / 1000 : NaN;
@@ -558,17 +742,19 @@ function CardConcluido({
 
   return (
     <div className={cartao}>
-      <button type="button" onClick={onAlternarExpandido} className="flex w-full items-start justify-between gap-2 text-left">
+      <div className="flex items-start justify-between gap-2">
+        <BotaoVisualizarPost onClick={() => onVisualizarPost({ pautaId: pauta.pautaId, palavraChavePrincipal: pauta.palavraChavePrincipal })} />
+        {badge}
+      </div>
+
+      <button type="button" onClick={onAlternarExpandido} className="mt-1.5 flex w-full items-start justify-between gap-2 text-left">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50">{pauta.palavraChavePrincipal}</p>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
             Levou {formatarDuracao(tempoTotalSegundos)} no total ({etapasOrdenadas.length} etapa{etapasOrdenadas.length === 1 ? "" : "s"})
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {badge}
-          <span className="text-zinc-400">{expandido ? "▲" : "▼"}</span>
-        </div>
+        <span className="shrink-0 text-zinc-400">{expandido ? "▲" : "▼"}</span>
       </button>
 
       {!publicado && pauta.motivoUltimaReprovacao && (
@@ -576,12 +762,184 @@ function CardConcluido({
       )}
 
       {expandido && (
-        <div className="mt-2 space-y-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-          {etapasOrdenadas.map((etapa) => (
-            <LinhaTimeline key={etapa.id} etapa={etapa} emAndamento={false} travada={false} reclaimMinutos={0} />
+        <div className="mt-2 space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+          {grupos.map((grupo) => (
+            <div key={grupo.numero}>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{grupo.numero}ª tentativa</p>
+              <div className="mt-1 space-y-1.5">
+                {grupo.etapas.map((etapa) => (
+                  <LinhaTimeline key={etapa.id} etapa={etapa} numeroTentativa={grupo.numero} emAndamento={false} travada={false} reclaimMinutos={0} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Modal "Visualizar Post" (pedido do Luiz, 19/08/2026) — quadro-resumo da pauta (persona, ângulo,
+ * título, slug...) + o post como está agora (rascunho em andamento ou já publicado), com imagens e
+ * legendas. Busca sob demanda via server action (não faz parte da carga inicial nem do Realtime —
+ * só é preciso quando o usuário efetivamente clica em "Visualizar post" de um card específico).
+ */
+function ModalVisualizarPost({
+  pautaId,
+  palavraChavePrincipal,
+  onFechar,
+}: {
+  pautaId: string;
+  palavraChavePrincipal: string;
+  onFechar: () => void;
+}) {
+  const [dados, setDados] = useState<DetalhesPostVisualizacao | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    // Promise.resolve().then(...) empurra o reset de estado + fetch pra fora da execução síncrona
+    // do efeito (mesmo padrão já usado em atendimento-client.tsx) — chamar setState direto no
+    // corpo síncrono do efeito é o que o eslint (react-hooks/set-state-in-effect) rejeita.
+    Promise.resolve().then(async () => {
+      setCarregando(true);
+      setErro(false);
+      try {
+        const resultado = await carregarDetalhesPostVisualizacaoAction(pautaId);
+        if (cancelado) return;
+        setDados(resultado);
+        setCarregando(false);
+      } catch {
+        if (cancelado) return;
+        setErro(true);
+        setCarregando(false);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [pautaId]);
+
+  // Esc fecha a modal — atalho padrão, sem lib extra.
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onFechar();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [onFechar]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-10" onClick={onFechar}>
+      <div
+        className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{palavraChavePrincipal}</h2>
+          <button
+            type="button"
+            onClick={onFechar}
+            className="shrink-0 rounded-full px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          >
+            ✕
+          </button>
+        </div>
+
+        {carregando && <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Carregando…</p>}
+        {erro && <p className="mt-4 text-sm text-red-600 dark:text-red-400">Não foi possível carregar os dados desta pauta.</p>}
+
+        {dados && !carregando && !erro && (
+          <>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+              <ItemResumo rotulo="Persona" valor={dados.personaNome ?? "—"} />
+              <ItemResumo rotulo="Ângulo" valor={dados.pauta.angulo} />
+              <ItemResumo rotulo="Funil" valor={NOME_FUNIL[dados.pauta.funil]} />
+              <ItemResumo rotulo="Formato" valor={NOME_TIPO_CONTEUDO[dados.pauta.tipoConteudo]} />
+              <ItemResumo rotulo="Geografia" valor={dados.pauta.geografia ?? "—"} />
+              <ItemResumo rotulo="Tentativas" valor={String(dados.pauta.tentativas)} />
+              {dados.post && (
+                <>
+                  <ItemResumo rotulo="Slug" valor={dados.post.slug} />
+                  <ItemResumo rotulo="Score QA" valor={dados.post.scoreQa !== null ? `${dados.post.scoreQa}/100` : "—"} />
+                  <ItemResumo rotulo="Status do post" valor={NOME_STATUS_POST[dados.post.status]} />
+                </>
+              )}
+            </dl>
+
+            {!dados.post && (
+              <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+                O Escritor ainda não gerou nenhum rascunho para esta pauta.
+              </p>
+            )}
+
+            {dados.post && (
+              <article className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+                {dados.post.urlPublicada && (
+                  <a
+                    href={dados.post.urlPublicada}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Ver no WordPress ↗
+                  </a>
+                )}
+                {dados.post.imagemDestaqueUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- imagem hospedada no WordPress/Storage do próprio Luiz, não vale configurar domínio remoto no next.config só pra esta modal
+                  <img
+                    src={dados.post.imagemDestaqueUrl}
+                    alt={dados.post.imagemDestaqueAlt ?? ""}
+                    className="mt-2 w-full rounded-lg object-cover"
+                  />
+                )}
+                <h1 className="mt-3 text-lg font-semibold text-zinc-900 dark:text-zinc-50">{dados.post.titulo}</h1>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <strong>Meta title:</strong> {dados.post.metaTitle}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  <strong>Meta description:</strong> {dados.post.metaDescription}
+                </p>
+                {/* conteudoHtml já passou por sanitizarConteudoHtml (server-side) antes de ser
+                    persistido — mesmo HTML que vai pro WordPress, allowlist de tags restrita. */}
+                <div
+                  className="prose prose-sm mt-3 max-w-none dark:prose-invert"
+                  dangerouslySetInnerHTML={{ __html: dados.post.conteudoHtml }}
+                />
+                {dados.post.imagensSecundarias.length > 0 && (
+                  <div className="mt-4 space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Imagens secundárias</p>
+                    {dados.post.imagensSecundarias.map((imagem) => (
+                      <figure key={imagem.url}>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- ver comentário acima */}
+                        <img src={imagem.url} alt={imagem.alt} className="w-full rounded-lg object-cover" />
+                        <figcaption className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{imagem.legenda}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
+              </article>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const NOME_STATUS_POST: Record<string, string> = {
+  rascunho: "Rascunho",
+  publicado: "Publicado",
+  falhou: "Falhou",
+};
+
+function ItemResumo({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <div>
+      <dt className="text-zinc-400 dark:text-zinc-500">{rotulo}</dt>
+      <dd className="font-medium text-zinc-700 dark:text-zinc-200">{valor}</dd>
     </div>
   );
 }
