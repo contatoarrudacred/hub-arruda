@@ -32,6 +32,9 @@ const NOME_ETAPA: Record<EtapaLog, string> = {
   // Fase 4a+4b, Task 10 (19/08/2026) — capa + imagens secundárias + upload WordPress + schema
   // Article/Organization, ver processar-pauta.ts.
   gerar_imagens: "Gerando imagens (capa + secundárias)",
+  // Fase 4e, Agente Agendador (20/08/2026) — só aparece quando a propriedade tem horários de
+  // publicação configurados, ver decidirProximoHorario em agendador.ts.
+  agendar: "Agendando publicação",
   publicar: "Publicando",
   registrar_resultado: "Registrando resultado",
 };
