@@ -26,14 +26,14 @@ describe("criarAdaptadorWordPress", () => {
   it("criarRascunho chama a REST API com status draft e retorna o id remoto", async () => {
     const fetchFalso = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 123, status: "draft" }),
+      json: async () => ({ id: 123, status: "draft", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     });
     vi.stubGlobal("fetch", fetchFalso);
 
     const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
     const resultado = await adaptador.criarRascunho(conteudo);
 
-    expect(resultado).toEqual({ idRemoto: "123", status: "rascunho" });
+    expect(resultado).toEqual({ idRemoto: "123", status: "rascunho", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
     const [url, opcoes] = fetchFalso.mock.calls[0];
     expect(url).toBe("https://teste.exemplo.com/wp-json/wp/v2/posts");
     expect(opcoes.method).toBe("POST");
@@ -46,7 +46,7 @@ describe("criarAdaptadorWordPress", () => {
   it("criarRascunho sem imagemDestacadaId: payload idêntico ao comportamento anterior a esta task (regressão)", async () => {
     const fetchFalso = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 123, status: "draft" }),
+      json: async () => ({ id: 123, status: "draft", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     });
     vi.stubGlobal("fetch", fetchFalso);
 
@@ -70,7 +70,7 @@ describe("criarAdaptadorWordPress", () => {
   it("criarRascunho com imagemDestacadaId: featured_media aparece no payload com o valor correto", async () => {
     const fetchFalso = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 123, status: "draft" }),
+      json: async () => ({ id: 123, status: "draft", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
     });
     vi.stubGlobal("fetch", fetchFalso);
 
@@ -83,6 +83,41 @@ describe("criarAdaptadorWordPress", () => {
     // Resto do payload permanece igual — só a chave nova foi adicionada.
     expect(corpo.slug).toBe(conteudo.slug);
     expect(corpo.status).toBe("draft");
+  });
+
+  // Fase 4e, Agente Agendador (20/08/2026).
+  it("criarRascunho com agendadoPara: status vira future + date_gmt, e link vem no retorno", async () => {
+    const fetchFalso = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 123, status: "future", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+    });
+    vi.stubGlobal("fetch", fetchFalso);
+
+    const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
+    const agendadoPara = new Date("2026-08-21T12:00:00.000Z");
+    const resultado = await adaptador.criarRascunho(conteudo, undefined, agendadoPara);
+
+    const [, opcoes] = fetchFalso.mock.calls[0];
+    const corpo = JSON.parse(opcoes.body);
+    expect(corpo.status).toBe("future");
+    expect(corpo.date_gmt).toBe("2026-08-21T12:00:00.000Z");
+    expect(resultado).toEqual({ idRemoto: "123", status: "rascunho", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+  });
+
+  it("criarRascunho sem agendadoPara: nem status future nem date_gmt aparecem no payload (regressão)", async () => {
+    const fetchFalso = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 123, status: "draft", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+    });
+    vi.stubGlobal("fetch", fetchFalso);
+
+    const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
+    await adaptador.criarRascunho(conteudo);
+
+    const [, opcoes] = fetchFalso.mock.calls[0];
+    const corpo = JSON.parse(opcoes.body);
+    expect(corpo.status).toBe("draft");
+    expect(corpo).not.toHaveProperty("date_gmt");
   });
 
   it("enviarMidia sobe uma data URL (base64 real) pro endpoint /wp/v2/media e retorna idRemoto/url", async () => {

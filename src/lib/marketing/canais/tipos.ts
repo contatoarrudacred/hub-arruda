@@ -11,7 +11,10 @@ export type ConteudoCanal = {
   metaDescription: string;
 };
 
-export type ResultadoRascunho = { idRemoto: string; status: "rascunho" | "falhou" };
+// `link` (Fase 4e, 20/08/2026): o WordPress sempre devolve o permalink final na criação do post,
+// mesmo pra `status: "future"` — deixa de ser necessário chamar aprovarPublicar só pra obter a URL
+// quando o post foi criado agendado. Ver processar-pauta.ts.
+export type ResultadoRascunho = { idRemoto: string; status: "rascunho" | "falhou"; link: string };
 export type ResultadoVerificacao = { ok: boolean; detalhes?: string };
 export type ResultadoPublicacao = { urlPublicada: string };
 
