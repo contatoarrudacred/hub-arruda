@@ -31,7 +31,7 @@ Sistema único de gestão para a ArrudaCred, cobrindo **Marketing, Comercial, Ju
 > - Os agentes de conteúdo da QMARKA (A1-A9b — Estrategista, Escritor, Imagem, Links, QA, Postador, Distribuidor, Backlinks, Retrofit, Atualização Semestral) **ainda não têm equivalente no nosso levantamento** — viram o núcleo da especificação do módulo Marketing, próxima frente de trabalho.
 
 ### 1.1 Módulo Comercial (CRM + Vendas)
-> 📄 Design do módulo Vendas (cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda, handoff pra Operação): `superpowers/specs/2026-08-17-modulo-vendas-design.md` — spec validada com Luiz em 17/08/2026, ainda não implementada.
+> 📄 Design do módulo Vendas (cadastro Cliente/Fornecedor/Serviço, contrato, assinatura digital, financeiro da venda, handoff pra Operação): `superpowers/specs/2026-08-17-modulo-vendas-design.md` — spec validada com Luiz em 17/08/2026. Sub-frente Cadastro construída (17-18/08), sub-frentes Contrato/Assinatura/Financeiro construídas (18-19/08), redesenho "Nova Oportunidade" + novo vocabulário do Kanban (`superpowers/specs/2026-08-19-vendas-nova-oportunidade-kanban-design.md`) construído e testado em produção (19-20/08) — status completo e diário de bugs reais na seção 11 abaixo.
 > ⚠️ Princípio de design que atravessa este módulo inteiro: **o sistema é multi-produto desde o início** (limpa nome é o principal hoje, mas não é o único — ver seção 8.8). Nada aqui deve ser modelado como se "limpa nome" fosse o único produto possível.
 > ✅ **Reconciliação com o planejamento da QMARKA (12/08/2026):** os agentes A10 (Resgate de Legado), A11 (Gestão de Funil WhatsApp) e A12 (Cobrança Financeira) descritos no plano de crescimento orgânico já estão majoritariamente cobertos pelo que desenhamos:
 > - **A11 ≈ nosso motor de follow-up + Kanban** — régua de follow-up, etiquetas de funil e encerramento automático em D+10 já batem com o que fechamos (`SCRIPT_LIMPANOME_SERASA_SPC.md`, premissas gerais)
@@ -525,6 +525,32 @@ Primeira sub-frente do módulo Vendas (spec: `superpowers/specs/2026-08-17-modul
 
 **Fora de escopo desta sub-frente** (registrado na spec, seção 7): módulo Operação, contas a pagar a fornecedor, régua de cobrança, agenda pós-venda, portal do cliente, split payment de afiliado — todos ficam pra frentes futuras.
 
+### ✅ Módulo Vendas — sub-frentes Contrato/Assinatura/Financeiro + redesenho Nova Oportunidade/Kanban, construídas e testadas em produção com bugs reais corrigidos (18-20/08/2026)
+
+Continuação direta da sub-frente Cadastro acima. Luiz pediu (18/08/2026) pra construir as 3 sub-frentes seguintes (Contrato, Assinatura digital, Financeiro) **juntas, ponta a ponta**, em vez de separadas — "gostaria que já fizesse tudo de ponta a ponta sempre parando e me questionando se tiver dúvidas". Plano: `superpowers/plans/2026-08-18-vendas-contrato.md`, spec: `superpowers/specs/2026-08-17-modulo-vendas-design.md`, 17 tasks + Task 18 de verificação, via subagent-driven-development.
+
+**Construído nesta passada (migrations `20260818090001_vendas_contrato_nucleo.sql`, `20260818100000_vendas_dados_contrato_pessoa.sql`, `20260819110000_vendas_corrige_contratos_desatualizado.sql`):**
+- `src/lib/vendas/`: `valor-por-extenso.ts` e `calculo-parcelas.ts` (lógica pura, TDD), `contrato-templates.ts`, `contratos.ts`, `geracao-pdf.ts` (Puppeteer + `@sparticuz/chromium`), `comissoes.ts` (produto `comissionado`).
+- `src/lib/assinafy/` e `src/lib/asaas/` (`cliente.ts` cru + `adapter.ts` de orquestração, mesmo padrão de `src/lib/whatsapp/`) — integração real com as duas plataformas, baseada na doc externa levantada antes de codar (regra de ouro do projeto).
+- Webhooks `/api/webhooks/assinafy` e `/api/webhooks/asaas` (clones estruturais do padrão Zapster: segredo/timing-safe, fail-closed em produção, processamento via `after()`).
+- Editor de template rico (TipTap) e tela `/admin/configuracoes/templates-documentos` pra editar `contrato_templates` sem precisar mexer em HTML cru.
+- Tela de Fechamento de Venda (caminho CRM) e tela de Detalhes da Venda (timeline, reenvio de link multi-canal, painel interativo por estágio).
+- Cartão via Asaas Checkout (`chargeTypes: INSTALLMENT`) em vez de tratar igual boleto/pix — decisão do Luiz revertendo uma escolha de arquitetura anterior, pra não exigir compliance PCI-DSS coletando dado de cartão no nosso formulário.
+
+Depois das 17 tasks veio um bug real em produção que motivou um segundo desenho: uma venda criada em "Nova Venda" nunca aparecia no Painel (`listarVendas()` só lê de `contratos`, que só ganhava linha depois de completar Fechamento de Venda). Isso virou a spec `superpowers/specs/2026-08-19-vendas-nova-oportunidade-kanban-design.md` (aprovada 19/08/2026) — tela única "Nova Oportunidade" (substitui Nova Venda + Fechamento no caminho sem funil prévio, cria o registro em `contratos` na hora), novo vocabulário do Kanban com progressão automática + retry (3x automático, depois manual por card ou em lote), Realtime no Painel, e `produtos.exige_lista_documentos`. Construída via SDD, 18 tasks (migration `20260819120000_vendas_nova_oportunidade_kanban.sql`).
+
+**Revisão de branch inteira** (mesmo padrão da sub-frente Cadastro — pega o que revisão por task não vê) achou, em duas rodadas, 2 Critical (parcelamento do cartão nunca chegava na Asaas; retentativa manual só aparecia depois de 3 falhas acumuladas, deixando um card com 1 erro preso pra sempre) + 4 Important + mais 2 Important expostos pela correção dos Critical + 3 Minor — todos corrigidos e re-revisados no mesmo dia (detalhe completo em `docs/status/vendas.md`, não repetido aqui pra não duplicar).
+
+**Teste ao vivo com o Luiz (19-20/08/2026) — a parte que não estava em nenhuma spec.** Depois do merge, Luiz testou de ponta a ponta em produção e trouxe pedidos/bugs reais que motivaram trabalho adicional não previsto:
+- Telas novas **Produtos & Serviços** (`/admin/configuracoes/produtos`) e **Template de Documentos** generalizado pra 3 tipos (`contrato`/`termo_acordo`/`ficha_associativa`), com placeholders granulares (`cliente_*`/`empresa_*`, `{{tabela_contratante}}`, `{{tabela_documentos}}`).
+- **Fonte Carlito embutida** no PDF (`fonte-carlito.ts`, base64 WOFF2) — achado real: o Chromium serverless da Vercel não tem fonte de sistema nenhuma instalada, cai pra "Open Sans" por padrão, então o PDF real divergia silenciosamente do preview no navegador até a fonte ser embutida via `@font-face`.
+- Reskin visual do Kanban + correção de um bug de UI real (menu suspenso do card preso dentro da coluna — `overflow-y-auto` força `overflow-x` implícito por spec CSS; corrigido com `createPortal`+`position: fixed`).
+- **4 bugs reais de integração**, nenhum pego por teste automatizado porque dependem do comportamento real das APIs externas: (1) upload da Assinafy devolve resposta envelopada, diferente do que a doc local mostrava pra esse endpoint; (2) Assinafy rejeita criar signatário com e-mail já existente na conta — falha garantida a partir do 2º contrato, já que o e-mail do signatário da ArrudaCred é fixo; corrigido com busca idempotente por e-mail; (3) Assinafy rejeita `assignment` com o mesmo signatário duplicado — acontece quando cliente e ArrudaCred resolvem pra mesma Pessoa; corrigido com dedup + erro claro citando nomes/e-mails; (4) nome do arquivo do PDF virou `contrato-arrudacred-<CLIENTE>-<SERVICO>-<timestamp>.pdf` (sem espaço/acentuação/caractere especial, via NFD+filtro alfanumérico) em vez do UUID cru do contrato.
+- **Fusão de etapas do Kanban**: "Emitindo Contrato" e "Envelopando Assinaturas" viravam uma etapa só (migration `20260820120000_vendas_remove_etapa_envelopando.sql`, **ainda pendente de execução pelo Luiz no SQL Editor**) — na prática as duas sempre rodavam automáticas em sequência, sem pausa humana real no meio; a coluna "Envelopando Assinaturas" nunca representou um estado intermediário real, só ficava sempre vazia. Kanban passou de 7 pra 6 etapas + cancelada.
+- **Cadastro da empresa ArrudaCred como Pessoa** (PJ, CNPJ 40.342.851/0001-37, e-mail `juridico@arrudacred.com.br`) + config `contrato_arrudacred_signatario` em `/admin/configuracoes`, pra parar de usar o e-mail pessoal do Luiz como signatário da empresa nos contratos. **Achado importante**: `contratos.pessoa_arrudacred_signatario_id` é lido da config só na CRIAÇÃO do contrato e nunca mais depois — corrigir a config não conserta contratos já criados antes da correção, só os novos.
+
+**Pendências reais no momento desta entrada:** migration `20260820120000` aguardando o Luiz rodar no SQL Editor; teste ao vivo completo (Nova Oportunidade → PDF → assinatura real na Assinafy → cobrança/pagamento real na Asaas) ainda não fechado — falta o Luiz assinar/pagar de verdade um documento de teste depois da correção do signatário. Ver `docs/status/vendas.md` pro estado corrente, atualizado com mais frequência que esta seção.
+
 ### Stack técnica confirmada (13/08/2026)
 - **Next.js 16** (App Router, TypeScript, Tailwind, pnpm) na Vercel
 - **Supabase**: Postgres + **Supabase Auth** (login do admin — substituiu a ideia original de `senha_hash` próprio em `usuarios_sistema`) + Storage (mídia) — acesso via `service_role` no backend
@@ -763,7 +789,7 @@ Perguntas em aberto pra quando for desenhar de verdade: quais KPIs entram em cad
 
 ---
 
-## 12. Módulo Vendas — Detalhamento (planejamento fechado da sub-frente Cadastro, construção em andamento)
+## 12. Módulo Vendas — Detalhamento (todas as sub-frentes planejadas na seção 12.3 já construídas — ver seção 11)
 
 > 📄 Spec completa: `superpowers/specs/2026-08-17-modulo-vendas-design.md`. Plano de implementação da sub-frente Cadastro: `superpowers/plans/2026-08-17-vendas-cadastro.md`. Status de produção: seção 11 acima.
 > Esta seção é sobre **Planejamento** (ver convenção de duas dimensões, seção 0) — o que foi decidido e por quê. O que já foi de fato construído fica em seção 11.
@@ -791,9 +817,10 @@ Exemplos: Limpeza de Nome/Score/Bacen = `proprio`. Consórcio, crédito/emprést
 ### 12.3 Sub-frentes planejadas (ordem de construção)
 
 1. **Cadastro** (Cliente/Fornecedor/Serviço, endereço, upload de documento, foto, leitura por IA) — ✅ construída, ver seção 11.
-2. **Contrato** (geração automática de PDF com template editável, valor por extenso, tabela de vencimentos, 2 assinantes via Assinafy) — planejada na spec, ainda não iniciada.
-3. **Assinatura digital** (integração real Assinafy, webhook) — planejada, ainda não iniciada.
-4. **Financeiro da venda** (cobrança real via Asaas, comissão a receber pro modelo `comissionado`, handoff pra Operação) — planejada, ainda não iniciada.
+2. **Contrato** (geração automática de PDF com template editável, valor por extenso, tabela de vencimentos, 2 assinantes via Assinafy) — ✅ construída e testada em produção (18-20/08/2026), ver seção 11.
+3. **Assinatura digital** (integração real Assinafy, webhook) — ✅ construída e testada em produção (18-20/08/2026), ver seção 11.
+4. **Financeiro da venda** (cobrança real via Asaas, comissão a receber pro modelo `comissionado`, handoff pra Operação) — ✅ construída e testada em produção (18-20/08/2026), ver seção 11. Handoff pro módulo Operação em si continua não desenhado (Operação ainda não existe como módulo).
+5. **Nova Oportunidade + Kanban** (redesenho não previsto nesta lista original — nasceu de um bug real de produção, ver seção 11) — ✅ construída e testada em produção (19-20/08/2026), spec própria `superpowers/specs/2026-08-19-vendas-nova-oportunidade-kanban-design.md`.
 
 ### 12.4 Convenções de cadastro de Pessoa — decidido 17/08/2026 (vale pra qualquer tela que cadastra Pessoa, não só Vendas)
 
