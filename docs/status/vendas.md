@@ -1,8 +1,8 @@
 # Status — Vendas
 
-tarefa: Documentação atualizada (plano mestre seção 11 + spec 2026-08-19, tudo que saiu do previsto registrado) e bug real corrigido: Nova Oportunidade não carregava o endereço já salvo de uma pessoa existente encontrada por CPF/CNPJ (campo ficava em branco, nada era enviado pro salvarEndereco) — corrigido em `actions.ts`/`nova-oportunidade-client.tsx` (commit `497f5d4`), buscando o endereço junto na busca por documento, igual fechamento-client.tsx já fazia. tsc/eslint/vitest limpos (401 testes de Vendas); sem `.env.local` neste worktree pra testar visualmente com Supabase real.
-desde: 2026-08-20T15:45:00-03:00
-proxima: Luiz confirmar o fix testando de novo com uma pessoa já cadastrada, depois rodar o teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade).
+tarefa: Mais um bug real corrigido na Nova Oportunidade (commit `b734ec8`): o nome de uma pessoa já existente era editável na tela, mas a edição nunca chegava no servidor (só ia junto quando a pessoa era nova) — contrato saía com o nome antigo. Corrigido em `pessoas.ts`/`actions.ts`/`nova-oportunidade-client.tsx`, e o mesmo ajuste passou por `fechamento/actions.ts` (lá o nome não é editável, comportamento preservado). Aproveitado pra tirar `console.log` de debug com dado pessoal que tinham ficado em `pessoas.ts`. O erro "Cliente e signatário da ArrudaCred resolveram pro mesmo signatário" que o Luiz viu depois foi confirmado por ele mesmo como engano de configuração (ID errado em `/admin/configuracoes`), não bug de código. tsc/eslint limpos, vitest 550/552 (as 2 falhas são do Marketing, env var ausente neste worktree, nada a ver com Vendas).
+desde: 2026-08-20T16:20:00-03:00
+proxima: Luiz confirmar os dois fixes de endereço+nome testando de novo com uma pessoa já cadastrada, depois rodar o teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade).
 bloqueio: nenhum — falta o teste ao vivo, que depende do Luiz assinar/pagar de verdade um documento de teste.
 
 ## Verificação da Task 18 (2026-08-19) — o que foi confirmado e o que ficou pendente
