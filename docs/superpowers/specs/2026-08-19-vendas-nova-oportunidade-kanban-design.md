@@ -1,6 +1,6 @@
 # Vendas — Nova Oportunidade + Kanban de Vendas (redesenho) — Design
 
-**Status:** proposto, aguardando revisão do Luiz.
+**Status:** ✅ implementado, mesclado em `main` e testado em produção (19-20/08/2026). Ver seção 9 pra tudo que mudou em relação a este desenho original, e `docs/PLANO_MESTRE_SISTEMA_ARRUDACRED.md` seção 11 pra o diário completo da construção e dos bugs reais encontrados no teste ao vivo.
 **Decidido com:** Luiz, 19/08/2026, numa sessão de brainstorming depois de um bug real de produção (ver seção 1).
 
 ## 1. Contexto e motivação
@@ -63,28 +63,29 @@ Pra produto `comissionado` (ver 3.1): cria só a Oportunidade, sem `contratos` �
 ## 4. Kanban de Vendas — novo vocabulário
 
 ```
-Nova Oportunidade → Emitindo Contrato → Envelopando Assinaturas → Aguardando Assinaturas
+Nova Oportunidade → Emitindo Contrato → Aguardando Assinaturas
   → Gerando Financeiro → Aguardando Pagamento → Concluída
                                                         ↘
                                                      Cancelada (motivo livre, fora da progressão linear)
 ```
 
+> ⚠️ **Atualizado em 20/08/2026** (ver seção 9): o desenho original desta seção previa 7 etapas, com "Envelopando Assinaturas" separada de "Emitindo Contrato". No teste em produção ficou claro que as duas sempre rodavam automáticas em sequência, sem nenhuma pausa humana real no meio — foram fundidas numa etapa só. A tabela abaixo já reflete o vocabulário final (6 etapas + cancelada), migration `20260820120000_vendas_remove_etapa_envelopando.sql`.
+
 | # | Etapa (rótulo) | `status` (valor interno) | Como avança |
 |---|---|---|---|
 | 1 | Nova Oportunidade | `nova_oportunidade` | Automático — tenta gerar o contrato assim que criado |
-| 2 | Emitindo Contrato | `emitindo_contrato` | Automático — PDF pronto, avança sozinho |
-| 3 | Envelopando Assinaturas | `envelopando_assinaturas` | Automático — envio à Assinafy, avança sozinho |
-| 4 | Aguardando Assinaturas | `aguardando_assinaturas` | **Humano** (assinatura real) — webhook da Assinafy confirma, aí avança sozinho |
-| 5 | Gerando Financeiro | `gerando_financeiro` | Automático — cobrança criada na Asaas, avança sozinho |
-| 6 | Aguardando Pagamento | `aguardando_pagamento` | **Humano** (pagamento real) — webhook da Asaas confirma, aí avança sozinho |
-| 7 | Concluída | `concluida` | Terminal |
+| 2 | Emitindo Contrato | `emitindo_contrato` | Automático — PDF gerado **e** enviado à Assinafy, as duas em sequência, avança sozinho |
+| 3 | Aguardando Assinaturas | `aguardando_assinaturas` | **Humano** (assinatura real) — webhook da Assinafy confirma, aí avança sozinho |
+| 4 | Gerando Financeiro | `gerando_financeiro` | Automático — cobrança criada na Asaas, avança sozinho |
+| 5 | Aguardando Pagamento | `aguardando_pagamento` | **Humano** (pagamento real) — webhook da Asaas confirma, aí avança sozinho |
+| 6 | Concluída | `concluida` | Terminal |
 | — | Cancelada | `cancelada` | Terminal, motivo em `motivo_cancelamento` |
 
-Comparado ao vocabulário atual: ganha 2 etapas novas (`nova_oportunidade` no início, `envelopando_assinaturas` separando "mandar pra assinar" de "esperar assinarem") e perde a etapa `assinado` como parada visível — o momento "todo mundo assinou" agora dispara direto pra `gerando_financeiro`, sem parar numa etapa própria (já era tratado como transição instantânea antes, então não perde informação, só um card a menos no board).
+Comparado ao vocabulário anterior à sub-frente Contrato: ganha 1 etapa nova (`nova_oportunidade` no início) e perde a etapa `assinado` como parada visível — o momento "todo mundo assinou" dispara direto pra `gerando_financeiro`, sem parar numa etapa própria.
 
 **Comissionado não usa nada disso** — continua pulando direto pra `aguardando_pagamento` só depois que `confirmarVendaComissionada` roda (fornecedor já aprovou), como já decidido antes.
 
-### 4.1. Erros nas etapas automáticas (2, 3, 5)
+### 4.1. Erros nas etapas automáticas (2, 4)
 - Se uma etapa automática falhar (ex.: Puppeteer não gera o PDF, Assinafy retorna erro), o sistema **tenta de novo sozinho até 3 vezes**.
 - Depois da 3ª tentativa falhada, o card fica parado na etapa atual com um sinal de erro visível — a mensagem do erro fica acessível na tela de Detalhes da Venda (mesmo lugar do histórico/timeline que já existe).
 - Retentativa manual: botão "Tentar novamente" por card individual, e uma ação em lote no Painel pra retentar todos os cards travados numa mesma etapa de uma vez.
@@ -124,3 +125,25 @@ Todas aditivas ou substituição de constraint numa tabela vazia — sem risco d
 
 - Custo/taxa da Asaas como conta a pagar — vira spec própria, futura, cobrindo todas as integrações pagas juntas (Assinafy, Asaas, WhatsApp, Resend), não só Asaas isolado.
 - Qualquer mudança no motor de fluxo do CRM — item explicitamente fora de alcance, tratado com o cuidado combinado desde o início desta sub-frente.
+
+## 9. Atualizações pós-implementação (19-20/08/2026)
+
+Esta spec foi implementada via SDD (18 tasks) e depois passou por um teste real em produção com o Luiz, que trouxe coisas que não estavam previstas aqui. Registro resumido — o detalhe completo, dia a dia, está no diário de produção (`docs/PLANO_MESTRE_SISTEMA_ARRUDACRED.md`, seção 11).
+
+**Fusão de etapas do Kanban** (já refletida na seção 4 acima): "Emitindo Contrato" e "Envelopando Assinaturas" viraram uma etapa só, porque na prática sempre rodavam automáticas em sequência, sem pausa humana real no meio — a coluna "Envelopando Assinaturas" nunca representou um estado real intermediário no Kanban, só ficava sempre vazia.
+
+**Construído fora do previsto nesta spec** (foram pedidos do Luiz durante o teste ao vivo, não estavam em nenhuma spec anterior):
+- Tela **Produtos & Serviços** (`/admin/configuracoes/produtos`) — CRUD de produto que esta spec e a spec anterior (`2026-08-17-modulo-vendas-design.md`) davam por já existente/fora de escopo.
+- Tela **Template de Documentos** (`/admin/configuracoes/templates-documentos`) — generalizada a partir do editor de `contrato_templates` (que a spec do Contrato previa como editor único) para suportar 3 tipos de documento (`contrato`, `termo_acordo`, `ficha_associativa`), com editor de texto rico (TipTap).
+- **Placeholders granulares** nos templates: além de `{{nome_cliente}}` etc. já previstos, ganhou `cliente_*`/`empresa_*` separados por campo, `{{tabela_contratante}}` (tabela formatada com os dados do signatário) e `{{tabela_documentos}}` (renomeado de `{{lista_documentos}}`, mesma função).
+- **Fonte Carlito embutida no PDF** (`src/lib/vendas/fonte-carlito.ts`, base64 WOFF2 via `@font-face`) — achado real: o Chromium serverless (`@sparticuz/chromium`) não tem nenhuma fonte de sistema instalada na Vercel, cai pra "Open Sans" por padrão, então qualquer `font-family` do template que não fosse embutida divergia silenciosamente entre o preview no navegador e o PDF real gerado no servidor.
+- Melhorias de CSS de impressão no PDF, botões de Sanitizar/Preview no editor de template.
+- Reskin visual do Kanban do Painel de Vendas (inspirado em Kibo UI) e correção de um bug de UI real: o menu suspenso do card ficava preso dentro dos limites da coluna (`overflow-y-auto` força `overflow-x` implícito por spec CSS) — corrigido com `createPortal` + `position: fixed`.
+
+**Bugs reais de integração achados só em produção** (nenhum teste automatizado os pega, porque dependem do comportamento real das APIs externas):
+- `POST /accounts/:id/documents` (upload) da Assinafy devolve resposta **envelopada** (`{status, message, data: {...}}`), diferente do que a doc local (`docs/api_reference/Assinafy-API-Reference.md`) mostrava pra esse endpoint específico.
+- Assinafy rejeita (`400`) criar um signatário com e-mail já existente na conta — como o e-mail do signatário da ArrudaCred é o mesmo em todo contrato, isso seria falha garantida a partir do 2º contrato. Corrigido com busca idempotente por e-mail antes de criar.
+- Assinafy rejeita (`400 "signatários duplicados"`) mandar o mesmo `signerId` duas vezes num `assignment` — acontece quando cliente e signatário da ArrudaCred resolvem pra mesma Pessoa (configuração errada ou dado de teste). Corrigido com deduplicação + mensagem de erro citando os nomes/e-mails envolvidos.
+- Nome do arquivo do PDF virou `contrato-arrudacred-<CLIENTE>-<SERVICO>-<timestamp>.pdf` (sem espaço/acentuação/caractere especial) em vez do UUID cru do contrato — pedido do Luiz, pra dar pra identificar o contrato só olhando o nome do arquivo na Assinafy.
+
+**Não mudou de comportamento**, mas vale registrar: a "regra de ouro" do projeto (nunca codar API externa sem doc em mãos) segurou bem durante a implementação inicial, mas todos os 4 bugs acima só apareceram porque a doc levantada antes de codar (Task 0, ver plano) não cobria esses comportamentos específicos — reforça que doc externa é ponto de partida, não substitui teste real contra a API de verdade.
