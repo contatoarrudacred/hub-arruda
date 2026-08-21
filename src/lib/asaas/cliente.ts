@@ -91,6 +91,23 @@ export async function criarCobranca(entrada: EntradaCobranca): Promise<Cobranca>
   });
 }
 
+export type EntradaRecebimentoEmDinheiro = { paymentDate: string; value: number };
+
+/**
+ * Confirma manualmente que uma cobrança foi paga em dinheiro fora da Asaas — pedido do Luiz,
+ * 21/08/2026: caso de cliente que paga em espécie direto pra ArrudaCred, precisando dar baixa
+ * manual no boleto. Confirmado na doc oficial (docs.asaas.com/reference/confirmar-recebimento-em-dinheiro):
+ * `POST /v3/payments/{id}/receiveInCash`, resposta vira status `RECEIVED_IN_CASH`. Importante: **não
+ * credita valor na conta Asaas** — só atualiza o histórico da cobrança pra consistência.
+ */
+export async function confirmarRecebimentoEmDinheiro(paymentId: string, entrada: EntradaRecebimentoEmDinheiro): Promise<Cobranca> {
+  return chamarApi<Cobranca>(`/payments/${paymentId}/receiveInCash`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entrada),
+  });
+}
+
 export type EntradaCheckout = {
   descricao: string;
   valorTotal: number;

@@ -1,8 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
-import { atualizarStatusContrato, buscarContratoPorId, marcarParcelaPaga } from "@/lib/vendas/contratos";
-import { buscarUnidadeNegocioDaPessoa, promoverPessoaACliente } from "@/lib/vendas/clientes";
-import { sincronizarEtapaKanban } from "@/lib/vendas/oportunidades";
+import { concluirVenda, deveConcluirAoConfirmarParcela } from "@/lib/vendas/conclusao-venda";
+import { buscarContratoPorId, marcarParcelaPaga } from "@/lib/vendas/contratos";
 
 export const maxDuration = 30;
 
@@ -35,25 +34,17 @@ async function processarPagamentoConfirmado(asaasPaymentId: string): Promise<voi
       return;
     }
 
-    // Só a 1ª parcela paga conclui a venda — as demais só ficam marcadas como pagas, sem mudar o
-    // estágio (regra confirmada com o Luiz: "Pagamento Primeira Parcela" é o marco de conclusão).
-    if (parcelaPaga.numero !== 1) return;
-
     const contrato = await buscarContratoPorId(parcelaPaga.contratoId);
     if (!contrato) {
       console.error(`[webhook asaas] contrato ${parcelaPaga.contratoId} não encontrado`);
       return;
     }
 
-    await atualizarStatusContrato(contrato.id, "concluida");
-    await sincronizarEtapaKanban(contrato.oportunidadeId, "ganha");
+    // Só a 1ª parcela paga conclui a venda — as demais só ficam marcadas como pagas, sem mudar o
+    // estágio (regra confirmada com o Luiz: "Pagamento Primeira Parcela" é o marco de conclusão).
+    if (!deveConcluirAoConfirmarParcela(contrato.metodoPagamento, parcelaPaga.numero)) return;
 
-    const unidadeNegocioId = await buscarUnidadeNegocioDaPessoa(contrato.pessoaSignatarioId);
-    if (unidadeNegocioId) {
-      await promoverPessoaACliente(contrato.pessoaSignatarioId, unidadeNegocioId);
-    } else {
-      console.error(`[webhook asaas] pessoa ${contrato.pessoaSignatarioId} sem unidade de negócio — não promovida a cliente`);
-    }
+    await concluirVenda(contrato);
 
     // TODO(módulo Operação, fora de escopo desta sub-frente): handoff pra Ordem de Serviço — a
     // Oportunidade "ganha" já carrega tudo que a OS vai precisar (spec seção 3.5).
