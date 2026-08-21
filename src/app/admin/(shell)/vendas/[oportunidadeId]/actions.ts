@@ -3,7 +3,7 @@
 import { buscarDocumento, type AssinafyDocumento } from "@/lib/assinafy/cliente";
 import { sincronizarPdfCertificado } from "@/lib/assinafy/adapter";
 import { buscarCobranca, type CobrancaStatus } from "@/lib/asaas/cliente";
-import { criarCheckoutManual } from "@/lib/asaas/adapter";
+import { criarCheckoutManual, marcarParcelaRecebidaEmDinheiroDoContrato } from "@/lib/asaas/adapter";
 import { atualizarStatusContrato, buscarContratoPorId } from "@/lib/vendas/contratos";
 import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
 import { enviarPorEmail, enviarWhatsapp } from "@/lib/vendas/notificacoes";
@@ -138,6 +138,28 @@ export async function confirmarAssinaturaManualAction(contratoId: string, assina
   }
 }
 
+/**
+ * Reprocessa a troca do PDF certificado pra vendas já assinadas que ficaram com o PDF sem
+ * assinatura — achado real, Luiz 21/08/2026: uma venda avançada pelo botão manual
+ * (confirmarAssinaturaManualAction) antes de `sincronizarPdfCertificado` ter sido plugada nele
+ * (mesma sessão, fix anterior a este) nunca teve o PDF trocado, mesmo já em "Aguardando Pagamento".
+ * Diferente de confirmarAssinaturaManualAction, esta ação NÃO toca em etapa nem tenta gerar
+ * cobrança de novo — só o arquivo. Segura de rodar em qualquer venda já assinada, mesmo que já
+ * tenha avançado bem além da etapa de assinatura (evita duplicar Checkout/cobrança na Asaas).
+ */
+export async function ressincronizarPdfAssinadoAction(contratoId: string): Promise<ResultadoAcao> {
+  try {
+    const contrato = await buscarContratoPorId(contratoId);
+    if (!contrato) return { sucesso: false, erro: "Contrato não encontrado." };
+    if (!contrato.assinafyDocumentId) return { sucesso: false, erro: "Este contrato não tem documento na Assinafy." };
+
+    await sincronizarPdfCertificado(contrato, contrato.assinafyDocumentId);
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao ressincronizar o PDF assinado.") };
+  }
+}
+
 export async function tentarNovamenteAction(contratoId: string): Promise<ResultadoAcao> {
   try {
     const { tentarNovamente } = await import("@/lib/vendas/progressao");
@@ -172,5 +194,16 @@ export async function gerarCheckoutManualAction(
     return { sucesso: true, url };
   } catch (erro) {
     return { sucesso: false, erro: mensagemErro(erro, "Falha ao gerar um novo link de pagamento.") };
+  }
+}
+
+/** Dá baixa manual numa parcela paga em dinheiro fora da Asaas (cliente pagou em espécie direto pra
+ * ArrudaCred) — botão "💵 Recebido em dinheiro" no quadro Financeiro. */
+export async function marcarParcelaRecebidaEmDinheiroAction(asaasPaymentId: string, valor: number, dataPagamento: string): Promise<ResultadoAcao> {
+  try {
+    await marcarParcelaRecebidaEmDinheiroDoContrato(asaasPaymentId, valor, dataPagamento);
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao marcar a parcela como recebida em dinheiro.") };
   }
 }

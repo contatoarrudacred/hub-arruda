@@ -1,13 +1,15 @@
-import { buscarClientePorCpfCnpj, criarCheckout, criarCliente, criarCobranca } from "./cliente";
+import { buscarClientePorCpfCnpj, confirmarRecebimentoEmDinheiro, criarCheckout, criarCliente, criarCobranca } from "./cliente";
 import {
   atualizarCheckoutContrato,
   atualizarParcelaAsaas,
   atualizarStatusContrato,
   atualizarVencimentoParcela,
   buscarContratoPorId,
+  marcarParcelaPaga,
   type Contrato,
   type MetodoPagamento,
 } from "@/lib/vendas/contratos";
+import { concluirVenda, deveConcluirAoConfirmarParcela } from "@/lib/vendas/conclusao-venda";
 import { enviarLinkPagamentoWhatsapp } from "@/lib/vendas/notificacoes";
 import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
 
@@ -119,5 +121,27 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
 
   if (linkPrimeiraParcela) {
     await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, linkPrimeiraParcela);
+  }
+}
+
+/**
+ * Dá baixa manual numa parcela paga em dinheiro fora da Asaas — pedido do Luiz, 21/08/2026: cliente
+ * que paga em espécie direto pra ArrudaCred, precisando dar baixa no boleto. Confirma na Asaas
+ * (não credita a conta, só atualiza o histórico da cobrança pra `RECEIVED_IN_CASH`) e espelha isso
+ * no nosso banco na mesma hora: esse caminho **não passa pelo webhook** `PAYMENT_RECEIVED` (a Asaas
+ * usa um status diferente pra recebimento em dinheiro, que não escutamos), então marcar a parcela
+ * como paga e concluir a venda (quando for a 1ª parcela) precisam rodar direto aqui.
+ */
+export async function marcarParcelaRecebidaEmDinheiroDoContrato(asaasPaymentId: string, valor: number, dataPagamento: string): Promise<void> {
+  await confirmarRecebimentoEmDinheiro(asaasPaymentId, { paymentDate: dataPagamento, value: valor });
+
+  const parcelaPaga = await marcarParcelaPaga(asaasPaymentId, new Date(dataPagamento).toISOString());
+  if (!parcelaPaga) return;
+
+  const contrato = await buscarContratoPorId(parcelaPaga.contratoId);
+  if (!contrato) return;
+
+  if (deveConcluirAoConfirmarParcela(contrato.metodoPagamento, parcelaPaga.numero)) {
+    await concluirVenda(contrato);
   }
 }

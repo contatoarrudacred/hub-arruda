@@ -325,9 +325,18 @@ export async function limparErroContrato(contratoId: string): Promise<void> {
   if (error) throw new Error(`Falha ao limpar erro do contrato: ${error.message}`);
 }
 
+/** Achado real, Luiz 21/08/2026: esta função gravava só o `asaas_payment_id`, nunca o `status` —
+ * a parcela ficava presa em `'previsto'` pra sempre, mesmo já tendo uma cobrança real na Asaas
+ * (só `marcarParcelaPaga` mudava o status, e só na hora de pagar). Além do rótulo errado na tela,
+ * isso escondia a cobrança do filtro `status !== 'previsto'` que o quadro Financeiro usa pra saber
+ * se já tem link pra mostrar — a busca automática de fatura/boleto nunca disparava pra boleto/pix.
+ * Agora grava `status: 'gerado'` junto, assim que a cobrança é criada de verdade. */
 export async function atualizarParcelaAsaas(parcelaId: string, asaasPaymentId: string): Promise<void> {
   const supabase = await createClient();
-  const { error } = await supabase.from("contrato_parcelas").update({ asaas_payment_id: asaasPaymentId }).eq("id", parcelaId);
+  const { error } = await supabase
+    .from("contrato_parcelas")
+    .update({ asaas_payment_id: asaasPaymentId, status: "gerado" })
+    .eq("id", parcelaId);
   if (error) throw new Error(`Falha ao atualizar parcela com id da Asaas: ${error.message}`);
 }
 

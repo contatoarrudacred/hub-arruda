@@ -116,10 +116,10 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "quero limpar meu nome",
       ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
+      // dívida alta pula direto de ln_passo6 pra ln_agendamento_oferta (confirmado 21/08/2026 —
+      // as 3 mensagens de preenchimento que existiam aqui antes só faziam a recusa real cair
+      // acidentalmente em ln_agendamento_horario em vez de ln_agendamento_oferta).
       "minha dívida está em uns 800 mil reais",
-      "vi vocês no Google",
-      "é urgente pra mim",
-      "sim, é prioridade fechar hoje",
       "não, prefiro não agendar ligação nenhuma",
       "não mesmo, prefiro resolver por aqui pelo WhatsApp",
     ],
@@ -137,6 +137,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       ...CONFIRMACOES_ATE_LN_PASSO4,
       "CPF e CNPJ, os dois",
       "o CPF está em uns 25 mil e o CNPJ uns 40 mil",
+      "sim, confirmo os dois valores",
       "vi o Google mesmo",
       "não é tão urgente, uns 3 a 6 meses",
       "sim, quero fechar hoje",
