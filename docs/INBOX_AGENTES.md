@@ -11,12 +11,12 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
 | Coordenador | Marketing | 19/08 | Fase 3 (personas ricas) **e agora também Fase 4a+4b (precisão editorial + imagens)** completas nesta mesma branch — 454/454 testes, `tsc`/`eslint`/`next build` limpos. Preciso que você traga `worktree-pipeline-conteudo-marketing-nucleo` pro fluxo sincroniza→testa→fast-forward. **Antes disso**, a migration `20260819110000_marketing_autoria_e_imagens.sql` precisa ir ao Luiz (aditiva, sem `drop`) — sem ela as features novas não funcionam em produção mesmo depois de mesclar. | Seção 3 de `COORDENACAO_AGENTES_ARRUDACRED.md`, entradas "19/08/2026 (Marketing → Coordenador/Luiz) — Fase 4a+4b..." e "...Fase 3..." |
-| **Luiz** | CRM | 21/08 | Rodar `supabase/migrations/20260821140000_nota_interna_sistema.sql` no SQL Editor — só relaxa um NOT NULL (`notas_internas.autor_id` vira opcional), aditiva, sem risco. Libera a nota interna automática que a Malala grava em todo handoff pra humano (achado: hoje nenhum ponto de handoff deixava rastro na timeline). Código local, aguardando — sem essa migration, qualquer handoff quebraria o turno em produção (o insert falha contra a coluna `NOT NULL` antiga). | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 2 e 3 |
 
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| Luiz | CRM | 21/08 (Luiz) | Rodou `20260821140000_nota_interna_sistema.sql` — confirmado, nota interna automática em handoff verificada funcionando contra produção (bateria de testes da Malala). |
 | Luiz | CRM | 20/08 (Luiz) | Rodar `20260820130000_agendamento_consultor.sql` — confirmado ("Agora foi."), verificado direto no banco, código de Agendamento com Consultor empurrado pra `main`. Falta só o patch do `etapas_fluxo` real, que o CRM faz na sequência (não bloqueia mais ninguém). |
 | Luiz | CRM | 19/08 (Luiz) | Rodar `20260819130000_fluxos_pastas.sql` — confirmado ("rodei"), verificado direto no banco, código de Pastas de Fluxo empurrado pra `main` |
 | Vendas | CRM | 19/08 (Vendas) | `pessoas.whatsapp` sem `unique`, risco confirmado em Nova Oportunidade — visto, dedup por telefone vai entrar como próxima tarefa da fila (não bloqueia os ajustes que o Luiz está pedindo agora) |

@@ -15,7 +15,7 @@ Bateria completa (16 cenários: 8 roteirizados + 8 adversariais) rodada em 21/08
 
 ---
 
-## Achado 0a (🔴 crítico, produção real) — `agendar_consultor` sempre falha: CHECK constraint desatualizado
+## Achado 0a (✅ corrigido e verificado em 21/08/2026) — `agendar_consultor` sempre falha: CHECK constraint desatualizado
 
 **Cenário:** `divida_alta_aceita_agendamento` (roteirizado) — o turno que dispara o efeito `agendar_consultor`
 lançou um erro de verdade, não um comportamento estranho da Malala:
@@ -33,16 +33,19 @@ com `check (tipo in ('mencao', 'atribuicao'))`. Quando o Agendamento com Consult
 quebra o turno inteiro** (o `throw` em `aplicarEfeitoNegocio` propaga pra cima; o webhook só loga o erro
 e não responde nada pro lead — silêncio total).
 
-**Correção necessária:** nova migration aditiva, `alter table notificacoes drop constraint
-notificacoes_tipo_check; alter table notificacoes add constraint notificacoes_tipo_check check (tipo in
-('mencao', 'atribuicao', 'agendamento'));` (ou `alter constraint` equivalente).
+**Correção aplicada:** migration `supabase/migrations/20260821150000_notificacoes_tipo_agendamento.sql`
+(`drop constraint` + `add constraint` incluindo `'agendamento'`). Rodada pelo Luiz em 21/08/2026.
 
-**Prioridade:** máxima — é a funcionalidade inteira de agendamento (lançada há poucos dias) quebrada pra
-qualquer lead real que chegue lá.
+**Verificação pós-fix:** (1) tentativa de insert com `tipo` inválido continua rejeitada pelo constraint
+(comportamento correto preservado); (2) tentativa de insert com `tipo: 'agendamento'` agora só falha por
+FK (esperado, `usuario_id`/`conversa_id` fake), não mais por CHECK; (3) re-rodei o cenário
+`divida_alta_aceita_agendamento` na íntegra — completou sem erro, e o banco confirma
+`agendamentos_consultor` gravado, `notificacoes.tipo='agendamento'` aceito, nota interna criada,
+`sob_supervisor=true`.
 
 ---
 
-## Achado 0b (🔴 crítico, produção real) — `abertura_email` trava pra sempre se o lead não quiser dar o e-mail
+## Achado 0b (✅ corrigido e verificado em 21/08/2026) — `abertura_email` trava pra sempre se o lead não quiser dar o e-mail
 
 **Cenários onde apareceu:** `lead_desconfiado_pede_provas` (12 repetições seguidas), `lead_testa_repeticao_de_pergunta`
 (13 repetições seguidas) — ambos adversariais, o "lead" reage de verdade, então não é script mal
@@ -64,10 +67,12 @@ semente `fluxo-limpeza-nome.ts`, nunca foi patcheado pro `etapas_fluxo` de verda
 **Impacto:** qualquer lead real que não queira (ou não consiga) dar e-mail fica preso numa mensagem
 repetida pra sempre, sem nunca conseguir prosseguir no atendimento — abandono garantido.
 
-**Correção necessária:** patch de conteúdo no `etapas_fluxo` real (igual aos outros patches deste
-projeto) adicionando `"opcional_apos_tentativas": 2` na etapa `abertura_email`. Não precisa de migration
-(é conteúdo, não schema) — só a mesma disciplina de "código primeiro, se depender de código novo" (aqui
-não depende, o `engine.ts` já trata o campo corretamente, só falta o dado).
+**Correção aplicada:** `update etapas_fluxo set conteudo = conteudo || '{"opcional_apos_tentativas": 2}'::jsonb
+where id = '91439f9e-0526-4336-9d44-18d164d274ff'` — patch de conteúdo, sem migration (o `engine.ts` já
+tratava o campo corretamente, só faltava o dado). Rodado pelo Luiz em 21/08/2026.
+
+**Verificação pós-fix:** script isolado repetindo a mesma resposta inválida 3x seguidas — na 2ª tentativa
+a etapa desiste corretamente e avança pra `triagem_menu` (antes, ficava presa pra sempre).
 
 ---
 
@@ -181,8 +186,8 @@ lá que os Achados 0b, 1 e 1b foram confirmados como reais.
 
 | # | Achado | Severidade | Confiança | Cenário(s) |
 |---|---|---|---|---|
-| 0a | `agendar_consultor` sempre falha (CHECK constraint desatualizado) | 🔴 crítico | Confirmado (erro reproduzido) | divida_alta_aceita_agendamento |
-| 0b | `abertura_email` trava pra sempre sem `opcional_apos_tentativas` | 🔴 crítico | Confirmado (diagnóstico isolado) | lead_desconfiado_pede_provas, lead_testa_repeticao_de_pergunta |
+| 0a | `agendar_consultor` sempre falha (CHECK constraint desatualizado) | ✅ **corrigido e verificado** | Confirmado (erro reproduzido, fix re-testado) | divida_alta_aceita_agendamento |
+| 0b | `abertura_email` trava pra sempre sem `opcional_apos_tentativas` | ✅ **corrigido e verificado** | Confirmado (diagnóstico isolado, fix re-testado) | lead_desconfiado_pede_provas, lead_testa_repeticao_de_pergunta |
 | 1 | Parcela cobrada não bate com a Condição Especial oferecida | 🔴 crítico | Confirmado (2 ocorrências) | lead_ansioso_urgente, lead_hostil_grosseiro |
 | 1b | Negociação de pagamento trava com perguntas de acompanhamento | 🟠 sério | Observado, causa raiz não confirmada | lead_ansioso_urgente, lead_pergunta_fora_do_escopo_no_meio |
 | 2 | Emoji de gênero inconsistente (🙋‍♂️ numa persona feminina) | 🟡 menor | Confirmado | triagem_handoff_outro_assunto, lead_divida_alta_recusa_com_argumentos |
@@ -196,7 +201,7 @@ sequenciamento de sempre). Precisam ser re-testados depois desse patch.
 
 ## Pendente
 
-- Decidir com o Luiz a ordem de correção — sugestão: 0a e 0b primeiro (críticos, simples, sem
-  ambiguidade), depois investigar 1/1b juntos (mesma área de código), 2 é cosmético e pode entrar
-  em qualquer correção que já mexer no texto do script.
-- Depois de corrigido: re-rodar os cenários afetados pra confirmar.
+- ✅ 0a e 0b corrigidos e verificados (21/08/2026).
+- Investigar e corrigir 1/1b (bug de preço da Condição Especial + travas na negociação de pagamento) —
+  mesma área de código, faz sentido investigar junto.
+- 2 (emoji de gênero) é cosmético, entra em qualquer correção que já mexer no texto do script.
