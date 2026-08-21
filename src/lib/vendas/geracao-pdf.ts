@@ -68,9 +68,14 @@ export async function uploadPdfContrato(contratoId: string, pdf: Buffer): Promis
   return { path: caminho };
 }
 
-export async function gerarUrlAssinadaContrato(caminho: string): Promise<string> {
+/** `forcarDownload: true` faz o link vir com `Content-Disposition: attachment` (o navegador baixa
+ * o arquivo em vez de abrir inline) — usado pelo botão "Baixar" da tela de Detalhes da Venda,
+ * separado do link "Ver" (que abre normal, sem esse header). */
+export async function gerarUrlAssinadaContrato(caminho: string, opcoes?: { forcarDownload?: boolean }): Promise<string> {
   const supabase = await createClient();
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(caminho, 3600);
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(caminho, 3600, opcoes?.forcarDownload ? { download: true } : undefined);
   if (error) throw new Error(`Falha ao gerar URL do contrato: ${error.message}`);
   return data.signedUrl;
 }
