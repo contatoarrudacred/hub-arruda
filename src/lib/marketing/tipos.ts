@@ -36,6 +36,35 @@ export type PautaCarregada = {
    * montarPrompt em escritor.ts.
    */
   ultimoRascunho: ConteudoGerado | null;
+  /**
+   * Horário exato escolhido manualmente pro post desta pauta (Novo Post Manual, Agenda de Posts,
+   * 21/08/2026) — quando presente, `processar-pauta.ts` usa direto na etapa "agendar", pulando o
+   * cálculo automático de `decidirProximoHorario` (agendador.ts). `null` = comportamento
+   * automático de sempre.
+   */
+  agendamentoForcado: string | null;
+};
+
+/**
+ * Entrada pra criação manual de uma pauta (Novo Post Manual, Agenda de Posts, 21/08/2026) — o
+ * Luiz controla à mão todos os ingredientes que o Estrategista decide sozinho (`estrategista.ts`).
+ * Diferente de `criarPautaDePersona` (usado só pelo próprio Estrategista): aqui `personaId` é
+ * opcional de verdade, `geografia` não é forçado a `null`, e a pauta entra como "pendente" (segue
+ * a fila normal), não "em_producao".
+ */
+export type DadosPautaManual = {
+  matrizConteudoId: string;
+  personaId?: string | null;
+  angulo: string;
+  palavraChavePrincipal: string;
+  palavrasSecundarias?: string[];
+  funil: FunilPauta;
+  tipoConteudo: TipoConteudo;
+  geografia?: string | null;
+  /** ISO — precisa estar no futuro (validado na action, não aqui). `undefined`/`null` = automático. */
+  agendamentoForcado?: string | null;
+  /** `undefined` = usa o default do repositório (100 — fura a fila das pautas geradas automaticamente). */
+  prioridadeScore?: number;
 };
 
 export type ItemChecklistCarregado = {
@@ -317,13 +346,20 @@ export type DadosItemChecklist = {
   itemParaRevisor?: string | null;
 };
 
-/** Post publicado, com os campos que a tela de Posts Publicados precisa mostrar. */
-export type PostAdmin = {
+/**
+ * Post com os campos que a tela Agenda de Posts precisa mostrar (calendário +
+ * lista de pendentes) — substitui `PostAdmin` (Fase 2), que só servia a
+ * antiga tela "Posts Publicados", puramente tabular.
+ */
+export type PostAgendaAdmin = {
   id: string;
+  propriedadeId: string;
   titulo: string;
-  url: string;
+  url: string | null;
   scoreQa: number | null;
+  agendadoPara: string | null;
   publicadoEm: string | null;
+  createdAt: string;
   tentativas: number;
 };
 

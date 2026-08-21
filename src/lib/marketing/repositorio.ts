@@ -7,6 +7,7 @@ import type {
   ConteudoGerado,
   DadosItemChecklist,
   DadosMatriz,
+  DadosPautaManual,
   DadosPropriedade,
   DetalhesPostVisualizacao,
   DuracaoMediaPorEtapa,
@@ -23,7 +24,7 @@ import type {
   PersonaAtiva,
   PersonaCarregada,
   PersonaFormulario,
-  PostAdmin,
+  PostAgendaAdmin,
   PostCriado,
   PostProntoParaPublicar,
   PostRelacionado,
@@ -47,7 +48,7 @@ import type { ImagemSecundaria } from "./imagens/secundarias";
 // a persona completa pro Escritor, spec seção 7). Nulo em pautas antigas/manuais — a coluna aceita
 // null (migration da Task 1).
 const CAMPOS_PAUTA =
-  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho";
+  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho, agendamento_forcado";
 
 // Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
 // porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
@@ -111,6 +112,7 @@ function mapearPauta(data: {
   tentativas: number;
   motivo_ultima_reprovacao: string | null;
   ultimo_rascunho?: unknown;
+  agendamento_forcado?: string | null;
 }): PautaCarregada {
   return {
     id: data.id,
@@ -129,7 +131,22 @@ function mapearPauta(data: {
     tentativas: data.tentativas,
     motivoUltimaReprovacao: data.motivo_ultima_reprovacao,
     ultimoRascunho: mapearRascunho(data.ultimo_rascunho),
+    agendamentoForcado: data.agendamento_forcado ?? null,
   };
+}
+
+/**
+ * Pauta por id — usada pela Agenda de Posts (Trocar Foto, "gerar de novo" na capa, 20/08/2026)
+ * pra montar os argumentos de `gerarCapa`, que espera a `PautaCarregada` completa (mesmo que hoje
+ * `gerarCapa` não use nenhum campo dela — ver imagens/capa.ts — carregar a pauta de verdade em vez
+ * de um objeto falso mantém o chamador correto se isso mudar).
+ */
+export async function carregarPauta(pautaId: string): Promise<PautaCarregada | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("pautas").select(CAMPOS_PAUTA).eq("id", pautaId).maybeSingle();
+  if (error) throw new Error(`Falha ao carregar pauta ${pautaId}: ${error.message}`);
+  if (!data) return null;
+  return mapearPauta(data);
 }
 
 /**
@@ -475,6 +492,105 @@ export async function carregarImagensPostAnterior(pautaId: string): Promise<Imag
       storageUrl: i.storage_url,
     })),
   };
+}
+
+/**
+ * Post completo por id — usado pelas ações da Agenda de Posts (Trocar Foto, Agendamento manual,
+ * Editar Post Completo, 20/08/2026), que precisam do post inteiro (conteúdo, metadados, imagens,
+ * canal WordPress) pra decidir o que atualizar e onde. `rascunhoIdWordpress: null` quando o post
+ * ainda não foi criado no WordPress (pauta pendente, nunca chegou em "publicar") — é o sinal que
+ * essas ações usam pra saber se precisam criar ou só atualizar o post remoto.
+ */
+export type PostDetalhado = {
+  id: string;
+  pautaId: string;
+  propriedadeId: string;
+  titulo: string;
+  slug: string;
+  metaTitle: string;
+  metaDescription: string;
+  conteudoHtml: string;
+  status: StatusPost;
+  imagemDestaqueUrl: string | null;
+  imagemDestaqueMediaId: string | null;
+  imagensSecundarias: ImagemSecundaria[];
+  rascunhoIdWordpress: string | null;
+  agendadoPara: string | null;
+};
+
+export async function carregarPostDetalhado(postId: string): Promise<PostDetalhado | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select(
+      "id, pauta_id, propriedade_id, titulo, slug, meta_title, meta_description, conteudo_html, status, imagem_destaque_url, imagem_destaque_media_id, imagens_secundarias, canais, agendado_para",
+    )
+    .eq("id", postId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar post ${postId}: ${error.message}`);
+  if (!data) return null;
+
+  const secundariasBrutas = (data.imagens_secundarias ?? []) as Array<{
+    url: string;
+    alt: string;
+    slug: string;
+    titulo: string;
+    legenda: string;
+    posicao_apos_secao: string;
+    storage_url: string | null;
+  }>;
+  const canais = data.canais as { wordpress?: { rascunho_id?: string } } | null;
+
+  return {
+    id: data.id,
+    pautaId: data.pauta_id,
+    propriedadeId: data.propriedade_id,
+    titulo: data.titulo,
+    slug: data.slug,
+    metaTitle: data.meta_title,
+    metaDescription: data.meta_description,
+    conteudoHtml: data.conteudo_html,
+    status: data.status,
+    imagemDestaqueUrl: data.imagem_destaque_url,
+    imagemDestaqueMediaId: data.imagem_destaque_media_id,
+    imagensSecundarias: secundariasBrutas.map((i) => ({
+      url: i.url,
+      alt: i.alt,
+      slug: i.slug,
+      titulo: i.titulo,
+      legenda: i.legenda,
+      posicaoAposSecao: i.posicao_apos_secao,
+      storageUrl: i.storage_url,
+    })),
+    rascunhoIdWordpress: canais?.wordpress?.rascunho_id ?? null,
+    agendadoPara: data.agendado_para,
+  };
+}
+
+/**
+ * Edição manual completa de um post (Agenda de Posts, Editar Post Completo, 21/08/2026) — diferente
+ * de `atualizarStatusPost` (transição de status, com escrita condicional truthy-check em cada
+ * campo): aqui é sempre "grava exatamente o que a tela mandou", sem condicional nenhuma — é uma
+ * substituição deliberada e completa, não um patch parcial.
+ */
+export async function atualizarConteudoPost(
+  postId: string,
+  dados: { titulo: string; slug: string; metaTitle: string; metaDescription: string; conteudoHtml: string },
+): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("posts")
+    .update({
+      titulo: dados.titulo,
+      slug: dados.slug,
+      meta_title: dados.metaTitle,
+      meta_description: dados.metaDescription,
+      conteudo_html: dados.conteudoHtml,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq("id", postId);
+  if (error) throw new Error(`Falha ao atualizar conteúdo do post ${postId}: ${error.message}`);
 }
 
 /**
@@ -1156,6 +1272,42 @@ export async function criarPautaDePersona(params: {
   return mapearPauta(data as Parameters<typeof mapearPauta>[0]);
 }
 
+// Default de prioridade pra pauta manual (Agenda de Posts, Novo Post Manual, 21/08/2026) — bem
+// acima do default de coluna (0, usado por pautas geradas automaticamente): uma pauta que o Luiz
+// criou à mão deveria furar a fila das geradas pelo Estrategista, é essa a expectativa intuitiva.
+const PRIORIDADE_PAUTA_MANUAL_PADRAO = 100;
+
+/**
+ * Cria uma pauta manualmente (Agenda de Posts, 21/08/2026) — diferente de `criarPautaDePersona`
+ * (só usada pelo próprio Estrategista): aqui `personaId`/`geografia`/`agendamentoForcado` são
+ * opcionais DE VERDADE (não hard-coded), e a pauta entra como `"pendente"` — segue o fluxo normal
+ * do pipeline (mesma fila que `selecionarProximaPautaPendente` já usa, indistinguível de uma pauta
+ * gerada pelo Estrategista a partir daqui). Validação de FK (matriz ativa, persona existe) é
+ * responsabilidade de quem chama (pauta-manual-actions.ts), não deste repositório.
+ */
+export async function criarPautaManual(dados: DadosPautaManual): Promise<PautaCarregada> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("pautas")
+    .insert({
+      matriz_conteudo_id: dados.matrizConteudoId,
+      persona_id: dados.personaId ?? null,
+      angulo: dados.angulo,
+      palavra_chave_principal: dados.palavraChavePrincipal,
+      palavras_secundarias: dados.palavrasSecundarias ?? [],
+      funil: dados.funil,
+      tipo_conteudo: dados.tipoConteudo,
+      geografia: dados.geografia ?? null,
+      agendamento_forcado: dados.agendamentoForcado ?? null,
+      prioridade_score: dados.prioridadeScore ?? PRIORIDADE_PAUTA_MANUAL_PADRAO,
+      status: "pendente",
+    })
+    .select(CAMPOS_PAUTA)
+    .single();
+  if (error || !data) throw new Error(`Falha ao criar pauta manual: ${error?.message ?? "sem retorno"}`);
+  return mapearPauta(data as Parameters<typeof mapearPauta>[0]);
+}
+
 export async function listarChecklistPorPropriedade(propriedadeId: string): Promise<ItemChecklistAdmin[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -1246,29 +1398,75 @@ export async function reabrirPauta(pautaId: string): Promise<void> {
   if (error) throw new Error(`Falha ao reabrir pauta ${pautaId}: ${error.message}`);
 }
 
-export async function listarPostsPublicados(propriedadeId?: string): Promise<PostAdmin[]> {
+/**
+ * Posts `publicado` (já no ar OU agendado — ver comentário de `PostAgendaAdmin`
+ * e a decisão de desenho em `20260820090000_marketing_agendado_para.sql`),
+ * pra tela Agenda de Posts montar o calendário. Renomeada de
+ * `listarPostsPublicados` (Fase 2, Task 11) — único call site era
+ * `posts/page.tsx`, agora `agenda/page.tsx`, seguro renomear direto.
+ */
+export async function listarPostsAgenda(propriedadeId?: string): Promise<PostAgendaAdmin[]> {
   const supabase = createAdminClient();
   let query = supabase
     .from("posts")
-    .select("id, titulo, canais, score_qa, publicado_em, tentativas")
+    .select("id, propriedade_id, titulo, canais, score_qa, agendado_para, publicado_em, created_at, tentativas")
     .eq("status", "publicado")
     .order("publicado_em", { ascending: false });
 
   if (propriedadeId) query = query.eq("propriedade_id", propriedadeId);
 
   const { data, error } = await query;
-  if (error) throw new Error(`Falha ao listar posts publicados: ${error.message}`);
-  return (data ?? []).map((linha) => {
-    const canais = linha.canais as { wordpress?: { url?: string } } | null;
-    return {
-      id: linha.id as string,
-      titulo: linha.titulo as string,
-      url: canais?.wordpress?.url ?? "",
-      scoreQa: linha.score_qa as number | null,
-      publicadoEm: linha.publicado_em as string | null,
-      tentativas: linha.tentativas as number,
-    };
-  });
+  if (error) throw new Error(`Falha ao listar posts da agenda: ${error.message}`);
+  return (data ?? []).map(mapearPostAgendaBruto);
+}
+
+/**
+ * Posts já com texto+imagens prontos (`gerar_imagens` concluído) mas que
+ * nunca chegaram a "publicar"/"agendar" — tipicamente uma tentativa
+ * interrompida (ex.: o bug de `verificar_links` visto em produção). Mesmo
+ * filtro que `carregarPostProntoParaPublicar` usa pra reaproveitamento entre
+ * tentativas, mas devolvendo a lista inteira (não só a mais recente de uma
+ * pauta) pra Agenda mostrar todos os pendentes de qualquer pauta.
+ */
+export async function listarPostsPendentesAgendamento(propriedadeId?: string): Promise<PostAgendaAdmin[]> {
+  const supabase = createAdminClient();
+  let query = supabase
+    .from("posts")
+    .select("id, propriedade_id, titulo, canais, score_qa, agendado_para, publicado_em, created_at, tentativas")
+    .eq("status", "rascunho")
+    .eq("pronto_para_publicar", true)
+    .order("created_at", { ascending: false });
+
+  if (propriedadeId) query = query.eq("propriedade_id", propriedadeId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao listar posts pendentes de agendamento: ${error.message}`);
+  return (data ?? []).map(mapearPostAgendaBruto);
+}
+
+function mapearPostAgendaBruto(linha: {
+  id: string;
+  propriedade_id: string;
+  titulo: string;
+  canais: unknown;
+  score_qa: number | null;
+  agendado_para: string | null;
+  publicado_em: string | null;
+  created_at: string;
+  tentativas: number;
+}): PostAgendaAdmin {
+  const canais = linha.canais as { wordpress?: { url?: string } } | null;
+  return {
+    id: linha.id,
+    propriedadeId: linha.propriedade_id,
+    titulo: linha.titulo,
+    url: canais?.wordpress?.url ?? null,
+    scoreQa: linha.score_qa,
+    agendadoPara: linha.agendado_para,
+    publicadoEm: linha.publicado_em,
+    createdAt: linha.created_at,
+    tentativas: linha.tentativas,
+  };
 }
 
 /**
@@ -1276,8 +1474,8 @@ export async function listarPostsPublicados(propriedadeId?: string): Promise<Pos
  * resolve o TODO(Task 3) deixado por processar-pauta.ts (Fase 4a, spec seção 3.1, "Contexto novo
  * no prompt do Revisor": o Revisor usa isto pra julgar `originalidade_adequada`).
  *
- * Função dedicada, não extensão de `listarPostsPublicados` acima: aquela serve a tela de admin
- * "Posts Publicados" (Fase 2, Task 11) e devolve `PostAdmin` (id/url/scoreQa/tentativas) — campos
+ * Função dedicada, não extensão de `listarPostsAgenda` acima: aquela serve a tela Agenda de Posts
+ * e devolve `PostAgendaAdmin` — campos
  * que o Revisor não precisa, e que não carrega `angulo` porque esse campo vive em `pautas`, não em
  * `posts` (decisão registrada no relatório da Task 2). Estender aquele tipo/consulta só pra este
  * uso pouparia uma função nova à custa de acoplar dois consumidores com necessidades diferentes ao

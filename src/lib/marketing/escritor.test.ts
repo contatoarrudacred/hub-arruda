@@ -27,6 +27,7 @@ const pauta: PautaCarregada = {
   tentativas: 0,
   motivoUltimaReprovacao: null,
   ultimoRascunho: null,
+  agendamentoForcado: null,
 };
 
 const pautaDePersona: PautaCarregada = {

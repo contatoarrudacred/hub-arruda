@@ -15,6 +15,7 @@ import {
   carregarResumoVisaoGeral,
   contarPostsPublicadosDesde,
   criarPautaDePersona,
+  criarPautaManual,
   excluirItemChecklist,
   listarChecklistPorPropriedade,
   listarMatrizes,
@@ -22,7 +23,11 @@ import {
   listarPautasEmAndamento,
   listarPautasPorStatus,
   listarPersonasAtivasComAngulosDisponiveis,
-  listarPostsPublicados,
+  atualizarConteudoPost,
+  carregarPauta,
+  carregarPostDetalhado,
+  listarPostsAgenda,
+  listarPostsPendentesAgendamento,
   listarPropriedades,
   listarUnidadesNegocio,
   reabrirPauta,
@@ -1515,31 +1520,53 @@ describe("reabrirPauta", () => {
   });
 });
 
-describe("listarPostsPublicados", () => {
+describe("listarPostsAgenda", () => {
   const postBruto = {
     id: "post-1",
+    propriedade_id: "prop-1",
     titulo: "Como Limpar o Nome",
     canais: { wordpress: { url: "https://x.com/limpar-nome" } },
     score_qa: 92,
+    agendado_para: "2026-08-25T12:00:00.000Z",
     publicado_em: "2026-08-01T00:00:00Z",
+    created_at: "2026-07-30T00:00:00Z",
     tentativas: 1,
   };
 
-  it("mapeia título/url/score/data/tentativas", async () => {
+  it("mapeia todos os campos, incluindo propriedadeId/agendadoPara/createdAt", async () => {
     mockarFrom(criarQueryFalsa({ data: [postBruto], error: null }));
 
-    const posts = await listarPostsPublicados();
+    const posts = await listarPostsAgenda();
 
     expect(posts).toEqual([
-      { id: "post-1", titulo: "Como Limpar o Nome", url: "https://x.com/limpar-nome", scoreQa: 92, publicadoEm: "2026-08-01T00:00:00Z", tentativas: 1 },
+      {
+        id: "post-1",
+        propriedadeId: "prop-1",
+        titulo: "Como Limpar o Nome",
+        url: "https://x.com/limpar-nome",
+        scoreQa: 92,
+        agendadoPara: "2026-08-25T12:00:00.000Z",
+        publicadoEm: "2026-08-01T00:00:00Z",
+        createdAt: "2026-07-30T00:00:00Z",
+        tentativas: 1,
+      },
     ]);
+  });
+
+  it("deixa agendadoPara/url null quando ausentes", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ ...postBruto, canais: {}, agendado_para: null }], error: null }));
+
+    const posts = await listarPostsAgenda();
+
+    expect(posts[0].url).toBeNull();
+    expect(posts[0].agendadoPara).toBeNull();
   });
 
   it("filtra por propriedade quando informado", async () => {
     const builder = criarQueryFalsa({ data: [postBruto], error: null });
     mockarFrom(builder);
 
-    await listarPostsPublicados("prop-1");
+    await listarPostsAgenda("prop-1");
 
     expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
   });
@@ -1547,14 +1574,211 @@ describe("listarPostsPublicados", () => {
   it("lança erro claro quando a query falha", async () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
-    await expect(listarPostsPublicados()).rejects.toThrow(/Falha ao listar posts publicados.*erro de teste/);
+    await expect(listarPostsAgenda()).rejects.toThrow(/Falha ao listar posts da agenda.*erro de teste/);
+  });
+});
+
+describe("listarPostsPendentesAgendamento", () => {
+  const postBruto = {
+    id: "post-2",
+    propriedade_id: "prop-1",
+    titulo: "Post travado no meio do pipeline",
+    canais: {},
+    score_qa: null,
+    agendado_para: null,
+    publicado_em: null,
+    created_at: "2026-08-20T22:43:00.000Z",
+    tentativas: 1,
+  };
+
+  it("filtra status=rascunho e pronto_para_publicar=true", async () => {
+    const builder = criarQueryFalsa({ data: [postBruto], error: null });
+    mockarFrom(builder);
+
+    const posts = await listarPostsPendentesAgendamento();
+
+    expect(builder.eq).toHaveBeenCalledWith("status", "rascunho");
+    expect(builder.eq).toHaveBeenCalledWith("pronto_para_publicar", true);
+    expect(posts).toEqual([
+      {
+        id: "post-2",
+        propriedadeId: "prop-1",
+        titulo: "Post travado no meio do pipeline",
+        url: null,
+        scoreQa: null,
+        agendadoPara: null,
+        publicadoEm: null,
+        createdAt: "2026-08-20T22:43:00.000Z",
+        tentativas: 1,
+      },
+    ]);
+  });
+
+  it("filtra por propriedade quando informado", async () => {
+    const builder = criarQueryFalsa({ data: [postBruto], error: null });
+    mockarFrom(builder);
+
+    await listarPostsPendentesAgendamento("prop-1");
+
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(listarPostsPendentesAgendamento()).rejects.toThrow(
+      /Falha ao listar posts pendentes de agendamento.*erro de teste/,
+    );
+  });
+});
+
+// Agenda de Posts (Trocar Foto — "gerar de novo" na capa precisa da PautaCarregada completa pra
+// chamar gerarCapa, 20/08/2026).
+describe("carregarPauta", () => {
+  const pautaBruta = {
+    id: "pauta-1",
+    matriz_conteudo_id: "matriz-1",
+    persona_id: "persona-1",
+    palavra_chave_principal: "limpar nome",
+    palavras_secundarias: [],
+    angulo: "urgencia_temporal",
+    geografia: null,
+    tipo_conteudo: "post_padrao",
+    funil: "topo",
+    status: "publicado",
+    tentativas: 0,
+    motivo_ultima_reprovacao: null,
+  };
+
+  it("mapeia a pauta", async () => {
+    mockarFrom(criarQueryFalsa({ data: pautaBruta, error: null }));
+
+    const pauta = await carregarPauta("pauta-1");
+
+    expect(pauta?.id).toBe("pauta-1");
+    expect(pauta?.personaId).toBe("persona-1");
+    expect(pauta?.palavraChavePrincipal).toBe("limpar nome");
+  });
+
+  it("devolve null quando a pauta não existe", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    expect(await carregarPauta("pauta-x")).toBeNull();
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPauta("pauta-1")).rejects.toThrow(/Falha ao carregar pauta pauta-1.*erro de teste/);
+  });
+});
+
+// Agenda de Posts (Trocar Foto/Agendamento manual/Editar Post Completo, 20/08/2026).
+describe("carregarPostDetalhado", () => {
+  const postBruto = {
+    id: "post-1",
+    pauta_id: "pauta-1",
+    propriedade_id: "prop-1",
+    titulo: "Como Limpar o Nome",
+    slug: "como-limpar-o-nome",
+    meta_title: "Como Limpar o Nome | Guia",
+    meta_description: "Guia completo.",
+    conteudo_html: "<h1>Como Limpar o Nome</h1><p>...</p>",
+    status: "publicado",
+    imagem_destaque_url: "https://x.com/capa.png",
+    imagem_destaque_media_id: "media-1",
+    imagens_secundarias: [
+      { url: "https://x.com/doc.png", alt: "Doc", slug: "doc", titulo: "Doc", legenda: "Legenda", posicao_apos_secao: "depois da intro", storage_url: null },
+    ],
+    canais: { wordpress: { rascunho_id: "123", status: "publicado", url: "https://x.com/post" } },
+    agendado_para: "2026-08-25T12:00:00.000Z",
+  };
+
+  it("mapeia todos os campos, incluindo imagensSecundarias e rascunhoIdWordpress", async () => {
+    mockarFrom(criarQueryFalsa({ data: postBruto, error: null }));
+
+    const post = await carregarPostDetalhado("post-1");
+
+    expect(post).toEqual({
+      id: "post-1",
+      pautaId: "pauta-1",
+      propriedadeId: "prop-1",
+      titulo: "Como Limpar o Nome",
+      slug: "como-limpar-o-nome",
+      metaTitle: "Como Limpar o Nome | Guia",
+      metaDescription: "Guia completo.",
+      conteudoHtml: "<h1>Como Limpar o Nome</h1><p>...</p>",
+      status: "publicado",
+      imagemDestaqueUrl: "https://x.com/capa.png",
+      imagemDestaqueMediaId: "media-1",
+      imagensSecundarias: [
+        { url: "https://x.com/doc.png", alt: "Doc", slug: "doc", titulo: "Doc", legenda: "Legenda", posicaoAposSecao: "depois da intro", storageUrl: null },
+      ],
+      rascunhoIdWordpress: "123",
+      agendadoPara: "2026-08-25T12:00:00.000Z",
+    });
+  });
+
+  it("rascunhoIdWordpress null quando o post nunca foi criado no WordPress", async () => {
+    mockarFrom(criarQueryFalsa({ data: { ...postBruto, canais: {}, imagens_secundarias: [] }, error: null }));
+
+    const post = await carregarPostDetalhado("post-1");
+
+    expect(post?.rascunhoIdWordpress).toBeNull();
+  });
+
+  it("devolve null quando o post não existe", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    expect(await carregarPostDetalhado("post-x")).toBeNull();
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPostDetalhado("post-1")).rejects.toThrow(/Falha ao carregar post post-1.*erro de teste/);
+  });
+});
+
+// Agenda de Posts, Editar Post Completo (21/08/2026).
+describe("atualizarConteudoPost", () => {
+  it("grava todos os campos sempre, sem write condicional (diferente de atualizarStatusPost)", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarConteudoPost("post-1", {
+      titulo: "Novo título",
+      slug: "novo-slug",
+      metaTitle: "Novo meta title",
+      metaDescription: "Nova meta description",
+      conteudoHtml: "<p>Novo conteúdo</p>",
+    });
+
+    expect(builder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        titulo: "Novo título",
+        slug: "novo-slug",
+        meta_title: "Novo meta title",
+        meta_description: "Nova meta description",
+        conteudo_html: "<p>Novo conteúdo</p>",
+      }),
+    );
+    expect(builder.eq).toHaveBeenCalledWith("id", "post-1");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(
+      atualizarConteudoPost("post-1", { titulo: "T", slug: "s", metaTitle: "M", metaDescription: "D", conteudoHtml: "<p>C</p>" }),
+    ).rejects.toThrow(/Falha ao atualizar conteúdo do post post-1.*erro de teste/);
   });
 });
 
 // Fase 4a, Task 3 (19/08/2026) — resolve o TODO deixado pela Task 2 (revisor.test.ts/
 // processar-pauta.ts): título + ângulo dos posts publicados recentes desta propriedade, pro
 // Revisor julgar originalidade_adequada (spec seção 3.1, "Contexto novo no prompt do Revisor").
-// Função dedicada (não extensão de listarPostsPublicados, que serve a tela de admin e não carrega
+// Função dedicada (não extensão de listarPostsAgenda, que serve a tela de admin e não carrega
 // ângulo, campo que vive em `pautas`) — ver decisão registrada no relatório desta task.
 describe("carregarPostsRecentes", () => {
   it("mapeia titulo/angulo via embed com pautas, mais recentes primeiro", async () => {
@@ -2346,5 +2570,94 @@ describe("criarPautaDePersona", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(criarPautaDePersona(paramsBase)).rejects.toThrow(/Falha ao criar pauta a partir da persona persona-1.*erro de teste/);
+  });
+});
+
+// Agenda de Posts, Novo Post Manual (21/08/2026).
+describe("criarPautaManual", () => {
+  const dadosBase = {
+    matrizConteudoId: "matriz-1",
+    angulo: "limpeza de nome no Natal",
+    palavraChavePrincipal: "limpar nome no natal",
+    funil: "meio" as const,
+    tipoConteudo: "post_padrao" as const,
+  };
+  const linhaRetorno = {
+    id: "pauta-nova",
+    matriz_conteudo_id: "matriz-1",
+    persona_id: null,
+    palavra_chave_principal: "limpar nome no natal",
+    palavras_secundarias: [],
+    angulo: "limpeza de nome no Natal",
+    geografia: null,
+    tipo_conteudo: "post_padrao",
+    funil: "meio",
+    status: "pendente",
+    tentativas: 0,
+    motivo_ultima_reprovacao: null,
+    agendamento_forcado: null,
+  };
+
+  it("cria a pauta com status pendente (segue a fila normal, diferente de criarPautaDePersona)", async () => {
+    const builder = criarQueryFalsa({ data: linhaRetorno, error: null });
+    mockarFrom(builder);
+
+    const pauta = await criarPautaManual(dadosBase);
+
+    expect(pauta.status).toBe("pendente");
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ matriz_conteudo_id: "matriz-1", angulo: "limpeza de nome no Natal", status: "pendente" }),
+    );
+  });
+
+  it("prioridade_score usa o default 100 quando não informado (fura a fila das pautas automáticas)", async () => {
+    const builder = criarQueryFalsa({ data: linhaRetorno, error: null });
+    mockarFrom(builder);
+
+    await criarPautaManual(dadosBase);
+
+    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ prioridade_score: 100 }));
+  });
+
+  it("respeita prioridade_score customizado quando informado", async () => {
+    const builder = criarQueryFalsa({ data: linhaRetorno, error: null });
+    mockarFrom(builder);
+
+    await criarPautaManual({ ...dadosBase, prioridadeScore: 200 });
+
+    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ prioridade_score: 200 }));
+  });
+
+  it("personaId/geografia/agendamentoForcado são opcionais de verdade (null quando ausentes, não hard-coded como em criarPautaDePersona)", async () => {
+    const builder = criarQueryFalsa({ data: linhaRetorno, error: null });
+    mockarFrom(builder);
+
+    await criarPautaManual(dadosBase);
+
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ persona_id: null, geografia: null, agendamento_forcado: null }),
+    );
+  });
+
+  it("grava personaId/geografia/agendamentoForcado quando informados", async () => {
+    const builder = criarQueryFalsa({ data: linhaRetorno, error: null });
+    mockarFrom(builder);
+
+    await criarPautaManual({
+      ...dadosBase,
+      personaId: "persona-1",
+      geografia: "São Paulo",
+      agendamentoForcado: "2026-12-20T12:00:00.000Z",
+    });
+
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ persona_id: "persona-1", geografia: "São Paulo", agendamento_forcado: "2026-12-20T12:00:00.000Z" }),
+    );
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(criarPautaManual(dadosBase)).rejects.toThrow(/Falha ao criar pauta manual.*erro de teste/);
   });
 });
