@@ -325,6 +325,16 @@ export function montarOfertaAgendamentoConsultor(motivo: "divida_alta" | "pacote
   return [frase, `👉 *Quer agendar uma ligação/vídeo-chamada com ele?*\n\n1️⃣ Sim, quero agendar\n2️⃣ Prefiro continuar por aqui mesmo`];
 }
 
+/** Reforço pra dívida alta (ln_agendamento_insistencia) — ligação é obrigatória nesse caso, então
+ * insiste 1x antes de aceitar a recusa (decisão de Luiz, 21/08/2026: diferente de pacote caro, aqui
+ * não existe self-service — achado ao revisar o desenho do fluxo no editor visual). */
+export function montarInsistenciaAgendamento(): string[] {
+  return [
+    "Entendo! Mas pelo valor da sua restrição, esse atendimento realmente precisa ser feito por um consultor especializado — não tem como eu continuar sozinha nesse caso.",
+    "👉 *Consegue topar a ligação?*\n\n1️⃣ Sim, vamos agendar\n2️⃣ Não, prefiro não falar por telefone",
+  ];
+}
+
 /** Data/hora de um horário oferecido, no formato "quinta (20/08) às 15h" — usado tanto pra listar as 2 opções quanto pra confirmar a escolhida. `isoInstant` é o instante UTC gravado em `dados`. */
 export function formatarDataHoraAgendamento(isoInstant: string): string {
   const data = new Date(isoInstant);

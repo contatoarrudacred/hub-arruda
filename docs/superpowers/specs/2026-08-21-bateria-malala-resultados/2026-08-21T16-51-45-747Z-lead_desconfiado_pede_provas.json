@@ -1,0 +1,161 @@
+{
+  "cenario": "lead_desconfiado_pede_provas",
+  "descricao": "Lead desconfiado, questiona se é golpe e pede provas de credibilidade — testa se ela responde com as informações reais (site, CNPJ, avaliações) sem inventar nada além do que está no script.",
+  "tipo": "adversarial",
+  "telefone": "+5511999909009",
+  "expectativaHandoff": null,
+  "turnos": [
+    {
+      "turno": 1,
+      "mensagemLead": "Oi, antes de mais nada: isso não é golpe não, né? Como eu sei que vocês são sérios?",
+      "mensagensMalala": [
+        "",
+        "🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!",
+        "👉 *Com quem eu falo?*"
+      ],
+      "etapaCodigo": "pergunta_nome",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 2,
+      "mensagemLead": "Pode me chamar de Carlos. Mas antes de continuar, me passa o CNPJ de vocês e o site oficial? Quero pesquisar antes de dar meus dados",
+      "mensagensMalala": [
+        "Oi Pode, boa tarde! Prazer em falar com você!",
+        "Pra eu te atender melhor, me confirma seu e-mail:"
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 3,
+      "mensagemLead": "Calma, você ainda não me respondeu o que eu pedi. Antes de qualquer dado meu, preciso do CNPJ de vocês e do site oficial. Consegue me passar?",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 4,
+      "mensagemLead": "Malala, percebi que você ficou repetindo e não respondeu o que perguntei. Antes de te dar qualquer e-mail ou dado, preciso saber: qual o CNPJ da empresa e o site oficial de vocês? Sem isso eu não sigo.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 5,
+      "mensagemLead": "Malala, isso já é a terceira vez que você não responde o que eu perguntei. Isso tá parecendo golpe. Se não me passar o CNPJ e o site oficial agora, vou encerrar essa conversa.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 6,
+      "mensagemLead": "Olha, já pedi o CNPJ e o site umas 4 vezes e você só fica repetindo a mesma coisa. Isso não é normal. Vou encerrar por aqui, obrigado.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 7,
+      "mensagemLead": "Encerrando a conversa por aqui. Não consegui nenhuma informação concreta sobre a empresa. Vou denunciar esse número. Tchau.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 8,
+      "mensagemLead": "Já falei que vou encerrar. Isso é golpe, com certeza. Vou bloquear e denunciar esse número. Tchau.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 9,
+      "mensagemLead": "Bloqueado. Isso é golpe confirmado, nem CNPJ conseguem passar.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 10,
+      "mensagemLead": "Já encerrei essa conversa. Não vou mandar mais nenhum dado sem CNPJ e site oficial. Tchau.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 11,
+      "mensagemLead": "[Conversa encerrada e número bloqueado]",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 12,
+      "mensagemLead": "[Número bloqueado]",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 13,
+      "mensagemLead": "[Sem resposta - número bloqueado]",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 14,
+      "mensagemLead": "[Número bloqueado - não haverá mais respostas]",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    }
+  ],
+  "efeitos": {
+    "sobSupervisor": false,
+    "etapaKanban": "novo_lead_triagem",
+    "notasInternas": [],
+    "notificacoes": [],
+    "agendamento": null
+  },
+  "encerradoPorLimiteDeTurnos": true,
+  "erro": null
+}

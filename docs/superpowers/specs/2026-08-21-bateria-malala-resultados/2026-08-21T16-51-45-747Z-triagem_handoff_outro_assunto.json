@@ -1,0 +1,70 @@
+{
+  "cenario": "triagem_handoff_outro_assunto",
+  "descricao": "Lead pede um assunto fora de Limpeza de Nome no menu de triagem — deve escalar pro handoff_humano (ponto A) sem inventar ajuda que não pode dar.",
+  "tipo": "roteirizado",
+  "telefone": "+5511999909000",
+  "expectativaHandoff": "Não precisa pedir confirmação (o próprio pedido do lead já é a confirmação) — mas precisa avisar que vai encaminhar, e o registro no banco (sob_supervisor + nota interna) precisa confirmar que a transferência de fato aconteceu.",
+  "turnos": [
+    {
+      "turno": 1,
+      "mensagemLead": "Oi, tudo bem?",
+      "mensagensMalala": [
+        "",
+        "🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!",
+        "👉 *Com quem eu falo?*"
+      ],
+      "etapaCodigo": "pergunta_nome",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 2,
+      "mensagemLead": "João Pedro Silva",
+      "mensagensMalala": [
+        "Oi João, boa tarde! Prazer em falar com você!",
+        "Pra eu te atender melhor, me confirma seu e-mail:"
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 3,
+      "mensagemLead": "joaopedro@testandodasilva.com.br",
+      "mensagensMalala": [
+        "Para agilizar seu atendimento, informe o número da opção:\n\n1️⃣ Limpeza de Nome (CPF/CNPJ)\n2️⃣ Aumento de Score / Rating\n3️⃣ BACEN / SCR / CCF\n4️⃣ Jusbrasil / Escavador\n5️⃣ Conta Protegida (Bloqueio Judicial)\n6️⃣ Consórcio\n7️⃣ Crédito / Financiamento\n8️⃣ Outro assunto\n\n👉 *É só responder com o número da opção* 😊"
+      ],
+      "etapaCodigo": "triagem_menu",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 4,
+      "mensagemLead": "na verdade eu queria saber sobre consórcio, vocês trabalham com isso?",
+      "mensagensMalala": [
+        "Perfeito! Esse assunto vou encaminhar para um outro consultor que vai te ajudar — só um instante 🙋‍♂️"
+      ],
+      "etapaCodigo": null,
+      "naoReconhecido": false,
+      "interpretadoPorIA": true
+    }
+  ],
+  "efeitos": {
+    "sobSupervisor": true,
+    "etapaKanban": "novo_lead_triagem",
+    "notasInternas": [
+      {
+        "autor": "Malala (sistema)",
+        "texto": "Malala transferiu o atendimento — o lead pediu um assunto fora de Limpeza de Nome no menu de triagem."
+      }
+    ],
+    "notificacoes": [
+      {
+        "tipo": "mencao"
+      }
+    ],
+    "agendamento": null
+  },
+  "encerradoPorLimiteDeTurnos": false,
+  "erro": null
+}

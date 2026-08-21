@@ -4,16 +4,23 @@
 // processa uma tentativa completa (gerar→revisar→publicar) de uma pauta por matriz — ver
 // docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md seção 3.1.
 
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processarProximaPauta } from "@/lib/marketing/processar-pauta";
 
-const DURACAO_LOCK_SEGUNDOS = 240; // uma tentativa completa — bem mais curto que o loop inteiro de retries
+// 290s, não mais 240s (achado real de produção, 21/08/2026): com after(), o cliente (cron-job.org)
+// não espera mais o processamento — só a Vercel importa agora, e a plataforma já libera até 300s
+// de maxDuration por padrão em qualquer plano. A geração inicial do Escritor sozinha já foi vista
+// consumindo 160-200s; com só 240s de teto, etapas mais adiante (revisar, gerar_imagens) às vezes
+// não tinham tempo de terminar antes da função ser morta no meio. 290 (não 300 cravado) deixa uma
+// margem de segurança.
+const DURACAO_LOCK_SEGUNDOS = 290; // uma tentativa completa — bem mais curto que o loop inteiro de retries
 
 // Mesma duração do lock: se a função for morta por timeout, o lock já teria expirado de qualquer
 // forma. Sem isto, a duração máxima default da plataforma poderia matar a função no meio do
 // processamento — a pauta ficaria presa em "em_producao" (reclaim cobre isso, ver
 // selecionarProximaPautaPendente em repositorio.ts, mas evitar o timeout no primeiro lugar é melhor).
-export const maxDuration = 240;
+export const maxDuration = 290;
 
 export async function GET(request: Request) {
   const segredo = process.env.CRON_SECRET;
@@ -28,22 +35,30 @@ export async function GET(request: Request) {
     return Response.json({ erro: `Falha ao carregar matrizes de conteúdo: ${erroMatrizes.message}` }, { status: 500 });
   }
 
-  const resultados: Record<string, string> = {};
-  for (const matriz of matrizes ?? []) {
-    const idLock = `marketing-pipeline-${matriz.id}`;
-    const { data: obtido } = await supabase.rpc("fn_tentar_lock_cron", {
-      p_id: idLock,
-      p_duracao_segundos: DURACAO_LOCK_SEGUNDOS,
-    });
-    if (!obtido) continue;
+  // Responde IMEDIATAMENTE (via after(), mesmo padrão já usado nos webhooks — ver
+  // src/app/api/webhooks/zapster/route.ts) — achado real de produção (21/08/2026): o plano
+  // gratuito do cron-job.org desiste de esperar depois de só 30s, bem menos que os até 240s que
+  // uma tentativa completa de verdade pode legitimamente levar (a geração inicial do Escritor
+  // sozinha já foi vista consumindo 160-200s) — todo disparo aparecia como "Failed (timeout)" na
+  // tela do cron-job.org mesmo com o pipeline rodando certinho no servidor. after() mantém a
+  // função viva em background via waitUntil do Vercel, até o maxDuration acima — dissociado da
+  // espera (curta) do cliente que disparou o request.
+  after(async () => {
+    for (const matriz of matrizes ?? []) {
+      const idLock = `marketing-pipeline-${matriz.id}`;
+      const { data: obtido } = await supabase.rpc("fn_tentar_lock_cron", {
+        p_id: idLock,
+        p_duracao_segundos: DURACAO_LOCK_SEGUNDOS,
+      });
+      if (!obtido) continue;
 
-    try {
-      const resultado = await processarProximaPauta(matriz.id, matriz.propriedade_id);
-      resultados[matriz.id] = resultado.status;
-    } finally {
-      await supabase.rpc("fn_liberar_lock_cron", { p_id: idLock });
+      try {
+        await processarProximaPauta(matriz.id, matriz.propriedade_id);
+      } finally {
+        await supabase.rpc("fn_liberar_lock_cron", { p_id: idLock });
+      }
     }
-  }
+  });
 
-  return Response.json({ resultados });
+  return Response.json({ disparado: true, matrizes: (matrizes ?? []).length });
 }

@@ -1194,21 +1194,21 @@ export type Database = {
       }
       notas_internas: {
         Row: {
-          autor_id: string
+          autor_id: string | null
           conversa_id: string
           created_at: string
           id: string
           texto: string
         }
         Insert: {
-          autor_id: string
+          autor_id?: string | null
           conversa_id: string
           created_at?: string
           id?: string
           texto: string
         }
         Update: {
-          autor_id?: string
+          autor_id?: string | null
           conversa_id?: string
           created_at?: string
           id?: string
