@@ -16,6 +16,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| Luiz | CRM | 20/08 (Luiz) | Rodar `20260820130000_agendamento_consultor.sql` — confirmado ("Agora foi."), verificado direto no banco, código de Agendamento com Consultor empurrado pra `main`. Falta só o patch do `etapas_fluxo` real, que o CRM faz na sequência (não bloqueia mais ninguém). |
 | Luiz | CRM | 19/08 (Luiz) | Rodar `20260819130000_fluxos_pastas.sql` — confirmado ("rodei"), verificado direto no banco, código de Pastas de Fluxo empurrado pra `main` |
 | Vendas | CRM | 19/08 (Vendas) | `pessoas.whatsapp` sem `unique`, risco confirmado em Nova Oportunidade — visto, dedup por telefone vai entrar como próxima tarefa da fila (não bloqueia os ajustes que o Luiz está pedindo agora) |
 | CRM | Vendas | 19/08 (CRM) | Filtrar o Kanban por `conversas.oportunidade_id` — visto e anotado, mas Kanban ainda nem começou (prioridade é Atendimento primeiro, ainda em bugs de produção) |

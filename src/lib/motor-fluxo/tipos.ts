@@ -253,6 +253,8 @@ export type ResultadoInterpretacaoFaixasDocumentos =
   | { status: "incompleto"; perguntaEsclarecimento: string; dadosParciais?: DadosConversa }
   /** Lead pediu a consulta oficial paga (R$39/documento) — escala pra atendimento humano em vez de continuar o automatizado. */
   | { status: "escalar_consulta_paga"; mensagem: string }
+  /** Lead escolheu a opção virtual "Acima de X mil" do menu (spec 2026-08-20-agendamento-consultor-alto-valor.md) — encerra a coleta de faixas do pacote na hora, sem perguntar os documentos restantes, e roteia pro fluxo de agendamento com consultor. */
+  | { status: "acima_do_corte" }
   | { status: "nao_entendi" };
 
 export type InterpretadorFaixasDocumentos = (params: {
@@ -307,7 +309,9 @@ export type ContextoAvanco = {
 export type EfeitoNegocio =
   | { tipo: "marcar_perdida"; motivo: string }
   | { tipo: "escalar_supervisor"; motivo: string }
-  | { tipo: "encerrar_fluxo_automatizado"; etapaKanban: string; sobSupervisor: boolean };
+  | { tipo: "encerrar_fluxo_automatizado"; etapaKanban: string; sobSupervisor: boolean }
+  /** Lead aceitou e escolheu um horário de agendamento com o consultor (spec 2026-08-20-agendamento-consultor-alto-valor.md) — grava em `agendamentos_consultor` e notifica o consultor. `inicio`/`fim` em ISO 8601. */
+  | { tipo: "agendar_consultor"; inicio: string; fim: string; motivo: "divida_alta" | "pacote_caro" };
 
 /** Uma mensagem já emparelhada com o digitando/delay da etapa de onde ela veio — é o que a camada de canal (ou o simulador) usa pra decidir quanto tempo esperar e se mostra "digitando..." antes de revelar cada uma. */
 export type MensagemEnviada = {

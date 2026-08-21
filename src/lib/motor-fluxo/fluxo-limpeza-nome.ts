@@ -23,18 +23,22 @@ import {
   calcularFormulaAltoValor,
   classificarAltoValor,
   combinarFaixasPacote,
+  CORTE_PACOTE_CARO,
   type ConfigPrecificacaoLimpaNome,
   type FaixaPreco,
   formatarDataBr,
   formatarMenuFaixas,
   formatarReais,
   type ParcelaTier,
+  montarConfirmacaoAgendamento,
+  montarHorariosAgendamento,
+  montarOfertaAgendamentoConsultor,
   montarPropostaAltoValorSelfService,
   montarPropostaBaixoValor,
   montarPropostaPorFaixa,
-  montarQualificacaoAltoValor,
   resolverValorRestricao,
 } from "./regras-limpeza-nome";
+import { calcularHorariosDisponiveis, type JanelaDisponibilidade, type PeriodoOcupado } from "./agenda-consultor";
 
 export type DefinicaoEtapa = {
   codigo: string;
@@ -529,10 +533,13 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
       codigo: "ln_passo15_router",
       mensagens: [],
       aguarda_resposta: false,
+      // `escalar_agendamento` (criarCalculadoraDadosDerivados) resume os 2 gatilhos do agendamento
+      // com consultor — dívida acima do corte (`alto_valor`) OU preço do pacote acima de R$8.000
+      // (`pacote_caro`) — spec 2026-08-20-agendamento-consultor-alto-valor.md.
       proximo_por_dado: {
-        campo: "alto_valor",
+        campo: "escalar_agendamento",
         se_igual: "sim",
-        entao: "ln_passo15_alto_valor",
+        entao: "ln_agendamento_oferta",
         senao: "ln_passo15_normal",
       },
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
@@ -562,23 +569,29 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
     },
   },
   {
-    codigo: "ln_passo15_alto_valor",
+    // Substitui o antigo "ln_passo15_alto_valor" (spec 2026-08-20-agendamento-consultor-alto-valor.md)
+    // — em vez de só perguntar "call ou WhatsApp", oferece agendamento de verdade com um consultor.
+    // Chegada por 2 caminhos: direto do ln_passo6 (lead escolheu "Acima de X mil" no menu, pulando a
+    // precificação inteira — engine.ts trata isso fora do fluxo normal) ou via ln_passo15_router
+    // (soma das faixas ultrapassou o corte, ou o pacote ficou caro). Mensagem dinâmica (motivo varia
+    // por gatilho) gerada em criarResolverMensagensDinamicas.
+    codigo: "ln_agendamento_oferta",
     ordem: 21,
-    campoSalvo: "aceitou_call",
+    campoSalvo: "aceitou_agendamento",
     conteudo: {
-      codigo: "ln_passo15_alto_valor",
-      mensagens: [t("(qualificação de alto valor gerada dinamicamente)")],
+      codigo: "ln_agendamento_oferta",
+      mensagens: [t("(oferta de agendamento gerada dinamicamente)")],
       aguarda_resposta: true,
       tipo_resposta: "menu",
       opcoes: [
-        { valor: "call", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_call_agendada" },
-        { valor: "whatsapp", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_passo15_selfservice" },
+        { valor: "sim", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_agendamento_horario" },
+        { valor: "nao", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_call_agendada" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
       interpretacao_ia: {
         habilitado: true,
         instrucao:
-          "O lead pode responder em texto livre (ex.: 'prefiro que me liguem' → call, 'pode continuar por aqui mesmo' → whatsapp). Escolha a opção correspondente.",
+          "O lead pode responder em texto livre (ex.: 'quero sim, pode marcar' → sim, 'prefiro seguir por aqui mesmo' → nao). Escolha a opção correspondente.",
       },
     },
   },
@@ -593,6 +606,45 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
           "Combinado! Já vou avisar nosso especialista pra entrar em contato com você e agendar a ligação. 🙋‍♂️",
         ),
       ],
+      aguarda_resposta: false,
+      encerramento: { sob_supervisor: true },
+      kanban_subetapa: KANBAN_NEGOCIACAO_DUVIDAS,
+    },
+  },
+  {
+    // Horários oferecidos já calculados em `_agendamento_opcao_1/2_inicio/fim` por
+    // criarCalculadoraDadosDerivados, assim que `aceitou_agendamento=sim` — mensagem dinâmica lê
+    // esses 2 valores prontos (criarResolverMensagensDinamicas), nenhuma consulta ao banco aqui.
+    codigo: "ln_agendamento_horario",
+    ordem: 21.5,
+    campoSalvo: "horario_agendamento_escolhido",
+    conteudo: {
+      codigo: "ln_agendamento_horario",
+      mensagens: [t("(horários disponíveis gerados dinamicamente)")],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "1", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_agendamento_confirmado" },
+        { valor: "2", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_agendamento_confirmado" },
+      ],
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead pode responder com o número da opção, ou descrevendo o horário preferido (ex.: 'prefiro o de amanhã', 'o da tarde' — combine com o texto das opções mostradas). Se ele disser que nenhum dos dois funciona, escolha a opção 1 mesmo assim SÓ SE ele não tiver deixado claro que recusa — quando ele recusar claramente as duas, não escolha nenhuma (deixe a Malala repetir a pergunta).",
+      },
+    },
+  },
+  {
+    // A confirmação lê `horario_agendamento_escolhido` + a opção correspondente pra montar a frase
+    // (criarResolverMensagensDinamicas) — o EfeitoNegocio "agendar_consultor" (engine.ts,
+    // persistencia.ts) é quem de fato grava o agendamento e notifica o consultor.
+    codigo: "ln_agendamento_confirmado",
+    ordem: 21.6,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_agendamento_confirmado",
+      mensagens: [t("(confirmação de agendamento gerada dinamicamente)")],
       aguarda_resposta: false,
       encerramento: { sob_supervisor: true },
       kanban_subetapa: KANBAN_NEGOCIACAO_DUVIDAS,
@@ -828,6 +880,7 @@ function valoresPorDocumento(dados: DadosConversa): number[] {
 export function criarCalculadoraDadosDerivados(
   config: Pick<ConfigPrecificacaoLimpaNome, "altoValorFixo" | "altoValorPercentual" | "corteAltoValor">,
   faixasPrecos: FaixaPreco[],
+  agenda?: { disponibilidadeConsultor: JanelaDisponibilidade[]; agendamentosExistentes: PeriodoOcupado[] },
 ) {
   return (dados: DadosConversa): DadosConversa => {
     const derivados: DadosConversa = {};
@@ -841,6 +894,34 @@ export function criarCalculadoraDadosDerivados(
       derivados.valor_restricao_estimado = String(total);
       derivados.alto_valor = classificarAltoValor(total, config.corteAltoValor) ? "sim" : "nao";
       derivados.documentos_valor_baixo = total < 3000 ? "sim" : "nao";
+
+      // Gatilho B (pacote caro, spec 2026-08-20-agendamento-consultor-alto-valor.md) — preço
+      // COMBINADO do pacote (o que o lead pagaria pra ArrudaCred), não a dívida dele. `alto_valor`
+      // acima é sobre a dívida (gatilho A); os dois convergem em `escalar_agendamento`, que é o que
+      // `ln_passo15_router` de fato usa pra decidir se vai pro fluxo normal ou pro de agendamento.
+      const faixaCombinadaPreco = combinarFaixasPacote(valoresPorDocumento(dados), faixasPrecos);
+      derivados.pacote_caro = (faixaCombinadaPreco?.precoCheio ?? 0) > CORTE_PACOTE_CARO ? "sim" : "nao";
+      derivados.escalar_agendamento = derivados.alto_valor === "sim" || derivados.pacote_caro === "sim" ? "sim" : "nao";
+    }
+
+    // Horários oferecidos pro agendamento (ln_agendamento_horario) — calculados UMA vez, assim que
+    // o lead aceita agendar (`aceitou_agendamento=sim`), nunca recalculados depois (senão os 2
+    // horários mudariam sob os pés do lead entre a pergunta e a resposta dele). Guardados em `dados`
+    // como strings ISO — mesmo padrão de estado provisório já usado em `_faixa_provisoria_indice`.
+    if (dados.aceitou_agendamento === "sim" && !dados._agendamento_opcao_1_inicio && agenda) {
+      const [opcao1, opcao2] = calcularHorariosDisponiveis({
+        disponibilidade: agenda.disponibilidadeConsultor,
+        agendamentosExistentes: agenda.agendamentosExistentes,
+        agora: new Date(),
+      });
+      if (opcao1) {
+        derivados._agendamento_opcao_1_inicio = opcao1.inicio.toISOString();
+        derivados._agendamento_opcao_1_fim = opcao1.fim.toISOString();
+      }
+      if (opcao2) {
+        derivados._agendamento_opcao_2_inicio = opcao2.inicio.toISOString();
+        derivados._agendamento_opcao_2_fim = opcao2.fim.toISOString();
+      }
     }
 
     // Defaults do detalhe de pagamento (spec 2026-08-18) — calculados UMA vez, assim que
@@ -926,7 +1007,7 @@ export function criarResolverMensagensDinamicas(
       // especializado (interpretar-faixas-documentos.ts), não aqui.
       return [
         t(
-          `👉 *Em qual das faixas abaixo melhor se enquadra o valor das suas restrições atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n${formatarMenuFaixas(faixasPrecos)}`,
+          `👉 *Em qual das faixas abaixo melhor se enquadra o valor das suas restrições atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n${formatarMenuFaixas(faixasPrecos, config.corteAltoValor)}`,
         ),
       ];
     }
@@ -960,8 +1041,23 @@ export function criarResolverMensagensDinamicas(
       return montarPropostaPorFaixa(faixaCombinada, dados.prioridade_fechar_hoje === "sim").map(t);
     }
 
-    if (codigo === "ln_passo15_alto_valor") {
-      return montarQualificacaoAltoValor().map(t);
+    if (codigo === "ln_agendamento_oferta") {
+      const motivo = dados.pacote_caro === "sim" && dados.alto_valor !== "sim" ? "pacote_caro" : "divida_alta";
+      return montarOfertaAgendamentoConsultor(motivo).map(t);
+    }
+
+    if (codigo === "ln_agendamento_horario") {
+      const opcao1 = dados._agendamento_opcao_1_inicio;
+      const opcao2 = dados._agendamento_opcao_2_inicio;
+      if (!opcao1 || !opcao2) return null;
+      return [t(montarHorariosAgendamento([opcao1, opcao2]))];
+    }
+
+    if (codigo === "ln_agendamento_confirmado") {
+      const escolha = dados.horario_agendamento_escolhido === "2" ? "2" : "1";
+      const inicio = dados[`_agendamento_opcao_${escolha}_inicio`];
+      if (!inicio) return null;
+      return [t(montarConfirmacaoAgendamento(inicio))];
     }
 
     if (codigo === "ln_passo15_selfservice") {

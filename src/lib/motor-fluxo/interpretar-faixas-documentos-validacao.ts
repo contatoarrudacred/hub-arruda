@@ -80,18 +80,20 @@ export function mesclarAtualizacoesParciais(
 // interpretar-faixas-documentos.ts (ferramentaEscolhaMenu/ferramentaConfirmacaoFaixa).
 
 export type RespostaBrutaEscolhaFaixaMenu = {
-  status: "faixa_escolhida" | "quer_consulta_paga" | "nao_entendi";
+  status: "faixa_escolhida" | "acima_do_corte" | "quer_consulta_paga" | "nao_entendi";
   indice_faixa: number;
 };
 
 export type ResultadoEscolhaFaixaMenu =
   | { tipo: "faixa_escolhida"; indice: number }
+  | { tipo: "acima_do_corte" }
   | { tipo: "quer_consulta_paga" }
   | { tipo: "nao_entendi" };
 
-/** `indice_faixa` da IA é 1-based (mesma numeração do menu que o lead vê); o retorno já vem 0-based, pronto pra indexar a lista ordenada de faixas. */
+/** `indice_faixa` da IA é 1-based (mesma numeração do menu que o lead vê); o retorno já vem 0-based, pronto pra indexar a lista ordenada de faixas. `acima_do_corte` (spec 2026-08-20-agendamento-consultor-alto-valor.md) é a opção virtual do menu — não precisa de índice, não indexa `precos_por_faixa`. */
 export function validarEscolhaFaixaMenu(bruta: RespostaBrutaEscolhaFaixaMenu, qtdFaixas: number): ResultadoEscolhaFaixaMenu {
   if (bruta.status === "quer_consulta_paga") return { tipo: "quer_consulta_paga" };
+  if (bruta.status === "acima_do_corte") return { tipo: "acima_do_corte" };
   if (bruta.status !== "faixa_escolhida") return { tipo: "nao_entendi" };
 
   const indice = Number(bruta.indice_faixa);

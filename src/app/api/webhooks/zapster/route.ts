@@ -26,6 +26,7 @@ import {
 import {
   carregarConfigPrecificacao,
   carregarConfigRoteamento,
+  carregarDadosAgendamentoConsultor,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
   listarRegrasRoteamentoAtivas,
@@ -67,16 +68,20 @@ const DEBOUNCE_MS = 3500;
 // checkpoint). Responder na hora elimina o motivo do reenvio.
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
+    carregarDadosAgendamentoConsultor(),
   ]);
   return {
     etapasPorCodigo,
     resolverMensagensDinamicas: criarResolverMensagensDinamicas(faixas, config),
-    calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas),
-    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas),
+    calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas, {
+      disponibilidadeConsultor: dadosAgendamento.disponibilidade,
+      agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
+    }),
+    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
   };
 }
 
