@@ -5,21 +5,38 @@
 // Roteirizados: mensagens fixas em português natural (não números de menu "crus") — o
 // `interpretacao_ia` já está habilitado em praticamente todo checkpoint do script, então usar
 // linguagem natural testa exatamente a camada que Luiz quer validar, em vez de só a extração
-// determinística. A sequência exata de cada um foi conferida direto contra
-// `fluxo-limpeza-nome.ts` (ETAPAS_ABERTURA_TRIAGEM + ETAPAS_LIMPEZA_NOME).
+// determinística. A sequência exata de cada um foi conferida direto contra o `etapas_fluxo` REAL de
+// produção (não contra `fluxo-limpeza-nome.ts` — o banco diverge da semente TS em alguns pontos,
+// ex.: existe um `ln_passo1` e um `ln_fazsentido` que não estavam na semente, e `ln_passo2` não tem
+// mais o ramo "não" pra `ln_aguardar_melhor_momento`). Ver comentário logo abaixo pro grafo completo
+// conferido em 21/08/2026.
+//
+// Grafo real (ordem → codigo → destino), conferido via leitura direta do banco:
+//   pergunta_nome → abertura_email (telefone pulado, já vem do canal) → triagem_menu →
+//   [limpeza_nome] → ln_passo1(auto) → ln_passo2 → ln_passo3(auto) → ln_fazsentido → ln_passo4 →
+//   ln_passo5(auto) → ln_passo6 → [baixo: ln_passo7 | normal: ln_passo8 → ...auto... → ln_passo12 →
+//   ln_passo13(auto) → ln_passo14 → ln_passo15_router → [normal: ln_passo15_normal | escalar:
+//   ln_agendamento_oferta → [sim: ln_agendamento_horario → ln_agendamento_confirmado | não:
+//   ln_call_agendada]]]
+//
+// IMPORTANTE — caveat vivo (remover quando o passo 3 da spec 2026-08-21 for concluído): a correção
+// da recusa de agendamento (insistência pra dívida alta / self-service pra pacote caro,
+// `ln_agendamento_router_recusa`/`ln_agendamento_insistencia`) só existe no código local — o
+// `etapas_fluxo` real AINDA aponta "não" direto pra `ln_call_agendada` (comportamento antigo) até
+// esse código ir pra `main` e o `etapas_fluxo` ser patcheado (mesma regra de sequenciamento do
+// agendamento em si). Cenários de recusa testados agora refletem o comportamento ANTIGO.
 //
 // Adversariais: só a persona/objetivo é fixo — quem decide o que escrever a cada turno é uma 2ª IA
 // fazendo o papel do lead (ator-ia.ts), reagindo de verdade ao que a Malala respondeu. É o que pega
-// repetição/alucinação que um roteiro fixo não provoca.
+// repetição/alucinação que um roteiro fixo não provoca — e são imunes a esse tipo de divergência
+// entre semente e banco real, já que reagem ao que a Malala realmente pergunta.
 
 import type { Cenario } from "./tipos";
 
-// Prefixo comum a todo cenário roteirizado — traçado direto contra ETAPAS_ABERTURA_TRIAGEM
-// (fluxo-limpeza-nome.ts): saudacao_inicial(auto) → pergunta_nome → saudacao_personalizada(auto) →
-// abertura_telefone (PULADA — o canal WhatsApp já fornece o telefone, mesmo comportamento do
-// webhook real) → abertura_email → triagem_menu. 3 mensagens do lead: nome, e-mail, e a escolha do
-// menu de triagem (que já entra no mesmo turno da mensagem seguinte de cada cenário).
 const NOME_E_EMAIL = ["João Pedro Silva", "joaopedro@testandodasilva.com.br"];
+// "sim, pode ser" (ln_passo2) → "sim, faz sentido" (ln_fazsentido) — 2 confirmações distintas antes
+// de ln_passo4, confirmadas contra o banco real (não é uma questão só, são duas).
+const CONFIRMACOES_ATE_LN_PASSO4 = ["sim, pode ser", "sim, faz sentido"];
 
 export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
   {
@@ -39,7 +56,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome mesmo",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "só o meu CPF",
       "tenho uma dívida de uns 1500 reais no cartão de crédito",
       "faz sentido, vou tentar negociar direto com o banco então",
@@ -54,7 +71,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
       "minha dívida hoje deve estar uns 20 mil",
       "já tentei antes com outra empresa e não deu certo, vi vocês no Google",
@@ -77,7 +94,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
       "minha dívida está em uns 800 mil reais",
       "vi vocês no Google",
@@ -97,7 +114,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
       "minha dívida está em uns 800 mil reais",
       "vi vocês no Google",
@@ -117,7 +134,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "CPF e CNPJ, os dois",
       "o CPF está em uns 25 mil e o CNPJ uns 40 mil",
       "vi o Google mesmo",
@@ -135,7 +152,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
       "não sei dizer um número exato, só sei que é bem mais alto que qualquer uma dessas faixas que você me passou",
     ],
@@ -149,7 +166,7 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "Oi",
       ...NOME_E_EMAIL,
       "quero limpar meu nome",
-      "sim, pode ser",
+      ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
       "não sei o valor exato, prefiro pagar pela consulta oficial de vocês pra descobrir certinho",
     ],

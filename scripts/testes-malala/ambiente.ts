@@ -16,6 +16,20 @@ req.cache[serverOnlyPath] = {
   exports: {},
 } as NodeJS.Module;
 
+// `persistencia.ts` usa `after()` (next/server) pra mandar o e-mail de boas-vindas e gravar
+// oportunidade_documentos "depois da resposta" — só funciona dentro de uma requisição real do
+// Next.js. Fora dela (aqui, script Node puro) a chamada em si lança erro. Stub como no-op: nunca
+// invoca o callback — de propósito, não só pra não quebrar, mas porque o e-mail de boas-vindas iria
+// de verdade pro domínio fictício do lead de teste (mesmo princípio de "sem efeito externo real"
+// já usado pra não chamar a Zapster).
+const nextServerPath = req.resolve("next/server");
+req.cache[nextServerPath] = {
+  id: nextServerPath,
+  filename: nextServerPath,
+  loaded: true,
+  exports: { after: () => {} },
+} as NodeJS.Module;
+
 // Carrega .env.local manualmente (mesmo padrão usado nos scripts de verificação deste projeto) —
 // tsx não lê .env.local sozinho, e o caminho do repo tem "$" no meio, que dotenv/shell costumam
 // atropelar se não for tratado com cuidado.
