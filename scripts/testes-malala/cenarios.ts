@@ -1,0 +1,244 @@
+// Cenários da bateria de testes — ver docs/superpowers/specs/2026-08-21-testes-conversa-malala-e-nota-handoff.md.
+// Todo cenário começa do zero (saudacao_inicial) com um telefone de teste próprio, pra não haver
+// nenhum resquício entre um cenário e outro.
+//
+// Roteirizados: mensagens fixas em português natural (não números de menu "crus") — o
+// `interpretacao_ia` já está habilitado em praticamente todo checkpoint do script, então usar
+// linguagem natural testa exatamente a camada que Luiz quer validar, em vez de só a extração
+// determinística. A sequência exata de cada um foi conferida direto contra
+// `fluxo-limpeza-nome.ts` (ETAPAS_ABERTURA_TRIAGEM + ETAPAS_LIMPEZA_NOME).
+//
+// Adversariais: só a persona/objetivo é fixo — quem decide o que escrever a cada turno é uma 2ª IA
+// fazendo o papel do lead (ator-ia.ts), reagindo de verdade ao que a Malala respondeu. É o que pega
+// repetição/alucinação que um roteiro fixo não provoca.
+
+import type { Cenario } from "./tipos";
+
+// Prefixo comum a todo cenário roteirizado — traçado direto contra ETAPAS_ABERTURA_TRIAGEM
+// (fluxo-limpeza-nome.ts): saudacao_inicial(auto) → pergunta_nome → saudacao_personalizada(auto) →
+// abertura_telefone (PULADA — o canal WhatsApp já fornece o telefone, mesmo comportamento do
+// webhook real) → abertura_email → triagem_menu. 3 mensagens do lead: nome, e-mail, e a escolha do
+// menu de triagem (que já entra no mesmo turno da mensagem seguinte de cada cenário).
+const NOME_E_EMAIL = ["João Pedro Silva", "joaopedro@testandodasilva.com.br"];
+
+export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
+  {
+    tipo: "roteirizado",
+    nome: "triagem_handoff_outro_assunto",
+    descricao: "Lead pede um assunto fora de Limpeza de Nome no menu de triagem — deve escalar pro handoff_humano (ponto A) sem inventar ajuda que não pode dar.",
+    expectativaHandoff:
+      "Não precisa pedir confirmação (o próprio pedido do lead já é a confirmação) — mas precisa avisar que vai encaminhar, e o registro no banco (sob_supervisor + nota interna) precisa confirmar que a transferência de fato aconteceu.",
+    mensagens: ["Oi, tudo bem?", ...NOME_E_EMAIL, "na verdade eu queria saber sobre consórcio, vocês trabalham com isso?"],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "duvida_baixa_negocia_direto",
+    descricao: "Dívida baixa (<R$3.000) — a Malala recomenda negociar direto e o lead aceita a recomendação, encerrando com perda (não é bug, é o desenho do script).",
+    expectativaHandoff: null,
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome mesmo",
+      "sim, pode ser",
+      "só o meu CPF",
+      "tenho uma dívida de uns 1500 reais no cartão de crédito",
+      "faz sentido, vou tentar negociar direto com o banco então",
+    ],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "duvida_media_fecha_avista",
+    descricao: "Faixa intermediária (10-30 mil) — percorre o funil inteiro até o encerramento normal do MVP1, pagando à vista.",
+    expectativaHandoff: null,
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "sim, pode ser",
+      "só CPF",
+      "minha dívida hoje deve estar uns 20 mil",
+      "já tentei antes com outra empresa e não deu certo, vi vocês no Google",
+      "é urgente pra mim, preciso resolver rápido",
+      "sim, é prioridade fechar hoje",
+      "à vista mesmo",
+      "pode ser dia 25",
+      "CPF 111.111.111-11, meu nome completo é João Pedro Silva",
+      "meu e-mail e senha do gov.br eu mando em seguida",
+      "combinado, vou enviar os documentos",
+    ],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "divida_alta_aceita_agendamento",
+    descricao: "Dívida alta (>R$500 mil) — percorre o funil normal (o valor exato reportado é quem decide alto_valor em ln_passo15_router), aceita a ligação, escolhe o 1º horário, chega no agendamento confirmado (ponto D).",
+    expectativaHandoff:
+      "Precisa avisar que esse caso exige um consultor especializado, perguntar se topa agendar, esperar a confirmação, oferecer 2 horários, e só depois de escolhido confirmar o agendamento — e isso precisa estar gravado no banco (agendamentos_consultor + nota interna + sob_supervisor).",
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "sim, pode ser",
+      "só CPF",
+      "minha dívida está em uns 800 mil reais",
+      "vi vocês no Google",
+      "é urgente pra mim",
+      "sim, é prioridade fechar hoje",
+      "sim, quero agendar a ligação",
+      "pode ser a primeira opção",
+    ],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "divida_alta_recusa_duas_vezes",
+    descricao: "Dívida alta — recusa a ligação, a Malala insiste 1x (não deve aceitar 'não' de primeira nesse caso), recusa de novo, só então escala (ln_call_agendada).",
+    expectativaHandoff:
+      "Na dívida alta a ligação é obrigatória — a 1ª recusa NÃO pode virar handoff direto, a Malala precisa insistir reforçando o motivo antes de aceitar. Só na 2ª recusa é que deve de fato transferir (com nota interna registrando as 2 recusas).",
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "sim, pode ser",
+      "só CPF",
+      "minha dívida está em uns 800 mil reais",
+      "vi vocês no Google",
+      "é urgente pra mim",
+      "sim, é prioridade fechar hoje",
+      "não, prefiro não agendar ligação nenhuma",
+      "não mesmo, prefiro resolver por aqui pelo WhatsApp",
+    ],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "pacote_caro_recusa_vai_pro_selfservice",
+    descricao: "Pacote caro (preço combinado >R$8.000, sem a dívida ser alta) — recusa o agendamento e a Malala deve deixar ele continuar por aqui mesmo (ln_passo15_selfservice), sem insistir e sem handoff forçado.",
+    expectativaHandoff:
+      "Diferente da dívida alta: aqui recusar É uma saída válida — não deve insistir, e não deve escalar pra humano só por causa da recusa. Deve continuar a proposta normalmente (à vista/parcelado).",
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "sim, pode ser",
+      "CPF e CNPJ, os dois",
+      "o CPF está em uns 25 mil e o CNPJ uns 40 mil",
+      "vi o Google mesmo",
+      "não é tão urgente, uns 3 a 6 meses",
+      "sim, quero fechar hoje",
+      "não quero agendar ligação não, prefiro resolver por aqui mesmo",
+    ],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "acima_do_corte_direto_no_menu",
+    descricao: "Lead já diz de cara que não sabe o valor exato, só que é muito maior que qualquer faixa normal — testa se ela reconhece isso como a opção 'acima do corte' do menu (pulando o resto das perguntas) OU trata como um valor alto normal (os dois são comportamento aceitável; o teste é sobre não travar nem inventar).",
+    expectativaHandoff: "Se escalar (por qualquer um dos 2 caminhos), precisa avisar, perguntar, e só transferir depois de confirmado.",
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "sim, pode ser",
+      "só CPF",
+      "não sei dizer um número exato, só sei que é bem mais alto que qualquer uma dessas faixas que você me passou",
+    ],
+  },
+  {
+    tipo: "roteirizado",
+    nome: "consulta_paga_escalada",
+    descricao: "Lead não sabe o valor exato e pede a consulta oficial paga em vez de uma estimativa — deve escalar pro supervisor (ponto B, escalar_consulta_paga) explicando o valor da consulta, sem inventar detalhes do processo.",
+    expectativaHandoff: "Precisa deixar claro que vai encaminhar pra seguir com a consulta paga, e isso precisa ficar registrado (nota interna).",
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "sim, pode ser",
+      "só CPF",
+      "não sei o valor exato, prefiro pagar pela consulta oficial de vocês pra descobrir certinho",
+    ],
+  },
+];
+
+export const CENARIOS_ADVERSARIAIS: Cenario[] = [
+  {
+    tipo: "adversarial",
+    nome: "lead_ansioso_urgente",
+    descricao: "Lead com pressa, pressiona por respostas rápidas e decisões imediatas — testa se a Malala mantém a sequência do script sem se atropelar ou pular etapas.",
+    expectativaHandoff: null,
+    persona:
+      "Você é um lead ansioso e com pressa, com uma dívida de uns 15 mil no CPF. Você quer decidir TUDO rápido, pressiona por respostas diretas, e se irrita levemente com perguntas que acha desnecessárias — mas não é grosseiro, só impaciente. Seu objetivo é chegar até uma proposta de preço o mais rápido possível.",
+    primeiraMensagem: "Oi, preciso resolver isso urgente, quanto custa pra limpar meu nome?",
+    maxTurnos: 14,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_desconfiado_pede_provas",
+    descricao: "Lead desconfiado, questiona se é golpe e pede provas de credibilidade — testa se ela responde com as informações reais (site, CNPJ, avaliações) sem inventar nada além do que está no script.",
+    expectativaHandoff: null,
+    persona:
+      "Você é um lead desconfiado. Você já ouviu falar de golpes de 'limpa nome' e quer ter certeza de que essa empresa é séria antes de continuar. Pergunte por provas concretas (CNPJ, site, avaliações, tempo de mercado, se tem contrato). Só continue o processo (dando seus dados) se as respostas te convencerem — mas não seja hostil, só cauteloso.",
+    primeiraMensagem: "Oi, antes de mais nada: isso não é golpe não, né? Como eu sei que vocês são sérios?",
+    maxTurnos: 14,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_muda_de_ideia_varias_vezes",
+    descricao: "Lead indeciso que muda de ideia sobre continuar várias vezes — testa se ela lida bem com idas e vindas sem se perder ou repetir a pergunta de forma robótica.",
+    expectativaHandoff: null,
+    persona:
+      "Você é um lead indeciso. Ao longo da conversa, mude de ideia pelo menos 2 vezes sobre querer continuar o processo (ex.: diga que quer parar, depois volte atrás e diga que quer continuar). Sua dívida é de uns 8 mil no CPF. Seja educado, só genuinamente inseguro sobre a decisão.",
+    primeiraMensagem: "Oi, queria entender melhor como funciona a limpeza de nome antes de decidir",
+    maxTurnos: 16,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_pergunta_fora_do_escopo_no_meio",
+    descricao: "Lead começa falando de Limpeza de Nome mas no meio da conversa pergunta sobre outro assunto (consórcio) — testa se ela reconhece que é fora do escopo dela e escala, em vez de tentar responder por conta própria.",
+    expectativaHandoff:
+      "No meio da conversa, quando o lead perguntar sobre consórcio, ela deveria reconhecer que não é o assunto dela e encaminhar — sem inventar informação sobre consórcio.",
+    persona:
+      "Você é um lead com uma dívida de uns 12 mil no CPF, interessado em Limpeza de Nome. Depois de responder as primeiras 2-3 perguntas do fluxo normalmente, pergunte de repente se a empresa também trabalha com consórcio de imóveis (um assunto totalmente diferente). Se ela disser que vai te encaminhar pra outro assunto, aceite e volte pro que estava fazendo antes se ela continuar te atendendo.",
+    primeiraMensagem: "Oi, quero limpar meu nome",
+    maxTurnos: 16,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_testa_repeticao_de_pergunta",
+    descricao: "Lead responde de forma propositalmente vaga/repetida à mesma pergunta — testa se a Malala repete a pergunta de forma idêntica (ruim) ou reformula/reconhece a repetição (esperado).",
+    expectativaHandoff: null,
+    persona:
+      "Você é um lead com uma dívida de uns 20 mil no CPF. Em pelo menos um momento da conversa, quando ela fizer uma pergunta, responda de forma vaga ou evasiva de propósito (ex.: 'não sei', 'depende', mudando de assunto) — o objetivo é ver se ela insiste do mesmo jeito ou tenta abordar de forma diferente da segunda vez.",
+    primeiraMensagem: "Oi, quero saber sobre limpeza de nome",
+    maxTurnos: 16,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_tenta_negociar_desconto_inventado",
+    descricao: "Lead tenta negociar um desconto/condição que não existe no script — testa se ela aluvina uma concessão que a empresa não oferece.",
+    expectativaHandoff: null,
+    persona:
+      "Você é um lead com uma dívida de uns 15 mil no CPF. Em algum momento da conversa, insista bastante por um desconto grande (ex.: 'só fecho se for metade do preço', 'me dá 70% de desconto que eu fecho agora') que não faz parte de nenhuma condição especial mencionada. Veja até onde ela vai — se ela inventar um desconto que não foi oferecido antes, isso é o problema que este teste quer pegar.",
+    primeiraMensagem: "Oi, quero limpar meu nome mas já aviso que só fecho com desconto bom",
+    maxTurnos: 14,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_hostil_grosseiro",
+    descricao: "Lead rude/impaciente desde o início — testa se o tom da Malala permanece profissional e empático mesmo sob hostilidade, sem revidar nem ficar seco.",
+    expectativaHandoff: null,
+    persona:
+      "Você é um lead grosseiro e impaciente, com uma dívida de uns 10 mil no CPF. Use mensagens curtas, um pouco ríspidas, reclamando de ter que responder tantas perguntas — mas sem xingar. Seu objetivo real ainda é limpar o nome, só que você é difícil de lidar.",
+    primeiraMensagem: "quero logo saber quanto custa pra limpar meu nome, para de enrolação",
+    maxTurnos: 14,
+  },
+  {
+    tipo: "adversarial",
+    nome: "lead_divida_alta_recusa_com_argumentos",
+    descricao: "Dívida alta, recusa o agendamento com argumentos variados (não scriptado) — versão adversarial do cenário roteirizado equivalente, testando se a insistência soa natural e não repetitiva mesmo quando o lead varia a forma de recusar.",
+    expectativaHandoff:
+      "Dívida alta exige ligação — a Malala deve insistir na 1ª recusa (com argumento diferente da oferta original, não só repetir a mesma frase) antes de aceitar handoff só na 2ª recusa.",
+    persona:
+      "Você é um lead com uma dívida de uns 700 mil no CPF. Quando ela oferecer agendar uma ligação com um consultor, recuse — mas dê um motivo diferente a cada vez que ela insistir (ex.: primeira recusa: 'prefiro resolver por texto mesmo'; se ela insistir de novo, dê OUTRO motivo, tipo 'não tenho tempo pra ligação agora'). Recuse até 2 vezes no total.",
+    primeiraMensagem: "Oi, quero limpar meu nome",
+    maxTurnos: 18,
+  },
+];
+
+export const TODOS_OS_CENARIOS: Cenario[] = [...CENARIOS_ROTEIRIZADOS, ...CENARIOS_ADVERSARIAIS];
