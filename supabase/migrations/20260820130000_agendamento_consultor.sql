@@ -58,6 +58,6 @@ create trigger trg_auditoria_agendamentos_consultor
 update usuarios_sistema set eh_consultor = true where email = 'lhdoria2011@gmail.com';
 
 insert into disponibilidade_atendente (usuario_sistema_id, dia_semana, hora_inicio, hora_fim)
-select id, dia, '10:00', case when dia = 6 then '15:00' else '21:00' end
+select id, dia, '10:00'::time, (case when dia = 6 then '15:00' else '21:00' end)::time
 from usuarios_sistema, unnest(array[1, 2, 3, 4, 5, 6]) as dia
 where email = 'lhdoria2011@gmail.com';
