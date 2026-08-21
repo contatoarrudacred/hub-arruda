@@ -12,6 +12,7 @@ import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-
 import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
 import {
   carregarConfigPrecificacao,
+  carregarDadosAgendamentoConsultor,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
 } from "@/lib/motor-fluxo/repositorio";
@@ -43,16 +44,20 @@ export type PassoSimulador = {
 };
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
+    carregarDadosAgendamentoConsultor(),
   ]);
   return {
     etapasPorCodigo,
     resolverMensagensDinamicas: criarResolverMensagensDinamicas(faixas, config),
-    calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas),
-    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas),
+    calcularDadosDerivados: criarCalculadoraDadosDerivados(config, faixas, {
+      disponibilidadeConsultor: dadosAgendamento.disponibilidade,
+      agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
+    }),
+    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
   };
 }
 

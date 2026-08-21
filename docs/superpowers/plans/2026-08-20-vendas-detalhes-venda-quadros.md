@@ -1,3 +1,224 @@
+# Vendas — Detalhes da Venda: quadros de informação completa — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) ou superpowers:executing-plans pra implementar task a task. Steps usam checkbox (`- [ ]`).
+
+**Goal:** Reorganizar a parte inferior da tela "Detalhes da Venda" pra mostrar todas as informações disponíveis da venda em cards sempre visíveis, em vez da lógica atual que esconde cards inteiros fora de estágios específicos do Kanban.
+
+**Architecture:** `page.tsx` (Server Component) ganha uma segunda leva de buscas em paralelo (endereço, signatário ArrudaCred, representante legal, fornecedor, template, pacote de documentos) e repassa tudo como props pro Client Component `detalhes-venda-client.tsx`, que troca a lógica condicional-por-status por uma grade de cards sempre renderizados (cada um decide sozinho o que mostrar quando o dado está ausente — "não informado", "aguardando emissão", etc. — em vez do card inteiro sumir).
+
+**Tech Stack:** Next.js 16 App Router, TypeScript, Tailwind, Supabase — mesmo stack do resto do módulo Vendas. Nenhuma dependência nova.
+
+**Spec:** `docs/superpowers/specs/2026-08-20-vendas-detalhes-venda-quadros-design.md`
+
+## Global Constraints
+
+- `pnpm exec tsc --noEmit` e `pnpm exec eslint src` limpos antes de cada commit.
+- **Sem migration nesta rodada** — todo dado usado já existe no banco. Nenhuma reserva de timestamp em `docs/COORDENACAO_AGENTES_ARRUDACRED.md` necessária.
+- **Convenção de teste do módulo Vendas** (repetida de todas as specs/plans anteriores desta sessão, confirmada na spec seção 7): I/O e apresentação (Server/Client Components lendo dado já buscado) **não ganham teste Vitest** — verificação é manual no navegador. Só lógica pura ganharia teste, e este plano não introduz nenhuma. Não escreva teste-primeiro pras tasks abaixo — implemente direto, rode `tsc`/`eslint`, verifique manualmente, e comite.
+- Nomenclatura/RLS/auditoria já estabelecidos no módulo — nenhuma tabela nova é criada, então não se aplica aqui.
+- Antes de dar push da branch de worktree pra fora: seguir o protocolo de sincronização já estabelecido no projeto (`git fetch origin`, comparar com `origin/main`, `git merge origin/main` local, resolver conflito mantendo os dois lados, rodar testes de novo, só então empurrar).
+
+---
+
+## Task 1: `buscarRepresentanteCompleto`
+
+**Files:**
+- Modify: `src/lib/vendas/pessoa-representantes.ts`
+
+**Interfaces:**
+- Consumes: `buscarRepresentante(pessoaJuridicaId: string): Promise<{ pessoaFisicaId: string } | null>` (já existe, mesmo arquivo). `buscarPessoaCompleta(pessoaId: string): Promise<PessoaCompleta | null>` de `@/lib/vendas/pessoas` (já existe).
+- Produces: `buscarRepresentanteCompleto(pessoaJuridicaId: string): Promise<PessoaCompleta | null>` — usado pela Task 2 (`page.tsx`).
+
+- [ ] **Step 1: Adicionar a função**
+
+Abra `src/lib/vendas/pessoa-representantes.ts` e adicione o import e a função no final do arquivo:
+
+```ts
+import { createClient } from "@/lib/supabase/server";
+import { buscarPessoaCompleta, type PessoaCompleta } from "./pessoas";
+```
+
+(troque a linha `import { createClient } from "@/lib/supabase/server";` existente por essas duas linhas — mantém o import de `createClient` e adiciona o de `pessoas`)
+
+```ts
+/** Composição de buscarRepresentante + buscarPessoaCompleta — usado pela tela Detalhes da Venda
+ * pra mostrar o representante legal (nome, e-mail, RG etc.) sem espalhar essa junção em quem chama.
+ * `null` tanto quando não há representante vinculado quanto quando o vínculo aponta pra uma Pessoa
+ * que não existe mais (não deveria acontecer, mas não é motivo pra lançar erro numa tela de leitura). */
+export async function buscarRepresentanteCompleto(pessoaJuridicaId: string): Promise<PessoaCompleta | null> {
+  const representante = await buscarRepresentante(pessoaJuridicaId);
+  if (!representante) return null;
+  return buscarPessoaCompleta(representante.pessoaFisicaId);
+}
+```
+
+O arquivo completo depois desta mudança:
+
+```ts
+import { createClient } from "@/lib/supabase/server";
+import { buscarPessoaCompleta, type PessoaCompleta } from "./pessoas";
+
+/** Busca o representante legal (Pessoa Física) ativo de uma Pessoa Jurídica — a "representação"
+ * não tem data_fim quando ainda vigente. Uma PJ pode ter mais de um representante ao longo do
+ * tempo; pra contrato usamos sempre o mais recente sem data_fim. */
+export async function buscarRepresentante(pessoaJuridicaId: string): Promise<{ pessoaFisicaId: string } | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("pessoa_representantes")
+    .select("pessoa_fisica_id")
+    .eq("pessoa_juridica_id", pessoaJuridicaId)
+    .is("data_fim", null)
+    .order("data_inicio", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar representante: ${error.message}`);
+  if (!data) return null;
+  return { pessoaFisicaId: data.pessoa_fisica_id };
+}
+
+/** Vincula uma Pessoa Física como representante legal de uma Pessoa Jurídica — idempotente
+ * (se o vínculo já existir e estiver ativo, não duplica). */
+export async function definirRepresentante(pessoaJuridicaId: string, pessoaFisicaId: string): Promise<void> {
+  const supabase = await createClient();
+  const existente = await buscarRepresentante(pessoaJuridicaId);
+  if (existente?.pessoaFisicaId === pessoaFisicaId) return;
+
+  const { error } = await supabase
+    .from("pessoa_representantes")
+    .insert({ pessoa_juridica_id: pessoaJuridicaId, pessoa_fisica_id: pessoaFisicaId });
+  if (error) throw new Error(`Falha ao definir representante: ${error.message}`);
+}
+
+/** Composição de buscarRepresentante + buscarPessoaCompleta — usado pela tela Detalhes da Venda
+ * pra mostrar o representante legal (nome, e-mail, RG etc.) sem espalhar essa junção em quem chama.
+ * `null` tanto quando não há representante vinculado quanto quando o vínculo aponta pra uma Pessoa
+ * que não existe mais (não deveria acontecer, mas não é motivo pra lançar erro numa tela de leitura). */
+export async function buscarRepresentanteCompleto(pessoaJuridicaId: string): Promise<PessoaCompleta | null> {
+  const representante = await buscarRepresentante(pessoaJuridicaId);
+  if (!representante) return null;
+  return buscarPessoaCompleta(representante.pessoaFisicaId);
+}
+```
+
+- [ ] **Step 2: Verificar tipos**
+
+Run: `pnpm exec tsc --noEmit`
+Expected: sem erro.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/lib/vendas/pessoa-representantes.ts
+git commit -m "feat(vendas): buscarRepresentanteCompleto compõe representante + dados completos"
+```
+
+---
+
+## Task 2: `page.tsx` — busca de dados completa
+
+**Files:**
+- Modify: `src/app/admin/(shell)/vendas/[oportunidadeId]/page.tsx`
+
+**Interfaces:**
+- Consumes: `buscarRepresentanteCompleto` (Task 1). `buscarEnderecoPorPessoa(pessoaId: string, tipo?: TipoEndereco): Promise<EnderecoPessoa | null>` de `@/lib/vendas/endereco` (já existe). `buscarTemplateDocumentoPorId(templateId: string): Promise<TemplateDocumentoCompleto | null>` de `@/lib/vendas/contrato-templates` (já existe). `listarDocumentosPacote(oportunidadeId: string): Promise<DocumentoPacoteLinha[]>` de `@/lib/vendas/oportunidades` (já existe). `buscarPessoaCompleta` (já existe, já importado hoje).
+- Produces: passa 6 props novas pro `DetalhesVendaClient` (Task 3): `enderecoCliente: EnderecoPessoa | null`, `pessoaArrudaCred: PessoaCompleta | null`, `representante: PessoaCompleta | null`, `fornecedor: PessoaCompleta | null`, `template: TemplateDocumentoCompleto | null`, `documentosPacote: DocumentoPacoteLinha[]`.
+
+- [ ] **Step 1: Substituir o arquivo inteiro**
+
+O arquivo atual tem `console.log("[DEBUG ...")` de depuração que vazam dado pessoal (nome/documento) nos logs do servidor — removidos nesta mudança junto (achado ao ler o código, mesmo tipo de limpeza já feita em `pessoas.ts` nesta sessão).
+
+Substitua `src/app/admin/(shell)/vendas/[oportunidadeId]/page.tsx` inteiro por:
+
+```tsx
+import { notFound } from "next/navigation";
+import { buscarContratoPorOportunidade } from "@/lib/vendas/contratos";
+import { buscarTemplateDocumentoPorId } from "@/lib/vendas/contrato-templates";
+import { buscarEnderecoPorPessoa } from "@/lib/vendas/endereco";
+import { buscarOportunidadeParaFechamento, listarDocumentosPacote } from "@/lib/vendas/oportunidades";
+import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
+import { buscarRepresentanteCompleto } from "@/lib/vendas/pessoa-representantes";
+import { listarTimelineVenda } from "@/lib/vendas/timeline";
+import { listarComissoesDaVenda } from "@/lib/vendas/comissoes";
+import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
+import { DetalhesVendaClient } from "./detalhes-venda-client";
+
+export default async function DetalhesVendaPage({ params }: { params: Promise<{ oportunidadeId: string }> }) {
+  const { oportunidadeId } = await params;
+
+  const oportunidade = await buscarOportunidadeParaFechamento(oportunidadeId);
+  if (!oportunidade) notFound();
+
+  const [pessoa, contrato] = await Promise.all([
+    buscarPessoaCompleta(oportunidade.pessoaId),
+    buscarContratoPorOportunidade(oportunidadeId),
+  ]);
+  if (!pessoa) notFound();
+
+  const [timeline, comissoes, pdfUrlAssinada] = await Promise.all([
+    contrato ? listarTimelineVenda(contrato, oportunidadeId) : Promise.resolve([]),
+    oportunidade.produtoTipo === "comissionado" ? listarComissoesDaVenda(oportunidadeId) : Promise.resolve([]),
+    contrato?.pdfUrl ? gerarUrlAssinadaContrato(contrato.pdfUrl) : Promise.resolve(null),
+  ]);
+
+  // Achado real (Luiz, 20/08/2026): a tela só mostrava assinatura/parcelas/etc. condicionado ao
+  // estágio atual do contrato — numa venda já concluída não dava mais pra ver quem assinou, por
+  // exemplo. Busca tudo aqui sempre; a tela decide como exibir (ver detalhes-venda-client.tsx).
+  const [enderecoCliente, pessoaArrudaCred, representante, fornecedor, template, documentosPacote] = await Promise.all([
+    buscarEnderecoPorPessoa(pessoa.id),
+    contrato?.pessoaArrudaCredSignatarioId ? buscarPessoaCompleta(contrato.pessoaArrudaCredSignatarioId) : Promise.resolve(null),
+    pessoa.tipoPessoa === "pj" ? buscarRepresentanteCompleto(pessoa.id) : Promise.resolve(null),
+    contrato?.fornecedorId ? buscarPessoaCompleta(contrato.fornecedorId) : Promise.resolve(null),
+    contrato?.contratoTemplateId ? buscarTemplateDocumentoPorId(contrato.contratoTemplateId) : Promise.resolve(null),
+    listarDocumentosPacote(oportunidadeId),
+  ]);
+
+  return (
+    <DetalhesVendaClient
+      oportunidade={oportunidade}
+      pessoa={pessoa}
+      contrato={contrato}
+      timeline={timeline}
+      comissoes={comissoes}
+      pdfUrlAssinada={pdfUrlAssinada}
+      enderecoCliente={enderecoCliente}
+      pessoaArrudaCred={pessoaArrudaCred}
+      representante={representante}
+      fornecedor={fornecedor}
+      template={template}
+      documentosPacote={documentosPacote}
+    />
+  );
+}
+```
+
+- [ ] **Step 2: Verificar tipos (vai falhar até a Task 3 atualizar o Props do client — esperado)**
+
+Run: `pnpm exec tsc --noEmit`
+Expected: erro em `detalhes-venda-client.tsx` reclamando que `DetalhesVendaClient` não aceita essas props novas — é esperado, a Task 3 resolve. Confirme que o erro é exatamente esse (props não reconhecidas), não outra coisa (import errado, nome de campo digitado errado, etc.).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add "src/app/admin/(shell)/vendas/[oportunidadeId]/page.tsx"
+git commit -m "feat(vendas): Detalhes da Venda busca endereco/representante/fornecedor/template/pacote"
+```
+
+---
+
+## Task 3: `detalhes-venda-client.tsx` — cards sempre visíveis em grade
+
+**Files:**
+- Modify: `src/app/admin/(shell)/vendas/[oportunidadeId]/detalhes-venda-client.tsx`
+
+**Interfaces:**
+- Consumes: as 6 props novas produzidas pela Task 2. `EnderecoPessoa` de `@/lib/vendas/endereco`. `DocumentoPacoteLinha`, `TipoProduto` de `@/lib/vendas/oportunidades`. `TemplateDocumentoCompleto` de `@/lib/vendas/contrato-templates`. `formatarCep`, `formatarTelefone` de `@/lib/vendas/mascaras` (`formatarCpfCnpj` já é importado hoje).
+- Produces: nada consumido por outra task — é a ponta final da cadeia desta feature.
+
+- [ ] **Step 1: Substituir o arquivo inteiro**
+
+Substitua `src/app/admin/(shell)/vendas/[oportunidadeId]/detalhes-venda-client.tsx` inteiro por:
+
+```tsx
 "use client";
 
 import Link from "next/link";
@@ -6,7 +227,7 @@ import type { AssinafyDocumento, AssinafySignatarioStatus } from "@/lib/assinafy
 import type { CobrancaStatus } from "@/lib/asaas/cliente";
 import type { ComissaoFornecedor } from "@/lib/vendas/comissoes";
 import type { TemplateDocumentoCompleto } from "@/lib/vendas/contrato-templates";
-import type { Contrato, ContratoParcela, FormaPagamento, MetodoPagamento, StatusContrato } from "@/lib/vendas/contratos";
+import type { Contrato, ContratoParcela, FormaPagamento, MetodoPagamento } from "@/lib/vendas/contratos";
 import type { EnderecoPessoa } from "@/lib/vendas/endereco";
 import { corEstagio, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import { formatarCep, formatarCpfCnpj, formatarTelefone } from "@/lib/vendas/mascaras";
@@ -17,7 +238,6 @@ import {
   buscarStatusAssinaturaAction,
   buscarStatusCobrancasAction,
   cancelarVendaDetalhesAction,
-  gerarUrlDownloadContratoAction,
   marcarComissaoRecebidaAction,
   reenviarLinkAction,
   tentarNovamenteAction,
@@ -48,47 +268,16 @@ function formatarData(data: string): string {
   return new Date(data).toLocaleDateString("pt-BR");
 }
 
-const DESCRICAO_ESTAGIO: Record<StatusContrato, string> = {
-  nova_oportunidade: "Registro criado — o sistema ainda vai tentar gerar o contrato automaticamente.",
-  emitindo_contrato: "Gerando o PDF e enviando pra assinatura eletrônica — automático.",
-  aguardando_assinaturas: "Esperando as partes assinarem o contrato.",
-  gerando_financeiro: "Criando a cobrança na Asaas — automático.",
-  aguardando_pagamento: "Esperando o cliente pagar a 1ª parcela.",
-  concluida: "1ª parcela paga — venda concluída.",
-  cancelada: "Venda cancelada.",
-};
-
-const BADGE_STATUS_PARCELA: Record<string, string> = {
-  previsto: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  gerado: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
-  pago: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
-  atrasado: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  cancelado: "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-800 dark:text-zinc-500",
-};
-
-const BADGE_STATUS_COMISSAO: Record<string, string> = {
-  previsto: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
-  recebido: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
-};
-
-function BadgeStatus({ status, mapa, texto }: { status: string; mapa: Record<string, string>; texto: string }) {
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${mapa[status] ?? "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"}`}>
-      {texto}
-    </span>
-  );
-}
-
 function formatarEndereco(endereco: EnderecoPessoa | null): string | null {
   if (!endereco) return null;
   const partes = [
-    endereco.logradouro ? `${endereco.logradouro}${endereco.numero ? `, ${endereco.numero}` : ""}` : null,
-    endereco.complemento || null,
-    endereco.bairro || null,
-    endereco.cidade && endereco.uf ? `${endereco.cidade}/${endereco.uf}` : null,
-    endereco.cep ? formatarCep(endereco.cep) : null,
-  ].filter((parte): parte is string => Boolean(parte));
-  return partes.length > 0 ? partes.join(" — ") : null;
+    `${endereco.logradouro}, ${endereco.numero}`,
+    endereco.complemento,
+    endereco.bairro,
+    `${endereco.cidade}/${endereco.uf}`,
+    formatarCep(endereco.cep),
+  ].filter((parte): parte is string => Boolean(parte && parte.trim()));
+  return partes.join(" — ");
 }
 
 function LinkCopiavel({ link }: { link: string }) {
@@ -112,14 +301,10 @@ function BotoesReenvio({
   pessoaId,
   contexto,
   link,
-  mostrarCopiar = true,
 }: {
   pessoaId: string;
   contexto: "assinatura" | "pagamento";
   link: string;
-  /** false quando quem chama já colocou um LinkCopiavel próprio ao lado (evita botão duplicado —
-   * caso da linha de parcela, que já tem Ver+Copiar antes deste grupo). */
-  mostrarCopiar?: boolean;
 }) {
   const [enviando, setEnviando] = useState<"whatsapp" | "email" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -141,51 +326,13 @@ function BotoesReenvio({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={() => enviar("whatsapp")} disabled={enviando !== null} className={botaoSecundario}>
-        {enviando === "whatsapp" ? "Enviando..." : enviado === "whatsapp" ? "Enviado!" : "💬 WhatsApp"}
+        {enviando === "whatsapp" ? "Enviando..." : enviado === "whatsapp" ? "Enviado!" : "WhatsApp"}
       </button>
       <button type="button" onClick={() => enviar("email")} disabled={enviando !== null} className={botaoSecundario}>
-        {enviando === "email" ? "Enviando..." : enviado === "email" ? "Enviado!" : "✉️ E-mail"}
+        {enviando === "email" ? "Enviando..." : enviado === "email" ? "Enviado!" : "E-mail"}
       </button>
-      {mostrarCopiar && <LinkCopiavel link={link} />}
+      <LinkCopiavel link={link} />
       {erro && <p className="w-full text-xs text-red-600 dark:text-red-400">{erro}</p>}
-    </div>
-  );
-}
-
-function BotaoBaixarPdf({ contratoId }: { contratoId: string }) {
-  const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  async function baixar() {
-    setCarregando(true);
-    setErro(null);
-    const resultado = await gerarUrlDownloadContratoAction(contratoId);
-    setCarregando(false);
-    if (!resultado.sucesso) {
-      setErro(resultado.erro);
-      return;
-    }
-    window.location.href = resultado.url;
-  }
-
-  return (
-    <>
-      <button type="button" onClick={baixar} disabled={carregando} className={botaoSecundario} title="Baixa o arquivo PDF do contrato pro seu computador">
-        {carregando ? "Preparando..." : "⬇️ Baixar"}
-      </button>
-      {erro && <p className="w-full text-xs text-red-600 dark:text-red-400">{erro}</p>}
-    </>
-  );
-}
-
-function BotoesPdfContrato({ contratoId, pdfUrl }: { contratoId: string; pdfUrl: string }) {
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
-      <a href={pdfUrl} target="_blank" rel="noreferrer" className={botaoSecundario} title="Abre o PDF do contrato numa nova aba">
-        👁️ Ver
-      </a>
-      <BotaoBaixarPdf contratoId={contratoId} />
-      <LinkCopiavel link={pdfUrl} />
     </div>
   );
 }
@@ -201,9 +348,7 @@ function LinhaDado({ rotulo, valor }: { rotulo: string; valor: string | null }) 
 function CardDadosCliente({ pessoa, endereco }: { pessoa: PessoaCompleta; endereco: EnderecoPessoa | null }) {
   return (
     <div className={cardBase}>
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-        <span aria-hidden="true">👤</span> Dados do Cliente
-      </h3>
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Dados do Cliente</h3>
       <div className="mt-2 space-y-1">
         <LinhaDado rotulo="Nome/Razão social" valor={pessoa.nomeRazaoSocial} />
         <LinhaDado rotulo="Documento" valor={formatarCpfCnpj(pessoa.documento)} />
@@ -227,55 +372,20 @@ function CardDadosDaVenda({
   oportunidade,
   fornecedor,
   template,
-  ehComissionado,
-  documentosPacote,
 }: {
   oportunidade: OportunidadeFechamento;
   fornecedor: PessoaCompleta | null;
   template: TemplateDocumentoCompleto | null;
-  ehComissionado: boolean;
-  documentosPacote: DocumentoPacoteLinha[];
 }) {
   return (
     <div className={cardBase}>
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-        <span aria-hidden="true">🧾</span> Dados da Venda
-      </h3>
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Dados da Venda</h3>
       <div className="mt-2 space-y-1">
         <LinhaDado rotulo="Produto" valor={oportunidade.produtoNome} />
         <LinhaDado rotulo="Tipo" valor={TIPO_PRODUTO_LABEL[oportunidade.produtoTipo]} />
         <LinhaDado rotulo="Fornecedor" valor={fornecedor?.nomeRazaoSocial ?? null} />
-        <LinhaDado
-          rotulo="Template do contrato"
-          valor={ehComissionado ? "não se aplica (venda comissionada)" : (template?.nome ?? "nenhum template ativo pra este produto")}
-        />
+        <LinhaDado rotulo="Template do contrato" valor={template?.nome ?? "nenhum template ativo pra este produto"} />
       </div>
-      {/* Pacote de documentos é dado do serviço contratado (produtos.exige_lista_documentos), não
-          da venda em si — fica aninhado aqui em vez de ser um card próprio (pedido do Luiz,
-          20/08/2026). */}
-      {documentosPacote.length > 0 && (
-        <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            <span aria-hidden="true">📎</span> Documentos do pacote (nomes cobertos pelo contrato)
-          </p>
-          <table className="mt-2 w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                <th className="py-1">Documento</th>
-                <th className="py-1">Nome/Razão social</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documentosPacote.map((d) => (
-                <tr key={d.id} className="border-b border-zinc-100 dark:border-zinc-800">
-                  <td className="py-1">{formatarCpfCnpj(d.documento)}</td>
-                  <td className="py-1">{d.nomeRazaoSocial}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
@@ -328,22 +438,12 @@ function CardPartesDoContrato({
     return documento.signatarios.find((s) => s.email === email) ?? null;
   }
 
-  const aguardandoAssinatura = contrato.status === "aguardando_assinaturas";
-
   return (
-    <div className={aguardandoAssinatura ? `${cardBase} border-l-4 border-l-amber-400 dark:border-l-amber-500` : cardBase}>
+    <div className={cardBase}>
       <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          <span aria-hidden="true">✍️</span> Partes do Contrato
-        </h3>
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Partes do Contrato</h3>
         {contrato.assinafyDocumentId && (
-          <button
-            type="button"
-            onClick={verificar}
-            disabled={carregando}
-            className={botaoSecundario}
-            title="Consulta o status exato na Assinafy neste instante — o texto abaixo é só o que já estava salvo no banco"
-          >
+          <button type="button" onClick={verificar} disabled={carregando} className={botaoSecundario}>
             {carregando ? "Verificando..." : "Verificar assinaturas agora"}
           </button>
         )}
@@ -394,7 +494,6 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
   const [erro, setErro] = useState<string | null>(null);
 
   const parcelasComCobranca = contrato.parcelas.filter((p) => p.status !== "previsto");
-  const temAtraso = contrato.parcelas.some((p) => p.status === "atrasado");
 
   async function verificar() {
     setCarregando(true);
@@ -412,17 +511,14 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
   }
 
   return (
-    <div className={temAtraso ? `${cardBase} border-l-4 border-l-red-400 dark:border-l-red-500` : cardBase}>
+    <div className={cardBase}>
       <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          <span aria-hidden="true">💰</span> Financeiro
-        </h3>
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Financeiro</h3>
         <button
           type="button"
           onClick={verificar}
           disabled={carregando || parcelasComCobranca.length === 0}
           className={botaoSecundario}
-          title="Consulta o status exato na Asaas neste instante — a tabela abaixo é só o que já estava salvo no banco"
         >
           {carregando ? "Verificando..." : "Verificar cobranças agora"}
         </button>
@@ -453,31 +549,39 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
                 <td className="py-1">{parcela.numero}</td>
                 <td className="py-1">{formatarData(parcela.vencimentoPrevisto)}</td>
                 <td className="py-1">{formatarValor(parcela.valor)}</td>
+                <td className="py-1">{cobranca ? `${parcela.status} (Asaas: ${cobranca.status})` : parcela.status}</td>
                 <td className="py-1">
-                  <BadgeStatus status={parcela.status} mapa={BADGE_STATUS_PARCELA} texto={cobranca ? `${parcela.status} (Asaas: ${cobranca.status})` : parcela.status} />
-                </td>
-                <td className="py-1">
-                  {cobranca && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <a
-                        href={cobranca.invoiceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={botaoSecundario}
-                        title="Abre o link do boleto/Pix ou do checkout do cartão"
-                      >
-                        👁️ Ver
-                      </a>
-                      <LinkCopiavel link={cobranca.invoiceUrl} />
-                      {parcela.status !== "pago" && (
-                        <BotoesReenvio pessoaId={pessoa.id} contexto="pagamento" link={cobranca.invoiceUrl} mostrarCopiar={false} />
-                      )}
-                    </div>
+                  {cobranca && parcela.status !== "pago" && (
+                    <BotoesReenvio pessoaId={pessoa.id} contexto="pagamento" link={cobranca.invoiceUrl} />
                   )}
                 </td>
               </tr>
             );
           })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CardPacoteDocumentos({ documentos }: { documentos: DocumentoPacoteLinha[] }) {
+  return (
+    <div className={cardBase}>
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Pacote de Documentos</h3>
+      <table className="mt-3 w-full text-sm">
+        <thead>
+          <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+            <th className="py-1">Documento</th>
+            <th className="py-1">Nome/Razão social</th>
+          </tr>
+        </thead>
+        <tbody>
+          {documentos.map((d) => (
+            <tr key={d.id} className="border-b border-zinc-100 dark:border-zinc-800">
+              <td className="py-1">{formatarCpfCnpj(d.documento)}</td>
+              <td className="py-1">{d.nomeRazaoSocial}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -502,9 +606,7 @@ function PainelComissoes({ comissoes, onMudou }: { comissoes: ComissaoFornecedor
 
   return (
     <div className={cardBase}>
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-        <span aria-hidden="true">🏭</span> Comissão do fornecedor
-      </h3>
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Comissão do fornecedor</h3>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
         Sem link de pagamento aqui — quem paga é o fornecedor pra ArrudaCred. Marque manualmente quando o valor cair.
       </p>
@@ -525,13 +627,7 @@ function PainelComissoes({ comissoes, onMudou }: { comissoes: ComissaoFornecedor
               <td className="py-1">{c.numero}</td>
               <td className="py-1">{formatarData(c.dataPrevista)}</td>
               <td className="py-1">{formatarValor(c.valor)}</td>
-              <td className="py-1">
-                <BadgeStatus
-                  status={c.status}
-                  mapa={BADGE_STATUS_COMISSAO}
-                  texto={c.status === "recebido" ? `Recebida em ${formatarData(c.recebidoEm!)}` : "Prevista"}
-                />
-              </td>
+              <td className="py-1">{c.status === "recebido" ? `Recebida em ${formatarData(c.recebidoEm!)}` : "Prevista"}</td>
               <td className="py-1">
                 {c.status === "previsto" && (
                   <button type="button" onClick={() => marcarRecebida(c.id)} disabled={processando === c.id} className={botaoSecundario}>
@@ -704,7 +800,6 @@ export function DetalhesVendaClient({
               <span
                 className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
                 style={{ backgroundColor: corEstagio(contrato.status) }}
-                title={DESCRICAO_ESTAGIO[contrato.status]}
               >
                 {rotuloEstagio(contrato.status)}
               </span>
@@ -712,7 +807,11 @@ export function DetalhesVendaClient({
                 <BotaoCancelar contratoId={contrato.id} onCancelado={recarregarPagina} />
               )}
             </div>
-            {pdfUrlAssinada && <BotoesPdfContrato contratoId={contrato.id} pdfUrl={pdfUrlAssinada} />}
+            {pdfUrlAssinada && (
+              <a href={pdfUrlAssinada} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-zinc-900 underline dark:text-zinc-50">
+                Ver PDF do contrato
+              </a>
+            )}
             {contrato.status === "cancelada" && contrato.motivoCancelamento && (
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Motivo: {contrato.motivoCancelamento}</p>
             )}
@@ -720,13 +819,7 @@ export function DetalhesVendaClient({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <CardDadosCliente pessoa={pessoa} endereco={enderecoCliente} />
-            <CardDadosDaVenda
-              oportunidade={oportunidade}
-              fornecedor={fornecedor}
-              template={template}
-              ehComissionado={ehComissionado}
-              documentosPacote={documentosPacote}
-            />
+            <CardDadosDaVenda oportunidade={oportunidade} fornecedor={fornecedor} template={template} />
 
             {!ehComissionado && (
               <div className="md:col-span-2">
@@ -740,18 +833,14 @@ export function DetalhesVendaClient({
               </div>
             )}
 
-            {ehComissionado && comissoes.length > 0 && (
-              <div className="md:col-span-2">
-                <PainelComissoes comissoes={comissoes} onMudou={recarregarPagina} />
-              </div>
-            )}
+            {documentosPacote.length > 0 && <CardPacoteDocumentos documentos={documentosPacote} />}
+
+            {ehComissionado && comissoes.length > 0 && <PainelComissoes comissoes={comissoes} onMudou={recarregarPagina} />}
           </div>
 
           {timeline.length > 0 && (
             <div className={cardBase}>
-              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                <span aria-hidden="true">🕘</span> Histórico
-              </h3>
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Histórico</h3>
               <ul className="mt-2 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
                 {timeline.map((evento, i) => (
                   <li key={i}>
@@ -766,3 +855,47 @@ export function DetalhesVendaClient({
     </div>
   );
 }
+```
+
+Nota: `max-w-2xl` virou `max-w-4xl` no container principal — a grade de 2 colunas não cabe legivelmente na largura antiga.
+
+- [ ] **Step 2: Verificar tipos**
+
+Run: `pnpm exec tsc --noEmit`
+Expected: sem erro (isso também confirma que a Task 2 está correta — os dois arquivos se encaixam).
+
+- [ ] **Step 3: Verificar lint**
+
+Run: `pnpm exec eslint "src/app/admin/(shell)/vendas/[oportunidadeId]/detalhes-venda-client.tsx" "src/app/admin/(shell)/vendas/[oportunidadeId]/page.tsx" src/lib/vendas/pessoa-representantes.ts`
+Expected: sem erro.
+
+- [ ] **Step 4: Rodar a suite completa (garante que nada em Vendas quebrou)**
+
+Run: `pnpm exec vitest run`
+Expected: mesma contagem de testes verde de antes desta mudança — este plano não adiciona nem remove teste nenhum.
+
+- [ ] **Step 5: Verificação manual no navegador**
+
+Abra `/admin/vendas/<oportunidadeId>` de uma venda real (produto próprio ou subcontratado, com contrato já criado) e confira:
+- Os cards Dados do Cliente e Dados da Venda aparecem lado a lado com os dados certos.
+- Partes do Contrato aparece mesmo se a venda já estiver concluída (não só durante "Aguardando Assinaturas").
+- Financeiro aparece mesmo se a venda ainda estiver em "Emitindo Contrato" (mostra "ainda não há cobrança gerada").
+- Se o produto exigir pacote de documentos, o card aparece com a lista certa; se não, o card não aparece.
+- Abra também uma venda comissionada: Partes do Contrato e Financeiro não aparecem (mesma exclusão de antes), Comissão do Fornecedor aparece normalmente.
+- Testar os botões que já existiam (cancelar, tentar novamente, verificar assinatura/cobrança, reenviar link, marcar comissão recebida) continuam funcionando.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "src/app/admin/(shell)/vendas/[oportunidadeId]/detalhes-venda-client.tsx"
+git commit -m "feat(vendas): Detalhes da Venda mostra todos os quadros sempre, sem gate por estagio"
+```
+
+---
+
+## Verification
+
+- `pnpm exec tsc --noEmit`, `pnpm exec eslint src`, `pnpm exec vitest run` — todos limpos/verdes.
+- Verificação manual da Task 3, Step 5, repetida uma última vez depois de todas as tasks juntas.
+- Confirma contra a spec (seção 5): os 6 cards existem com o conteúdo exato descrito, sem gate de status nos que antes tinham.
+- Seção 8 da spec ("drill-down por item") **não vira código nesta rodada** — confirmar que nenhuma task acima introduziu um botão "Ver detalhes" ou tela nova; é só o texto da spec que registra a intenção.

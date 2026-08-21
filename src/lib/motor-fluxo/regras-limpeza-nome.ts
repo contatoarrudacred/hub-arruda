@@ -7,6 +7,9 @@
 
 import type { DadosConversa } from "./tipos";
 
+/** Preço combinado do pacote (preço cheio) acima disso escala pra agendamento com consultor — spec 2026-08-20-agendamento-consultor-alto-valor.md. Diferente de `corteAltoValor` (configurável, é sobre a DÍVIDA do lead) — este é sobre o preço que ele pagaria pra ArrudaCred, fixo por enquanto (YAGNI — promove pra `configuracoes` se virar pedido de verdade). */
+export const CORTE_PACOTE_CARO = 8000;
+
 export type FaixaPreco = {
   faixaMin: number;
   faixaMax: number | null;
@@ -116,15 +119,29 @@ export function formatarLabelFaixa(faixa: FaixaPreco, ehPrimeira: boolean): stri
  * Lista numerada (1️⃣, 2️⃣...) de todas as faixas, ordenadas por `faixaMin` — usada tanto na
  * mensagem que o lead vê (criarResolverMensagensDinamicas) quanto no prompt do interpretador de IA
  * (pra ele conseguir mapear "2" pro intervalo certo), sempre o mesmo texto nos dois lugares.
+ *
+ * `corteAltoValor`, quando passado, acrescenta uma última linha virtual "Acima de X mil" — spec
+ * 2026-08-20-agendamento-consultor-alto-valor.md. Essa opção **nunca vira uma faixa de
+ * `precos_por_faixa`** (não tem preço fixo, escala pra agendamento com consultor) — a posição dela
+ * no menu é sempre `faixas.length` (a próxima depois da última faixa real), nunca um número fixo:
+ * se alguém adicionar/remover faixa em `/admin/precos`, ela desliza sozinha pro lugar certo.
  */
-export function formatarMenuFaixas(faixas: FaixaPreco[]): string {
-  return ordenarFaixasPreco(faixas)
-    .map((faixa, i) => {
-      const emoji = EMOJIS_NUMERO[i] ?? `${i + 1}.`;
-      return `${emoji} ${formatarLabelFaixa(faixa, i === 0)}`;
-    })
-    .join("\n");
+export function formatarMenuFaixas(faixas: FaixaPreco[], corteAltoValor?: number): string {
+  const ordenadas = ordenarFaixasPreco(faixas);
+  const linhas = ordenadas.map((faixa, i) => {
+    const emoji = EMOJIS_NUMERO[i] ?? `${i + 1}.`;
+    return `${emoji} ${formatarLabelFaixa(faixa, i === 0)}`;
+  });
+  if (corteAltoValor !== undefined) {
+    const indice = ordenadas.length;
+    const emoji = EMOJIS_NUMERO[indice] ?? `${indice + 1}.`;
+    linhas.push(`${emoji} Acima de ${formatarMil(corteAltoValor)}`);
+  }
+  return linhas.join("\n");
 }
+
+/** Valor gravado em `dados` quando o lead escolhe a opção virtual "Acima de X mil" (nunca digitado por ele, nunca exibido) — mesmo padrão conservador já usado em `resolverValorRestricao` pro caso "não consigo converter pra número". Só precisa ficar acima do corte pra `classificarAltoValor` classificar certo; o valor exato não importa pra ninguém além do painel interno. */
+export const VALOR_SENTINELA_ACIMA_DO_CORTE = 600_000;
 
 /** Mesmos 3 formatos de `formatarLabelFaixa`, mas minúsculo e sem espaço antes do "mil" — o jeito exato que Luiz pediu pra frase de confirmação do ln_passo6 ("entre 10 e 30mil", não "Entre 10 mil e 30 mil"). */
 export function formatarFaixaConfirmacao(faixa: FaixaPreco, ehPrimeira: boolean): string {
@@ -291,12 +308,47 @@ export function formatarParcelas(tiers: ParcelaTier[]): string {
   return tiers.map((t) => `${t.quantidade}x ${formatarReais(t.valor)}`).join(" + ");
 }
 
-/** Bloco de qualificação para alto valor (>R$500 mil) — PLANO_MESTRE seção 8.6: qualifica e tenta agendar call com Luiz antes de propor. */
+/** Bloco de qualificação para alto valor (>R$500 mil) — PLANO_MESTRE seção 8.6: qualifica e tenta agendar call com Luiz antes de propor. Mantida pra referência histórica; substituída em produção por `montarOfertaAgendamentoConsultor` (spec 2026-08-20-agendamento-consultor-alto-valor.md). */
 export function montarQualificacaoAltoValor(): string[] {
   return [
     `Pelo que você me contou, esse é um caso que merece atenção especial — vale a pena conversarmos por ligação para eu te apresentar a proposta com todo o cuidado que ela precisa.`,
     `👉 *Podemos agendar uma ligação com nosso especialista, ou prefere já receber a proposta por aqui mesmo?*\n\n1️⃣ Quero agendar a ligação\n2️⃣ Prefiro receber por WhatsApp`,
   ];
+}
+
+/** Oferta de agendamento com consultor — checkpoint `ln_agendamento_oferta` (spec 2026-08-20-agendamento-consultor-alto-valor.md). O motivo varia por gatilho: dívida acima do corte configurável, ou preço do pacote acima de R$8.000. */
+export function montarOfertaAgendamentoConsultor(motivo: "divida_alta" | "pacote_caro"): string[] {
+  const frase =
+    motivo === "divida_alta"
+      ? "Pelo que você me contou, essa dívida é um valor mais alto — nesses casos, quem te atende é um consultor especializado, não eu."
+      : "Como esse é um pacote maior, quem cuida da negociação nesses casos é um consultor especializado, não eu.";
+  return [frase, `👉 *Quer agendar uma ligação/vídeo-chamada com ele?*\n\n1️⃣ Sim, quero agendar\n2️⃣ Prefiro continuar por aqui mesmo`];
+}
+
+/** Data/hora de um horário oferecido, no formato "quinta (20/08) às 15h" — usado tanto pra listar as 2 opções quanto pra confirmar a escolhida. `isoInstant` é o instante UTC gravado em `dados`. */
+export function formatarDataHoraAgendamento(isoInstant: string): string {
+  const data = new Date(isoInstant);
+  const partes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(data);
+  const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  const diaSemana = valor("weekday");
+  return `${diaSemana} (${valor("day")}/${valor("month")}) às ${valor("hour")}h`;
+}
+
+/** Lista os 2 horários oferecidos — checkpoint `ln_agendamento_horario`. `opcoes` já vêm calculadas (`_agendamento_opcao_N_inicio`, `criarCalculadoraDadosDerivados`). */
+export function montarHorariosAgendamento(opcoes: [string, string]): string {
+  return `Consigo te encaixar em um desses horários com nosso consultor:\n\n1️⃣ ${formatarDataHoraAgendamento(opcoes[0])}\n2️⃣ ${formatarDataHoraAgendamento(opcoes[1])}\n\nQual prefere? Se nenhum funcionar, me avisa que vejo outra opção com ele.`;
+}
+
+/** Confirmação final — checkpoint `ln_agendamento_confirmado`. */
+export function montarConfirmacaoAgendamento(isoInstant: string): string {
+  return `Perfeito! Agendado com nosso consultor pra ${formatarDataHoraAgendamento(isoInstant)}. Ele já foi avisado e vai te chamar nesse horário. 🙋‍♂️`;
 }
 
 /** Bloco de proposta self-service para quem recusou a call de alto valor — usa a mesma fórmula de previsibilidade do Kanban. */

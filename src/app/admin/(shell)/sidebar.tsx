@@ -34,6 +34,7 @@ const MODULOS: Modulo[] = [
     itens: [
       { tipo: "em_breve", rotulo: "Dashboard", icone: "📊" },
       { tipo: "link", rotulo: "Atendimento", href: "/admin/atendimento", icone: "🗨️" },
+      { tipo: "link", rotulo: "Minha Agenda", href: "/admin/agenda", icone: "📅" },
       { tipo: "em_breve", rotulo: "Kanban", icone: "📋" },
     ],
   },

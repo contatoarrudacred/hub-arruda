@@ -340,13 +340,55 @@ export async function detectarEMarcarObjecaoPendente(conversaId: string, textoLe
   }
 }
 
-/** Aplica um efeito de negócio já decidido pelo motor (engine.ts) — hoje isto ficava calculado e nunca era usado, porque nada persistia. Também é usada pelo cron de follow-up ao sintetizar um "marcar_perdida" quando a agenda se esgota. */
+/** Aplica um efeito de negócio já decidido pelo motor (engine.ts) — hoje isto ficava calculado e nunca era usado, porque nada persistia. Também é usada pelo cron de follow-up ao sintetizar um "marcar_perdida" quando a agenda se esgota. `pessoaId` só é obrigatório de verdade pro efeito `agendar_consultor` (spec 2026-08-20-agendamento-consultor-alto-valor.md) — os demais efeitos não usam. */
 export async function aplicarEfeitoNegocio(
   conversaId: string,
   oportunidadeId: string,
   efeito: EfeitoNegocio,
+  pessoaId?: string,
 ): Promise<void> {
   const supabase = createAdminClient();
+
+  if (efeito.tipo === "agendar_consultor") {
+    if (!pessoaId) throw new Error("Falha ao agendar consultor: pessoaId não informado.");
+    const { data: consultor, error: erroConsultor } = await supabase
+      .from("usuarios_sistema")
+      .select("id")
+      .eq("eh_consultor", true)
+      .eq("ativo", true)
+      .limit(1)
+      .maybeSingle();
+    if (erroConsultor) throw new Error(`Falha ao buscar consultor: ${erroConsultor.message}`);
+    if (!consultor) {
+      // Defensivo — não devia acontecer em produção (o corte só é oferecido pro lead quando existe
+      // consultor com horário calculado), mas se acontecer não trava o turno: só não agenda nada.
+      console.error("[persistencia] agendar_consultor sem nenhum usuario_sistema.eh_consultor=true — nada agendado.");
+      return;
+    }
+
+    const { data: agendamento, error: erroAgendamento } = await supabase
+      .from("agendamentos_consultor")
+      .insert({
+        usuario_sistema_id: consultor.id,
+        conversa_id: conversaId,
+        pessoa_id: pessoaId,
+        inicio: efeito.inicio,
+        fim: efeito.fim,
+        motivo: efeito.motivo,
+      })
+      .select("id")
+      .single();
+    if (erroAgendamento || !agendamento) throw new Error(`Falha ao gravar agendamento: ${erroAgendamento?.message}`);
+
+    const { error: erroNotificacao } = await supabase
+      .from("notificacoes")
+      .insert({ usuario_id: consultor.id, conversa_id: conversaId, tipo: "agendamento", agendamento_id: agendamento.id });
+    if (erroNotificacao) throw new Error(`Falha ao notificar consultor: ${erroNotificacao.message}`);
+
+    const { error: erroSupervisor } = await supabase.from("conversas").update({ sob_supervisor: true }).eq("id", conversaId);
+    if (erroSupervisor) throw new Error(`Falha ao escalar conversa pro supervisor: ${erroSupervisor.message}`);
+    return;
+  }
 
   if (efeito.tipo === "marcar_perdida") {
     const [{ error: erroOportunidade }, { error: erroConversa }] = await Promise.all([
@@ -496,7 +538,7 @@ export async function registrarTurnoMalala(params: {
   if (erroPosicao) throw new Error(`Falha ao salvar posição da conversa: ${erroPosicao.message}`);
 
   for (const efeito of resultado.efeitos) {
-    await aplicarEfeitoNegocio(conversaId, oportunidadeId, efeito);
+    await aplicarEfeitoNegocio(conversaId, oportunidadeId, efeito, pessoaId);
   }
 
   const aguardaResposta = resultado.etapaFinal !== null && resultado.etapaFinal.conteudo.aguarda_resposta;

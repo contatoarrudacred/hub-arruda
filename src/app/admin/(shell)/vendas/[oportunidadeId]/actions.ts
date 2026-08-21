@@ -2,6 +2,8 @@
 
 import { buscarDocumento, type AssinafyDocumento } from "@/lib/assinafy/cliente";
 import { buscarCobranca, type CobrancaStatus } from "@/lib/asaas/cliente";
+import { buscarContratoPorId } from "@/lib/vendas/contratos";
+import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
 import { enviarPorEmail, enviarWhatsapp } from "@/lib/vendas/notificacoes";
 import { marcarComissaoParcelaRecebida } from "@/lib/vendas/comissoes";
 import { cancelarVenda } from "@/lib/vendas/painel-vendas";
@@ -69,6 +71,22 @@ export async function cancelarVendaDetalhesAction(contratoId: string, motivo: st
     return { sucesso: true };
   } catch (erro) {
     return { sucesso: false, erro: mensagemErro(erro, "Falha ao cancelar a venda.") };
+  }
+}
+
+/** Gera um link assinado à parte, com Content-Disposition: attachment, sob demanda (só quando o
+ * usuário clica em "Baixar") — evita gastar uma chamada ao Storage a mais no carregamento da
+ * página pra quem nunca clica em baixar (o link "Ver" já é gerado de qualquer forma no page.tsx). */
+export async function gerarUrlDownloadContratoAction(
+  contratoId: string,
+): Promise<{ sucesso: true; url: string } | { sucesso: false; erro: string }> {
+  try {
+    const contrato = await buscarContratoPorId(contratoId);
+    if (!contrato?.pdfUrl) throw new Error("Contrato ainda não tem PDF gerado.");
+    const url = await gerarUrlAssinadaContrato(contrato.pdfUrl, { forcarDownload: true });
+    return { sucesso: true, url };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao preparar o download do PDF.") };
   }
 }
 

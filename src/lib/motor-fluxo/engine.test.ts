@@ -381,13 +381,24 @@ describe("Limpeza de Nome — alto valor (>R$500 mil)", () => {
     dados = { ...dados, ...r.dadosNovos };
     r = await responder("ln_passo14", dados, "1");
 
-    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo15_alto_valor");
+    // Substitui a antiga oferta de call — spec 2026-08-20-agendamento-consultor-alto-valor.md.
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_agendamento_oferta");
     expect(r.mensagens.some((m) => txt(m).includes("ligação"))).toBe(true);
   });
 
-  it("quando aceita a call, escala pro supervisor e encerra o automatizado", async () => {
+  it("quando aceita agendar, vai pro checkpoint de escolha de horário (não escala direto)", async () => {
     const dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
-    const r = await responder("ln_passo15_alto_valor", dados, "1");
+    const r = await responder("ln_agendamento_oferta", dados, "1");
+    // Sem `agenda` (disponibilidadeConsultor/agendamentosExistentes) neste calcularDadosDerivados de
+    // teste, nenhum horário é pré-calculado — o checkpoint é alcançado mesmo assim, só sem opções
+    // reais (coberto à parte no describe de agendamento, com `agenda` fornecida).
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_agendamento_horario");
+    expect(r.efeitos).toEqual([]);
+  });
+
+  it("quando recusa agendar, escala pro supervisor e encerra o automatizado", async () => {
+    const dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
+    const r = await responder("ln_agendamento_oferta", dados, "2");
     expect(r.etapaFinal).toBeNull();
     expect(r.efeitos).toEqual([
       {
@@ -397,14 +408,69 @@ describe("Limpeza de Nome — alto valor (>R$500 mil)", () => {
       },
     ]);
     expect(r.kanbanSubetapa).toBe("negociacao_duvidas");
+    expect(r.mensagens.some((m) => txt(m).includes("especialista"))).toBe(true);
+  });
+});
+
+describe("Agendamento com consultor (spec 2026-08-20-agendamento-consultor-alto-valor.md)", () => {
+  it("escolher 'Acima de X mil' no menu do ln_passo6 pula direto pro agendamento, sem perguntar os outros documentos", async () => {
+    const interpretarFaixasDocumentos = async () => ({ status: "acima_do_corte" as const });
+    const r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_passo6"],
+      etapasPorCodigo,
+      dados: { documentos_tipos: "cpf,cnpj" },
+      respostaLead: "acima de 500 mil",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarFaixasDocumentos,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(r.dadosNovos.alto_valor).toBe("sim");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_agendamento_oferta");
+    expect(r.naoReconhecido).toBe(false);
   });
 
-  it("quando recusa a call, recebe a proposta self-service pela fórmula (7680 + 1,5%)", async () => {
-    const dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
-    const r = await responder("ln_passo15_alto_valor", dados, "2");
-    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo15_selfservice");
-    // 7680 + 1.5% * 800000 = 19.680,00
-    expect(r.mensagens.some((m) => txt(m).includes("19.680"))).toBe(true);
+  it("ponta a ponta: aceita agendar, escolhe um dos 2 horários, e dispara o efeito agendar_consultor com o horário certo", async () => {
+    const agora = new Date("2026-08-20T11:00:00Z"); // quinta, 08h São Paulo — mesma base de agenda-consultor.test.ts
+    const calcularComAgenda = criarCalculadoraDadosDerivados(CONFIG, FAIXAS_PRECOS, {
+      disponibilidadeConsultor: [
+        { diaSemana: 1, horaInicio: 10, horaFim: 21 },
+        { diaSemana: 2, horaInicio: 10, horaFim: 21 },
+        { diaSemana: 3, horaInicio: 10, horaFim: 21 },
+        { diaSemana: 4, horaInicio: 10, horaFim: 21 },
+        { diaSemana: 5, horaInicio: 10, horaFim: 21 },
+      ],
+      agendamentosExistentes: [],
+    });
+
+    let dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
+    let r = await avancarConversa({
+      etapaAtual: etapasPorCodigo["ln_agendamento_oferta"],
+      etapasPorCodigo,
+      dados,
+      respostaLead: "1",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados: calcularComAgenda,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    dados = { ...dados, ...r.dadosNovos };
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_agendamento_horario");
+    expect(dados._agendamento_opcao_1_inicio).toBeDefined();
+    expect(r.mensagens.some((m) => txt(m).includes("horários"))).toBe(true);
+
+    // Nota: as datas concretas dependem de `new Date()` real (agora não é injetável neste ponto do
+    // motor) — a asserção verifica só que a escolha "1" propaga o horário calculado de verdade pro
+    // efeito, não um valor fixo (agenda-consultor.test.ts já cobre o cálculo isolado com `agora` fixo).
+    void agora;
+    r = await responder("ln_agendamento_horario", dados, "1");
+    // ln_agendamento_confirmado não espera resposta (aguarda_resposta: false) — termina o turno
+    // como etapaFinal null, igual qualquer checkpoint de encerramento (ex.: ln_call_agendada acima).
+    expect(r.etapaFinal).toBeNull();
+    expect(r.efeitos).toEqual([
+      { tipo: "encerrar_fluxo_automatizado", etapaKanban: "negociacao_duvidas", sobSupervisor: true },
+      { tipo: "agendar_consultor", inicio: dados._agendamento_opcao_1_inicio, fim: dados._agendamento_opcao_1_fim, motivo: "divida_alta" },
+    ]);
+    expect(r.mensagens.some((m) => txt(m).includes("Agendado"))).toBe(true);
   });
 });
 

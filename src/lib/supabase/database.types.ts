@@ -1240,6 +1240,7 @@ export type Database = {
       }
       notificacoes: {
         Row: {
+          agendamento_id: string | null
           conversa_id: string
           created_at: string
           id: string
@@ -1249,6 +1250,7 @@ export type Database = {
           usuario_id: string
         }
         Insert: {
+          agendamento_id?: string | null
           conversa_id: string
           created_at?: string
           id?: string
@@ -1258,6 +1260,7 @@ export type Database = {
           usuario_id: string
         }
         Update: {
+          agendamento_id?: string | null
           conversa_id?: string
           created_at?: string
           id?: string
@@ -1286,6 +1289,13 @@ export type Database = {
             columns: ["nota_id"]
             isOneToOne: false
             referencedRelation: "notas_internas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notificacoes_agendamento_id_fkey"
+            columns: ["agendamento_id"]
+            isOneToOne: false
+            referencedRelation: "agendamentos_consultor"
             referencedColumns: ["id"]
           },
           {
@@ -2099,6 +2109,7 @@ export type Database = {
           auth_user_id: string | null
           cor_badge: string
           created_at: string
+          eh_consultor: boolean
           email: string
           id: string
           nivel_acesso: string
@@ -2111,6 +2122,7 @@ export type Database = {
           auth_user_id?: string | null
           cor_badge?: string
           created_at?: string
+          eh_consultor?: boolean
           email: string
           id?: string
           nivel_acesso?: string
@@ -2123,6 +2135,7 @@ export type Database = {
           auth_user_id?: string | null
           cor_badge?: string
           created_at?: string
+          eh_consultor?: boolean
           email?: string
           id?: string
           nivel_acesso?: string
@@ -2135,6 +2148,111 @@ export type Database = {
             foreignKeyName: "usuarios_sistema_pessoa_id_fkey"
             columns: ["pessoa_id"]
             isOneToOne: true
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      disponibilidade_atendente: {
+        Row: {
+          id: string
+          usuario_sistema_id: string
+          dia_semana: number
+          hora_inicio: string
+          hora_fim: string
+          ativo: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          usuario_sistema_id: string
+          dia_semana: number
+          hora_inicio: string
+          hora_fim: string
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          usuario_sistema_id?: string
+          dia_semana?: number
+          hora_inicio?: string
+          hora_fim?: string
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "disponibilidade_atendente_usuario_sistema_id_fkey"
+            columns: ["usuario_sistema_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios_sistema"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agendamentos_consultor: {
+        Row: {
+          id: string
+          usuario_sistema_id: string
+          conversa_id: string
+          pessoa_id: string
+          inicio: string
+          fim: string
+          status: string
+          lembrete_15min_enviado: boolean
+          lembrete_hora_enviado: boolean
+          motivo: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          usuario_sistema_id: string
+          conversa_id: string
+          pessoa_id: string
+          inicio: string
+          fim: string
+          status?: string
+          lembrete_15min_enviado?: boolean
+          lembrete_hora_enviado?: boolean
+          motivo: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          usuario_sistema_id?: string
+          conversa_id?: string
+          pessoa_id?: string
+          inicio?: string
+          fim?: string
+          status?: string
+          lembrete_15min_enviado?: boolean
+          lembrete_hora_enviado?: boolean
+          motivo?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentos_consultor_usuario_sistema_id_fkey"
+            columns: ["usuario_sistema_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios_sistema"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agendamentos_consultor_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agendamentos_consultor_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
             referencedRelation: "pessoas"
             referencedColumns: ["id"]
           },

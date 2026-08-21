@@ -68,9 +68,14 @@ export async function uploadPdfContrato(contratoId: string, pdf: Buffer): Promis
   return { path: caminho };
 }
 
-export async function gerarUrlAssinadaContrato(caminho: string): Promise<string> {
+/** `forcarDownload: true` faz o link vir com `Content-Disposition: attachment` (o navegador baixa
+ * o arquivo em vez de abrir inline) — usado pelo botão "Baixar" da tela de Detalhes da Venda,
+ * separado do link "Ver" (que abre normal, sem esse header). */
+export async function gerarUrlAssinadaContrato(caminho: string, opcoes?: { forcarDownload?: boolean }): Promise<string> {
   const supabase = await createClient();
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(caminho, 3600);
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(caminho, 3600, opcoes?.forcarDownload ? { download: true } : undefined);
   if (error) throw new Error(`Falha ao gerar URL do contrato: ${error.message}`);
   return data.signedUrl;
 }
@@ -82,4 +87,17 @@ export async function baixarPdfContrato(caminho: string): Promise<Buffer> {
   const { data, error } = await supabase.storage.from(BUCKET).download(caminho);
   if (error) throw new Error(`Falha ao baixar PDF do contrato: ${error.message}`);
   return Buffer.from(await data.arrayBuffer());
+}
+
+/**
+ * Sobrescreve o PDF já salvo no MESMO caminho (`upsert: true`) — usado quando o contrato termina
+ * de ser assinado por todos: o PDF sem assinatura vira o PDF final com certificado da Assinafy
+ * (pedido do Luiz, 20/08/2026). Sobrescrever em vez de subir um arquivo novo com caminho diferente
+ * significa que `contratos.pdf_url` não precisa mudar — qualquer link já copiado/enviado antes da
+ * assinatura passa a servir o conteúdo assinado automaticamente, sem precisar gerar/reenviar nada.
+ */
+export async function sobrescreverPdfContrato(caminho: string, pdf: Buffer): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.storage.from(BUCKET).upload(caminho, pdf, { contentType: "application/pdf", upsert: true });
+  if (error) throw new Error(`Falha ao sobrescrever PDF do contrato: ${error.message}`);
 }

@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
+import { baixarDocumentoCertificado } from "@/lib/assinafy/cliente";
 import { atualizarStatusContrato, buscarContratoPorAssinafyDocumentId } from "@/lib/vendas/contratos";
+import { sobrescreverPdfContrato } from "@/lib/vendas/geracao-pdf";
 import { sincronizarEtapaKanban } from "@/lib/vendas/oportunidades";
 
 export const maxDuration = 30;
@@ -33,6 +35,20 @@ async function processarDocumentoAssinado(assinafyDocumentId: string): Promise<v
     if (!contrato) {
       console.error(`[webhook assinafy] contrato não encontrado pro documento ${assinafyDocumentId}`);
       return;
+    }
+
+    // Troca o PDF sem assinatura pelo PDF final (com certificado de assinatura da Assinafy) —
+    // pedido do Luiz, 20/08/2026: a partir daqui, o link que aparece em Detalhes da Venda precisa
+    // ser do contrato já assinado, não do rascunho enviado pra assinatura. Sobrescreve o mesmo
+    // caminho no Storage (contratos.pdf_url não muda) — não bloqueia o resto do fluxo se falhar,
+    // já que o contrato está de fato assinado independente de conseguirmos atualizar o arquivo.
+    if (contrato.pdfUrl) {
+      try {
+        const pdfCertificado = await baixarDocumentoCertificado(assinafyDocumentId);
+        await sobrescreverPdfContrato(contrato.pdfUrl, pdfCertificado);
+      } catch (erroPdf) {
+        console.error("[webhook assinafy] contrato assinado, mas falhou ao baixar/sobrescrever o PDF certificado:", erroPdf);
+      }
     }
 
     await atualizarStatusContrato(contrato.id, "aguardando_assinaturas", { assinadoEm: new Date().toISOString() });

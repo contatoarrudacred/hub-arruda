@@ -356,6 +356,33 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
         interpretadoPorIA: true,
         kanbanSubetapa: conteudo.kanban_subetapa ?? null,
       };
+    } else if (resultado.status === "acima_do_corte") {
+      // Lead escolheu a opção virtual "Acima de X mil" (spec 2026-08-20-agendamento-consultor-alto-valor.md)
+      // — pula o resto da coleta de faixas do pacote (não tem preço fixo pra somar com o que falta)
+      // e vai direto pro fluxo de agendamento com consultor, marcando `alto_valor=sim` (mesmo campo
+      // que o gatilho normal usa, então o motivo mostrado pro lead fica correto). Reaproveita
+      // `percorrerAPartirDe` em vez de montar a mensagem na mão, pra herdar toda a lógica de mensagem
+      // dinâmica/kanban/efeitos que um checkpoint normal já tem.
+      const dadosComAltoValor: DadosConversa = { ...dados, alto_valor: "sim" };
+      const derivadosAltoValor = calcularDadosDerivados?.(dadosComAltoValor) ?? {};
+      const dadosNovosAcimaDoCorte: DadosConversa = { alto_valor: "sim", ...derivadosAltoValor };
+      const dadosParaPercurso = { ...dados, ...dadosNovosAcimaDoCorte };
+      const percurso = percorrerAPartirDe(
+        "ln_agendamento_oferta",
+        etapasPorCodigo,
+        dadosParaPercurso,
+        resolverMensagensDinamicas,
+        variaveisGlobais,
+      );
+      return {
+        mensagens: percurso.mensagens,
+        etapaFinal: percurso.etapaFinal,
+        dadosNovos: dadosNovosAcimaDoCorte,
+        efeitos: percurso.efeitos,
+        naoReconhecido: false,
+        interpretadoPorIA: true,
+        kanbanSubetapa: percurso.kanbanSubetapa,
+      };
     }
     // "nao_entendi" deixa `reconhecido` null — cai no bloco genérico abaixo (repete a pergunta original).
   }
@@ -529,11 +556,26 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     variaveisGlobais,
   );
 
+  // Lead escolheu um dos 2 horários oferecidos (ln_agendamento_horario, spec
+  // 2026-08-20-agendamento-consultor-alto-valor.md) — o horário em si já foi calculado antes
+  // (criarCalculadoraDadosDerivados) e viaja em `dados._agendamento_opcao_N_inicio/_fim`; aqui só
+  // decide qual das 2 opções foi escolhida e dispara o efeito que grava/notifica de verdade.
+  const efeitosExtras: EfeitoNegocio[] = [];
+  if (etapaAtual.campoSalvo === "horario_agendamento_escolhido") {
+    const escolha = reconhecido.valor === "2" ? "2" : "1";
+    const inicio = dadosCompletos[`_agendamento_opcao_${escolha}_inicio`];
+    const fim = dadosCompletos[`_agendamento_opcao_${escolha}_fim`];
+    if (inicio && fim) {
+      const motivo = dadosCompletos.alto_valor === "sim" ? "divida_alta" : "pacote_caro";
+      efeitosExtras.push({ tipo: "agendar_consultor", inicio, fim, motivo });
+    }
+  }
+
   return {
     mensagens: percurso.mensagens,
     etapaFinal: percurso.etapaFinal,
     dadosNovos,
-    efeitos: percurso.efeitos,
+    efeitos: [...percurso.efeitos, ...efeitosExtras],
     naoReconhecido: false,
     interpretadoPorIA,
     kanbanSubetapa: percurso.kanbanSubetapa,

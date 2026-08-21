@@ -59,7 +59,7 @@ function obterCliente(): Anthropic {
 
 // --- Rodada 1: escolha de faixa no menu fechado ---------------------------------------------
 
-function ferramentaEscolhaMenu(qtdFaixas: number) {
+function ferramentaEscolhaMenu(qtdFaixas: number, temOpcaoAcimaDoCorte: boolean) {
   return {
     name: "interpretar_escolha_faixa",
     description:
@@ -69,13 +69,20 @@ function ferramentaEscolhaMenu(qtdFaixas: number) {
       properties: {
         status: {
           type: "string",
-          enum: ["faixa_escolhida", "quer_consulta_paga", "nao_entendi"],
-          description:
-            "'faixa_escolhida' quando o lead indicou claramente uma das opções do menu (por número, ou descrevendo um valor que cai numa faixa). 'quer_consulta_paga' quando ele pede a consulta oficial/paga em vez de estimar. 'nao_entendi' quando a resposta não tem nada a ver com isso.",
+          enum: ["faixa_escolhida", "acima_do_corte", "quer_consulta_paga", "nao_entendi"],
+          description: [
+            "'faixa_escolhida' quando o lead indicou claramente uma das opções numeradas de faixa (por número, ou descrevendo um valor que cai numa faixa).",
+            temOpcaoAcimaDoCorte
+              ? "'acima_do_corte' quando ele escolheu a última opção do menu (a que diz 'Acima de X mil') — nunca preencher indice_faixa nesse caso."
+              : null,
+            "'quer_consulta_paga' quando ele pede a consulta oficial/paga em vez de estimar. 'nao_entendi' quando a resposta não tem nada a ver com isso.",
+          ]
+            .filter(Boolean)
+            .join(" "),
         },
         indice_faixa: {
           type: "number",
-          description: `Número da opção escolhida no menu, de 1 a ${qtdFaixas} — só preencher com certeza quando status=faixa_escolhida.`,
+          description: `Número da opção de faixa escolhida no menu, de 1 a ${qtdFaixas} — só preencher com certeza quando status=faixa_escolhida (nunca pra acima_do_corte).`,
         },
       },
       required: ["status", "indice_faixa"],
@@ -99,6 +106,7 @@ async function interpretarEscolhaMenu(params: {
   menu: string;
   respostaLead: string;
   qtdFaixas: number;
+  temOpcaoAcimaDoCorte: boolean;
 }): Promise<ReturnType<typeof validarEscolhaFaixaMenu>> {
   try {
     // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
@@ -106,7 +114,7 @@ async function interpretarEscolhaMenu(params: {
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 400,
-      tools: [ferramentaEscolhaMenu(params.qtdFaixas)],
+      tools: [ferramentaEscolhaMenu(params.qtdFaixas, params.temOpcaoAcimaDoCorte)],
       tool_choice: { type: "tool", name: "interpretar_escolha_faixa" },
       messages: [{ role: "user", content: montarPromptEscolhaMenu(params) }],
     });
@@ -319,9 +327,17 @@ async function interpretarModoLivre(params: {
 
 // --- Fábrica -----------------------------------------------------------------------------------
 
-export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[]): InterpretadorFaixasDocumentos {
+/**
+ * `corteAltoValor`, quando passado, acrescenta a opção virtual "Acima de X mil" no menu (mesma
+ * flag de `formatarMenuFaixas`) — spec 2026-08-20-agendamento-consultor-alto-valor.md. Escolher
+ * essa opção retorna `{ status: "acima_do_corte" }` direto na rodada 1, sem rodada de confirmação
+ * (decisão de Luiz: não faz sentido confirmar um valor que não existe de verdade) — o `engine.ts`
+ * roteia isso pro fluxo de agendamento com consultor, sem perguntar a faixa dos outros documentos.
+ */
+export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], corteAltoValor?: number): InterpretadorFaixasDocumentos {
   const faixasOrdenadas = ordenarFaixasPreco(faixasPrecos);
-  const menu = formatarMenuFaixas(faixasPrecos);
+  const menu = formatarMenuFaixas(faixasPrecos, corteAltoValor);
+  const temOpcaoAcimaDoCorte = corteAltoValor !== undefined;
 
   return async ({ etapaAtual, respostaLead, dados }) => {
     const tiposEsperados = (dados.documentos_tipos ?? "")
@@ -338,7 +354,7 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[]): 
       const faixa = faixasOrdenadas[indice];
       if (!faixa) {
         // estado provisório inconsistente (defensivo) — trata como se a rodada de confirmação não existisse.
-        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados });
+        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte });
       }
 
       const perguntaConfirmacao = montarMensagemConfirmacaoFaixa(faixa, indice === 0, tiposEsperados);
@@ -370,7 +386,7 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[]): 
       });
     }
 
-    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados });
+    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte });
   };
 }
 
@@ -379,13 +395,15 @@ async function escolherFaixaDoMenu(params: {
   faixasOrdenadas: FaixaPreco[];
   respostaLead: string;
   tiposEsperados: ("cpf" | "cnpj")[];
+  temOpcaoAcimaDoCorte: boolean;
 }): Promise<ResultadoInterpretacaoFaixasDocumentos> {
-  const { menu, faixasOrdenadas, respostaLead, tiposEsperados } = params;
-  const escolha = await interpretarEscolhaMenu({ menu, respostaLead, qtdFaixas: faixasOrdenadas.length });
+  const { menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte } = params;
+  const escolha = await interpretarEscolhaMenu({ menu, respostaLead, qtdFaixas: faixasOrdenadas.length, temOpcaoAcimaDoCorte });
 
   if (escolha.tipo === "quer_consulta_paga") {
     return { status: "escalar_consulta_paga", mensagem: MENSAGEM_CONSULTA_PAGA };
   }
+  if (escolha.tipo === "acima_do_corte") return { status: "acima_do_corte" };
   if (escolha.tipo === "nao_entendi") return { status: "nao_entendi" };
 
   const faixa = faixasOrdenadas[escolha.indice];

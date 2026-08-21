@@ -512,7 +512,9 @@ function SinoNotificacoes({
                 <span className="text-zinc-700 dark:text-zinc-300">
                   {n.tipo === "mencao"
                     ? `📝 Você foi mencionado numa nota de ${n.pessoaNome}`
-                    : `👤 ${n.pessoaNome} foi atribuída a você`}
+                    : n.tipo === "agendamento"
+                      ? `📅 Agendamento marcado com ${n.pessoaNome}`
+                      : `👤 ${n.pessoaNome} foi atribuída a você`}
                 </span>
                 <span className="text-[10px] text-zinc-400">{formatarHora(n.criadoEm)}</span>
               </button>

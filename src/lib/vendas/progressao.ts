@@ -1,4 +1,4 @@
-import { buscarContratoPorId, limparErroContrato, registrarErroContrato } from "./contratos";
+import { atualizarStatusContrato, buscarContratoPorId, limparErroContrato, registrarErroContrato } from "./contratos";
 import { gerarEEmitirContrato } from "./emissao-contrato";
 
 const MAX_TENTATIVAS_AUTOMATICAS = 3;
@@ -60,12 +60,19 @@ export async function tentarEnvelopar(contratoId: string): Promise<void> {
 /** Etapa "Gerando Financeiro" — cria a(s) cobrança(s) na Asaas. Disparada pelo webhook da Assinafy
  * quando todo mundo assina (não pela cadeia automática inicial — isso só acontece depois de uma
  * ação humana). Ao dar certo, criarCobrancasDoContrato já deixa o contrato em
- * "aguardando_pagamento" (etapa 5, espera ação humana). Mesmo raciocínio: não marca
- * "gerando_financeiro" antes de tentar. */
+ * "aguardando_pagamento" (etapa 5, espera ação humana).
+ *
+ * Diferente de "Emitindo Contrato" (marcado como último passo de uma sub-etapa que já teve
+ * sucesso), aqui não existe sub-etapa prévia pra pendurar a marcação — por isso marca
+ * "gerando_financeiro" explicitamente ANTES de tentar, não depois. Achado real corrigido em
+ * 20/08/2026: sem essa marcação prévia, um erro na Asaas deixava o card rotulado "Aguardando
+ * Assinaturas" mesmo já tendo sido assinado por todos — etiqueta enganosa (a espera de assinatura
+ * já tinha terminado de verdade), não só uma coluna vazia como "Envelopando Assinaturas" era. */
 export async function tentarGerarFinanceiro(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato || !podeTentarAutomaticamente(contrato.tentativasErro)) return;
 
+  await atualizarStatusContrato(contratoId, "gerando_financeiro");
   await executarPassoAutomatico(contratoId, async () => {
     const { criarCobrancasDoContrato } = await import("@/lib/asaas/adapter");
     await criarCobrancasDoContrato(contratoId);
