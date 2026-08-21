@@ -248,6 +248,49 @@ describe("revisarConteudo", () => {
     expect(promptEnviado).toMatch(/sugestão concreta/i);
   });
 
+  // Achado real de produção (21/08/2026): uma reprovação sem `motivo` é inutilizável — nem o
+  // Escritor nem um humano sabem o que corrigir. O schema não força `motivo` (é null de propósito
+  // quando aprovado), então o modelo pode devolver reprovado SEM preencher o campo. Trata como
+  // falha técnica (lança) em vez de silenciosamente persistir um motivo placeholder — mesmo
+  // princípio já usado em escritor.ts pra resposta truncada.
+  it("reprovado sem motivo preenchido (e sem truncamento): lança erro técnico em vez de motivo placeholder", async () => {
+    const mockCreate = obterMockCreate();
+    mockCreate.mockResolvedValue({
+      stop_reason: "tool_use",
+      content: [
+        {
+          type: "tool_use",
+          name: "registrar_revisao",
+          input: { score: 60, motivo: null, precisao_factual_adequada: true, fontes_especificas: true, originalidade_adequada: true },
+        },
+      ],
+      usage: { input_tokens: 700, output_tokens: 30 },
+    });
+
+    await expect(revisarConteudo(conteudo, checklist, propriedadeSemCalibracao, postsRecentesVazio, 1)).rejects.toThrow(
+      /reprovação sem motivo.*campo 'motivo' não preenchido/,
+    );
+  });
+
+  it("reprovado sem motivo E resposta truncada por limite de tokens: lança identificando a causa como truncamento", async () => {
+    const mockCreate = obterMockCreate();
+    mockCreate.mockResolvedValue({
+      stop_reason: "max_tokens",
+      content: [
+        {
+          type: "tool_use",
+          name: "registrar_revisao",
+          input: { score: 60, motivo: null, precisao_factual_adequada: true, fontes_especificas: true, originalidade_adequada: true },
+        },
+      ],
+      usage: { input_tokens: 700, output_tokens: 8000 },
+    });
+
+    await expect(revisarConteudo(conteudo, checklist, propriedadeSemCalibracao, postsRecentesVazio, 1)).rejects.toThrow(
+      /reprovação sem motivo.*truncada por limite de tokens/,
+    );
+  });
+
   it("inclui os títulos e ângulos de postsRecentes no prompt, pro julgamento de originalidade", async () => {
     const mockCreate = obterMockCreate();
     mockCreate.mockResolvedValue({
