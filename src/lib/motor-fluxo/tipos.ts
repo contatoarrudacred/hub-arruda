@@ -309,7 +309,7 @@ export type ContextoAvanco = {
 export type EfeitoNegocio =
   | { tipo: "marcar_perdida"; motivo: string }
   | { tipo: "escalar_supervisor"; motivo: string }
-  | { tipo: "encerrar_fluxo_automatizado"; etapaKanban: string; sobSupervisor: boolean }
+  | { tipo: "encerrar_fluxo_automatizado"; etapaKanban: string; sobSupervisor: boolean; etapaCodigo: string }
   /** Lead aceitou e escolheu um horário de agendamento com o consultor (spec 2026-08-20-agendamento-consultor-alto-valor.md) — grava em `agendamentos_consultor` e notifica o consultor. `inicio`/`fim` em ISO 8601. */
   | { tipo: "agendar_consultor"; inicio: string; fim: string; motivo: "divida_alta" | "pacote_caro" };
 

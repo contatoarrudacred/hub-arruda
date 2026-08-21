@@ -1,0 +1,116 @@
+{
+  "cenario": "duvida_baixa_negocia_direto",
+  "descricao": "Dívida baixa (<R$3.000) — a Malala recomenda negociar direto e o lead aceita a recomendação, encerrando com perda (não é bug, é o desenho do script).",
+  "tipo": "roteirizado",
+  "telefone": "+5511999909001",
+  "expectativaHandoff": null,
+  "turnos": [
+    {
+      "turno": 1,
+      "mensagemLead": "Oi",
+      "mensagensMalala": [
+        "",
+        "🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!",
+        "👉 *Com quem eu falo?*"
+      ],
+      "etapaCodigo": "pergunta_nome",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 2,
+      "mensagemLead": "João Pedro Silva",
+      "mensagensMalala": [
+        "Oi João, boa tarde! Prazer em falar com você!",
+        "Pra eu te atender melhor, me confirma seu e-mail:"
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 3,
+      "mensagemLead": "joaopedro@testandodasilva.com.br",
+      "mensagensMalala": [
+        "Para agilizar seu atendimento, informe o número da opção:\n\n1️⃣ Limpeza de Nome (CPF/CNPJ)\n2️⃣ Aumento de Score / Rating\n3️⃣ BACEN / SCR / CCF\n4️⃣ Jusbrasil / Escavador\n5️⃣ Conta Protegida (Bloqueio Judicial)\n6️⃣ Consórcio\n7️⃣ Crédito / Financiamento\n8️⃣ Outro assunto\n\n👉 *É só responder com o número da opção* 😊"
+      ],
+      "etapaCodigo": "triagem_menu",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 4,
+      "mensagemLead": "quero limpar meu nome mesmo",
+      "mensagensMalala": [
+        "Entendi que precisa limpeza de nome no Serasa/SPC!\n\n👉 *Você já contratou esse serviço antes? sabe como funciona?*",
+        "🤔 Se você me responder 4 perguntinhas rápidas, eu já consigo passar o valor exato para limpeza de nome. Depois, tiro todas as suas dúvidas e, se preferir, podemos conversar por ligação ou vídeo-chamada.\n\n👉 *Podemos começar?*"
+      ],
+      "etapaCodigo": "ln_passo2",
+      "naoReconhecido": false,
+      "interpretadoPorIA": true
+    },
+    {
+      "turno": 5,
+      "mensagemLead": "sim, pode ser",
+      "mensagensMalala": [
+        "✅ A proposta é remover as restrições que estão sujando o CPF ou CNPJ: contas não pagas, cartão de crédito, empréstimos, financiamentos, protestos, cheques devolvidos e até ações judiciais.\n\n👉 O objetivo é nome limpo, recuperar a reputação financeira para voltar a pleitear crédito no mercado.",
+        "⚖️ Trata-se de uma ação judicial coletiva via associação de proteção ao consumidor, garantindo direitos previstos em lei para remover as restrições no SERASA, SPC Brasil, SCPC Boa Vista e CENPROT (Central Nacional de Protestos).\n\n📌 Oferecemos seguro-garantia sobre o nome limpo por 1 ANO, conforme contrato (após 12 meses as restrições podem retornar se não forem negociadas ou pagas neste período).",
+        "⚠️ Importante entender: RESTRIÇÃO é uma coisa, DÍVIDA é outra! As restrições que hoje estão sujando o nome nestes orgãos serão 100% removidas. Já as dívidas, continuarão existindo de forma interna no credor e nos sistemas do Banco Central.\n\n✅ Resumindo: é uma forma rápida e legal de obter CPF ou CNPJ limpo no sistema Serasa/SPC por um custo menor do que se fosse pagar as dívidas.",
+        "👋👋 *Isso faz sentido? Atende suas necessidades?*"
+      ],
+      "etapaCodigo": "ln_fazsentido",
+      "naoReconhecido": false,
+      "interpretadoPorIA": true
+    },
+    {
+      "turno": 6,
+      "mensagemLead": "sim, faz sentido",
+      "mensagensMalala": [
+        "👉 Você precisa limpar um *CPF* ou *CNPJ*?\n\n_Me diga se precisar mais de um (exemplo: CPF + CNPJ)_"
+      ],
+      "etapaCodigo": "ln_passo4",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 7,
+      "mensagemLead": "só o meu CPF",
+      "mensagensMalala": [
+        "👍 Perfeito João! Entendido...",
+        "👉 *Em qual das faixas abaixo melhor se enquadra o valor das suas restrições atualmente?* (tudo bem se não tiver certeza - depois faremos uma consulta)\n\n1️⃣ Menos de 10 mil\n2️⃣ Entre 10 mil e 30 mil\n3️⃣ Entre 30 mil e 50 mil\n4️⃣ Entre 50 mil e 100 mil\n5️⃣ Entre 100 mil e 500 mil\n6️⃣ Acima de 500 mil"
+      ],
+      "etapaCodigo": "ln_passo6",
+      "naoReconhecido": false,
+      "interpretadoPorIA": true
+    },
+    {
+      "turno": 8,
+      "mensagemLead": "tenho uma dívida de uns 1500 reais no cartão de crédito",
+      "mensagensMalala": [
+        "Só confirmando: Limpeza de nome para *01 CPF* com restrições menos de 10mil.\n👉 *Está correto?*"
+      ],
+      "etapaCodigo": "ln_passo6",
+      "naoReconhecido": true,
+      "interpretadoPorIA": true
+    },
+    {
+      "turno": 9,
+      "mensagemLead": "faz sentido, vou tentar negociar direto com o banco então",
+      "mensagensMalala": [
+        "👍 Entendido! você já contratou algum serviço para limpar nome antes? E como conheceu a ArrudaCred? Foi indicação de alguém?"
+      ],
+      "etapaCodigo": "ln_passo8",
+      "naoReconhecido": false,
+      "interpretadoPorIA": true
+    }
+  ],
+  "efeitos": {
+    "sobSupervisor": false,
+    "etapaKanban": "novo_lead_triagem",
+    "notasInternas": [],
+    "notificacoes": [],
+    "agendamento": null
+  },
+  "encerradoPorLimiteDeTurnos": false,
+  "erro": null
+}

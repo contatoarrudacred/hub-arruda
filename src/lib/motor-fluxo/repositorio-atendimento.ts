@@ -466,7 +466,8 @@ export type MensagemConversa = {
 export type NotaInterna = {
   id: string;
   conversaId: string;
-  autorId: string;
+  /** null = nota gerada pelo motor (handoff automático), sem autor humano — ver `autorNome`. */
+  autorId: string | null;
   autorNome: string;
   texto: string;
   criadoEm: string;
@@ -599,7 +600,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
         id: n.id,
         conversaId,
         autorId: n.autor_id,
-        autorNome: autorInfo?.pessoas?.nome_razao_social ?? "Atendente",
+        autorNome: n.autor_id === null ? "Malala (sistema)" : (autorInfo?.pessoas?.nome_razao_social ?? "Atendente"),
         texto: n.texto,
         criadoEm: n.created_at,
       };

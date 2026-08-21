@@ -32,6 +32,7 @@ import {
   type ParcelaTier,
   montarConfirmacaoAgendamento,
   montarHorariosAgendamento,
+  montarInsistenciaAgendamento,
   montarOfertaAgendamentoConsultor,
   montarPropostaAltoValorSelfService,
   montarPropostaBaixoValor,
@@ -585,13 +586,59 @@ export const ETAPAS_LIMPEZA_NOME: DefinicaoEtapa[] = [
       tipo_resposta: "menu",
       opcoes: [
         { valor: "sim", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_agendamento_horario" },
-        { valor: "nao", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_call_agendada" },
+        { valor: "nao", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_agendamento_router_recusa" },
       ],
       kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
       interpretacao_ia: {
         habilitado: true,
         instrucao:
           "O lead pode responder em texto livre (ex.: 'quero sim, pode marcar' → sim, 'prefiro seguir por aqui mesmo' → nao). Escolha a opção correspondente.",
+      },
+    },
+  },
+  {
+    // Decide o destino da recusa (spec 2026-08-21, achado ao revisar o editor de fluxo: recusar
+    // sempre ia direto pro handoff, mesmo quando o motivo era pacote caro — nesse caso não faz
+    // sentido forçar humano, o lead pode seguir no self-service). Só pra dívida alta (`alto_valor`)
+    // a ligação é obrigatória — mesma precedência usada em `motivo` (criarResolverMensagensDinamicas):
+    // `alto_valor` vence `pacote_caro` quando os dois são "sim".
+    codigo: "ln_agendamento_router_recusa",
+    ordem: 21.1,
+    campoSalvo: null,
+    conteudo: {
+      codigo: "ln_agendamento_router_recusa",
+      mensagens: [],
+      aguarda_resposta: false,
+      proximo_por_dado: {
+        campo: "alto_valor",
+        se_igual: "sim",
+        entao: "ln_agendamento_insistencia",
+        senao: "ln_passo15_selfservice",
+      },
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+    },
+  },
+  {
+    // Dívida alta: a ligação é obrigatória (decisão de Luiz, 21/08/2026) — insiste 1x reforçando o
+    // motivo antes de aceitar a recusa. Recusando de novo, transfere mesmo assim (ln_call_agendada,
+    // nunca libera self-service pra esse motivo — diferente de pacote caro).
+    codigo: "ln_agendamento_insistencia",
+    ordem: 21.2,
+    campoSalvo: "aceitou_agendamento_apos_insistencia",
+    conteudo: {
+      codigo: "ln_agendamento_insistencia",
+      mensagens: [t("(reforço de agendamento gerado dinamicamente)")],
+      aguarda_resposta: true,
+      tipo_resposta: "menu",
+      opcoes: [
+        { valor: "sim", rotulos: ["1", "1️⃣"], proximo_codigo: "ln_agendamento_horario" },
+        { valor: "nao", rotulos: ["2", "2️⃣"], proximo_codigo: "ln_call_agendada" },
+      ],
+      kanban_subetapa: KANBAN_ENVIO_PROPOSTA,
+      interpretacao_ia: {
+        habilitado: true,
+        instrucao:
+          "O lead já recusou o agendamento uma vez. Se ele aceitar agora (ex.: 'tá bom, pode ligar' → sim) ou recusar/reforçar que não quer (ex.: 'não, prefiro assim mesmo' → nao). Escolha a opção correspondente.",
       },
     },
   },
@@ -1044,6 +1091,10 @@ export function criarResolverMensagensDinamicas(
     if (codigo === "ln_agendamento_oferta") {
       const motivo = dados.pacote_caro === "sim" && dados.alto_valor !== "sim" ? "pacote_caro" : "divida_alta";
       return montarOfertaAgendamentoConsultor(motivo).map(t);
+    }
+
+    if (codigo === "ln_agendamento_insistencia") {
+      return montarInsistenciaAgendamento().map(t);
     }
 
     if (codigo === "ln_agendamento_horario") {

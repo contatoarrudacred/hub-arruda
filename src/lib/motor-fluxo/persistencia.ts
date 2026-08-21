@@ -340,12 +340,70 @@ export async function detectarEMarcarObjecaoPendente(conversaId: string, textoLe
   }
 }
 
-/** Aplica um efeito de negócio já decidido pelo motor (engine.ts) — hoje isto ficava calculado e nunca era usado, porque nada persistia. Também é usada pelo cron de follow-up ao sintetizar um "marcar_perdida" quando a agenda se esgota. `pessoaId` só é obrigatório de verdade pro efeito `agendar_consultor` (spec 2026-08-20-agendamento-consultor-alto-valor.md) — os demais efeitos não usam. */
+/**
+ * Nota interna "do sistema" (sem autor humano) — grava o rastro de um handoff pra humano na timeline
+ * da conversa (spec 2026-08-21-testes-conversa-malala-e-nota-handoff.md: achado de que nenhum handoff
+ * deixava esse rastro, só notificações soltas ou nada). Diferente de `criarNotaInterna`
+ * (repositorio-atendimento.ts): não depende de sessão logada — o motor roda como `service_role`, sem
+ * usuário autenticado por trás — por isso `autor_id` fica `null` em vez de inventar um usuário
+ * fictício "Sistema" em `usuarios_sistema`.
+ */
+async function inserirNotaInternaSistema(conversaId: string, texto: string): Promise<string> {
+  const supabase = createAdminClient();
+  const { data: nota, error } = await supabase
+    .from("notas_internas")
+    .insert({ conversa_id: conversaId, autor_id: null, texto })
+    .select("id")
+    .single();
+  if (error || !nota) throw new Error(`Falha ao criar nota interna do sistema: ${error?.message}`);
+  return nota.id;
+}
+
+/** Notifica (tipo "mencao") todo consultor ativo sobre uma nota do sistema — usado nos handoffs que
+ * ainda não têm nenhuma notificação própria (todos exceto `agendar_consultor`, que já notifica de
+ * forma mais específica — ver comentário no bloco `agendar_consultor` abaixo). */
+async function notificarConsultoresSobreNota(conversaId: string, notaId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: consultores, error } = await supabase
+    .from("usuarios_sistema")
+    .select("id")
+    .eq("eh_consultor", true)
+    .eq("ativo", true);
+  if (error) throw new Error(`Falha ao buscar consultores pra notificar handoff: ${error.message}`);
+  if (!consultores || consultores.length === 0) return;
+
+  const { error: erroNotificacao } = await supabase
+    .from("notificacoes")
+    .insert(consultores.map((c) => ({ usuario_id: c.id, conversa_id: conversaId, tipo: "mencao", nota_id: notaId })));
+  if (erroNotificacao) throw new Error(`Falha ao notificar consultores sobre handoff: ${erroNotificacao.message}`);
+}
+
+/** Texto da nota interna por etapa terminal que escala pro supervisor (`encerrar_fluxo_automatizado`,
+ * ver inventário na spec 2026-08-21) — cobre os 3 pontos hoje conhecidos, com um fallback genérico
+ * pra qualquer etapa nova que ganhe `encerramento.sob_supervisor:true` no futuro sem essa lista ser
+ * atualizada junto. */
+function textoHandoffPorEtapa(etapaCodigo: string): string {
+  switch (etapaCodigo) {
+    case "handoff_humano":
+      return "Malala transferiu o atendimento — o lead pediu um assunto fora de Limpeza de Nome no menu de triagem.";
+    case "ln_call_agendada":
+      return "Malala transferiu o atendimento — o lead vai ser contatado por ligação por um consultor.";
+    case "ln_agendamento_confirmado":
+      return "Malala confirmou um agendamento com o consultor.";
+    case "ln_encerramento":
+      return "Malala concluiu a coleta de dados do funil automatizado — segue com um consultor humano a partir daqui.";
+    default:
+      return `Malala encerrou o atendimento automatizado (etapa "${etapaCodigo}") e escalou pra um consultor humano.`;
+  }
+}
+
+/** Aplica um efeito de negócio já decidido pelo motor (engine.ts) — hoje isto ficava calculado e nunca era usado, porque nada persistia. Também é usada pelo cron de follow-up ao sintetizar um "marcar_perdida" quando a agenda se esgota. `pessoaId` só é obrigatório de verdade pro efeito `agendar_consultor` (spec 2026-08-20-agendamento-consultor-alto-valor.md) — os demais efeitos não usam. `suprimirNotaHandoff` evita uma 2ª nota interna redundante quando `encerrar_fluxo_automatizado` e `agendar_consultor` chegam juntos no mesmo turno (ln_agendamento_confirmado é sempre terminal e sempre roteado a partir de um horário escolhido — ver `registrarTurnoMalala`, que calcula essa flag). */
 export async function aplicarEfeitoNegocio(
   conversaId: string,
   oportunidadeId: string,
   efeito: EfeitoNegocio,
   pessoaId?: string,
+  suprimirNotaHandoff = false,
 ): Promise<void> {
   const supabase = createAdminClient();
 
@@ -387,6 +445,14 @@ export async function aplicarEfeitoNegocio(
 
     const { error: erroSupervisor } = await supabase.from("conversas").update({ sob_supervisor: true }).eq("id", conversaId);
     if (erroSupervisor) throw new Error(`Falha ao escalar conversa pro supervisor: ${erroSupervisor.message}`);
+
+    // Nota interna registra o motivo na timeline (spec 2026-08-21) — sem notificar de novo: a
+    // notificação "agendamento" acima já cobre isso, e é mais específica (tem link pro lembrete).
+    const motivoTexto = efeito.motivo === "divida_alta" ? "dívida acima do corte configurado" : "pacote acima de R$8.000";
+    await inserirNotaInternaSistema(
+      conversaId,
+      `Malala agendou uma ligação com o consultor — motivo: ${motivoTexto}. Horário: ${new Date(efeito.inicio).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`,
+    );
     return;
   }
 
@@ -409,6 +475,8 @@ export async function aplicarEfeitoNegocio(
   if (efeito.tipo === "escalar_supervisor") {
     const { error } = await supabase.from("conversas").update({ sob_supervisor: true }).eq("id", conversaId);
     if (error) throw new Error(`Falha ao escalar conversa pro supervisor: ${error.message}`);
+    const notaId = await inserirNotaInternaSistema(conversaId, `Malala transferiu o atendimento — ${efeito.motivo}`);
+    await notificarConsultoresSobreNota(conversaId, notaId);
     return;
   }
 
@@ -426,6 +494,11 @@ export async function aplicarEfeitoNegocio(
   if (efeito.sobSupervisor) {
     const { error } = await supabase.from("conversas").update({ sob_supervisor: true }).eq("id", conversaId);
     if (error) throw new Error(`Falha ao escalar conversa pro supervisor: ${error.message}`);
+
+    if (!suprimirNotaHandoff) {
+      const notaId = await inserirNotaInternaSistema(conversaId, textoHandoffPorEtapa(efeito.etapaCodigo));
+      await notificarConsultoresSobreNota(conversaId, notaId);
+    }
   }
 
   // Selo de risco de esfriar, sinal 3 (Bloco D/Fase 5) — o fluxo automatizado acabou sem chegar em
@@ -537,8 +610,14 @@ export async function registrarTurnoMalala(params: {
     .eq("id", conversaId);
   if (erroPosicao) throw new Error(`Falha ao salvar posição da conversa: ${erroPosicao.message}`);
 
+  // `ln_agendamento_confirmado` é sempre terminal e sempre chega junto com `agendar_consultor` no
+  // mesmo turno (roteado a partir do horário escolhido em ln_agendamento_horario, engine.ts) — sem
+  // essa checagem, o handoff genérico criaria uma 2ª nota interna redundante com a que
+  // `agendar_consultor` já grava (com o horário e o motivo, mais específica).
+  const temAgendamentoNesteTurno = resultado.efeitos.some((e) => e.tipo === "agendar_consultor");
   for (const efeito of resultado.efeitos) {
-    await aplicarEfeitoNegocio(conversaId, oportunidadeId, efeito, pessoaId);
+    const suprimirNotaHandoff = temAgendamentoNesteTurno && efeito.tipo === "encerrar_fluxo_automatizado";
+    await aplicarEfeitoNegocio(conversaId, oportunidadeId, efeito, pessoaId, suprimirNotaHandoff);
   }
 
   const aguardaResposta = resultado.etapaFinal !== null && resultado.etapaFinal.conteudo.aguarda_resposta;
