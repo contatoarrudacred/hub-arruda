@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
-import { corEstagio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
+import { corEstagio, ehEstagioTransitorio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
 import { cancelarVendaAction, excluirVendaAction, listarVendasAction, tentarNovamenteEmLoteAction } from "./actions";
 
@@ -269,7 +269,14 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
 
       {visao === "kanban" && vendas.length > 0 && (
         <div className="flex gap-4 overflow-x-auto pb-4">
-          {ESTAGIOS_VENDA.map((estagio) => (
+          {ESTAGIOS_VENDA
+            // Etapas transitórias (Emitindo Contrato/Gerando Financeiro) só aparecem como coluna
+            // quando têm ao menos 1 card — pedido do Luiz, 21/08/2026: são etapas automáticas que
+            // deveriam ser instantâneas, então uma coluna sempre visível ficaria quase sempre vazia
+            // à toa; a coluna aparecendo já é o sinal de que algo travou. As demais (esperas humanas
+            // genuínas + terminais) continuam sempre visíveis, mesmo vazias.
+            .filter((estagio) => !ehEstagioTransitorio(estagio.valor) || (porEstagio.get(estagio.valor)?.length ?? 0) > 0)
+            .map((estagio) => (
             <div
               key={estagio.valor}
               className="flex w-64 shrink-0 flex-col divide-y divide-zinc-200 rounded-md border border-zinc-200 bg-zinc-50 text-xs shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
