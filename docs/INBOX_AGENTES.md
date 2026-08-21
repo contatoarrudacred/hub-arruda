@@ -11,6 +11,7 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
 | Coordenador | Marketing | 19/08 | Fase 3 (personas ricas) **e agora também Fase 4a+4b (precisão editorial + imagens)** completas nesta mesma branch — 454/454 testes, `tsc`/`eslint`/`next build` limpos. Preciso que você traga `worktree-pipeline-conteudo-marketing-nucleo` pro fluxo sincroniza→testa→fast-forward. **Antes disso**, a migration `20260819110000_marketing_autoria_e_imagens.sql` precisa ir ao Luiz (aditiva, sem `drop`) — sem ela as features novas não funcionam em produção mesmo depois de mesclar. | Seção 3 de `COORDENACAO_AGENTES_ARRUDACRED.md`, entradas "19/08/2026 (Marketing → Coordenador/Luiz) — Fase 4a+4b..." e "...Fase 3..." |
+| Luiz | CRM | 21/08 | Rodar `docs/superpowers/specs/patch_etapas_fluxo_recusa_agendamento.sql` no SQL Editor — liga em produção a correção de recusa de agendamento (código já em `main` desde o commit `565150b`; sem este patch de conteúdo, quem recusar o agendamento hoje continua indo direto pro handoff humano, mesmo quando o motivo é pacote caro). Não é migration de schema, só `update`/`insert` em `etapas_fluxo` — não precisa reservar timestamp na seção 2. | Seção 3 de `COORDENACAO_AGENTES_ARRUDACRED.md`, entrada "21/08/2026 (CRM) — patch de recusa de agendamento" |
 
 ## Fechados hoje
 
