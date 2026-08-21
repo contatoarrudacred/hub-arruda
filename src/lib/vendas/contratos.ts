@@ -13,7 +13,6 @@ export type StatusContrato =
   | "nova_oportunidade"
   | "emitindo_contrato"
   | "aguardando_assinaturas"
-  | "gerando_financeiro"
   | "aguardando_pagamento"
   | "concluida"
   | "cancelada";

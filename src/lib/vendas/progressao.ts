@@ -57,11 +57,12 @@ export async function tentarEnvelopar(contratoId: string): Promise<void> {
   });
 }
 
-/** Etapa "Gerando Financeiro" — cria a(s) cobrança(s) na Asaas. Disparada pelo webhook da Assinafy
- * quando todo mundo assina (não pela cadeia automática inicial — isso só acontece depois de uma
- * ação humana). Ao dar certo, criarCobrancasDoContrato já deixa o contrato em
- * "aguardando_pagamento" (etapa 5, espera ação humana). Mesmo raciocínio: não marca
- * "gerando_financeiro" antes de tentar. */
+/** Cria a(s) cobrança(s) na Asaas — não tem coluna própria no Kanban (decisão do Luiz, 20/08/2026,
+ * mesmo raciocínio da fusão Emitindo Contrato/Envelopando Assinaturas): disparada pelo webhook da
+ * Assinafy assim que todo mundo assina, sem pausa humana no meio. Ao dar certo,
+ * criarCobrancasDoContrato já deixa o contrato em "aguardando_pagamento" (espera ação humana); se
+ * falhar, o erro fica visível em "aguardando_assinaturas" mesmo (etapa anterior, já confirmada) —
+ * por isso não marca nenhum status "gerando_financeiro" intermediário antes de tentar. */
 export async function tentarGerarFinanceiro(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato || !podeTentarAutomaticamente(contrato.tentativasErro)) return;
@@ -74,7 +75,15 @@ export async function tentarGerarFinanceiro(contratoId: string): Promise<void> {
 
 /** Dispatcher usado pela retentativa manual (botão por card / ação em lote no Painel) — decide
  * qual etapa automática tentar de novo com base no status atual do contrato, e reseta o contador
- * de tentativas (dá mais 3 tentativas automáticas antes de precisar de ação manual de novo). */
+ * de tentativas (dá mais 3 tentativas automáticas antes de precisar de ação manual de novo).
+ *
+ * Achado real (Luiz, 20/08/2026): como "gerando_financeiro" nunca é um status de verdade (ver
+ * comentário de tentarGerarFinanceiro acima), um contrato já assinado cuja cobrança falhou na
+ * Asaas fica com `status = "aguardando_assinaturas"` mesmo — é o único jeito de um contrato ter
+ * erro registrado nesse status (nenhuma etapa automática roda enquanto genuinamente espera
+ * assinatura humana). Sem este branch, o botão "Tentar novamente" desse card não fazia nada.
+ * criarCobrancasDoContrato já é seguro pra rodar de novo (pula parcela de boleto/pix já cobrada
+ * com sucesso; cartão só cria o Checkout se a tentativa anterior tiver falhado antes de criar). */
 export async function tentarNovamente(contratoId: string): Promise<void> {
   const contrato = await buscarContratoPorId(contratoId);
   if (!contrato) return;
@@ -82,7 +91,7 @@ export async function tentarNovamente(contratoId: string): Promise<void> {
 
   if (contrato.status === "nova_oportunidade" || contrato.status === "emitindo_contrato") {
     await tentarEmitirContrato(contratoId);
-  } else if (contrato.status === "gerando_financeiro") {
+  } else if (contrato.status === "aguardando_assinaturas") {
     await tentarGerarFinanceiro(contratoId);
   }
 }

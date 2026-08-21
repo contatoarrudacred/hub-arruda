@@ -52,7 +52,6 @@ const DESCRICAO_ESTAGIO: Record<StatusContrato, string> = {
   nova_oportunidade: "Registro criado — o sistema ainda vai tentar gerar o contrato automaticamente.",
   emitindo_contrato: "Gerando o PDF e enviando pra assinatura eletrônica — automático.",
   aguardando_assinaturas: "Esperando as partes assinarem o contrato.",
-  gerando_financeiro: "Criando a cobrança na Asaas — automático.",
   aguardando_pagamento: "Esperando o cliente pagar a 1ª parcela.",
   concluida: "1ª parcela paga — venda concluída.",
   cancelada: "Venda cancelada.",
