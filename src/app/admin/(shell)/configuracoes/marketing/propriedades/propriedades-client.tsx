@@ -244,8 +244,8 @@ function CardPropriedade({
             </div>
             <div className="space-y-1">
               <label className={rotulo}>
-                Posts por dia
-                <Ajuda texto="Limita quantos posts o cron PUBLICA por dia nesta propriedade — não afeta quantos posts são gerados/revisados, só a velocidade de publicação. Deixe em branco para sem limite." />
+                Máximo de posts gerados por dia
+                <Ajuda texto="Limita quantos posts o cron GERA (escreve, revisa e envia pro WordPress — agendados ou não) por dia nesta propriedade. Comece com um número alto (ex.: 10) pra formar estoque de posts prontos com folga, e depois abaixe (ex.: 3) quando quiser só repor no ritmo da agenda. Deixe em branco para sem limite." />
               </label>
               <input
                 type="number"
@@ -261,7 +261,7 @@ function CardPropriedade({
           <div className="space-y-1">
             <label className={rotulo}>
               Janela de publicação
-              <Ajuda texto="Horário (fuso de Brasília) em que o cron pode publicar posts desta propriedade — limita apenas o momento da publicação, não a geração de conteúdo. Deixe os dois campos em branco para publicar a qualquer hora." />
+              <Ajuda texto="Horário (fuso de Brasília) em que o cron RODA nesta propriedade — fora dele, o tick inteiro é pulado (nenhuma pauta é gerada nem publicada). Deixe os dois campos em branco para rodar a qualquer hora." />
             </label>
             <div className="grid grid-cols-2 gap-3">
               <input
@@ -282,7 +282,7 @@ function CardPropriedade({
           <div className="space-y-1">
             <label className={rotulo}>
               Horários de publicação
-              <Ajuda texto="Horários fixos (fuso de Brasília, separados por vírgula, ex.: 09:00, 15:00) em que o pipeline agenda os posts aprovados no WordPress — em vez de publicar na hora, o post é criado com data futura e o próprio WordPress libera sozinho no horário certo. Deixe em branco para manter a publicação imediata (comportamento anterior a este campo)." />
+              <Ajuda texto="Horários fixos (fuso de Brasília, separados por vírgula, ex.: 09:00, 15:00) em que o pipeline agenda os posts aprovados no WordPress — em vez de publicar na hora, o post é criado com data futura e o próprio WordPress libera sozinho no horário certo. A quantidade de horários cadastrados aqui É o máximo de posts agendados por dia: o Agendador vai preenchendo esses horários e, quando os de um dia enchem, passa a preencher o dia seguinte. Deixe em branco para manter a publicação imediata (comportamento anterior a este campo)." />
             </label>
             <input
               type="text"
