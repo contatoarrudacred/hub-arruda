@@ -23,6 +23,7 @@ import {
   gerarCheckoutManualAction,
   gerarUrlDownloadContratoAction,
   marcarComissaoRecebidaAction,
+  marcarParcelaRecebidaEmDinheiroAction,
   reenviarLinkAction,
   ressincronizarPdfAssinadoAction,
   tentarNovamenteAction,
@@ -564,6 +565,60 @@ function CardCheckoutCartao({ contrato, onGerado }: { contrato: Contrato; onGera
   );
 }
 
+/** Baixa manual de uma parcela paga em dinheiro fora da Asaas — pedido do Luiz, 21/08/2026: cliente
+ * que paga em espécie direto pra ArrudaCred, precisando dar baixa no boleto. Confirmado na doc
+ * oficial da Asaas: não credita a conta, só atualiza o histórico da cobrança — deixa isso claro na
+ * tela pra não passar a impressão de que o dinheiro "apareceu" na conta Asaas. */
+function BotaoRecebidoEmDinheiro({ parcela, onMarcado }: { parcela: ContratoParcela; onMarcado: () => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [dataPagamento, setDataPagamento] = useState(() => new Date().toISOString().slice(0, 10));
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function confirmar() {
+    if (!parcela.asaasPaymentId) return;
+    setEnviando(true);
+    setErro(null);
+    const resultado = await marcarParcelaRecebidaEmDinheiroAction(parcela.asaasPaymentId, parcela.valor, dataPagamento);
+    setEnviando(false);
+    if (!resultado.sucesso) {
+      setErro(resultado.erro);
+      return;
+    }
+    onMarcado();
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        title="Cliente pagou em espécie direto pra ArrudaCred — dá baixa manual nesta parcela"
+        className={botaoSecundario}
+      >
+        💵 Recebido em dinheiro
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-1 space-y-1 rounded border border-zinc-300 p-2 dark:border-zinc-700">
+      <label className="text-xs text-zinc-600 dark:text-zinc-400">Data em que o cliente pagou</label>
+      <input type="date" className={campo} value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">Isso não credita valor na conta Asaas — só atualiza o histórico da cobrança.</p>
+      {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
+      <div className="flex gap-3">
+        <button type="button" onClick={confirmar} disabled={enviando} className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          {enviando ? "Confirmando..." : "Confirmar"}
+        </button>
+        <button type="button" onClick={() => setAberto(false)} className="text-xs text-zinc-500 dark:text-zinc-400">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: PessoaCompleta }) {
   const [status, setStatus] = useState<Map<string, CobrancaStatus>>(new Map());
   const [carregando, setCarregando] = useState(false);
@@ -687,6 +742,15 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
                       {parcela.status !== "pago" && (
                         <BotoesReenvio pessoaId={pessoa.id} contexto="pagamento" link={cobranca.invoiceUrl} mostrarCopiar={false} />
                       )}
+                    </div>
+                  )}
+                  {/* Só a 1ª parcela — pedido do Luiz, 21/08/2026: evita dar baixa numa parcela
+                      posterior fora de ordem (o caso real de uso é "cliente pagou tudo/a entrada
+                      em espécie", não uma parcela solta no meio do plano). Mesma ação também
+                      aparece no Painel Interativo (topo), pra ficar visível sem rolar a tela. */}
+                  {parcela.numero === 1 && parcela.asaasPaymentId && parcela.status !== "pago" && parcela.status !== "cancelado" && (
+                    <div className="mt-2">
+                      <BotaoRecebidoEmDinheiro parcela={parcela} onMarcado={() => window.location.reload()} />
                     </div>
                   )}
                 </td>
@@ -906,6 +970,11 @@ function PainelErroTentativas({ contrato, onTentou }: { contrato: Contrato; onTe
  */
 function PainelInterativo({ contrato, onMudou }: { contrato: Contrato; onMudou: () => void }) {
   const sugestao = SUGESTAO_ACAO_ESTAGIO[contrato.status];
+  // Mesma ação/mesma restrição (só a 1ª parcela) do quadro Financeiro — visível aqui também pra não
+  // depender de rolar a tela até lá (pedido do Luiz, 21/08/2026).
+  const primeiraParcela = contrato.parcelas.find((p) => p.numero === 1);
+  const podeReceberEmDinheiro = Boolean(primeiraParcela?.asaasPaymentId && primeiraParcela.status !== "pago" && primeiraParcela.status !== "cancelado");
+
   return (
     <div className={cardBase}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -925,6 +994,7 @@ function PainelInterativo({ contrato, onMudou }: { contrato: Contrato; onMudou: 
           </div>
         </div>
         <div className="flex flex-wrap items-start gap-2">
+          {podeReceberEmDinheiro && primeiraParcela && <BotaoRecebidoEmDinheiro parcela={primeiraParcela} onMarcado={onMudou} />}
           {!ehEstagioTerminal(contrato.status) && <BotaoCancelar contratoId={contrato.id} onCancelado={onMudou} />}
           <BotaoExcluir contratoId={contrato.id} />
         </div>
