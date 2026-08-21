@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { buscarPessoaCompleta, type PessoaCompleta } from "./pessoas";
 
 /** Busca o representante legal (Pessoa Física) ativo de uma Pessoa Jurídica — a "representação"
  * não tem data_fim quando ainda vigente. Uma PJ pode ter mais de um representante ao longo do
@@ -29,4 +30,14 @@ export async function definirRepresentante(pessoaJuridicaId: string, pessoaFisic
     .from("pessoa_representantes")
     .insert({ pessoa_juridica_id: pessoaJuridicaId, pessoa_fisica_id: pessoaFisicaId });
   if (error) throw new Error(`Falha ao definir representante: ${error.message}`);
+}
+
+/** Composição de buscarRepresentante + buscarPessoaCompleta — usado pela tela Detalhes da Venda
+ * pra mostrar o representante legal (nome, e-mail, RG etc.) sem espalhar essa junção em quem chama.
+ * `null` tanto quando não há representante vinculado quanto quando o vínculo aponta pra uma Pessoa
+ * que não existe mais (não deveria acontecer, mas não é motivo pra lançar erro numa tela de leitura). */
+export async function buscarRepresentanteCompleto(pessoaJuridicaId: string): Promise<PessoaCompleta | null> {
+  const representante = await buscarRepresentante(pessoaJuridicaId);
+  if (!representante) return null;
+  return buscarPessoaCompleta(representante.pessoaFisicaId);
 }
