@@ -77,7 +77,7 @@ describe("GET /api/cron/marketing-pipeline", () => {
     expect(processarPauta.processarProximaPauta).toHaveBeenCalledTimes(2);
     expect(supabaseFalso.rpc).toHaveBeenCalledWith("fn_tentar_lock_cron", {
       p_id: "marketing-pipeline-matriz-1",
-      p_duracao_segundos: 240,
+      p_duracao_segundos: 290,
     });
   });
 

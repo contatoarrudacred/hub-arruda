@@ -8,13 +8,19 @@ import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processarProximaPauta } from "@/lib/marketing/processar-pauta";
 
-const DURACAO_LOCK_SEGUNDOS = 240; // uma tentativa completa — bem mais curto que o loop inteiro de retries
+// 290s, não mais 240s (achado real de produção, 21/08/2026): com after(), o cliente (cron-job.org)
+// não espera mais o processamento — só a Vercel importa agora, e a plataforma já libera até 300s
+// de maxDuration por padrão em qualquer plano. A geração inicial do Escritor sozinha já foi vista
+// consumindo 160-200s; com só 240s de teto, etapas mais adiante (revisar, gerar_imagens) às vezes
+// não tinham tempo de terminar antes da função ser morta no meio. 290 (não 300 cravado) deixa uma
+// margem de segurança.
+const DURACAO_LOCK_SEGUNDOS = 290; // uma tentativa completa — bem mais curto que o loop inteiro de retries
 
 // Mesma duração do lock: se a função for morta por timeout, o lock já teria expirado de qualquer
 // forma. Sem isto, a duração máxima default da plataforma poderia matar a função no meio do
 // processamento — a pauta ficaria presa em "em_producao" (reclaim cobre isso, ver
 // selecionarProximaPautaPendente em repositorio.ts, mas evitar o timeout no primeiro lugar é melhor).
-export const maxDuration = 240;
+export const maxDuration = 290;
 
 export async function GET(request: Request) {
   const segredo = process.env.CRON_SECRET;
