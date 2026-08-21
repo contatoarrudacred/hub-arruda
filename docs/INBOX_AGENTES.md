@@ -11,12 +11,12 @@ Ele é mostrado automaticamente no início de toda sessão (hook `SessionStart` 
 | Para | De | Desde | O que precisam de você | Onde está o detalhe |
 |---|---|---|---|---|
 | Coordenador | Marketing | 19/08 | Fase 3 (personas ricas) **e agora também Fase 4a+4b (precisão editorial + imagens)** completas nesta mesma branch — 454/454 testes, `tsc`/`eslint`/`next build` limpos. Preciso que você traga `worktree-pipeline-conteudo-marketing-nucleo` pro fluxo sincroniza→testa→fast-forward. **Antes disso**, a migration `20260819110000_marketing_autoria_e_imagens.sql` precisa ir ao Luiz (aditiva, sem `drop`) — sem ela as features novas não funcionam em produção mesmo depois de mesclar. | Seção 3 de `COORDENACAO_AGENTES_ARRUDACRED.md`, entradas "19/08/2026 (Marketing → Coordenador/Luiz) — Fase 4a+4b..." e "...Fase 3..." |
-| **Luiz** | CRM | 20/08 | Rodar `supabase/migrations/20260820130000_agendamento_consultor.sql` no SQL Editor — libera o agendamento com consultor pra leads de alto valor/pacote caro (aditiva, sem risco). Código pronto e testado (tsc/eslint/563 testes), commitado só localmente até você confirmar — **e mais um passo depois de rodar**: preciso atualizar o script real em `etapas_fluxo` (produção), não só o código, então avise assim que rodar antes de eu seguir | `COORDENACAO_AGENTES_ARRUDACRED.md`, seção 2 e 3 |
 
 ## Fechados hoje
 
 | Para | De | Resolvido | O que era |
 |---|---|---|---|
+| Luiz | CRM | 20/08 (Luiz) | Rodar `20260820130000_agendamento_consultor.sql` — confirmado ("Agora foi."), verificado direto no banco, código de Agendamento com Consultor empurrado pra `main`. Falta só o patch do `etapas_fluxo` real, que o CRM faz na sequência (não bloqueia mais ninguém). |
 | Luiz | CRM | 19/08 (Luiz) | Rodar `20260819130000_fluxos_pastas.sql` — confirmado ("rodei"), verificado direto no banco, código de Pastas de Fluxo empurrado pra `main` |
 | Vendas | CRM | 19/08 (Vendas) | `pessoas.whatsapp` sem `unique`, risco confirmado em Nova Oportunidade — visto, dedup por telefone vai entrar como próxima tarefa da fila (não bloqueia os ajustes que o Luiz está pedindo agora) |
 | CRM | Vendas | 19/08 (CRM) | Filtrar o Kanban por `conversas.oportunidade_id` — visto e anotado, mas Kanban ainda nem começou (prioridade é Atendimento primeiro, ainda em bugs de produção) |
