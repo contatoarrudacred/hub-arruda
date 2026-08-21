@@ -88,7 +88,10 @@ export async function montarHtmlContrato(contratoId: string): Promise<string> {
     dadosCliente: montarDadosClienteHtml(pessoaContrato, representanteContrato),
     valorTotal: contrato.valorTotal,
     formaPagamento: formaPagamentoLabel,
-    tabelaVencimentos: parcelasTabela.length > 1 ? montarTabelaVencimentosHtml(parcelasTabela, formaPagamentoLabel) : "",
+    // Achado do Luiz (21/08/2026): antes só gerava a tabela com mais de 1 parcela — uma venda à
+    // vista (1 parcela só) ficava sem tabela nenhuma no contrato. Gera sempre agora.
+    tabelaVencimentos: montarTabelaVencimentosHtml(parcelasTabela, formaPagamentoLabel),
+    quantidadeParcelas: String(parcelasTabela.length),
     tabelaDocumentos: montarTabelaDocumentosHtml(
       documentosPacote.map((d) => ({ documento: d.documento, nomeRazaoSocial: d.nomeRazaoSocial })),
     ),

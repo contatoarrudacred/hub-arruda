@@ -41,7 +41,8 @@ const GRUPOS_PLACEHOLDERS = [
     itens: [
       { chave: "valor_total", descricao: "Valor total do contrato, formatado em R$." },
       { chave: "valor_total_extenso", descricao: "Valor total por extenso (ex.: mil e quinhentos reais)." },
-      { chave: "tabela_vencimentos", descricao: "Tabela com número, vencimento, valor e forma de pagamento de cada parcela." },
+      { chave: "tabela_vencimentos", descricao: "Tabela com número, vencimento, valor e forma de pagamento de cada parcela — inclusive quando é só uma parcela (à vista)." },
+      { chave: "quantidade_parcelas", descricao: "Número de parcelas combinadas (ex.: 3). Só o número, sem a palavra \"parcelas\" nem o \"x\" — escreva em volta no template." },
       { chave: "forma_pagamento", descricao: "Texto simples com a forma de pagamento combinada (ex.: Parcelado em 3x, Boleto/Pix)." },
     ],
   },

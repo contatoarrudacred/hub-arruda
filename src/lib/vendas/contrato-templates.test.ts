@@ -51,7 +51,13 @@ describe("resolverPlaceholders", () => {
     clienteEndereco: "Rua das Flores, 123 — Florianópolis/SC",
     empresaRazaoSocial: "",
     empresaCnpj: "",
+    quantidadeParcelas: "3",
   };
+
+  it("substitui {{quantidade_parcelas}}", () => {
+    const resultado = resolverPlaceholders("Pagamento em {{quantidade_parcelas}} parcelas.", dadosBase);
+    expect(resultado).toBe("Pagamento em 3 parcelas.");
+  });
 
   it("substitui os placeholders granulares de cliente ({{cliente_nome}}, etc.)", () => {
     const template = "Eu, {{cliente_nome}}, CPF {{cliente_documento}}, RG {{cliente_rg}}, {{cliente_estado_civil}}, {{cliente_profissao}}.";
@@ -240,5 +246,13 @@ describe("montarTabelaVencimentosHtml", () => {
     expect(html).toContain("10/10/2026");
     expect(html).toContain((750).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
     expect((html.match(/Boleto\/Pix/g) ?? []).length).toBe(2);
+  });
+
+  it("monta a tabela mesmo com uma única parcela (à vista)", () => {
+    const html = montarTabelaVencimentosHtml([{ numero: 1, valor: 1500, vencimento: new Date("2026-09-01T00:00:00Z") }], "Boleto/Pix");
+
+    expect(html).toContain("<table>");
+    expect(html).toContain("01/09/2026");
+    expect(html).toContain((1500).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
   });
 });

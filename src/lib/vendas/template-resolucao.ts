@@ -14,6 +14,7 @@ export type DadosResolucaoContrato = {
   valorTotal: number;
   formaPagamento: string;
   tabelaVencimentos: string;
+  quantidadeParcelas: string;
   tabelaDocumentos: string;
   tabelaContratante: string;
   // Campos granulares — complementam {{dados_cliente}} (bloco pronto) pra quem quer montar o
@@ -37,6 +38,7 @@ const PLACEHOLDERS = [
   "valor_total",
   "valor_total_extenso",
   "tabela_vencimentos",
+  "quantidade_parcelas",
   "forma_pagamento",
   "tabela_documentos",
   "tabela_contratante",
@@ -74,6 +76,7 @@ export function resolverPlaceholders(conteudoHtml: string, dados: DadosResolucao
     valor_total: valorFormatado,
     valor_total_extenso: valorPorExtenso(dados.valorTotal),
     tabela_vencimentos: dados.tabelaVencimentos,
+    quantidade_parcelas: dados.quantidadeParcelas,
     forma_pagamento: dados.formaPagamento,
     tabela_documentos: dados.tabelaDocumentos,
     tabela_contratante: dados.tabelaContratante,
@@ -309,6 +312,7 @@ export function gerarDadosMockPreview(): DadosResolucaoContrato {
     valorTotal: 1500,
     formaPagamento: "Parcelado em 3x no boleto/PIX",
     tabelaVencimentos: montarTabelaVencimentosHtml(parcelasMock, "Boleto/Pix"),
+    quantidadeParcelas: String(parcelasMock.length),
     tabelaDocumentos: montarTabelaDocumentosHtml(documentosPacoteMock),
     tabelaContratante: montarTabelaContratanteHtml(pessoaMock),
     ...montarCamposClienteResolucao(pessoaMock),
