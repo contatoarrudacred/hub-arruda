@@ -354,7 +354,7 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], c
       const faixa = faixasOrdenadas[indice];
       if (!faixa) {
         // estado provisório inconsistente (defensivo) — trata como se a rodada de confirmação não existisse.
-        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte });
+        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados });
       }
 
       const perguntaConfirmacao = montarMensagemConfirmacaoFaixa(faixa, indice === 0, tiposEsperados);
@@ -386,7 +386,7 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], c
       });
     }
 
-    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte });
+    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados });
   };
 }
 
@@ -396,15 +396,32 @@ async function escolherFaixaDoMenu(params: {
   respostaLead: string;
   tiposEsperados: ("cpf" | "cnpj")[];
   temOpcaoAcimaDoCorte: boolean;
+  etapaAtual: EtapaCarregada;
+  dados: DadosConversa;
 }): Promise<ResultadoInterpretacaoFaixasDocumentos> {
-  const { menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte } = params;
+  const { menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados } = params;
   const escolha = await interpretarEscolhaMenu({ menu, respostaLead, qtdFaixas: faixasOrdenadas.length, temOpcaoAcimaDoCorte });
 
   if (escolha.tipo === "quer_consulta_paga") {
     return { status: "escalar_consulta_paga", mensagem: MENSAGEM_CONSULTA_PAGA };
   }
   if (escolha.tipo === "acima_do_corte") return { status: "acima_do_corte" };
-  if (escolha.tipo === "nao_entendi") return { status: "nao_entendi" };
+  if (escolha.tipo === "nao_entendi") {
+    // Achado 3 (21/08/2026, bateria de testes da Malala): quando o lead pula o menu e já responde
+    // com valores específicos por documento (ex.: "o CPF está em uns 25 mil e o CNPJ uns 40 mil"),
+    // a IA de rodada 1 não reconhece isso como escolha de menu — sem este fallback, o checkpoint
+    // ficava preso pra sempre repetindo a mesma pergunta (nunca chegava a setar
+    // `_faixa_provisoria_indice` nem `_faixas_modo_livre`, os dois únicos jeitos de sair do menu).
+    // Tenta o extrator de texto livre antes de desistir — é o mesmo caminho que já existe quando o
+    // lead REJEITA uma faixa proposta (linhas abaixo), só que aqui sem valor nenhum pra semear.
+    return await interpretarModoLivre({
+      etapaAtual,
+      respostaLead,
+      tiposEsperados,
+      dados,
+      dadosExtras: { _faixas_modo_livre: "1" },
+    });
+  }
 
   const faixa = faixasOrdenadas[escolha.indice];
   const perguntaEsclarecimento = montarMensagemConfirmacaoFaixa(faixa, escolha.indice === 0, tiposEsperados);
