@@ -1,13 +1,15 @@
 "use server";
 
 import { buscarDocumento, type AssinafyDocumento } from "@/lib/assinafy/cliente";
+import { sincronizarPdfCertificado } from "@/lib/assinafy/adapter";
 import { buscarCobranca, type CobrancaStatus } from "@/lib/asaas/cliente";
+import { criarCheckoutManual } from "@/lib/asaas/adapter";
 import { atualizarStatusContrato, buscarContratoPorId } from "@/lib/vendas/contratos";
 import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
 import { enviarPorEmail, enviarWhatsapp } from "@/lib/vendas/notificacoes";
 import { marcarComissaoParcelaRecebida } from "@/lib/vendas/comissoes";
 import { sincronizarEtapaKanban } from "@/lib/vendas/oportunidades";
-import { cancelarVenda } from "@/lib/vendas/painel-vendas";
+import { cancelarVenda, excluirVenda } from "@/lib/vendas/painel-vendas";
 
 export type ResultadoAcao = { sucesso: true } | { sucesso: false; erro: string };
 
@@ -118,6 +120,12 @@ export async function confirmarAssinaturaManualAction(contratoId: string, assina
     const contrato = await buscarContratoPorId(contratoId);
     if (!contrato) return { sucesso: false, erro: "Contrato não encontrado." };
 
+    try {
+      await sincronizarPdfCertificado(contrato, assinafyDocumentId);
+    } catch (erroPdf) {
+      console.error("[confirmarAssinaturaManualAction] contrato assinado, mas falhou ao baixar/sobrescrever o PDF certificado:", erroPdf);
+    }
+
     await atualizarStatusContrato(contratoId, "aguardando_assinaturas", { assinadoEm: new Date().toISOString() });
     await sincronizarEtapaKanban(contrato.oportunidadeId, "pagamento");
 
@@ -137,5 +145,32 @@ export async function tentarNovamenteAction(contratoId: string): Promise<Resulta
     return { sucesso: true };
   } catch (erro) {
     return { sucesso: false, erro: mensagemErro(erro, "Falha ao tentar novamente.") };
+  }
+}
+
+/** Exclusão permanente da venda a partir de Detalhes da Venda — mesmo comportamento (e mesma
+ * confirmação "EXCLUIR" na tela) do botão "Excluir" do menu flutuante no Painel de Vendas
+ * (painel-vendas-client.tsx), agora também disponível aqui (pedido do Luiz, 21/08/2026: o Painel
+ * Interativo deve oferecer as mesmas ações do menu flutuante). */
+export async function excluirVendaDetalhesAction(contratoId: string): Promise<ResultadoAcao> {
+  try {
+    await excluirVenda(contratoId);
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao excluir a venda.") };
+  }
+}
+
+/** Gera um novo Checkout de cartão sob demanda — usado quando o link salvo em
+ * `asaasCheckoutUrl` já passou das 24h de validade (minutesToExpire: 1440, ver asaas/cliente.ts).
+ * Reaproveita os mesmos dados já usados na criação automática (criarCheckoutManual, asaas/adapter.ts). */
+export async function gerarCheckoutManualAction(
+  contratoId: string,
+): Promise<{ sucesso: true; url: string } | { sucesso: false; erro: string }> {
+  try {
+    const url = await criarCheckoutManual(contratoId);
+    return { sucesso: true, url };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao gerar um novo link de pagamento.") };
   }
 }

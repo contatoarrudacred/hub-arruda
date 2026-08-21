@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import type { AssinafyDocumento, AssinafySignatarioStatus } from "@/lib/assinafy/cliente";
 import type { CobrancaStatus } from "@/lib/asaas/cliente";
 import type { ComissaoFornecedor } from "@/lib/vendas/comissoes";
 import type { TemplateDocumentoCompleto } from "@/lib/vendas/contrato-templates";
 import type { Contrato, ContratoParcela, FormaPagamento, MetodoPagamento, StatusContrato } from "@/lib/vendas/contratos";
 import type { EnderecoPessoa } from "@/lib/vendas/endereco";
-import { corEstagio, rotuloEstagio } from "@/lib/vendas/estagio-venda";
+import { corEstagio, ehEstagioTerminal, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import { formatarCep, formatarCpfCnpj, formatarTelefone } from "@/lib/vendas/mascaras";
 import type { DocumentoPacoteLinha, OportunidadeFechamento, TipoProduto } from "@/lib/vendas/oportunidades";
 import type { PessoaCompleta } from "@/lib/vendas/pessoas";
@@ -18,6 +19,8 @@ import {
   buscarStatusCobrancasAction,
   cancelarVendaDetalhesAction,
   confirmarAssinaturaManualAction,
+  excluirVendaDetalhesAction,
+  gerarCheckoutManualAction,
   gerarUrlDownloadContratoAction,
   marcarComissaoRecebidaAction,
   reenviarLinkAction,
@@ -57,6 +60,30 @@ const DESCRICAO_ESTAGIO: Record<StatusContrato, string> = {
   aguardando_pagamento: "Esperando o cliente pagar a 1ª parcela.",
   concluida: "1ª parcela paga — venda concluída.",
   cancelada: "Venda cancelada.",
+};
+
+const ICONE_ESTAGIO: Record<StatusContrato, string> = {
+  nova_oportunidade: "🆕",
+  emitindo_contrato: "📝",
+  aguardando_assinaturas: "✍️",
+  gerando_financeiro: "💳",
+  aguardando_pagamento: "💰",
+  concluida: "✅",
+  cancelada: "❌",
+};
+
+/** O que sugerir fazer em cada etapa — pedido do Luiz, 21/08/2026: o Painel Interativo precisa
+ * indicar a ação certa pra etapa atual, não só o botão genérico de cancelar. Etapas automáticas
+ * (emitindo_contrato/gerando_financeiro) não têm ação — só terminam sozinhas ou erram (e o erro já
+ * aparece à parte, em PainelErroTentativas). */
+const SUGESTAO_ACAO_ESTAGIO: Record<StatusContrato, string | null> = {
+  nova_oportunidade: null,
+  emitindo_contrato: null,
+  aguardando_assinaturas: 'Reenvie o link de assinatura pro cliente no quadro "Partes do Contrato" abaixo, se ele ainda não recebeu.',
+  gerando_financeiro: null,
+  aguardando_pagamento: 'Copie ou reenvie o link de pagamento pro cliente no quadro "Financeiro" abaixo.',
+  concluida: null,
+  cancelada: null,
 };
 
 const BADGE_STATUS_PARCELA: Record<string, string> = {
@@ -299,12 +326,14 @@ function CardPartesDoContrato({
   pessoa,
   representante,
   pessoaArrudaCred,
+  pdfUrlAssinada,
   onAvancou,
 }: {
   contrato: Contrato;
   pessoa: PessoaCompleta;
   representante: PessoaCompleta | null;
   pessoaArrudaCred: PessoaCompleta | null;
+  pdfUrlAssinada: string | null;
   onAvancou: () => void;
 }) {
   const [documento, setDocumento] = useState<AssinafyDocumento | null>(null);
@@ -350,7 +379,13 @@ function CardPartesDoContrato({
     return documento.signatarios.find((s) => s.email === email) ?? null;
   }
 
-  const aguardandoAssinatura = contrato.status === "aguardando_assinaturas";
+  // assinado_em (banco) é o sinal confiável de "já assinado", não contrato.status — depois que
+  // todos assinam, o status continua "aguardando_assinaturas" até a próxima etapa automática rodar
+  // (só assinado_em muda nesse momento, ver atualizarStatusContrato no webhook/ação manual). Pedido
+  // do Luiz, 21/08/2026: enquanto não assinado, mostrar só o botão de sincronizar com a Assinafy;
+  // depois de assinado, mostrar direto a informação (data) que já está no nosso banco.
+  const assinado = contrato.assinadoEm !== null;
+  const aguardandoAssinatura = contrato.status === "aguardando_assinaturas" && !assinado;
 
   return (
     <div className={aguardandoAssinatura ? `${cardBase} border-l-4 border-l-amber-400 dark:border-l-amber-500` : cardBase}>
@@ -358,7 +393,7 @@ function CardPartesDoContrato({
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
           <span aria-hidden="true">✍️</span> Partes do Contrato
         </h3>
-        {contrato.assinafyDocumentId && (
+        {contrato.assinafyDocumentId && !assinado && (
           <button
             type="button"
             onClick={verificar}
@@ -373,7 +408,12 @@ function CardPartesDoContrato({
       {!contrato.assinafyDocumentId && (
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Aguardando emissão do contrato.</p>
       )}
-      {contrato.assinafyDocumentId && (
+      {assinado && (
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <span aria-hidden="true">✅</span> Assinado por todos em {formatarData(contrato.assinadoEm!)}.
+        </p>
+      )}
+      {!assinado && contrato.assinafyDocumentId && (
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
           Estágio salvo no banco: {contrato.assinafyDocumentStatus ?? "ainda não sincronizado"}. Clique em &quot;Verificar&quot; pra ver o
           status exato na Assinafy neste instante.
@@ -395,6 +435,14 @@ function CardPartesDoContrato({
             {confirmando ? "Confirmando..." : "🔄 Já assinado? Confirmar e avançar"}
           </button>
           {erroConfirmar && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erroConfirmar}</p>}
+        </div>
+      )}
+      {pdfUrlAssinada && (
+        <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            📄 PDF do contrato {assinado ? "(com certificado de assinatura da Assinafy)" : "(ainda sem assinatura)"}
+          </p>
+          <BotoesPdfContrato contratoId={contrato.id} pdfUrl={pdfUrlAssinada} />
         </div>
       )}
       <ul className="mt-3 space-y-3">
@@ -427,6 +475,61 @@ function CardPartesDoContrato({
   );
 }
 
+/** Link do Checkout de cartão salvo em `contratos` (migration 20260821100000) — expira em 24h
+ * (minutesToExpire: 1440, asaas/cliente.ts). Mostra o link salvo enquanto válido; passado esse
+ * prazo, oferece gerar um novo sob demanda (gerarCheckoutManualAction) em vez de deixar a Asaas
+ * responder erro só quando o cliente for tentar pagar. */
+function CardCheckoutCartao({ contrato, onGerado }: { contrato: Contrato; onGerado: () => void }) {
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // Date.now() capturado uma vez (lazy initializer do useState) em vez de lido direto no corpo do
+  // componente — chamar uma função impura durante a renderização quebra a regra de pureza do React
+  // (achado do eslint-plugin-react-hooks, 21/08/2026); aqui só precisa do "agora" de quando a tela
+  // abriu, não de um relógio vivo, então uma leitura única já resolve.
+  const [agora] = useState(() => Date.now());
+  const geradoEm = contrato.asaasCheckoutGeradoEm ? new Date(contrato.asaasCheckoutGeradoEm) : null;
+  const VALIDADE_MS = 24 * 60 * 60 * 1000;
+  const linkValido = Boolean(contrato.asaasCheckoutUrl && geradoEm && agora - geradoEm.getTime() < VALIDADE_MS);
+
+  async function gerarNovo() {
+    setGerando(true);
+    setErro(null);
+    const resultado = await gerarCheckoutManualAction(contrato.id);
+    setGerando(false);
+    if (!resultado.sucesso) {
+      setErro(resultado.erro);
+      return;
+    }
+    onGerado();
+  }
+
+  return (
+    <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">💳 Checkout de cartão</p>
+      {linkValido ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <a href={contrato.asaasCheckoutUrl!} target="_blank" rel="noreferrer" className={botaoSecundario} title="Abre a página de pagamento hospedada pela Asaas">
+            👁️ Ver checkout
+          </a>
+          <LinkCopiavel link={contrato.asaasCheckoutUrl!} />
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">gerado em {formatarData(contrato.asaasCheckoutGeradoEm!)}</span>
+        </div>
+      ) : (
+        <div className="mt-2">
+          {contrato.asaasCheckoutUrl && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">O link anterior já passou das 24h de validade — gere um novo.</p>
+          )}
+          <button type="button" onClick={gerarNovo} disabled={gerando} className={`${botaoSecundario} mt-1`}>
+            {gerando ? "Gerando..." : "🔄 Gerar novo link de pagamento"}
+          </button>
+        </div>
+      )}
+      {erro && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erro}</p>}
+    </div>
+  );
+}
+
 function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: PessoaCompleta }) {
   const [status, setStatus] = useState<Map<string, CobrancaStatus>>(new Map());
   const [carregando, setCarregando] = useState(false);
@@ -450,6 +553,26 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
     setStatus(mapa);
   }
 
+  // Busca os links de cobrança automaticamente ao abrir a tela, uma vez, em vez de exigir o clique
+  // em "Verificar cobranças agora" pra aparecerem — pedido do Luiz, 21/08/2026: assim que a parcela
+  // estiver sincronizada com a Asaas, o link (fatura/boleto) precisa estar visível, não escondido
+  // atrás de uma ação extra. O botão continua existindo pra atualizar o status sob demanda depois.
+  useEffect(() => {
+    if (parcelasComCobranca.length === 0) return;
+    let cancelado = false;
+    const ids = parcelasComCobranca.map((p) => p.id);
+    buscarStatusCobrancasAction(ids).then((resultado) => {
+      if (cancelado || !resultado.sucesso) return;
+      const mapa = new Map<string, CobrancaStatus>();
+      resultado.cobrancas.forEach((c, i) => mapa.set(ids[i], c));
+      setStatus(mapa);
+    });
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contrato.id]);
+
   return (
     <div className={temAtraso ? `${cardBase} border-l-4 border-l-red-400 dark:border-l-red-500` : cardBase}>
       <div className="flex items-center justify-between">
@@ -470,11 +593,19 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
         {contrato.formaPagamento ? FORMA_PAGAMENTO_LABEL[contrato.formaPagamento] : "—"} —{" "}
         {contrato.metodoPagamento ? METODO_PAGAMENTO_LABEL[contrato.metodoPagamento] : "—"} — valor total {formatarValor(contrato.valorTotal)}
       </p>
-      {parcelasComCobranca.length === 0 && (
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Ainda não há cobrança gerada na Asaas.</p>
-      )}
-      {erro && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{erro}</p>}
-      <table className="mt-3 w-full text-sm">
+      {contrato.metodoPagamento === "cartao" ? (
+        contrato.asaasCheckoutUrl ? (
+          <CardCheckoutCartao contrato={contrato} onGerado={() => window.location.reload()} />
+        ) : (
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Ainda não há Checkout gerado na Asaas.</p>
+        )
+      ) : (
+        <>
+          {parcelasComCobranca.length === 0 && (
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Ainda não há cobrança gerada na Asaas.</p>
+          )}
+          {erro && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{erro}</p>}
+          <table className="mt-3 w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
             <th className="py-1">Parcela</th>
@@ -503,10 +634,21 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
                         target="_blank"
                         rel="noreferrer"
                         className={botaoSecundario}
-                        title="Abre o link do boleto/Pix ou do checkout do cartão"
+                        title="Abre a fatura na Asaas"
                       >
-                        👁️ Ver
+                        👁️ Ver fatura
                       </a>
+                      {cobranca.bankSlipUrl && (
+                        <a
+                          href={cobranca.bankSlipUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={botaoSecundario}
+                          title="Baixa o PDF do boleto"
+                        >
+                          📄 Boleto
+                        </a>
+                      )}
                       <LinkCopiavel link={cobranca.invoiceUrl} />
                       {parcela.status !== "pago" && (
                         <BotoesReenvio pessoaId={pessoa.id} contexto="pagamento" link={cobranca.invoiceUrl} mostrarCopiar={false} />
@@ -518,7 +660,9 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
             );
           })}
         </tbody>
-      </table>
+          </table>
+        </>
+      )}
     </div>
   );
 }
@@ -631,6 +775,59 @@ function BotaoCancelar({ contratoId, onCancelado }: { contratoId: string; onCanc
   );
 }
 
+/** Mesma ação (e mesma confirmação "EXCLUIR") do botão "Excluir" do menu flutuante no Painel de
+ * Vendas (painel-vendas-client.tsx) — pedido do Luiz, 21/08/2026: o Painel Interativo deve
+ * oferecer as mesmas opções do menu flutuante de lá. Como o registro deixa de existir, redireciona
+ * pro Painel de Vendas em vez de recarregar esta página (que daria 404). */
+function BotaoExcluir({ contratoId }: { contratoId: string }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [confirmacao, setConfirmacao] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+
+  async function confirmar() {
+    if (confirmacao !== "EXCLUIR") {
+      setErro('Digite "EXCLUIR" pra confirmar — essa ação não pode ser desfeita.');
+      return;
+    }
+    setExcluindo(true);
+    const resultado = await excluirVendaDetalhesAction(contratoId);
+    setExcluindo(false);
+    if (!resultado.sucesso) {
+      setErro(resultado.erro);
+      return;
+    }
+    router.push("/admin/vendas");
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        title="Ação restrita — apaga o registro da venda de vez, sem volta"
+        className="rounded-full border border-red-300 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
+      >
+        Excluir
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-1 rounded border border-red-300 p-2 dark:border-red-700">
+      <label className="text-xs text-zinc-600 dark:text-zinc-400">
+        Isso apaga a venda de vez, sem volta. Digite <strong>EXCLUIR</strong> pra confirmar.
+      </label>
+      <input className={campo} value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} />
+      {erro && <p className="text-xs text-red-600 dark:text-red-400">{erro}</p>}
+      <button type="button" onClick={confirmar} disabled={excluindo} className="text-xs font-medium text-red-700 dark:text-red-400">
+        {excluindo ? "Excluindo..." : "Excluir definitivamente"}
+      </button>
+    </div>
+  );
+}
+
 function PainelErroTentativas({ contrato, onTentou }: { contrato: Contrato; onTentou: () => void }) {
   const [tentando, setTentando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -663,6 +860,44 @@ function PainelErroTentativas({ contrato, onTentou }: { contrato: Contrato; onTe
         {tentando ? "Tentando..." : "Tentar novamente"}
       </button>
       {erro && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erro}</p>}
+    </div>
+  );
+}
+
+/**
+ * Quadro superior — muda de acordo com a etapa atual da venda (pedido do Luiz, 21/08/2026):
+ * ícone + etapa em destaque + descrição visível (antes só existia como tooltip) + sugestão de ação
+ * pra etapa atual (SUGESTAO_ACAO_ESTAGIO) + as mesmas ações do menu flutuante do Painel de Vendas
+ * (Cancelar venda + Excluir, antes só Cancelar existia aqui).
+ */
+function PainelInterativo({ contrato, onMudou }: { contrato: Contrato; onMudou: () => void }) {
+  const sugestao = SUGESTAO_ACAO_ESTAGIO[contrato.status];
+  return (
+    <div className={cardBase}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl" aria-hidden="true">
+            {ICONE_ESTAGIO[contrato.status]}
+          </span>
+          <div>
+            <span
+              className="inline-block rounded-full px-2 py-0.5 text-xs font-medium text-white"
+              style={{ backgroundColor: corEstagio(contrato.status) }}
+            >
+              {rotuloEstagio(contrato.status)}
+            </span>
+            <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{DESCRICAO_ESTAGIO[contrato.status]}</p>
+            {sugestao && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">💡 {sugestao}</p>}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-start gap-2">
+          {!ehEstagioTerminal(contrato.status) && <BotaoCancelar contratoId={contrato.id} onCancelado={onMudou} />}
+          <BotaoExcluir contratoId={contrato.id} />
+        </div>
+      </div>
+      {contrato.status === "cancelada" && contrato.motivoCancelamento && (
+        <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Motivo: {contrato.motivoCancelamento}</p>
+      )}
     </div>
   );
 }
@@ -738,24 +973,7 @@ export function DetalhesVendaClient({
         <>
           {contrato.ultimoErro && <PainelErroTentativas contrato={contrato} onTentou={recarregarPagina} />}
 
-          <div className={cardBase}>
-            <div className="flex items-center justify-between">
-              <span
-                className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                style={{ backgroundColor: corEstagio(contrato.status) }}
-                title={DESCRICAO_ESTAGIO[contrato.status]}
-              >
-                {rotuloEstagio(contrato.status)}
-              </span>
-              {contrato.status !== "cancelada" && contrato.status !== "concluida" && (
-                <BotaoCancelar contratoId={contrato.id} onCancelado={recarregarPagina} />
-              )}
-            </div>
-            {pdfUrlAssinada && <BotoesPdfContrato contratoId={contrato.id} pdfUrl={pdfUrlAssinada} />}
-            {contrato.status === "cancelada" && contrato.motivoCancelamento && (
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Motivo: {contrato.motivoCancelamento}</p>
-            )}
-          </div>
+          <PainelInterativo contrato={contrato} onMudou={recarregarPagina} />
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <CardDadosCliente pessoa={pessoa} endereco={enderecoCliente} />
@@ -774,6 +992,7 @@ export function DetalhesVendaClient({
                   pessoa={pessoa}
                   representante={representante}
                   pessoaArrudaCred={pessoaArrudaCred}
+                  pdfUrlAssinada={pdfUrlAssinada}
                   onAvancou={recarregarPagina}
                 />
               </div>

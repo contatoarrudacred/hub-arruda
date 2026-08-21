@@ -55,7 +55,9 @@ export type EntradaCobranca = {
   description: string;
 };
 
-export type Cobranca = { id: string; invoiceUrl: string };
+// bankSlipUrl: link de download do boleto em PDF — separado de invoiceUrl (a página de pagamento
+// em si), só existe pra billingType BOLETO (confirmado na doc oficial, docs.asaas.com, 21/08/2026).
+export type Cobranca = { id: string; invoiceUrl: string; bankSlipUrl: string | null };
 
 /**
  * Cria UMA cobrança individual. Decisão importante: **não usamos o `installmentCount`/

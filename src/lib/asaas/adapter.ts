@@ -1,9 +1,11 @@
 import { buscarClientePorCpfCnpj, criarCheckout, criarCliente, criarCobranca } from "./cliente";
 import {
+  atualizarCheckoutContrato,
   atualizarParcelaAsaas,
   atualizarStatusContrato,
   atualizarVencimentoParcela,
   buscarContratoPorId,
+  type Contrato,
   type MetodoPagamento,
 } from "@/lib/vendas/contratos";
 import { enviarLinkPagamentoWhatsapp } from "@/lib/vendas/notificacoes";
@@ -25,6 +27,40 @@ async function resolverClienteAsaas(pessoaId: string): Promise<string> {
   return novo.id;
 }
 
+/** Monta e persiste um novo Checkout de cartão pro contrato — usado tanto na criação automática
+ * (dentro de criarCobrancasDoContrato) quanto na geração manual sob demanda (criarCheckoutManual,
+ * quando o link salvo já passou das 24h de validade). Grava o link em `contratos` via
+ * atualizarCheckoutContrato (migration 20260821100000) — antes dessa mudança o link gerado
+ * automaticamente nunca era salvo em lugar nenhum, só mandado por WhatsApp na hora. */
+async function gerarEPersistirCheckout(contrato: Pick<Contrato, "id" | "valorTotal" | "maxParcelasCartao" | "pessoaSignatarioId">): Promise<string> {
+  const pessoa = await buscarPessoaCompleta(contrato.pessoaSignatarioId);
+  if (!pessoa) throw new Error(`Pessoa ${contrato.pessoaSignatarioId} não encontrada.`);
+
+  const checkout = await criarCheckout({
+    descricao: `Contrato ${contrato.id}`,
+    valorTotal: contrato.valorTotal,
+    // NÃO usar contrato.parcelasQtd aqui — o significado dela pra cartão varia por tela de
+    // origem (Nova Oportunidade: sempre 1, um placeholder; Fechamento de Venda: reflete parcelas
+    // reais calculadas). O parcelamento que vale pro Checkout é sempre maxParcelasCartao,
+    // independente de quem criou o contrato; achado real na revisão final da branch (o valor
+    // escolhido nunca chegava na Asaas antes desta correção).
+    maxParcelas: contrato.maxParcelasCartao ?? 1,
+    externalReference: contrato.id,
+    cliente: { nome: pessoa.nomeRazaoSocial, documento: pessoa.documento, email: pessoa.email, telefone: pessoa.whatsapp },
+  });
+  await atualizarCheckoutContrato(contrato.id, checkout.id, checkout.link);
+  return checkout.link;
+}
+
+/** Gera um novo Checkout sob demanda — chamado pelo botão "Gerar novo link de pagamento" em
+ * Detalhes da Venda quando o link salvo já expirou (24h, minutesToExpire: 1440). */
+export async function criarCheckoutManual(contratoId: string): Promise<string> {
+  const contrato = await buscarContratoPorId(contratoId);
+  if (!contrato) throw new Error("Contrato não encontrado.");
+  if (contrato.metodoPagamento !== "cartao") throw new Error("Esta venda não é por cartão — não tem Checkout pra gerar de novo.");
+  return gerarEPersistirCheckout(contrato);
+}
+
 /**
  * Cria as cobranças na Asaas — ramifica por método de pagamento. Boleto/Pix: uma chamada por
  * parcela, com o valor/vencimento exatos que já temos (não usa o parcelamento nativo da Asaas, ver
@@ -38,23 +74,9 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
   if (!contrato.metodoPagamento) throw new Error("Venda comissionada não gera cobrança na Asaas — não deveria chegar aqui.");
 
   if (contrato.metodoPagamento === "cartao") {
-    const pessoa = await buscarPessoaCompleta(contrato.pessoaSignatarioId);
-    if (!pessoa) throw new Error(`Pessoa ${contrato.pessoaSignatarioId} não encontrada.`);
-
-    const checkout = await criarCheckout({
-      descricao: `Contrato ${contratoId}`,
-      valorTotal: contrato.valorTotal,
-      // NÃO usar contrato.parcelasQtd aqui — o significado dela pra cartão varia por tela de
-      // origem (Nova Oportunidade: sempre 1, um placeholder; Fechamento de Venda: reflete parcelas
-      // reais calculadas). O parcelamento que vale pro Checkout é sempre maxParcelasCartao,
-      // independente de quem criou o contrato; achado real na revisão final da branch (o valor
-      // escolhido nunca chegava na Asaas antes desta correção).
-      maxParcelas: contrato.maxParcelasCartao ?? 1,
-      externalReference: contratoId,
-      cliente: { nome: pessoa.nomeRazaoSocial, documento: pessoa.documento, email: pessoa.email, telefone: pessoa.whatsapp },
-    });
+    const link = await gerarEPersistirCheckout(contrato);
     await atualizarStatusContrato(contratoId, "aguardando_pagamento");
-    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, checkout.link);
+    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, link);
     return;
   }
 
