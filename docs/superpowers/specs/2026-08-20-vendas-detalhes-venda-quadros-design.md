@@ -1,6 +1,6 @@
 # Vendas — Detalhes da Venda: quadros de informação completa — Design
 
-**Status:** aprovado, aguardando plano de implementação.
+**Status:** ✅ implementado, mesclado em `main` e refinado em produção (20-21/08/2026). Ver seção 10 pra tudo que foi pedido depois da implementação inicial e não estava neste desenho original.
 **Decidido com:** Luiz, 20/08/2026, conversa direta em chat (sem sessão de brainstorming em terminal separada).
 
 ## 1. Contexto e motivação
@@ -106,3 +106,14 @@ Não é um princípio exclusivo de parcelas — vale pra qualquer quadro resumid
 - Edição de qualquer dado nesta tela.
 - Mudança de schema.
 - Qualquer mudança no Painel Interativo por estágio (parte superior da tela) — já construído e aprovado em sessão anterior, fora de alcance deste design.
+
+## 10. Atualizações pós-implementação (20-21/08/2026)
+
+A tela foi construída conforme este design (SDD, 3 tasks + revisão final de branch — 2 achados Important corrigidos: `formatarEndereco` sem guarda contra campo nulo do banco, que podia derrubar a página; venda comissionada mostrando aviso falso de "template faltando"). Depois de usar em produção, o Luiz pediu refinamentos que **não estavam neste desenho original**:
+
+- **UX de leitura**: ícones (emoji) em cada quadro, badge colorido pro status de parcela/comissão (antes era texto puro), borda de atenção (âmbar/vermelha) em Partes do Contrato/Financeiro quando algo precisa de ação, tooltips nos botões de "Verificar... agora" e no badge de etapa.
+- **PDF do contrato**: o link discreto "Ver PDF" virou um grupo de 3 ações (Ver/Baixar de verdade com `Content-Disposition: attachment`/Copiar). Junto veio um achado maior, fora do escopo original desta spec: nada no sistema buscava de volta o PDF final com certificado que a Assinafy gera depois que todos assinam — o link sempre mostrava a versão sem assinatura. Corrigido no webhook `document_ready` (baixa o artifact "certificated" e sobrescreve o mesmo arquivo no Storage).
+- **Parcela financeira**: ganhou o mesmo modelo Ver+Copiar do link de cobrança (boleto/Pix ou checkout do cartão) — sem "Baixar", que não se aplica (é uma página de cobrança, não um arquivo).
+- **Reorganização de hierarquia**: Pacote de Documentos deixou de ser um quadro próprio (como esta spec desenhou originalmente na seção 5.5) e virou uma seção dentro de Dados da Venda — o Luiz observou que é dado do serviço contratado (`produtos.exige_lista_documentos`), não da venda em si, e devia ficar visualmente junto do produto, não separado.
+
+Nenhuma dessas mudanças alterou o princípio da seção 8 (drill-down por item) — continua só registrado, não implementado.

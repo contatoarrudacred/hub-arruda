@@ -88,10 +88,8 @@ async function salvarEnderecoSeInformado(pessoaId: string, endereco: EnderecoEnt
 }
 
 export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechamento): Promise<ResultadoConfirmarFechamento> {
-  console.log("[DEBUG confirmarFechamento] entrada recebida:", JSON.stringify(entrada));
   try {
     const oportunidade = await buscarOportunidadeParaFechamento(entrada.oportunidadeId);
-    console.log("[DEBUG confirmarFechamento] oportunidade:", JSON.stringify(oportunidade));
     if (!oportunidade) return { sucesso: false, erro: "Oportunidade não encontrada." };
 
     // Template/signatário ArrudaCred faltando NÃO bloqueia a criação do contrato — o card precisa
@@ -99,10 +97,8 @@ export async function confirmarFechamentoAction(entrada: EntradaConfirmarFechame
     // emissão (montarHtmlContrato/enviarContratoParaAssinatura já checam isso e lançam erro claro,
     // capturado por tentarEmitirContrato) — mesmo achado da Nova Oportunidade, corrigido junto.
     const template = await buscarTemplateAtivoPorProduto(oportunidade.produtoId);
-    console.log("[DEBUG confirmarFechamento] template encontrado:", template ? template.id : null);
 
     const pessoaArrudaCredId = await buscarPessoaArrudaCredSignatario();
-    console.log("[DEBUG confirmarFechamento] pessoaArrudaCredId:", pessoaArrudaCredId);
 
     // 1) Salva dados de contrato + endereço do signatário (e do representante, se PJ)
     // Nome do signatário não é editável nesta tela (só exibido, ver fechamento-client.tsx) —

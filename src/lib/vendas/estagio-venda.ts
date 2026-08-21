@@ -10,6 +10,14 @@ import type { StatusContrato } from "./contratos";
  * duas etapas já rodavam automaticamente uma atrás da outra sem nenhuma pausa humana no meio
  * (ver tentarEmitirContrato em progressao.ts, que já encadeia direto pra tentarEnvelopar), então a
  * coluna extra não representava nenhum estado real intermediário — só ficava sempre vazia.
+ *
+ * "Gerando Financeiro" quase seguiu o mesmo caminho (chegou a ser removida, depois revertida no
+ * mesmo dia — Luiz, 20/08/2026) por uma razão diferente da "Envelopando Assinaturas": aqui a
+ * etapa É real (existe uma chamada de verdade à Asaas que pode falhar), só que o código nunca
+ * marcava esse status antes de tentar — corrigido em tentarGerarFinanceiro (progressao.ts), que
+ * agora marca "gerando_financeiro" antes de tentar, igual "Emitindo Contrato" já fazia. Sem isso,
+ * um erro na Asaas deixava o card rotulado "Aguardando Assinaturas" mesmo já tendo sido assinado
+ * por todos — etiqueta enganosa, não só uma coluna vazia.
  */
 export const ESTAGIOS_VENDA: { valor: StatusContrato; rotulo: string; cor: string }[] = [
   { valor: "nova_oportunidade", rotulo: "Nova Oportunidade", cor: "#a78bfa" },
@@ -34,4 +42,13 @@ export function corEstagio(status: StatusContrato): string {
 /** Estágios terminais — a venda não sai deles sozinha. */
 export function ehEstagioTerminal(status: StatusContrato): boolean {
   return status === "concluida" || status === "cancelada";
+}
+
+/** Etapas automáticas que deveriam ser instantâneas (emitir contrato, gerar cobrança) — um card só
+ * fica parado nelas de verdade quando a etapa falhou. Diferente de "Aguardando Assinaturas"/
+ * "Aguardando Pagamento" (esperas humanas genuínas, sempre fazem sentido como coluna fixa), o
+ * Painel esconde a coluna inteira quando não há nenhum card nela (pedido do Luiz, 21/08/2026) — a
+ * coluna aparecendo já é o sinal de que algo travou, em vez de um espaço permanentemente vazio. */
+export function ehEstagioTransitorio(status: StatusContrato): boolean {
+  return status === "emitindo_contrato" || status === "gerando_financeiro";
 }

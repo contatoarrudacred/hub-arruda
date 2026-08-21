@@ -44,7 +44,6 @@ export type EntradaOportunidadeSemFunil = {
 export async function criarOportunidadeSemFunilPrevio(
   entrada: EntradaOportunidadeSemFunil,
 ): Promise<{ oportunidadeId: string }> {
-  console.log("[DEBUG criarOportunidadeSemFunilPrevio] entrada:", JSON.stringify(entrada));
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("oportunidades")
@@ -56,10 +55,6 @@ export async function criarOportunidadeSemFunilPrevio(
     })
     .select("id")
     .single();
-  if (error) {
-    console.error("[DEBUG criarOportunidadeSemFunilPrevio] erro do Supabase:", JSON.stringify(error));
-    throw new Error(`Falha ao criar oportunidade: ${error.message}`);
-  }
-  console.log("[DEBUG criarOportunidadeSemFunilPrevio] oportunidade criada com id:", data.id);
+  if (error) throw new Error(`Falha ao criar oportunidade: ${error.message}`);
   return { oportunidadeId: data.id };
 }

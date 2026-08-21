@@ -31,6 +31,15 @@ describe("sanitizarConteudoHtml", () => {
     expect(resultado).toContain("<td>Célula</td>");
   });
 
+  // Agenda de Posts (Trocar Foto, 20/08/2026): data-imagem precisa sobreviver à re-sanitização
+  // (ex.: botão "Sanitizar" do editor manual, Editar Post Completo) — sem isso, o marcador que liga
+  // uma entrada de imagem (capa/slug da secundária) ao seu <figure> se perderia silenciosamente.
+  it("preserva o atributo data-imagem em <img> (marcador de troca de foto)", () => {
+    const html = '<img src="https://exemplo.com/capa.png" alt="Capa" data-imagem="capa">';
+    const resultado = sanitizarConteudoHtml(html);
+    expect(resultado).toContain('data-imagem="capa"');
+  });
+
   // Achado real de teste em produção (19/08/2026) + decisão do Luiz: o Escritor CONTINUA
   // escrevendo <h1>título</h1> no corpo (é como o Revisor confirma de verdade que existe um H1 com
   // a palavra-chave, ver escritor.ts) — o WordPress renderiza o campo `titulo` do post como o H1

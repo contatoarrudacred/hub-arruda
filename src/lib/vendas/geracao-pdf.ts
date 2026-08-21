@@ -88,3 +88,16 @@ export async function baixarPdfContrato(caminho: string): Promise<Buffer> {
   if (error) throw new Error(`Falha ao baixar PDF do contrato: ${error.message}`);
   return Buffer.from(await data.arrayBuffer());
 }
+
+/**
+ * Sobrescreve o PDF já salvo no MESMO caminho (`upsert: true`) — usado quando o contrato termina
+ * de ser assinado por todos: o PDF sem assinatura vira o PDF final com certificado da Assinafy
+ * (pedido do Luiz, 20/08/2026). Sobrescrever em vez de subir um arquivo novo com caminho diferente
+ * significa que `contratos.pdf_url` não precisa mudar — qualquer link já copiado/enviado antes da
+ * assinatura passa a servir o conteúdo assinado automaticamente, sem precisar gerar/reenviar nada.
+ */
+export async function sobrescreverPdfContrato(caminho: string, pdf: Buffer): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.storage.from(BUCKET).upload(caminho, pdf, { contentType: "application/pdf", upsert: true });
+  if (error) throw new Error(`Falha ao sobrescrever PDF do contrato: ${error.message}`);
+}

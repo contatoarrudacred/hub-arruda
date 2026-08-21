@@ -294,6 +294,49 @@ async function gerarPromptCapa(titulo: string, resumoPost: string, resumoPersona
   };
 }
 
+/**
+ * Geração de imagem com PROMPT EXPLÍCITO, pulando as etapas 1-4 de `gerarCapa` acima (que derivam
+ * o prompt automaticamente a partir do post) — usada pela Agenda de Posts (Trocar Foto, 20/08/2026)
+ * quando o usuário digita o próprio prompt, ou quando "gerar de novo" numa imagem SECUNDÁRIA já
+ * existente (o prompt original de uma candidata de `gerarImagensSecundarias` nunca é persistido —
+ * ver `ImagemSecundaria`, secundarias.ts — então o chamador monta um prompt razoável a partir do
+ * `titulo`/`legenda` já salvos e passa aqui). Mesmo loop de retry e contrato "nunca lança" da etapa
+ * 5 de `gerarCapa` — mesmo `LIMITE_TENTATIVAS_IMAGEM`.
+ */
+export async function gerarImagemComPrompt(
+  promptImagem: string,
+  trechoParaRevisao: string,
+): Promise<{ resultado: { url: string } | null; usage: UsageTokens; custoUsdOpenAi: number }> {
+  let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
+  let custoUsdOpenAi = 0;
+
+  try {
+    let promptTentativa = promptImagem;
+    for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
+      const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
+      custoUsdOpenAi += geracao.usage.custoUsd;
+
+      const revisao = await revisarImagem(geracao.url, trechoParaRevisao);
+      usage = somarUsage(usage, revisao.usage);
+
+      if (revisao.resultado.aprovada) {
+        return { resultado: { url: geracao.url }, usage, custoUsdOpenAi };
+      }
+
+      promptTentativa = [
+        promptImagem,
+        "",
+        "CORREÇÃO OBRIGATÓRIA — a tentativa anterior foi reprovada pelo motivo abaixo. Gere novamente evitando especificamente esse problema:",
+        revisao.resultado.motivo ?? "",
+      ].join("\n");
+    }
+
+    return { resultado: null, usage, custoUsdOpenAi };
+  } catch {
+    return { resultado: null, usage, custoUsdOpenAi };
+  }
+}
+
 export async function gerarCapa(
   pauta: PautaCarregada,
   conteudo: ConteudoGerado,

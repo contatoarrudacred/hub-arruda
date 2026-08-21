@@ -40,6 +40,7 @@ const pautaFalsa = {
   tentativas: 0,
   motivoUltimaReprovacao: null,
   ultimoRascunho: null,
+  agendamentoForcado: null as string | null,
 };
 
 const propriedadeFalsa = {
@@ -320,6 +321,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -411,6 +413,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn(),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -443,6 +446,65 @@ describe("processarProximaPauta", () => {
         canais: { wordpress: { rascunho_id: "123", status: "agendado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" } },
       }),
     );
+  });
+
+  // Novo Post Manual (Agenda de Posts, 21/08/2026) — pauta.agendamentoForcado tem precedência
+  // sobre o cálculo automático de decidirProximoHorario, mesmo com horariosPublicacao configurado.
+  it("com agendamentoForcado na pauta, usa direto — não chama decidirProximoHorario/carregarProximosAgendamentos", async () => {
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue({
+      ...pautaFalsa,
+      agendamentoForcado: "2026-12-20T12:00:00.000Z",
+    });
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue({
+      ...propriedadeFalsa,
+      horariosPublicacao: ["11:00", "15:00"],
+    });
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    const carregarProximosAgendamentosSpy = vi.spyOn(repositorio, "carregarProximosAgendamentos");
+    vi.spyOn(escritor, "gerarConteudo").mockResolvedValue({
+      resultado: {
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>...</h1>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+        relatorio: "Segui o ângulo passo a passo.",
+      },
+      usage: { inputTokens: 1000, outputTokens: 2000 },
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: {
+        aprovado: true,
+        score: 92,
+        motivo: null,
+        precisaoFactualAdequada: true,
+        fontesEspecificas: true,
+        originalidadeAdequada: true,
+      },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue("<h1>...</h1>");
+    const { etapasChamadas } = espiarRegistrarEtapa();
+
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho", link: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      enviarMidia: vi.fn(),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn(),
+      atualizarPost: vi.fn(),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+    expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+    const agendadoParaEsperado = new Date("2026-12-20T12:00:00.000Z");
+    expect(adaptadorFalso.criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined, agendadoParaEsperado);
+    expect(carregarProximosAgendamentosSpy).not.toHaveBeenCalled();
+    expect(etapasChamadas).toContain("agendar");
   });
 
   // Etapa "verificar_links" (19/08/2026, pedido do Luiz) — achado real de teste em produção: o
@@ -497,6 +559,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -529,6 +592,77 @@ describe("processarProximaPauta", () => {
       expect(reprovarSpy).not.toHaveBeenCalled();
     } finally {
       global.fetch = fetchOriginal;
+    }
+  });
+
+  // Achado real de produção (21/08/2026): 2 pautas travadas pra sempre em "verificar_links" —
+  // a geração inicial do Escritor sozinha já consumiu boa parte do orçamento de 240s do tick
+  // (route.ts, maxDuration), e tentar uma CORREÇÃO (nova chamada à Claude, sem teto próprio)
+  // estourou o timeout do Vercel no meio, matando a função antes de gravar qualquer conclusão.
+  // Este teste simula exatamente isso — o tempo "passa" (Date mockado) durante a geração inicial
+  // — e confirma que a correção é PULADA (gerarConteudo chamado só 1 vez) em vez de arriscar travar
+  // de novo, com o conteúdo original (link quebrado e tudo) seguindo pro resto do pipeline mesmo
+  // assim, sem contar como reprovação.
+  it("pula a correção de link se o orçamento de tempo do tick já está curto, sem travar o pipeline", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const inicio = new Date("2026-08-21T00:00:00.000Z");
+    vi.setSystemTime(inicio);
+
+    vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+    vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+    vi.spyOn(repositorio, "carregarChecklistAtivo").mockResolvedValue([]);
+    const gerarConteudoSpy = vi.spyOn(escritor, "gerarConteudo").mockImplementationOnce(async () => {
+      // Simula a geração inicial sozinha já consumindo 130s de wall-clock (achado real: 160-200s
+      // vistos em produção) — mais que LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS (120s).
+      vi.setSystemTime(new Date(inicio.getTime() + 130_000));
+      return {
+        resultado: {
+          titulo: "Como Limpar o Nome no Serasa",
+          conteudoHtml: '<p>Veja <a href="https://www.bcb.gov.br/quebrado">o BACEN</a>.</p>',
+          metaTitle: "Como Limpar Nome no Serasa",
+          metaDescription: "Guia completo.",
+          slug: "como-limpar-nome-serasa",
+          relatorio: "Primeira geração.",
+        },
+        usage: { inputTokens: 1000, outputTokens: 2000 },
+      };
+    });
+    vi.spyOn(revisor, "revisarConteudo").mockResolvedValue({
+      resultado: { aprovado: true, score: 92, motivo: null, precisaoFactualAdequada: true, fontesEspecificas: true, originalidadeAdequada: true },
+      usage: { inputTokens: 500, outputTokens: 50 },
+    });
+    vi.spyOn(repositorio, "criarPost").mockResolvedValue({ id: "post-1", pautaId: "pauta-1", propriedadeId: "prop-1", status: "rascunho" });
+    vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+    vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+    const reprovarSpy = vi.spyOn(repositorio, "registrarReprovacaoPauta").mockResolvedValue(undefined);
+    vi.mocked(inserirLinksInternos).mockResolvedValue('<p>Veja <a href="https://www.bcb.gov.br/quebrado">o BACEN</a>.</p>');
+    const fetchOriginal = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response);
+    const { detalhesExtraidos } = espiarRegistrarEtapa();
+    const adaptadorFalso = {
+      criarRascunho: vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" }),
+      enviarMidia: vi.fn(),
+      verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+      aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      atualizarPost: vi.fn(),
+    };
+    vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+    try {
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      // Só 1 chamada — a correção foi pulada, não uma segunda tentativa de gerarConteudo.
+      expect(gerarConteudoSpy).toHaveBeenCalledTimes(1);
+      expect(detalhesExtraidos.verificar_links).toContain("orçamento de tempo curto");
+      expect(detalhesExtraidos.verificar_links).not.toContain("enviado(s) pro Escritor corrigir");
+      // Conteúdo original (com o link quebrado) segue pro resto do pipeline mesmo assim — nunca
+      // trava, e não conta como reprovação de negócio.
+      expect(inserirLinksInternos).toHaveBeenCalledWith('<p>Veja <a href="https://www.bcb.gov.br/quebrado">o BACEN</a>.</p>', "prop-1", "post-1");
+      expect(reprovarSpy).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = fetchOriginal;
+      vi.useRealTimers();
     }
   });
 
@@ -576,6 +710,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -632,6 +767,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -707,6 +843,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
       aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -787,6 +924,7 @@ describe("processarProximaPauta", () => {
       enviarMidia: vi.fn(),
       verificarRascunho: vi.fn().mockResolvedValue({ ok: false, detalhes: "Rascunho sem conteúdo renderizado." }),
       aprovarPublicar: vi.fn(),
+      atualizarPost: vi.fn(),
     };
     vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
 
@@ -1004,6 +1142,7 @@ describe("processarProximaPauta", () => {
         enviarMidia: vi.fn(),
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
       const { etapasChamadas } = espiarRegistrarEtapa();
@@ -1084,6 +1223,7 @@ describe("processarProximaPauta", () => {
         enviarMidia,
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
       const { etapasChamadas } = espiarRegistrarEtapa();
@@ -1177,6 +1317,7 @@ describe("processarProximaPauta", () => {
         enviarMidia,
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
       vi.mocked(gerarCapa).mockResolvedValue({
@@ -1224,7 +1365,7 @@ describe("processarProximaPauta", () => {
       // corpo — antes até da imagem secundária — porque o tema do WordPress não renderiza o
       // featured_media dentro da página do post; sem isso a capa nunca aparecia pro leitor.
       expect(corpoHtmlPublicado.indexOf('<figure><img src="https://teste.exemplo.com/wp-content/uploads/capa-serasa.png"')).toBe(0);
-      expect(corpoHtmlPublicado).toContain('<img src="https://teste.exemplo.com/wp-content/uploads/capa-serasa.png" alt="Pessoa aliviada olhando boletos organizados">');
+      expect(corpoHtmlPublicado).toContain('<img src="https://teste.exemplo.com/wp-content/uploads/capa-serasa.png" alt="Pessoa aliviada olhando boletos organizados" data-imagem="capa">');
       // Imagem secundária embutida como <figure> com a URL PÚBLICA (pós-upload), não a data URL.
       expect(corpoHtmlPublicado).toContain('<img src="https://teste.exemplo.com/wp-content/uploads/doc-necessarios.png"');
       expect(corpoHtmlPublicado).toContain("<figcaption>RG e CPF em mãos antes de ligar.</figcaption>");
@@ -1266,6 +1407,7 @@ describe("processarProximaPauta", () => {
         enviarMidia: vi.fn(),
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
       vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 100, outputTokens: 50 }, custoUsdOpenAi: 0.041 });
@@ -1307,6 +1449,7 @@ describe("processarProximaPauta", () => {
         enviarMidia,
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
       vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
@@ -1378,6 +1521,7 @@ describe("processarProximaPauta", () => {
         enviarMidia,
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
       vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
@@ -1440,6 +1584,7 @@ describe("processarProximaPauta", () => {
         enviarMidia,
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
       vi.mocked(gerarCapa).mockResolvedValue({
@@ -1474,6 +1619,7 @@ describe("processarProximaPauta", () => {
         enviarMidia,
         verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
         aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
       vi.mocked(gerarCapa).mockResolvedValue({

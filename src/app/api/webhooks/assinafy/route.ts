@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
+import { sincronizarPdfCertificado } from "@/lib/assinafy/adapter";
 import { atualizarStatusContrato, buscarContratoPorAssinafyDocumentId } from "@/lib/vendas/contratos";
 import { sincronizarEtapaKanban } from "@/lib/vendas/oportunidades";
 
@@ -33,6 +34,12 @@ async function processarDocumentoAssinado(assinafyDocumentId: string): Promise<v
     if (!contrato) {
       console.error(`[webhook assinafy] contrato não encontrado pro documento ${assinafyDocumentId}`);
       return;
+    }
+
+    try {
+      await sincronizarPdfCertificado(contrato, assinafyDocumentId);
+    } catch (erroPdf) {
+      console.error("[webhook assinafy] contrato assinado, mas falhou ao baixar/sobrescrever o PDF certificado:", erroPdf);
     }
 
     await atualizarStatusContrato(contrato.id, "aguardando_assinaturas", { assinadoEm: new Date().toISOString() });

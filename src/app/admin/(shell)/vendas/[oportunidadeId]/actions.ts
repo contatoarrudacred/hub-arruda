@@ -1,12 +1,15 @@
 "use server";
 
 import { buscarDocumento, type AssinafyDocumento } from "@/lib/assinafy/cliente";
+import { sincronizarPdfCertificado } from "@/lib/assinafy/adapter";
 import { buscarCobranca, type CobrancaStatus } from "@/lib/asaas/cliente";
-import { buscarContratoPorId } from "@/lib/vendas/contratos";
+import { criarCheckoutManual } from "@/lib/asaas/adapter";
+import { atualizarStatusContrato, buscarContratoPorId } from "@/lib/vendas/contratos";
 import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
 import { enviarPorEmail, enviarWhatsapp } from "@/lib/vendas/notificacoes";
 import { marcarComissaoParcelaRecebida } from "@/lib/vendas/comissoes";
-import { cancelarVenda } from "@/lib/vendas/painel-vendas";
+import { sincronizarEtapaKanban } from "@/lib/vendas/oportunidades";
+import { cancelarVenda, excluirVenda } from "@/lib/vendas/painel-vendas";
 
 export type ResultadoAcao = { sucesso: true } | { sucesso: false; erro: string };
 
@@ -90,6 +93,51 @@ export async function gerarUrlDownloadContratoAction(
   }
 }
 
+/**
+ * Escape hatch pra quando o webhook `document_ready` da Assinafy nunca chega (achado real, Luiz
+ * 21/08/2026: uma venda com as 2 assinaturas confirmadas de verdade na Assinafy ficou presa em
+ * "Aguardando Assinaturas" sem nenhum erro registrado — sinal de que o webhook nunca foi
+ * processado, não de uma falha visível). Sem esta ação, esse card não tinha jeito de destravar
+ * pela tela: o botão de retentativa só aparece quando existe `ultimo_erro`, e aqui não existe.
+ *
+ * Confere de verdade na Assinafy antes de agir (não confia só no clique) — só avança se todos os
+ * signatários estiverem `completo: true` agora. Reproduz exatamente o que o webhook faria:
+ * registra `assinado_em`, sincroniza `etapa_kanban` do CRM, e tenta gerar a cobrança na Asaas
+ * (tentarGerarFinanceiro já marca "gerando_financeiro" antes de tentar e não relança erro de
+ * cobrança — ele fica registrado em `ultimo_erro`, visível na tela após recarregar).
+ */
+export async function confirmarAssinaturaManualAction(contratoId: string, assinafyDocumentId: string): Promise<ResultadoAcao> {
+  try {
+    const documento = await buscarDocumento(assinafyDocumentId);
+    const todosAssinaram = documento.signatarios.length > 0 && documento.signatarios.every((s) => s.completo);
+    if (!todosAssinaram) {
+      return {
+        sucesso: false,
+        erro: 'Nem todo mundo assinou ainda, conforme a Assinafy agora — confira com "Verificar assinaturas agora" antes de tentar de novo.',
+      };
+    }
+
+    const contrato = await buscarContratoPorId(contratoId);
+    if (!contrato) return { sucesso: false, erro: "Contrato não encontrado." };
+
+    try {
+      await sincronizarPdfCertificado(contrato, assinafyDocumentId);
+    } catch (erroPdf) {
+      console.error("[confirmarAssinaturaManualAction] contrato assinado, mas falhou ao baixar/sobrescrever o PDF certificado:", erroPdf);
+    }
+
+    await atualizarStatusContrato(contratoId, "aguardando_assinaturas", { assinadoEm: new Date().toISOString() });
+    await sincronizarEtapaKanban(contrato.oportunidadeId, "pagamento");
+
+    const { tentarGerarFinanceiro } = await import("@/lib/vendas/progressao");
+    await tentarGerarFinanceiro(contratoId);
+
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao confirmar a assinatura e avançar.") };
+  }
+}
+
 export async function tentarNovamenteAction(contratoId: string): Promise<ResultadoAcao> {
   try {
     const { tentarNovamente } = await import("@/lib/vendas/progressao");
@@ -97,5 +145,32 @@ export async function tentarNovamenteAction(contratoId: string): Promise<Resulta
     return { sucesso: true };
   } catch (erro) {
     return { sucesso: false, erro: mensagemErro(erro, "Falha ao tentar novamente.") };
+  }
+}
+
+/** Exclusão permanente da venda a partir de Detalhes da Venda — mesmo comportamento (e mesma
+ * confirmação "EXCLUIR" na tela) do botão "Excluir" do menu flutuante no Painel de Vendas
+ * (painel-vendas-client.tsx), agora também disponível aqui (pedido do Luiz, 21/08/2026: o Painel
+ * Interativo deve oferecer as mesmas ações do menu flutuante). */
+export async function excluirVendaDetalhesAction(contratoId: string): Promise<ResultadoAcao> {
+  try {
+    await excluirVenda(contratoId);
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao excluir a venda.") };
+  }
+}
+
+/** Gera um novo Checkout de cartão sob demanda — usado quando o link salvo em
+ * `asaasCheckoutUrl` já passou das 24h de validade (minutesToExpire: 1440, ver asaas/cliente.ts).
+ * Reaproveita os mesmos dados já usados na criação automática (criarCheckoutManual, asaas/adapter.ts). */
+export async function gerarCheckoutManualAction(
+  contratoId: string,
+): Promise<{ sucesso: true; url: string } | { sucesso: false; erro: string }> {
+  try {
+    const url = await criarCheckoutManual(contratoId);
+    return { sucesso: true, url };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao gerar um novo link de pagamento.") };
   }
 }

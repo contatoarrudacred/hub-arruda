@@ -56,7 +56,7 @@ const MODULOS: Modulo[] = [
       { tipo: "link", rotulo: "Visão Geral", href: "/admin/marketing", icone: "📊" },
       { tipo: "link", rotulo: "Monitor", href: "/admin/marketing/monitor", icone: "🛰️" },
       { tipo: "link", rotulo: "Fila de Pautas", href: "/admin/marketing/pautas", icone: "🗂️" },
-      { tipo: "link", rotulo: "Posts Publicados", href: "/admin/marketing/posts", icone: "📰" },
+      { tipo: "link", rotulo: "Agenda de Posts", href: "/admin/marketing/agenda", icone: "📅" },
     ],
   },
   {
