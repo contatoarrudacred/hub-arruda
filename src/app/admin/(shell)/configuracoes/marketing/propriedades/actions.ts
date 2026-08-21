@@ -14,6 +14,8 @@ export type EntradaSalvarPropriedade = {
   maxTentativas: number;
   postsPorDia: number | null;
   janelaPublicacao: JanelaPublicacao | null;
+  /** Fase 4e (20/08/2026) — `null`/vazio = publica na hora, sem agendar (ver agendador.ts). */
+  horariosPublicacao: string[] | null;
   /** Só é lido/exigido na criação (id === null) — uma vez criada, o dono não muda por esta tela. */
   unidadeNegocioId: string | null;
   ativo: boolean;
@@ -55,6 +57,17 @@ export async function salvarPropriedadeAction(entrada: EntradaSalvarPropriedade)
     if (inicio >= fim) return { sucesso: false, erro: "O início da janela de publicação deve ser antes do fim." };
   }
 
+  // Fase 4e (20/08/2026) — HH:MM 24h, mesmo formato do `type="time"` da janela de publicação
+  // acima. Ordenado antes de salvar: decidirProximoHorario (agendador.ts) espera a lista já em
+  // ordem crescente.
+  let horariosPublicacaoOrdenados: string[] | null = null;
+  if (entrada.horariosPublicacao?.length) {
+    const REGEX_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const invalido = entrada.horariosPublicacao.find((h) => !REGEX_HORA.test(h));
+    if (invalido) return { sucesso: false, erro: `Horário de publicação inválido: "${invalido}" (use o formato HH:MM, ex.: 09:00).` };
+    horariosPublicacaoOrdenados = [...entrada.horariosPublicacao].sort();
+  }
+
   const propriedade = await salvarPropriedade({
     ...(entrada.id ? { id: entrada.id } : {}),
     nome,
@@ -63,6 +76,7 @@ export async function salvarPropriedadeAction(entrada: EntradaSalvarPropriedade)
     maxTentativas: entrada.maxTentativas,
     postsPorDia: entrada.postsPorDia,
     janelaPublicacao: entrada.janelaPublicacao,
+    horariosPublicacao: horariosPublicacaoOrdenados,
     ativo: entrada.ativo,
     // unidadeNegocioId só é repassado na criação — em atualização, omiti-lo (undefined) faz
     // salvarPropriedade não tocar na coluna unidade_negocio_id (ver comentário lá), preservando

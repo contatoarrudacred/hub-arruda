@@ -236,6 +236,7 @@ export async function carregarPropriedade(propriedadeId: string): Promise<Propri
     maxTentativas: config.maxTentativas,
     postsPorDia: config.postsPorDia ?? undefined,
     janelaPublicacao: config.janelaPublicacao ?? undefined,
+    horariosPublicacao: config.horariosPublicacao ?? undefined,
     credenciaisCanais,
     autoria: mapearAutoria(data.autoria),
     // Passthrough puro — SEM `?? default` aqui. O default de cada campo (80/"medio"/true) é
@@ -268,6 +269,25 @@ export async function contarPostsPublicadosDesde(propriedadeId: string, desdeIso
     .gte("publicado_em", desdeIso);
   if (error) throw new Error(`Falha ao contar posts publicados da propriedade ${propriedadeId}: ${error.message}`);
   return count ?? 0;
+}
+
+/**
+ * Horários já ocupados na agenda de publicação futura desta propriedade (Fase 4e, Agente
+ * Agendador, 20/08/2026) — `agendado_para` de posts ainda não liberados (`> now()`), pra
+ * `decidirProximoHorario` (agendador.ts) não escolher um slot que outro post já está ocupando.
+ * Posts cujo horário agendado já passou não entram aqui de propósito: nesse ponto o WordPress já
+ * liberou o post sozinho, então o slot não está mais "em disputa".
+ */
+export async function carregarProximosAgendamentos(propriedadeId: string): Promise<Date[]> {
+  const supabase = createAdminClient();
+  const agora = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("agendado_para")
+    .eq("propriedade_id", propriedadeId)
+    .gt("agendado_para", agora);
+  if (error) throw new Error(`Falha ao carregar agendamentos futuros da propriedade ${propriedadeId}: ${error.message}`);
+  return (data ?? []).map((linha) => new Date(linha.agendado_para as string));
 }
 
 export async function carregarChecklistAtivo(propriedadeId: string): Promise<ItemChecklistCarregado[]> {
@@ -615,6 +635,9 @@ export async function atualizarStatusPost(
     // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — ver carregarPostProntoParaPublicar.
     prontoParaPublicar?: boolean;
     imagemDestaqueMediaId?: string;
+    // Fase 4e, Agente Agendador (20/08/2026) — preenchido quando o post foi criado no WordPress
+    // com `status: "future"` em vez de publicado na hora. Ver decidirProximoHorario (agendador.ts).
+    agendadoPara?: string;
   },
 ): Promise<void> {
   const supabase = createAdminClient();
@@ -649,6 +672,7 @@ export async function atualizarStatusPost(
         : {}),
       ...(extra?.prontoParaPublicar !== undefined ? { pronto_para_publicar: extra.prontoParaPublicar } : {}),
       ...(extra?.imagemDestaqueMediaId ? { imagem_destaque_media_id: extra.imagemDestaqueMediaId } : {}),
+      ...(extra?.agendadoPara ? { agendado_para: extra.agendadoPara } : {}),
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", postId);
@@ -666,6 +690,9 @@ function mapearConfigPipeline(bruto: unknown): {
   maxTentativas: number;
   postsPorDia: number | null;
   janelaPublicacao: JanelaPublicacao | null;
+  // Horários fixos de publicação (Fase 4e, Agente Agendador, 20/08/2026) — mesmo tratamento
+  // sempre-escrito de postsPorDia/janelaPublicacao acima, não dos 5 campos condicionais abaixo.
+  horariosPublicacao: string[] | null;
   // Os 5 campos de calibração do Revisor (Fase 4a, Task 3, spec seção 3.1.1) — deliberadamente
   // `| undefined`, NUNCA com fallback pra um valor concreto aqui: quem decide o default (80,
   // "medio", true) é revisor.ts, não este mapeador. Ver comentário em carregarPropriedade.
@@ -684,6 +711,7 @@ function mapearConfigPipeline(bruto: unknown): {
       max_tentativas?: number;
       posts_por_dia?: number | null;
       janela_publicacao?: JanelaPublicacao | null;
+      horarios_publicacao?: string[] | null;
       score_minimo_aprovacao?: number;
       rigor_ymyl?: PropriedadeCarregada["rigorYmyl"];
       checar_precisao_factual?: boolean;
@@ -695,6 +723,7 @@ function mapearConfigPipeline(bruto: unknown): {
     maxTentativas: config.max_tentativas ?? 3,
     postsPorDia: config.posts_por_dia ?? null,
     janelaPublicacao: config.janela_publicacao ?? null,
+    horariosPublicacao: config.horarios_publicacao ?? null,
     scoreMinimoAprovacao: config.score_minimo_aprovacao,
     rigorYmyl: config.rigor_ymyl,
     checarPrecisaoFactual: config.checar_precisao_factual,
@@ -737,6 +766,7 @@ function mapearPropriedadeAdmin(data: {
     maxTentativas: config.maxTentativas,
     postsPorDia: config.postsPorDia,
     janelaPublicacao: config.janelaPublicacao,
+    horariosPublicacao: config.horariosPublicacao,
     credenciais: mapearCredenciais(data.credenciais_canais),
     autoria: mapearAutoria(data.autoria),
   };
@@ -806,6 +836,7 @@ export async function salvarPropriedade(dados: DadosPropriedade): Promise<Propri
     max_tentativas: dados.maxTentativas,
     posts_por_dia: dados.postsPorDia ?? null,
     janela_publicacao: dados.janelaPublicacao ?? null,
+    horarios_publicacao: dados.horariosPublicacao ?? null,
     ...(dados.scoreMinimoAprovacao !== undefined ? { score_minimo_aprovacao: dados.scoreMinimoAprovacao } : {}),
     ...(dados.rigorYmyl !== undefined ? { rigor_ymyl: dados.rigorYmyl } : {}),
     ...(dados.checarPrecisaoFactual !== undefined ? { checar_precisao_factual: dados.checarPrecisaoFactual } : {}),

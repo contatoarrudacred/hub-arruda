@@ -19,6 +19,8 @@ type Rascunho = {
   postsPorDia: string;
   janelaInicio: string;
   janelaFim: string;
+  /** Fase 4e (20/08/2026) — texto bruto, horários separados por vírgula (ex.: "09:00, 15:00"). */
+  horariosPublicacao: string;
   unidadeNegocioId: string;
   ativo: boolean;
 };
@@ -32,6 +34,7 @@ function paraRascunho(p: PropriedadeAdmin | null): Rascunho {
     postsPorDia: p?.postsPorDia != null ? String(p.postsPorDia) : "",
     janelaInicio: p?.janelaPublicacao?.inicio ?? "",
     janelaFim: p?.janelaPublicacao?.fim ?? "",
+    horariosPublicacao: p?.horariosPublicacao?.join(", ") ?? "",
     unidadeNegocioId: "",
     ativo: p?.ativo ?? true,
   };
@@ -127,6 +130,13 @@ function CardPropriedade({
     const maxTentativasNum = Number(r.maxTentativas);
     const postsPorDiaNum = r.postsPorDia.trim() === "" ? null : Number(r.postsPorDia);
     const janela = r.janelaInicio || r.janelaFim ? { inicio: r.janelaInicio, fim: r.janelaFim } : null;
+    const horariosPublicacao =
+      r.horariosPublicacao.trim() === ""
+        ? null
+        : r.horariosPublicacao
+            .split(",")
+            .map((h) => h.trim())
+            .filter((h) => h !== "");
 
     setSalvando(true);
     const resultado = await salvarPropriedadeAction({
@@ -137,6 +147,7 @@ function CardPropriedade({
       maxTentativas: maxTentativasNum,
       postsPorDia: postsPorDiaNum,
       janelaPublicacao: janela,
+      horariosPublicacao,
       unidadeNegocioId: r.unidadeNegocioId || null,
       ativo: r.ativo,
     });
@@ -266,6 +277,20 @@ function CardPropriedade({
                 onChange={(e) => setR({ ...r, janelaFim: e.target.value })}
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className={rotulo}>
+              Horários de publicação
+              <Ajuda texto="Horários fixos (fuso de Brasília, separados por vírgula, ex.: 09:00, 15:00) em que o pipeline agenda os posts aprovados no WordPress — em vez de publicar na hora, o post é criado com data futura e o próprio WordPress libera sozinho no horário certo. Deixe em branco para manter a publicação imediata (comportamento anterior a este campo)." />
+            </label>
+            <input
+              type="text"
+              className={campo}
+              value={r.horariosPublicacao}
+              onChange={(e) => setR({ ...r, horariosPublicacao: e.target.value })}
+              placeholder="Ex.: 09:00, 15:00 — em branco publica na hora"
+            />
           </div>
 
           <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">

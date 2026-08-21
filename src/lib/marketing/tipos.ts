@@ -85,6 +85,14 @@ export type PropriedadeCarregada = {
    */
   janelaPublicacao?: JanelaPublicacao;
   /**
+   * Horários fixos de publicação (Fase 4e, Agente Agendador, 20/08/2026) —
+   * `config_pipeline.horarios_publicacao`, lista de `"HH:MM"` em fuso de Brasília. Ausente/vazia =
+   * comportamento anterior a esta feature (publica na hora em que o Revisor aprova). Quando
+   * presente, o pipeline agenda o post no WordPress (`status: "future"`) pro próximo horário livre
+   * desta lista em vez de publicar imediatamente — ver decidirProximoHorario em agendador.ts.
+   */
+  horariosPublicacao?: string[];
+  /**
    * Credencial cifrada do canal WordPress (propriedades_digitais.credenciais_canais), decifrada
    * só no momento de uso em processar-pauta.ts — ver credenciaisWordPressDaPropriedade. Ausente
    * quando a propriedade não tem credencial salva no banco (fallback pro par de env genérico
@@ -223,6 +231,8 @@ export type PropriedadeAdmin = {
   maxTentativas: number;
   postsPorDia: number | null;
   janelaPublicacao: JanelaPublicacao | null;
+  /** Horários fixos de publicação (Fase 4e, 20/08/2026) — `null`/vazio = publica na hora, sem agendar. */
+  horariosPublicacao: string[] | null;
   credenciais: Record<string, CredencialCanalAdmin>;
   /** Autoria E-E-A-T cadastrada (Fase 4a, Task 3, 19/08/2026) — `null` = não configurada ainda. */
   autoria: AutoriaPropriedade | null;
@@ -237,6 +247,8 @@ export type DadosPropriedade = {
   maxTentativas: number;
   postsPorDia?: number | null;
   janelaPublicacao?: JanelaPublicacao | null;
+  /** Horários fixos de publicação (Fase 4e, 20/08/2026) — mesma convenção de postsPorDia/janelaPublicacao acima: sempre enviado pela tela, ausência vira `null` explícito (limpar). */
+  horariosPublicacao?: string[] | null;
   /** Um dos dois é obrigatório na criação — constraint chk_propriedade_tem_dono do banco. */
   pessoaId?: string | null;
   unidadeNegocioId?: string | null;
@@ -331,6 +343,10 @@ export type EtapaLog =
   // false por uma imagem que não gerou/não subiu (Global Constraint: imagem nunca bloqueia
   // publicação) — só por um erro de infraestrutura de verdade fora dos try/catch internos.
   | "gerar_imagens"
+  // Fase 4e, Agente Agendador (20/08/2026) — só roda quando a propriedade tem
+  // `horariosPublicacao` configurado; decide o próximo horário livre antes de criar o rascunho.
+  // Ver decidirProximoHorario em agendador.ts.
+  | "agendar"
   | "publicar"
   | "registrar_resultado";
 

@@ -10,6 +10,7 @@ import {
   carregarPersona,
   carregarPersonaFormulario,
   carregarPostsRecentes,
+  carregarProximosAgendamentos,
   carregarPropriedade,
   carregarResumoVisaoGeral,
   contarPostsPublicadosDesde,
@@ -65,6 +66,7 @@ function criarQueryFalsa(resultado: ResultadoQuery) {
     "limit",
     "lt",
     "lte",
+    "gt",
     "gte",
     "in",
     "not",
@@ -147,7 +149,28 @@ describe("carregarPropriedade", () => {
 
     expect(propriedade.postsPorDia).toBeUndefined();
     expect(propriedade.janelaPublicacao).toBeUndefined();
+    expect(propriedade.horariosPublicacao).toBeUndefined();
     expect(propriedade.maxTentativas).toBe(3);
+  });
+
+  // Fase 4e, Agente Agendador (20/08/2026).
+  it("mapeia horarios_publicacao quando presente no config_pipeline", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site Teste",
+          url_base: "https://teste.exemplo.com",
+          tipo_cms: "wordpress",
+          config_pipeline: { max_tentativas: 3, horarios_publicacao: ["09:00", "15:00"] },
+        },
+        error: null,
+      }),
+    );
+
+    const propriedade = await carregarPropriedade("prop-1");
+
+    expect(propriedade.horariosPublicacao).toEqual(["09:00", "15:00"]);
   });
 
   // Gap real deixado pela Fase 2 (Task 5 desta sessão, spec seção 143 do design das telas):
@@ -349,6 +372,37 @@ describe("contarPostsPublicadosDesde", () => {
   });
 });
 
+// Fase 4e, Agente Agendador (20/08/2026).
+describe("carregarProximosAgendamentos", () => {
+  it("devolve os horários agendado_para (futuros) da propriedade, convertidos pra Date", async () => {
+    const builder = criarQueryFalsa({
+      data: [{ agendado_para: "2026-08-21T12:00:00.000Z" }, { agendado_para: "2026-08-22T09:00:00.000Z" }],
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const agendamentos = await carregarProximosAgendamentos("prop-1");
+
+    expect(agendamentos).toEqual([new Date("2026-08-21T12:00:00.000Z"), new Date("2026-08-22T09:00:00.000Z")]);
+    expect(builder.eq).toHaveBeenCalledWith("propriedade_id", "prop-1");
+    expect(builder.gt).toHaveBeenCalledWith("agendado_para", expect.any(String));
+  });
+
+  it("devolve lista vazia quando não há nenhum post agendado", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    expect(await carregarProximosAgendamentos("prop-1")).toEqual([]);
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarProximosAgendamentos("prop-1")).rejects.toThrow(
+      /Falha ao carregar agendamentos futuros da propriedade prop-1.*erro de teste/,
+    );
+  });
+});
+
 describe("listarPropriedades", () => {
   it("mapeia propriedade + credenciais sem nunca expor a senha", async () => {
     mockarFrom(
@@ -360,7 +414,12 @@ describe("listarPropriedades", () => {
             url_base: "https://teste.exemplo.com",
             tipo_cms: "wordpress",
             ativo: true,
-            config_pipeline: { max_tentativas: 5, posts_por_dia: 3, janela_publicacao: { inicio: "08:00", fim: "20:00" } },
+            config_pipeline: {
+              max_tentativas: 5,
+              posts_por_dia: 3,
+              janela_publicacao: { inicio: "08:00", fim: "20:00" },
+              horarios_publicacao: ["09:00", "15:00"],
+            },
             credenciais_canais: { wordpress: { usuario: "admin", senha_cifrada: "abc123" } },
           },
         ],
@@ -380,6 +439,7 @@ describe("listarPropriedades", () => {
         maxTentativas: 5,
         postsPorDia: 3,
         janelaPublicacao: { inicio: "08:00", fim: "20:00" },
+        horariosPublicacao: ["09:00", "15:00"],
         credenciais: { wordpress: { usuario: "admin", senhaConfigurada: true } },
         autoria: null,
       },
@@ -593,6 +653,85 @@ describe("salvarPropriedade", () => {
     expect(propriedade.maxTentativas).toBe(5);
     expect(linhaEscritaSpy).toHaveBeenCalledWith(
       expect.objectContaining({ config_pipeline: expect.objectContaining({ canais_distribuicao: ["gmb"], max_tentativas: 5 }) }),
+    );
+  });
+
+  // Fase 4e, Agente Agendador (20/08/2026) — horariosPublicacao segue o mesmo tratamento
+  // sempre-escrito de postsPorDia/janelaPublicacao (não o condicional dos campos de calibração).
+  it("grava horarios_publicacao no config_pipeline", async () => {
+    const linhaEscritaSpy = vi.fn();
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { max_tentativas: 3 } }, error: null });
+      const builder = criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site",
+          url_base: "https://x.com",
+          tipo_cms: "wordpress",
+          ativo: true,
+          config_pipeline: { horarios_publicacao: ["09:00", "15:00"] },
+          credenciais_canais: {},
+        },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: unknown) => {
+        linhaEscritaSpy(arg);
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarPropriedade({
+      id: "prop-1",
+      nome: "Site",
+      urlBase: "https://x.com",
+      tipoCms: "wordpress",
+      maxTentativas: 3,
+      horariosPublicacao: ["09:00", "15:00"],
+    });
+
+    expect(linhaEscritaSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ config_pipeline: expect.objectContaining({ horarios_publicacao: ["09:00", "15:00"] }) }),
+    );
+  });
+
+  it("grava horarios_publicacao como null quando não informado (sempre-escrito, não condicional)", async () => {
+    const linhaEscritaSpy = vi.fn();
+    const supabaseFalso = { from: vi.fn() };
+    let chamada = 0;
+    supabaseFalso.from.mockImplementation(() => {
+      chamada += 1;
+      if (chamada === 1) return criarQueryFalsa({ data: { config_pipeline: { horarios_publicacao: ["09:00"] } }, error: null });
+      const builder = criarQueryFalsa({
+        data: {
+          id: "prop-1",
+          nome: "Site",
+          url_base: "https://x.com",
+          tipo_cms: "wordpress",
+          ativo: true,
+          config_pipeline: {},
+          credenciais_canais: {},
+        },
+        error: null,
+      });
+      const updateOriginal = builder.update as unknown as (arg: unknown) => unknown;
+      builder.update = vi.fn((arg: unknown) => {
+        linhaEscritaSpy(arg);
+        return updateOriginal(arg);
+      });
+      return builder;
+    });
+    vi.mocked(createAdminClient).mockReturnValue(supabaseFalso as never);
+
+    await salvarPropriedade({ id: "prop-1", nome: "Site", urlBase: "https://x.com", tipoCms: "wordpress", maxTentativas: 3 });
+
+    expect(linhaEscritaSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ config_pipeline: expect.objectContaining({ horarios_publicacao: null }) }),
     );
   });
 
@@ -1296,6 +1435,25 @@ describe("atualizarStatusPost", () => {
         imagem_destaque_storage_url: "https://supabase.exemplo.com/storage/v1/object/public/marketing-imagens/prop-1/pauta-1/capa-x.png",
       }),
     );
+  });
+
+  // Fase 4e, Agente Agendador (20/08/2026).
+  it("grava agendado_para quando o post foi criado agendado no WordPress", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", { agendadoPara: "2026-08-21T12:00:00.000Z" });
+
+    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ agendado_para: "2026-08-21T12:00:00.000Z" }));
+  });
+
+  it("NÃO grava agendado_para quando o campo vem ausente — publicação imediata, comportamento anterior a esta feature", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await atualizarStatusPost("post-1", "publicado", {});
+
+    expect(builder.update).toHaveBeenCalledWith(expect.not.objectContaining({ agendado_para: expect.anything() }));
   });
 
   it("NÃO grava a coluna quando o campo vem ausente (undefined) — preserva um arquivo de tentativa anterior", async () => {

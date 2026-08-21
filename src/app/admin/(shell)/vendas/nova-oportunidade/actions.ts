@@ -1,6 +1,7 @@
 "use server";
 
 import { buscarRazaoSocialPorCnpj } from "@/lib/vendas/cnpj-publico";
+import { buscarEnderecoPorPessoa, type EnderecoPessoa } from "@/lib/vendas/endereco";
 import { buscarPessoaCompleta, buscarPessoaPorDocumento } from "@/lib/vendas/pessoas";
 
 export type ResultadoBuscarPessoa =
@@ -13,6 +14,7 @@ export type ResultadoBuscarPessoa =
       rg: string | null;
       estadoCivil: string | null;
       profissao: string | null;
+      endereco: EnderecoPessoa | null;
     }
   | { encontrada: false };
 
@@ -22,6 +24,9 @@ export async function buscarPessoaPorDocumentoAction(documento: string): Promise
   // buscarPessoaPorDocumento (PessoaEncontrada) não traz rg/estadoCivil/profissao — busca completa:
   const completa = await buscarPessoaCompleta(pessoa.id);
   if (!completa) return { encontrada: false };
+  // Achado real (Luiz, 20/08/2026): sem isso, o endereço já salvo de uma pessoa existente nunca
+  // aparecia na tela — o campo ficava em branco e o submit não mandava nada pro salvarEndereco.
+  const endereco = await buscarEnderecoPorPessoa(completa.id);
   return {
     encontrada: true,
     id: completa.id,
@@ -31,6 +36,7 @@ export async function buscarPessoaPorDocumentoAction(documento: string): Promise
     rg: completa.rg,
     estadoCivil: completa.estadoCivil,
     profissao: completa.profissao,
+    endereco,
   };
 }
 
@@ -65,7 +71,7 @@ export type EntradaConfirmarNovaOportunidade = {
   produtoId: string;
   pessoaId: string | null;
   pessoaNova: { nome: string; documento: string } | null;
-  dadosContrato: { email: string; whatsapp: string; rg: string; estadoCivil: string; profissao: string };
+  dadosContrato: { nome: string; email: string; whatsapp: string; rg: string; estadoCivil: string; profissao: string };
   endereco: { cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string } | null;
   pacote: EntradaPacote[];
   valorTotal: number | null;
@@ -101,6 +107,9 @@ export async function confirmarNovaOportunidadeAction(
     if (!pessoa.sucesso) return { sucesso: false, erro: pessoa.erro };
 
     await atualizarDadosContratoPessoa(pessoa.pessoaId, {
+      // Nome é editável na tela mesmo pra pessoa já existente — sem mandar aqui, uma correção feita
+      // na hora não gravava e o contrato saía com o nome antigo (achado real, Luiz 20/08/2026).
+      nome: entrada.dadosContrato.nome || null,
       email: entrada.dadosContrato.email || null,
       whatsapp: entrada.dadosContrato.whatsapp || null,
       rg: entrada.dadosContrato.rg || null,
@@ -164,6 +173,9 @@ export async function confirmarNovaOportunidadeAction(
       representanteId = resolvidoRepresentante.pessoaId;
       await definirRepresentante(pessoa.pessoaId, representanteId);
       await atualizarDadosContratoPessoa(representanteId, {
+        // Nome do representante não é editável na tela quando encontrado (só ao cadastrar um novo,
+        // e nesse caso resolverOuCriarPessoa/criarContrato já grava o nome certo) — nada a sincronizar.
+        nome: null,
         email: entrada.representante.dadosContrato.email || null,
         whatsapp: entrada.representante.dadosContrato.whatsapp || null,
         rg: entrada.representante.dadosContrato.rg || null,

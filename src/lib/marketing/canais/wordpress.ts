@@ -47,9 +47,11 @@ export function criarAdaptadorWordPress(
   credenciais: CredenciaisWordPress,
 ): AdaptadorCanal & {
   // Sobrescreve a assinatura de criarRascunho do AdaptadorCanal genérico (que não conhece
-  // imagemDestacadaId — parâmetro específico do WordPress) — sem isso a interseção manteria só a
-  // assinatura de 1 parâmetro e o chamador não conseguiria passar o segundo.
-  criarRascunho(conteudo: ConteudoCanal, imagemDestacadaId?: string): Promise<ResultadoRascunho>;
+  // imagemDestacadaId/agendadoPara — parâmetros específicos do WordPress) — sem isso a interseção
+  // manteria só a assinatura de 1 parâmetro e o chamador não conseguiria passar os outros dois.
+  // agendadoPara (Fase 4e, 20/08/2026): quando presente, cria o post com `status: "future"` pro
+  // WordPress liberar sozinho nesse horário, em vez de `"draft"` (ver processar-pauta.ts).
+  criarRascunho(conteudo: ConteudoCanal, imagemDestacadaId?: string, agendadoPara?: Date): Promise<ResultadoRascunho>;
   enviarMidia(imagemUrl: string, nomeArquivo: string, altText: string): Promise<ResultadoMidia>;
 } {
   const baseApi = `${urlBase.replace(/\/$/, "")}/wp-json/wp/v2`;
@@ -68,12 +70,17 @@ export function criarAdaptadorWordPress(
   }
 
   return {
-    async criarRascunho(conteudo: ConteudoCanal, imagemDestacadaId?: string): Promise<ResultadoRascunho> {
+    async criarRascunho(conteudo: ConteudoCanal, imagemDestacadaId?: string, agendadoPara?: Date): Promise<ResultadoRascunho> {
       const post = await chamarApi("/posts", {
         title: conteudo.titulo,
         content: conteudo.corpoHtml,
         slug: conteudo.slug,
-        status: "draft",
+        // Fase 4e (20/08/2026): com agendadoPara, cria como "future" + date_gmt — o WordPress
+        // libera o post sozinho nesse horário (recurso nativo do core, sem cron próprio). UTC
+        // explícito (toISOString) porque date_gmt é sempre UTC pro core, independente do fuso
+        // configurado no site (diferente de `date`, que seguiria o fuso do WordPress).
+        status: agendadoPara ? "future" : "draft",
+        ...(agendadoPara ? { date_gmt: agendadoPara.toISOString() } : {}),
         meta: { _yoast_wpseo_title: conteudo.metaTitle, _yoast_wpseo_metadesc: conteudo.metaDescription },
         // Adição puramente aditiva (Task 9): sem imagemDestacadaId a chave nem entra no objeto,
         // então o payload enviado continua idêntico ao de antes desta task (ver regressão em
@@ -83,7 +90,9 @@ export function criarAdaptadorWordPress(
         // tipo aqui em vez de converter pra number sem necessidade.
         ...(imagemDestacadaId ? { featured_media: imagemDestacadaId } : {}),
       });
-      return { idRemoto: String(post.id), status: "rascunho" };
+      // `post.link` (Fase 4e): o WordPress calcula o permalink a partir do slug já na criação,
+      // mesmo pra status "future" — não precisa esperar aprovarPublicar pra ter a URL final.
+      return { idRemoto: String(post.id), status: "rascunho", link: String(post.link) };
     },
 
     // POST /wp/v2/media — confirmado via developer.wordpress.org/rest-api/reference/media/

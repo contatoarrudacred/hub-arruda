@@ -1,9 +1,9 @@
 # Status — Vendas
 
-tarefa: Pipeline de assinatura+cobrança fechada pro lado externo — Assinafy (API key, account id, webhook secret, webhook cadastrado e confirmado apontando certo) e Asaas (API key, webhook secret, eventos cadastrados) configurados de ponta a ponta no Vercel. Corrigidos no caminho: botão de configurar webhook que travava (sem timeout), falso-positivo no checador de status (só validava eventos, não a URL), e URL montada errada quando NEXT_PUBLIC_APP_URL vinha vazia. Template de contrato do Limpa Nome também já está pronto (Luiz).
-desde: 2026-08-20T10:20:00-03:00
-proxima: rodar um teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade) — e só depois fazer a revisão geral do módulo + atualizar spec/documentação (pedido do Luiz).
-bloqueio: nenhum — só falta o teste ao vivo em si, que depende do Luiz assinar/pagar de verdade um documento de teste.
+tarefa: Mais um bug real corrigido na Nova Oportunidade (commit `b734ec8`): o nome de uma pessoa já existente era editável na tela, mas a edição nunca chegava no servidor (só ia junto quando a pessoa era nova) — contrato saía com o nome antigo. Corrigido em `pessoas.ts`/`actions.ts`/`nova-oportunidade-client.tsx`, e o mesmo ajuste passou por `fechamento/actions.ts` (lá o nome não é editável, comportamento preservado). Aproveitado pra tirar `console.log` de debug com dado pessoal que tinham ficado em `pessoas.ts`. O erro "Cliente e signatário da ArrudaCred resolveram pro mesmo signatário" que o Luiz viu depois foi confirmado por ele mesmo como engano de configuração (ID errado em `/admin/configuracoes`), não bug de código. tsc/eslint limpos, vitest 550/552 (as 2 falhas são do Marketing, env var ausente neste worktree, nada a ver com Vendas).
+desde: 2026-08-20T16:20:00-03:00
+proxima: Luiz confirmar os dois fixes de endereço+nome testando de novo com uma pessoa já cadastrada, depois rodar o teste real de ponta a ponta — Nova Oportunidade → PDF → Assinafy (assinatura de verdade) → Asaas (cobrança/pagamento de verdade).
+bloqueio: nenhum — falta o teste ao vivo, que depende do Luiz assinar/pagar de verdade um documento de teste.
 
 ## Verificação da Task 18 (2026-08-19) — o que foi confirmado e o que ficou pendente
 
