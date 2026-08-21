@@ -156,7 +156,7 @@ Achado 1 — o cálculo de parcela por forma de pagamento). Vale investigar junt
 
 ---
 
-## Achado 1c (🔴 crítico, produção real) — Texto quebrado em `ln_passo17a`: "[parcela unica] ou [parcela inicial) de 899"
+## Achado 1c (✅ corrigido e verificado em 21/08/2026) — Texto quebrado em `ln_passo17a`: "[parcela unica] ou [parcela inicial) de 899"
 
 **Achado ao re-testar o Achado 1** (não é bug de código, nem de IA — é conteúdo real quebrado no
 `etapas_fluxo` de produção). Depois de confirmar o pagamento em `ln_passo16_1`, a próxima etapa
@@ -175,8 +175,10 @@ o valor (já foi dito com clareza na mensagem de confirmação anterior):
 
 > "👍 Perfeito! Vou te passar os dados que preciso para emitir o contrato e já te mando pra você ler e assinar. Depois do contrato assinado, você faz o pagamento combinado — combinado?"
 
-**Ainda não aplicado** — precisa do mesmo tratamento dos outros patches de `etapas_fluxo` (SQL pro Luiz
-rodar no SQL Editor).
+**Correção aplicada e verificada** — Luiz rodou o `jsonb_set` no SQL Editor, confirmado por leitura
+direta: o texto real agora é "👍 Perfeito! Vou te passar os dados que preciso para emitir o contrato e
+já te mando pra você ler e assinar. Depois do contrato assinado, você faz o pagamento combinado —
+combinado?", sem colchetes soltos nem valor errado.
 
 ---
 
@@ -227,7 +229,7 @@ lá que os Achados 0b, 1 e 1b foram confirmados como reais.
 | 0b | `abertura_email` trava pra sempre sem `opcional_apos_tentativas` | ✅ **corrigido e verificado** | Confirmado (diagnóstico isolado, fix re-testado) | lead_desconfiado_pede_provas, lead_testa_repeticao_de_pergunta |
 | 1 | Parcela cobrada não bate com a Condição Especial oferecida | ✅ **corrigido e verificado** | Confirmado (2 ocorrências, causa raiz achada, fix re-testado) | lead_ansioso_urgente, lead_hostil_grosseiro |
 | 1b | Negociação de pagamento trava com perguntas de acompanhamento | 🟠 sério | Observado, causa raiz não confirmada | lead_ansioso_urgente, lead_pergunta_fora_do_escopo_no_meio |
-| 1c | Texto quebrado em `ln_passo17a` ("[parcela unica]... de 899") | 🔴 crítico, aguardando patch | Confirmado (texto real em produção) | lead_ansioso_urgente |
+| 1c | Texto quebrado em `ln_passo17a` ("[parcela unica]... de 899") | ✅ **corrigido e verificado** | Confirmado (texto real em produção, patch re-verificado) | lead_ansioso_urgente |
 | 2 | Emoji de gênero inconsistente (🙋‍♂️ numa persona feminina) | 🟡 menor | Confirmado | triagem_handoff_outro_assunto, lead_divida_alta_recusa_com_argumentos |
 | — | Nota interna automática em handoff | ✅ funcionando | Confirmado | triagem_handoff_outro_assunto |
 | — | Recusa de agendamento (insistência/self-service) | ⏸️ não testável ainda | `etapas_fluxo` real não patcheado (código só local) | divida_alta_recusa_duas_vezes, pacote_caro_recusa_vai_pro_selfservice |
@@ -239,8 +241,9 @@ sequenciamento de sempre). Precisam ser re-testados depois desse patch.
 
 ## Pendente
 
-- ✅ 0a, 0b e 1 corrigidos e verificados (21/08/2026).
-- Rodar o patch do Achado 1c (SQL pro Luiz, texto de `ln_passo17a`).
+- ✅ 0a, 0b, 1 e 1c corrigidos e verificados (21/08/2026).
 - Investigar 1b (travas na negociação de pagamento com perguntas de acompanhamento) — mesma área de
   código do Achado 1, faz sentido revisitar quando mexer ali de novo.
+- Patchear `etapas_fluxo` real com a correção de recusa de agendamento (`ln_agendamento_router_recusa`/
+  `ln_agendamento_insistencia`) — código já em `main`, falta só o patch de conteúdo.
 - 2 (emoji de gênero) é cosmético, entra em qualquer correção que já mexer no texto do script.
