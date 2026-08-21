@@ -24,6 +24,7 @@ import {
   gerarUrlDownloadContratoAction,
   marcarComissaoRecebidaAction,
   reenviarLinkAction,
+  ressincronizarPdfAssinadoAction,
   tentarNovamenteAction,
 } from "./actions";
 
@@ -341,8 +342,29 @@ function CardPartesDoContrato({
   const [erro, setErro] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [erroConfirmar, setErroConfirmar] = useState<string | null>(null);
+  const [ressincronizando, setRessincronizando] = useState(false);
+  const [erroRessincronizar, setErroRessincronizar] = useState<string | null>(null);
+  const [ressincronizado, setRessincronizado] = useState(false);
 
   const partes = montarPartes(pessoa, representante, pessoaArrudaCred);
+
+  // Escape hatch pra vendas assinadas ANTES de sincronizarPdfCertificado existir nos dois caminhos
+  // (webhook + confirmarAssinaturaManualAction) — achado real, Luiz 21/08/2026: uma venda avançada
+  // pelo botão manual antes desse fix ficou com o PDF sem assinatura mesmo já em "Aguardando
+  // Pagamento". Diferente de confirmarAssinatura acima, não toca em etapa/cobrança — só o arquivo,
+  // seguro de rodar em qualquer venda já assinada, mesmo bem além desta etapa.
+  async function ressincronizarPdf() {
+    setRessincronizando(true);
+    setErroRessincronizar(null);
+    const resultado = await ressincronizarPdfAssinadoAction(contrato.id);
+    setRessincronizando(false);
+    if (!resultado.sucesso) {
+      setErroRessincronizar(resultado.erro);
+      return;
+    }
+    setRessincronizado(true);
+    setTimeout(() => setRessincronizado(false), 3000);
+  }
 
   async function verificar() {
     if (!contrato.assinafyDocumentId) return;
@@ -409,9 +431,21 @@ function CardPartesDoContrato({
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Aguardando emissão do contrato.</p>
       )}
       {assinado && (
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-          <span aria-hidden="true">✅</span> Assinado por todos em {formatarData(contrato.assinadoEm!)}.
-        </p>
+        <div className="mt-1">
+          <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <span aria-hidden="true">✅</span> Assinado por todos em {formatarData(contrato.assinadoEm!)}.
+          </p>
+          <button
+            type="button"
+            onClick={ressincronizarPdf}
+            disabled={ressincronizando}
+            title="Baixa de novo o PDF certificado da Assinafy e sobrescreve o arquivo — use se o PDF abaixo ainda parecer o rascunho sem assinatura"
+            className="mt-1 text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            {ressincronizando ? "Ressincronizando..." : ressincronizado ? "PDF ressincronizado!" : "🔄 Ressincronizar PDF assinado"}
+          </button>
+          {erroRessincronizar && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erroRessincronizar}</p>}
+        </div>
       )}
       {!assinado && contrato.assinafyDocumentId && (
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">

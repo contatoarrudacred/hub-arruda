@@ -138,6 +138,28 @@ export async function confirmarAssinaturaManualAction(contratoId: string, assina
   }
 }
 
+/**
+ * Reprocessa a troca do PDF certificado pra vendas já assinadas que ficaram com o PDF sem
+ * assinatura — achado real, Luiz 21/08/2026: uma venda avançada pelo botão manual
+ * (confirmarAssinaturaManualAction) antes de `sincronizarPdfCertificado` ter sido plugada nele
+ * (mesma sessão, fix anterior a este) nunca teve o PDF trocado, mesmo já em "Aguardando Pagamento".
+ * Diferente de confirmarAssinaturaManualAction, esta ação NÃO toca em etapa nem tenta gerar
+ * cobrança de novo — só o arquivo. Segura de rodar em qualquer venda já assinada, mesmo que já
+ * tenha avançado bem além da etapa de assinatura (evita duplicar Checkout/cobrança na Asaas).
+ */
+export async function ressincronizarPdfAssinadoAction(contratoId: string): Promise<ResultadoAcao> {
+  try {
+    const contrato = await buscarContratoPorId(contratoId);
+    if (!contrato) return { sucesso: false, erro: "Contrato não encontrado." };
+    if (!contrato.assinafyDocumentId) return { sucesso: false, erro: "Este contrato não tem documento na Assinafy." };
+
+    await sincronizarPdfCertificado(contrato, contrato.assinafyDocumentId);
+    return { sucesso: true };
+  } catch (erro) {
+    return { sucesso: false, erro: mensagemErro(erro, "Falha ao ressincronizar o PDF assinado.") };
+  }
+}
+
 export async function tentarNovamenteAction(contratoId: string): Promise<ResultadoAcao> {
   try {
     const { tentarNovamente } = await import("@/lib/vendas/progressao");
