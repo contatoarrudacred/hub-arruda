@@ -50,13 +50,13 @@ function formatarData(data: string): string {
 function formatarEndereco(endereco: EnderecoPessoa | null): string | null {
   if (!endereco) return null;
   const partes = [
-    `${endereco.logradouro}, ${endereco.numero}`,
-    endereco.complemento,
-    endereco.bairro,
-    `${endereco.cidade}/${endereco.uf}`,
-    formatarCep(endereco.cep),
-  ].filter((parte): parte is string => Boolean(parte && parte.trim()));
-  return partes.join(" — ");
+    endereco.logradouro ? `${endereco.logradouro}${endereco.numero ? `, ${endereco.numero}` : ""}` : null,
+    endereco.complemento || null,
+    endereco.bairro || null,
+    endereco.cidade && endereco.uf ? `${endereco.cidade}/${endereco.uf}` : null,
+    endereco.cep ? formatarCep(endereco.cep) : null,
+  ].filter((parte): parte is string => Boolean(parte));
+  return partes.length > 0 ? partes.join(" — ") : null;
 }
 
 function LinkCopiavel({ link }: { link: string }) {
@@ -151,10 +151,12 @@ function CardDadosDaVenda({
   oportunidade,
   fornecedor,
   template,
+  ehComissionado,
 }: {
   oportunidade: OportunidadeFechamento;
   fornecedor: PessoaCompleta | null;
   template: TemplateDocumentoCompleto | null;
+  ehComissionado: boolean;
 }) {
   return (
     <div className={cardBase}>
@@ -163,7 +165,10 @@ function CardDadosDaVenda({
         <LinhaDado rotulo="Produto" valor={oportunidade.produtoNome} />
         <LinhaDado rotulo="Tipo" valor={TIPO_PRODUTO_LABEL[oportunidade.produtoTipo]} />
         <LinhaDado rotulo="Fornecedor" valor={fornecedor?.nomeRazaoSocial ?? null} />
-        <LinhaDado rotulo="Template do contrato" valor={template?.nome ?? "nenhum template ativo pra este produto"} />
+        <LinhaDado
+          rotulo="Template do contrato"
+          valor={ehComissionado ? "não se aplica (venda comissionada)" : (template?.nome ?? "nenhum template ativo pra este produto")}
+        />
       </div>
     </div>
   );
@@ -598,7 +603,7 @@ export function DetalhesVendaClient({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <CardDadosCliente pessoa={pessoa} endereco={enderecoCliente} />
-            <CardDadosDaVenda oportunidade={oportunidade} fornecedor={fornecedor} template={template} />
+            <CardDadosDaVenda oportunidade={oportunidade} fornecedor={fornecedor} template={template} ehComissionado={ehComissionado} />
 
             {!ehComissionado && (
               <div className="md:col-span-2">
@@ -612,9 +617,24 @@ export function DetalhesVendaClient({
               </div>
             )}
 
-            {documentosPacote.length > 0 && <CardPacoteDocumentos documentos={documentosPacote} />}
-
-            {ehComissionado && comissoes.length > 0 && <PainelComissoes comissoes={comissoes} onMudou={recarregarPagina} />}
+            {(() => {
+              const mostrarPacote = documentosPacote.length > 0;
+              const mostrarComissoes = ehComissionado && comissoes.length > 0;
+              return (
+                <>
+                  {mostrarPacote && (
+                    <div className={mostrarComissoes ? "" : "md:col-span-2"}>
+                      <CardPacoteDocumentos documentos={documentosPacote} />
+                    </div>
+                  )}
+                  {mostrarComissoes && (
+                    <div className={mostrarPacote ? "" : "md:col-span-2"}>
+                      <PainelComissoes comissoes={comissoes} onMudou={recarregarPagina} />
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {timeline.length > 0 && (
