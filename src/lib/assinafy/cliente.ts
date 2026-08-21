@@ -174,6 +174,24 @@ export async function buscarDocumento(documentId: string): Promise<AssinafyDocum
   return mapearDocumento(bruto.data);
 }
 
+/**
+ * Baixa o artifact "certificated" — o PDF final, com o certificado de assinatura embutido pela
+ * Assinafy, disponível assim que o documento chega em `certificated` (mesmo momento do evento de
+ * webhook `document_ready`, já tratado em processarDocumentoAssinado). Diferente de chamarApi: a
+ * resposta é o binário do PDF (`Content-Type: application/pdf`), não JSON — por isso não reaproveita
+ * aquele helper, que sempre chama `.json()`.
+ */
+export async function baixarDocumentoCertificado(documentId: string): Promise<Buffer> {
+  const resposta = await fetch(`${BASE_URL}/documents/${documentId}/download/certificated`, {
+    headers: { "X-Api-Key": apiKey() },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!resposta.ok) {
+    throw new Error(`Assinafy respondeu ${resposta.status} ao baixar o PDF certificado do documento ${documentId}.`);
+  }
+  return Buffer.from(await resposta.arrayBuffer());
+}
+
 export type StatusWebhookAssinafy = { events: string[]; ativo: boolean; url: string; email: string; atualizadoEm: string };
 
 /** Consulta o estado atual da assinatura de webhook da conta — usado pra mostrar na tela se o
