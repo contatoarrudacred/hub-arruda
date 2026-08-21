@@ -311,6 +311,17 @@ export async function atualizarParcelaAsaas(parcelaId: string, asaasPaymentId: s
   if (error) throw new Error(`Falha ao atualizar parcela com id da Asaas: ${error.message}`);
 }
 
+/** Corrige `vencimento_previsto` quando a cobrança de verdade sai criada com uma data diferente da
+ * planejada — achado real (Luiz, 21/08/2026): a Asaas rejeita (400 `invalid_dueDate`) qualquer
+ * vencimento anterior a hoje, o que pode acontecer numa venda que demorou a ser assinada (webhook
+ * perdido, destravada manualmente bem depois do previsto). Sem gravar a correção aqui, o banco
+ * ficaria com uma data diferente da que a Asaas realmente vai cobrar. */
+export async function atualizarVencimentoParcela(parcelaId: string, novoVencimento: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contrato_parcelas").update({ vencimento_previsto: novoVencimento }).eq("id", parcelaId);
+  if (error) throw new Error(`Falha ao atualizar vencimento da parcela: ${error.message}`);
+}
+
 export async function marcarParcelaPaga(
   asaasPaymentId: string,
   pagoEm: string,

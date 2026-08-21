@@ -1,5 +1,11 @@
 import { buscarClientePorCpfCnpj, criarCheckout, criarCliente, criarCobranca } from "./cliente";
-import { atualizarParcelaAsaas, atualizarStatusContrato, buscarContratoPorId, type MetodoPagamento } from "@/lib/vendas/contratos";
+import {
+  atualizarParcelaAsaas,
+  atualizarStatusContrato,
+  atualizarVencimentoParcela,
+  buscarContratoPorId,
+  type MetodoPagamento,
+} from "@/lib/vendas/contratos";
 import { enviarLinkPagamentoWhatsapp } from "@/lib/vendas/notificacoes";
 import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
 
@@ -64,11 +70,22 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
     // ver Critical 2) recriaria as parcelas que já tinham dado certo antes de uma falha no meio.
     if (parcela.asaasPaymentId) continue;
 
+    // Achado real (Luiz, 21/08/2026): a Asaas rejeita (400 invalid_dueDate) qualquer vencimento
+    // anterior a hoje — acontece numa venda que demorou a ser assinada/destravada bem depois do
+    // previsto (ex.: webhook document_ready perdido, corrigido só depois via
+    // confirmarAssinaturaManualAction). Empurra pra hoje nesse caso e grava a correção de volta em
+    // contrato_parcelas, pra não ficar um dado divergente do que a Asaas realmente cobra.
+    const hoje = new Date().toISOString().slice(0, 10);
+    const dueDate = parcela.vencimentoPrevisto < hoje ? hoje : parcela.vencimentoPrevisto;
+    if (dueDate !== parcela.vencimentoPrevisto) {
+      await atualizarVencimentoParcela(parcela.id, dueDate);
+    }
+
     const cobranca = await criarCobranca({
       customerId,
       billingType,
       value: parcela.valor,
-      dueDate: parcela.vencimentoPrevisto,
+      dueDate,
       externalReference: parcela.id,
       description: `Parcela ${parcela.numero}/${contrato.parcelasQtd} — contrato ${contratoId}`,
     });
