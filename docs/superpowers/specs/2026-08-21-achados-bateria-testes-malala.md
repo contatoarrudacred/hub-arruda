@@ -76,7 +76,7 @@ a etapa desiste corretamente e avança pra `triagem_menu` (antes, ficava presa p
 
 ---
 
-## Achado 1 (🔴 crítico) — Parcela cobrada não bate com a "Condição Especial" oferecida
+## Achado 1 (✅ corrigido e verificado em 21/08/2026) — Parcela cobrada não bate com a "Condição Especial" oferecida
 
 **Cenário:** `lead_ansioso_urgente` (adversarial), rodado em 21/08/2026 contra produção.
 
@@ -129,6 +129,19 @@ matemático nenhum, e de novo não corrigiu nem escalou. **2 ocorrências em 2 c
 chegaram até esse ponto confirma que não é acaso** — é um bug sistemático em como `ln_passo16_1`
 (negociação de pagamento) calcula a parcela quando o lead aceita a Condição Especial.
 
+**Causa raiz confirmada:** o cálculo de defaults de parcela em `fluxo-limpeza-nome.ts`
+(`criarCalculadoraDadosDerivados`, bloco "Defaults do detalhe de pagamento") sempre usava
+`faixaCombinada.parcelasBoleto`/`precoAvista` (preço normal) — nunca olhava `dados.prioridade_fechar_hoje`
+nem os campos `voucherAvista`/`voucherParcelas` que `combinarFaixasPacote` já calculava (e que
+`montarPropostaPorFaixa` já usava pra MOSTRAR a oferta, só não pra gravar o valor de verdade).
+
+**Correção aplicada:** o cálculo agora usa o preço do voucher quando `prioridade_fechar_hoje=sim` e o
+voucher existe pra faixa (com fallback pro parcelamento normal se a faixa não tiver voucher parcelado,
+só à vista). 4 testes novos em `calcular-dados-derivados-pagamento.test.ts`, 622/622 verdes.
+
+**Verificação pós-fix:** re-rodei `lead_ansioso_urgente` — a parcela confirmada agora bate exatamente
+com a Condição Especial oferecida (R$399, não mais R$600).
+
 ---
 
 ## Achado 1b (🟠 sério, não totalmente investigado) — Negociação de pagamento (`ln_passo16_1`) trava com perguntas de acompanhamento
@@ -140,6 +153,30 @@ parcela é a do boleto ou do cartão?"). Diferente do Achado 0b, não confirmei 
 o interpretador de negociação de pagamento não cobrindo essas variações, ou pode ter uma relação com o
 Achado 1 — o cálculo de parcela por forma de pagamento). Vale investigar junto quando formos mexer nessa
 área.
+
+---
+
+## Achado 1c (🔴 crítico, produção real) — Texto quebrado em `ln_passo17a`: "[parcela unica] ou [parcela inicial) de 899"
+
+**Achado ao re-testar o Achado 1** (não é bug de código, nem de IA — é conteúdo real quebrado no
+`etapas_fluxo` de produção). Depois de confirmar o pagamento em `ln_passo16_1`, a próxima etapa
+(`ln_passo17a`, pede os dados do assinante do contrato) manda esta mensagem **estática, literal, pra todo
+lead real que chega nesse ponto**:
+
+> "👍 Perfeito! vou te passar os dados que preciso para emitir o contrato e já te mando para ler e assinar. depois do contrato assinado você faz o pagamento da **[parcela unica] ou [parcela inicial) de 899** - combinado?"
+
+Colchetes sem preencher, parênteses trocado por colchete, e um valor "899" que não tem nenhuma relação
+com o preço negociado na conversa (nem é o preço da faixa, nem do voucher — parece ter sido um valor de
+exemplo esquecido numa edição anterior). Confirmado direto no banco: é texto estático (`mensagens`), não
+gerado dinamicamente — todo lead que chega em `ln_passo17a` recebe exatamente isso.
+
+**Correção proposta (patch de conteúdo, sem código):** trocar o texto por algo que não dependa de repetir
+o valor (já foi dito com clareza na mensagem de confirmação anterior):
+
+> "👍 Perfeito! Vou te passar os dados que preciso para emitir o contrato e já te mando pra você ler e assinar. Depois do contrato assinado, você faz o pagamento combinado — combinado?"
+
+**Ainda não aplicado** — precisa do mesmo tratamento dos outros patches de `etapas_fluxo` (SQL pro Luiz
+rodar no SQL Editor).
 
 ---
 
@@ -188,8 +225,9 @@ lá que os Achados 0b, 1 e 1b foram confirmados como reais.
 |---|---|---|---|---|
 | 0a | `agendar_consultor` sempre falha (CHECK constraint desatualizado) | ✅ **corrigido e verificado** | Confirmado (erro reproduzido, fix re-testado) | divida_alta_aceita_agendamento |
 | 0b | `abertura_email` trava pra sempre sem `opcional_apos_tentativas` | ✅ **corrigido e verificado** | Confirmado (diagnóstico isolado, fix re-testado) | lead_desconfiado_pede_provas, lead_testa_repeticao_de_pergunta |
-| 1 | Parcela cobrada não bate com a Condição Especial oferecida | 🔴 crítico | Confirmado (2 ocorrências) | lead_ansioso_urgente, lead_hostil_grosseiro |
+| 1 | Parcela cobrada não bate com a Condição Especial oferecida | ✅ **corrigido e verificado** | Confirmado (2 ocorrências, causa raiz achada, fix re-testado) | lead_ansioso_urgente, lead_hostil_grosseiro |
 | 1b | Negociação de pagamento trava com perguntas de acompanhamento | 🟠 sério | Observado, causa raiz não confirmada | lead_ansioso_urgente, lead_pergunta_fora_do_escopo_no_meio |
+| 1c | Texto quebrado em `ln_passo17a` ("[parcela unica]... de 899") | 🔴 crítico, aguardando patch | Confirmado (texto real em produção) | lead_ansioso_urgente |
 | 2 | Emoji de gênero inconsistente (🙋‍♂️ numa persona feminina) | 🟡 menor | Confirmado | triagem_handoff_outro_assunto, lead_divida_alta_recusa_com_argumentos |
 | — | Nota interna automática em handoff | ✅ funcionando | Confirmado | triagem_handoff_outro_assunto |
 | — | Recusa de agendamento (insistência/self-service) | ⏸️ não testável ainda | `etapas_fluxo` real não patcheado (código só local) | divida_alta_recusa_duas_vezes, pacote_caro_recusa_vai_pro_selfservice |
@@ -201,7 +239,8 @@ sequenciamento de sempre). Precisam ser re-testados depois desse patch.
 
 ## Pendente
 
-- ✅ 0a e 0b corrigidos e verificados (21/08/2026).
-- Investigar e corrigir 1/1b (bug de preço da Condição Especial + travas na negociação de pagamento) —
-  mesma área de código, faz sentido investigar junto.
+- ✅ 0a, 0b e 1 corrigidos e verificados (21/08/2026).
+- Rodar o patch do Achado 1c (SQL pro Luiz, texto de `ln_passo17a`).
+- Investigar 1b (travas na negociação de pagamento com perguntas de acompanhamento) — mesma área de
+  código do Achado 1, faz sentido revisitar quando mexer ali de novo.
 - 2 (emoji de gênero) é cosmético, entra em qualquer correção que já mexer no texto do script.

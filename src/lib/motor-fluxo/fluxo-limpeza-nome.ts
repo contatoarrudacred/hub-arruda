@@ -978,9 +978,19 @@ export function criarCalculadoraDadosDerivados(
     if (dados.forma_pagamento && !dados.parcelas_valores) {
       const parcelado = dados.forma_pagamento === "parcelado";
       const faixaCombinada = combinarFaixasPacote(valoresPorDocumento(dados), faixasPrecos);
+
+      // Achado real (21/08/2026, bateria de testes da Malala): quando o lead topa a Condição
+      // Especial (prioridade_fechar_hoje=sim) e existe voucher pra faixa dele, a parcela cobrada
+      // precisa usar o preço COM o desconto do voucher — antes disso, sempre usava o preço normal
+      // aqui, cobrando mais do que `montarPropostaPorFaixa` (que já respeita esse flag) tinha
+      // acabado de oferecer. Sem voucher parcelado pra essa faixa (raro, mas `voucherParcelas` pode
+      // vir vazio), cai pro parcelamento normal em vez de travar sem valor nenhum.
+      const temVoucher = dados.prioridade_fechar_hoje === "sim" && faixaCombinada?.voucherAvista != null;
       const tiers: ParcelaTier[] = parcelado
-        ? (faixaCombinada?.parcelasBoleto ?? [])
-        : [{ quantidade: 1, valor: faixaCombinada?.precoAvista ?? 0 }];
+        ? (temVoucher && (faixaCombinada?.voucherParcelas.length ?? 0) > 0
+            ? faixaCombinada?.voucherParcelas
+            : faixaCombinada?.parcelasBoleto) ?? []
+        : [{ quantidade: 1, valor: (temVoucher ? faixaCombinada?.voucherAvista : faixaCombinada?.precoAvista) ?? 0 }];
 
       if (tiers.length > 0) {
         const hojeISO = dataDeHojeISO();
