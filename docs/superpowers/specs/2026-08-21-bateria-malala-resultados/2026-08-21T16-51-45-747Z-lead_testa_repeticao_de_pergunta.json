@@ -1,0 +1,182 @@
+{
+  "cenario": "lead_testa_repeticao_de_pergunta",
+  "descricao": "Lead responde de forma propositalmente vaga/repetida à mesma pergunta — testa se a Malala repete a pergunta de forma idêntica (ruim) ou reformula/reconhece a repetição (esperado).",
+  "tipo": "adversarial",
+  "telefone": "+5511999909012",
+  "expectativaHandoff": null,
+  "turnos": [
+    {
+      "turno": 1,
+      "mensagemLead": "Oi, quero saber sobre limpeza de nome",
+      "mensagensMalala": [
+        "",
+        "🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!",
+        "👉 *Com quem eu falo?*"
+      ],
+      "etapaCodigo": "pergunta_nome",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 2,
+      "mensagemLead": "Marcos",
+      "mensagensMalala": [
+        "Oi Marcos, boa tarde! Prazer em falar com você!",
+        "Pra eu te atender melhor, me confirma seu e-mail:"
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": false,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 3,
+      "mensagemLead": "ah não sei de cor não, posso ver depois? me fala mais sobre como funciona isso ai",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 4,
+      "mensagemLead": "depois eu te passo, pode ser? me explica primeiro como funciona esse processo de limpar o nome",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 5,
+      "mensagemLead": "Poxa, ela tá insistindo muito nesse email. Tá bom, tá bom, depois eu arrumo. Mas me explica logo como funciona esse negócio de limpar nome então",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 6,
+      "mensagemLead": "Cara, você só fica repetindo a mesma mensagem. Esquece o email por enquanto, só quero entender como funciona o processo, depois eu vejo isso",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 7,
+      "mensagemLead": "Cara, sério, não vou ficar travado nisso. Se não der pra explicar sem o email, deixa quieto então.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 8,
+      "mensagemLead": "Então tá, esquece, depois eu vejo isso em outro lugar. Valeu",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 9,
+      "mensagemLead": "Falou, então. Tchau.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 10,
+      "mensagemLead": "É sério isso? Já falei que não vou continuar assim, tchau mesmo.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 11,
+      "mensagemLead": "Bloqueando esse número, isso não é atendimento de verdade.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 12,
+      "mensagemLead": "Não vou responder mais isso, esse atendimento é automático e não funciona. Já era.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 13,
+      "mensagemLead": "[sem resposta - número bloqueado]",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 14,
+      "mensagemLead": "Já falei que bloqueei o número, isso aqui nem chega mais. Fica falando sozinha então.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 15,
+      "mensagemLead": "Isso é um bot travado numa mesma resposta. Não adianta insistir, tá quebrado. Vou parar por aqui.",
+      "mensagensMalala": [
+        "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser."
+      ],
+      "etapaCodigo": "abertura_email",
+      "naoReconhecido": true,
+      "interpretadoPorIA": false
+    },
+    {
+      "turno": 16,
+      "mensagemLead": "Meu email é [email protected], agora me explica como funciona o processo.",
+      "mensagensMalala": [
+        "Entendi que precisa limpeza de nome no Serasa/SPC!\n\n👉 *Você já contratou esse serviço antes? sabe como funciona?*",
+        "🤔 Se você me responder 4 perguntinhas rápidas, eu já consigo passar o valor exato para limpeza de nome. Depois, tiro todas as suas dúvidas e, se preferir, podemos conversar por ligação ou vídeo-chamada.\n\n👉 *Podemos começar?*"
+      ],
+      "etapaCodigo": "ln_passo2",
+      "naoReconhecido": false,
+      "interpretadoPorIA": true
+    }
+  ],
+  "efeitos": {
+    "sobSupervisor": false,
+    "etapaKanban": "novo_lead_triagem",
+    "notasInternas": [],
+    "notificacoes": [],
+    "agendamento": null
+  },
+  "encerradoPorLimiteDeTurnos": true,
+  "erro": null
+}

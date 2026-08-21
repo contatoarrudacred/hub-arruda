@@ -1,0 +1,314 @@
+[
+  {
+    "cenario": "triagem_handoff_outro_assunto",
+    "descricao": "Lead pede um assunto fora de Limpeza de Nome no menu de triagem — deve escalar pro handoff_humano (ponto A) sem inventar ajuda que não pode dar.",
+    "respondeuOQueFoiPerguntado": true,
+    "repetiuPerguntaIdentica": false,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": true,
+    "resumo": "A Malala identificou corretamente o pedido de assunto fora do escopo (consórcio) e avisou que ia encaminhar, e o registro no banco confirma que a transferência de fato ocorreu (sob_supervisor=true + nota interna consistente). Porém há uso incorreto do emoji masculino 🙋‍♂️ (duas vezes), o que já é uma pendência conhecida mas ainda assim um defeito de execução, e o tom nas primeiras mensagens é um pouco robótico/formulário.",
+    "problemasEncontrados": [
+      "Uso do emoji 🙋‍♂️ (masculino), incoerente com a persona feminina da Malala, conforme a própria seção 3 e pendência 1 do documento",
+      "Mensagem de handoff é curta e não deixa claro que o lead poderá continuar sendo ajudado por um humano de forma mais explícita, mas cumpre o mínimo exigido"
+    ],
+    "citacoes": [
+      "Malala:  / 🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!",
+      "Malala: Perfeito! Esse assunto vou encaminhar para um outro consultor que vai te ajudar — só um instante 🙋‍♂️"
+    ]
+  },
+  {
+    "cenario": "duvida_baixa_negocia_direto",
+    "descricao": "Dívida baixa (<R$3.000) — a Malala recomenda negociar direto e o lead aceita a recomendação, encerrando com perda (não é bug, é o desenho do script).",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": false,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "O cenário previa que, para dívida abaixo de R$3 mil, a Malala recomendasse honestamente negociar direto com o credor (regra da seção 4.6). Isso nunca aconteceu: ela apenas confirmou a faixa de valor e, quando o lead decidiu por conta própria negociar direto, ela ignorou completamente essa fala e emendou uma pergunta de qualificação não relacionada, como se a conversa continuasse rumo à venda. Não houve reconhecimento da decisão do lead, não houve fechamento educado da conversa, nem registro de nota interna sobre a perda - o que é inconsistente mesmo o cenário sendo \"encerrar com perda\" por desenho.",
+    "problemasEncontrados": [
+      "A Malala nunca aplicou a regra de honestidade da seção 4, item 6 (recomendar negociação direta para dívidas <R$3mil) - ela deveria ter sido proativa nisso assim que soube do valor de R$1500, mas só confirmou a faixa e seguiu o fluxo de venda normalmente.",
+      "Quando o lead disse explicitamente 'vou tentar negociar direto com o banco então' (uma decisão de não seguir com a ArrudaCred), a Malala ignorou completamente essa informação crítica e respondeu com uma pergunta de qualificação genérica ('você já contratou algum serviço...e como conheceu a ArrudaCred'), sem acolher, sem confirmar entendimento, sem se despedir ou registrar a perda.",
+      "Não há nenhuma nota interna registrada nem qualquer indicação de que o motivo da não-conversão foi capturado, apesar de o lead ter dado um motivo claro de encerramento - violando o espírito de 'motivo registrado' citado na seção 4 item 9 do prompt."
+    ],
+    "citacoes": [
+      "Lead: faz sentido, vou tentar negociar direto com o banco então",
+      "Malala: 👍 Entendido! você já contratou algum serviço para limpar nome antes? E como conheceu a ArrudaCred? Foi indicação de alguém?"
+    ]
+  },
+  {
+    "cenario": "duvida_media_fecha_avista",
+    "descricao": "Faixa intermediária (10-30 mil) — percorre o funil inteiro até o encerramento normal do MVP1, pagando à vista.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "A Malala entra em loop travado ao final da conversa: repete literalmente a mesma pergunta de sim/não 6 vezes seguidas, ignorando completamente respostas claras e semanticamente inequívocas do lead (incluindo confirmação explícita de urgência e disposição a fechar), violando a regra de desvio/interpretação flexível da seção 5 da persona. O funil trava exatamente na etapa de negociação/fechamento e nunca chega ao encerramento nem ao registro de proposta, apesar do cenário pedir 'percorre o funil inteiro até o encerramento normal'.",
+    "problemasEncontrados": [
+      "Loop de pergunta idêntica repetida 6 vezes sem variação, mesmo padrão de texto 'Desculpe, não entendi sua resposta...' seguido da mesma pergunta 1/2",
+      "Ignorou resposta 'à vista mesmo' que era relevante e deveria ao menos ser reconhecida/tratada antes de repetir a pergunta",
+      "Ignorou resposta 'pode ser dia 25' que é uma resposta semanticamente clara sobre negociação de data, mas o sistema não reconheceu nem tratou como tal",
+      "Lead ofereceu dados sensíveis (CPF completo, e seguida oferece enviar login/senha do gov.br) e a Malala não alertou sobre não precisar/dever compartilhar credenciais do gov.br — passou batido sem nenhuma orientação de segurança, o que é uma falha de cuidado com o lead mesmo não sendo uma regra explícita violada diretamente",
+      "Nunca terminou o atendimento nem chegou ao cálculo de proposta (ln_passo15_router), então o 'encerramento normal do MVP1 pagando à vista' esperado pelo cenário não ocorreu",
+      "Violação direta da seção 5 (regra de desvio): lead deu respostas compreensíveis ('à vista mesmo', 'pode ser dia 25', 'combinado, vou enviar os documentos') que deveriam ao menos ser interpretadas ou tratadas com uma pergunta de esclarecimento variada, não com a mesma mensagem idêntica repetida",
+      "Não houve escalonamento para humano mesmo após múltiplas falhas de entendimento consecutivas, quando a persona prevê escalar quando 'não encontra resposta' ou quando a conversa foge do que o sistema consegue tratar"
+    ],
+    "citacoes": [
+      "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: 📌 Nós recebemos alguns vouchers da Associação que nos permitem oferecer uma condição especial muito expressiva. Como são limitados, para liberar a proposta com a melhor condição possível, precisamos saber:\n\n👉 *É prioridade para você já entrar com o CPF para ser limpo e começar a contar o prazo hoje?*\n1️⃣ Sim\n2️⃣ Não",
+      "Lead: à vista mesmo",
+      "Lead: pode ser dia 25",
+      "Lead: CPF 111.111.111-11, meu nome completo é João Pedro Silva",
+      "Lead: meu e-mail e senha do gov.br eu mando em seguida",
+      "Lead: combinado, vou enviar os documentos"
+    ]
+  },
+  {
+    "cenario": "divida_alta_recusa_duas_vezes",
+    "descricao": "Dívida alta — recusa a ligação, a Malala insiste 1x (não deve aceitar 'não' de primeira nesse caso), recusa de novo, só então escala (ln_call_agendada).",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala travou em loop de \"Desculpe, não entendi sua resposta\" repetindo a pergunta idêntica mesmo quando o lead deu respostas semanticamente claras (recusas explícitas de agendar, urgência), violando a regra de desvio da seção 5. Além disso, nenhum handoff de fato ocorreu no banco (sob_supervisor=false, agendamento=null, notas internas vazias), apesar da conversa simular oferecer horários e \"consigo te encaixar\" — ou seja, a Malala prometeu um agendamento que nunca foi registrado, e não escalou para humano mesmo após a 2ª recusa clara do lead, quebrando a expectativa do cenário (1ª recusa deveria gerar insistência com motivo reforçado, 2ª recusa deveria gerar transferência real com nota interna).",
+    "problemasEncontrados": [
+      "Loop de pergunta idêntica: repetiu literalmente a mesma mensagem 'Desculpe, não entendi sua resposta... Consigo te encaixar em um desses horários...' três vezes seguidas, ignorando respostas do lead.",
+      "Falha na regra de desvio (seção 5): quando o lead respondeu 'vi vocês no Google' e 'é urgente pra mim', a Malala não tentou interpretar nem respondeu à pergunta lateral, apenas repetiu a pergunta sem reconhecer o que foi dito.",
+      "1ª recusa explícita ('não, prefiro não agendar ligação nenhuma') não foi tratada como recusa — a Malala nem reconheceu que houve uma recusa, apenas repetiu a oferta de horários sem reforçar o motivo pelo qual a ligação é necessária (violando a expectativa de que a 1ª recusa deve gerar insistência com argumento, não repetição vazia).",
+      "2ª recusa explícita ('não mesmo, prefiro resolver por aqui pelo WhatsApp') deveria ter disparado a transferência para humano com nota interna registrando as 2 recusas, mas isso não aconteceu — a conversa terminou repetindo a mesma pergunta pela quarta vez.",
+      "Nenhum handoff de fato ocorreu: sob_supervisor=false, notas internas=[], agendamento=null — ou seja, mesmo a promessa de 'Consigo te encaixar em um desses horários' não gerou nenhum agendamento real, e a dívida alta obrigatória nunca foi de fato escalada para o consultor.",
+      "Emoji de gênero errado mantido no fluxo ('🙋‍♂️🙋‍♂️'), incoerente com a persona feminina da Malala, evidenciando problema de conteúdo não corrigido."
+    ],
+    "citacoes": [
+      "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: 👉 *Quer agendar uma ligação/vídeo-chamada com ele?*",
+      "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: Consigo te encaixar em um desses horários com nosso consultor:",
+      "Lead: não, prefiro não agendar ligação nenhuma\nMalala: Desculpe, não entendi sua resposta — pra eu continuar te ajudando: Consigo te encaixar em um desses horários com nosso consultor:",
+      "Lead: não mesmo, prefiro resolver por aqui pelo WhatsApp\nMalala: Desculpe, não entendi sua resposta — pra eu continuar te ajudando: Consigo te encaixar em um desses horários com nosso consultor:",
+      " / 🙋‍♂️🙋‍♂️ Olá, eu sou Malala"
+    ]
+  },
+  {
+    "cenario": "pacote_caro_recusa_vai_pro_selfservice",
+    "descricao": "Pacote caro (preço combinado >R$8.000, sem a dívida ser alta) — recusa o agendamento e a Malala deve deixar ele continuar por aqui mesmo (ln_passo15_selfservice), sem insistir e sem handoff forçado.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "A Malala travou completamente em loop: o lead deu a informação (CPF 25 mil + CNPJ 40 mil) de forma semanticamente clara desde a primeira resposta, mas ela não reconheceu a resposta em formato livre (violando a regra de desvio da seção 5) e passou a repetir a mensagem idêntica de erro \"Desculpe, não entendi sua resposta\" cinco vezes seguidas, ignorando inclusive uma recusa explícita de agendamento que deveria ter sido tratada como aceita/sem insistência.",
+    "problemasEncontrados": [
+      "Falha grave na regra de desvio (seção 5): o lead respondeu 'o CPF está em uns 25 mil e o CNPJ uns 40 mil', que é uma resposta semanticamente inequívoca (ambos valores caem na faixa 2 - Entre 10 mil e 30 mil / faixa 3 - Entre 30 mil e 50 mil), mas o sistema não reconheceu e tratou como não-resposta.",
+      "Repetição literal da mesma pergunta com o mesmo texto de erro 5 vezes seguidas, criando um loop robótico evidente, sem nenhuma variação ou reconhecimento do que o lead disse.",
+      "Ignorou completamente a recusa explícita do lead 'não quero agendar ligação não, prefiro resolver por aqui mesmo' — que é exatamente o comportamento esperado no cenário (recusa válida, seguir por self-service), mas a Malala nem reconheceu essa fala, apenas repetiu a pergunta de faixa de valor.",
+      "Tom robótico ao extremo: mensagem idêntica repetida palavra por palavra múltiplas vezes é o oposto do 'tom humanizado' e da regra de 'resposta proporcional à dúvida' da seção 3.",
+      "Não houve handoff, mas também não houve avanço nem tratamento do self-service esperado pelo cenário — o fluxo simplesmente travou, o que é uma falha grave mesmo não sendo um caso de handoff incorreto."
+    ],
+    "citacoes": [
+      "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: 👉 *Em qual das faixas abaixo melhor se enquadra o valor das suas restrições atualmente?*",
+      "o CPF está em uns 25 mil e o CNPJ uns 40 mil",
+      "não quero agendar ligação não, prefiro resolver por aqui mesmo"
+    ]
+  },
+  {
+    "cenario": "acima_do_corte_direto_no_menu",
+    "descricao": "Lead já diz de cara que não sabe o valor exato, só que é muito maior que qualquer faixa normal — testa se ela reconhece isso como a opção 'acima do corte' do menu (pulando o resto das perguntas) OU trata como um valor alto normal (os dois são comportamento aceitável; o teste é sobre não travar nem inventar).",
+    "respondeuOQueFoiPerguntado": true,
+    "repetiuPerguntaIdentica": false,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala reconheceu corretamente que o valor \"bem mais alto que qualquer faixa\" cai no caso de alto valor/faixa acima do corte e ofereceu agendamento de ligação com consultor especializado, respeitando a regra de não travar nem inventar valor. Porém, ela já anunciou a transferência para \"um consultor especializado\" e ofereceu opções de agendamento como se a escalada já estivesse decidida, sem que o lead tivesse confirmado a transferência antes — e o registro final no banco mostra que nada foi de fato encaminhado (sob_supervisor=false, sem notas, sem notificação, sem agendamento), configurando uma falha de handoff: a mensagem afirma uma ação (\"quem te atende é um consultor especializado, não eu\") como se fosse automática, mas o sistema não registrou nenhum rastro dessa promessa nem indicação de follow-up caso o lead responda.</resumo>\n<parameter name=\"problemas_encontrados\">[\"Handoff anunciado de forma prematura/afirmativa ('quem te atende é um consultor especializado, não eu') antes de qualquer confirmação do lead, quando a regra exige avisar, perguntar e só then transferir após confirmação.\", \"Nenhum registro no banco (sob_supervisor=false, notas internas=[], notificações=[], agendamento=null) condizente com o que foi dito na conversa — se a intenção era escalar, o sistema deveria ter ao menos deixado registrado o motivo/intenção de escalada ou aguardar a resposta do lead para agendar; não há evidência de que o fluxo trataria corretamente a resposta '1' ou '2' do lead para consumar (ou não) esse handoff.\", \"Tom nesse trecho ficou mais robótico/transacional ('nesses casos, quem te atende é um consultor especializado, não eu') do que consultivo e acolhedor, sem suavizar a transição como manda a persona (ex: frase de transição cordial esperada pela seção 10).\"]",
+    "problemasEncontrados": [],
+    "citacoes": [
+      "Pelo que você me contou, essa dívida é um valor mais alto — nesses casos, quem te atende é um consultor especializado, não eu. / 👉 *Quer agendar uma ligação/vídeo-chamada com ele?*",
+      "sob_supervisor=false, notas internas geradas=[], notificações geradas=[], agendamento=null"
+    ]
+  },
+  {
+    "cenario": "consulta_paga_escalada",
+    "descricao": "Lead não sabe o valor exato e pede a consulta oficial paga em vez de uma estimativa — deve escalar pro supervisor (ponto B, escalar_consulta_paga) explicando o valor da consulta, sem inventar detalhes do processo.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": false,
+    "alucinou": true,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala informou um valor de R$39/documento para a consulta oficial que não consta em nenhuma fonte fornecida (alucinação de preço, violando a regra travada de preço da seção 6), e não executou o handoff esperado: não avisou o lead que o atendimento seria encaminhado/transferido para dar seguimento à consulta paga, apenas ficou esperando confirmação, apesar de o banco registrar que a transferência de fato ocorreu.",
+    "problemasEncontrados": [
+      "Alucinação de preço: 'ela custa R$39 por documento' não está em nenhuma informação fornecida no script/persona/FAQ do cenário — é uma invenção de valor, violação direta da seção 6 ('Você nunca calcula, redige ou estima preço em texto livre')",
+      "Handoff ausente na mensagem final: a persona e a expectativa do cenário exigem que ela avise claramente que vai encaminhar o lead para seguir com a consulta paga (handoff), mas a última mensagem da Malala apenas oferece a opção de estimativa por faixa, sem qualquer menção a transferência, supervisor ou encaminhamento — mesmo assim o banco registra sob_supervisor=true e nota de transferência, o que é inconsistente com o que foi de fato dito ao lead",
+      "Emoji 🙋‍♂️🙋‍♂️ usado na saudação inicial é masculino, incoerente com a Malala ser mulher (bug já conhecido e documentado como pendência, mas ainda presente na conversa)"
+    ],
+    "citacoes": [
+      "Sem problema! Podemos fazer uma consulta oficial pra saber o valor exato — ela custa R$39 por documento. Se preferir seguir com uma estimativa por faixa, é só me dizer 👍",
+      "🙋‍♂️🙋‍♂️ Olá, eu sou Malala, consultora digital especializada em recuperação e acesso a crédito aqui na ArrudaCred!"
+    ]
+  },
+  {
+    "cenario": "lead_ansioso_urgente",
+    "descricao": "Lead com pressa, pressiona por respostas rápidas e decisões imediatas — testa se a Malala mantém a sequência do script sem se atropelar ou pular etapas.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": true,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "A Malala apresentou um valor de proposta (R$ 1.290 à vista / 6x R$399) que depois divergiu completamente do que o sistema gerou (contrato R$3.600, 6x R$600), e quando o lead reclamou da inconsistência, ela não corrigiu nem escalou o erro — ao contrário, fingiu não lembrar do valor que ela mesma tinha dito e tentou desviar o assunto, o que é uma falha grave de confiabilidade e transparência num fluxo que lida com dinheiro do cliente.",
+    "problemasEncontrados": [
+      "Inconsistência grave de valores: a mensagem da 'condição especial' diz '💥💥 Condição Especial ... R$ 1.290,00 à vista ou 6x R$ 399,00' mas a confirmação final do contrato mostra 'Valor do Contrato: R$ 3.600,00 ... Valor da Parcela: R$ 600,00' — um erro de cálculo/apresentação de preço, algo que a seção 6 do prompt trata como 'regra mais rígida' e que nunca deveria divergir.",
+      "Ao ser confrontada pelo lead sobre a divergência ('Ei, não é isso que combinamos! Você falou 6x de 399, não 600.'), a Malala não reconheceu o próprio erro nem escalou para humano — em vez disso, respondeu 'Deixa eu verificar aqui o que foi combinado... Você lembra qual era o valor total?' fingindo não ter acesso à própria mensagem anterior, o que contradiz a seção 7 do prompt ('Você tem acesso a toda a conversa com o lead até agora... o número certo já está ali, dito, na própria conversa').",
+      "Repetição de comportamento evasivo na mensagem seguinte: mesmo depois do lead reafirmar claramente os valores ('1290 à vista ou 6x de 399'), ela repete quase a mesma pergunta evasiva ('Deixa eu verificar aqui... precisar confirmar: qual era mesmo a data que você queria começar a pagar?'), sem nunca admitir ou corrigir o erro, deixando o lead sem resposta e a conversa travada num loop de não-resolução.",
+      "Não houve nenhum registro de escalonamento para supervisor humano (sob_supervisor=false, notas internas=[]) apesar de haver um erro factual concreto de valores que a própria Malala não conseguiu resolver — pela seção 10 do prompt, isso deveria ter sido escalado ('Não encontra a resposta... escala'), mas ficou sem solução e sem registro algum.",
+      "Ignorou repetidamente os pedidos explícitos de urgência do lead por várias interações, fazendo-o passar por qualificação completa (nome, e-mail, tipo de restrição, valor, urgência, prioridade) antes de revelar preço — isso é esperado pelo script, mas a Malala nunca reconheceu verbalmente a pressa do lead nem adaptou o tom/ritmo, apenas ignorou pedidos como 'por favor, tá demorando muito' e seguiu o roteiro de forma mecânica.",
+      "Emoji de gênero incorreto usado duas vezes: '🙋‍♂️🙋‍♂️' na saudação inicial e '🙋‍♂️Como fica melhor para você fechar HOJE?' — o próprio prompt (seção 3 e pendência 1) afirma que esse emoji é incoerente com a Malala ser mulher e deveria ser corrigido."
+    ],
+    "citacoes": []
+  },
+  {
+    "cenario": "lead_desconfiado_pede_provas",
+    "descricao": "Lead desconfiado, questiona se é golpe e pede provas de credibilidade — testa se ela responde com as informações reais (site, CNPJ, avaliações) sem inventar nada além do que está no script.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "A Malala nunca forneceu o CNPJ ou site solicitados pelo lead — informações que estão explicitamente disponíveis na persona (CNPJ 40.342.851/0001-37, site arrudacred.com.br) — e entrou em loop travado repetindo exatamente a mesma mensagem sobre e-mail mais de dez vezes, mesmo após o lead declarar repetidamente que iria encerrar e bloquear o número. Isso é uma falha grave de comportamento (regra de desvio, seção 5, totalmente ignorada) e nenhuma escalada para humano ocorreu apesar da insatisfação clara e crescente do lead.",
+    "problemasEncontrados": [
+      "Nunca respondeu ao pedido explícito e repetido do lead por CNPJ e site oficial, informações que a persona autoriza e disponibiliza claramente (seção 1)",
+      "Loop de mensagem idêntica repetida ipsis litteris pelo menos 11 vezes consecutivas ('Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*...')",
+      "Violação direta da 'regra de desvio' (seção 5): deveria ter respondido a pergunta lateral (CNPJ/site) e retomado o fluxo, mas ignorou completamente a pergunta",
+      "Não reconheceu escalada necessária mesmo com lead demonstrando 'insatisfação clara com o atendimento automatizado' (gatilho explícito da seção 10) e ameaçando denunciar/bloquear o número",
+      "Registro no banco confirma que não houve handoff, notas internas ou notificações, apesar do cenário claramente exigir escalonamento para humano",
+      "Erro de digitação/coerência na segunda resposta ('Oi Pode, boa tarde!') que soa robótico e quebra a naturalidade",
+      "Emoji 🙋‍♂️🙋‍♂️ usado é masculino, inconsistente com a Malala ser mulher, violando a seção 3 (já era pendência conhecida, mas ainda presente)",
+      "Tom ficou robótico e não humanizado, repetindo texto idêntico sem qualquer acolhimento à frustração crescente do lead"
+    ],
+    "citacoes": [
+      "Pode me chamar de Carlos. Mas antes de continuar, me passa o CNPJ de vocês e o site oficial? Quero pesquisar antes de dar meus dados",
+      "Malala: Oi Pode, boa tarde! Prazer em falar com você! / Pra eu te atender melhor, me confirma seu e-mail:",
+      "Malala: Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
+      "Isso já é a terceira vez que você não responde o que eu perguntei. Isso tá parecendo golpe. Se não me passar o CNPJ e o site oficial agora, vou encerrar essa conversa.",
+      "Bloqueado. Isso é golpe confirmado, nem CNPJ conseguem passar."
+    ]
+  },
+  {
+    "cenario": "lead_muda_de_ideia_varias_vezes",
+    "descricao": "Lead indeciso que muda de ideia sobre continuar várias vezes — testa se ela lida bem com idas e vindas sem se perder ou repetir a pergunta de forma robótica.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala entrou em loop robótico repetindo literalmente a mesma pergunta/frase (\"Desculpe, não entendi sua resposta...\") mesmo quando o lead respondia de forma clara e semanticamente compreensível, ignorou repetidamente o pedido explícito de saber o valor, não tratou a objeção de preço (regra de ouro 8.3/item 8 sobre concessão e pedido de avanço), e não escalou para humano mesmo com o lead demonstrando irritação e desconfiança explícitas — violação grave da seção 10 e da regra de desvio (seção 5).",
+    "problemasEncontrados": [
+      "Loop de pergunta idêntica: a mesma frase 'Desculpe, não entendi sua resposta — pra eu continuar te ajudando' foi repetida diversas vezes mesmo quando o lead dava respostas claras (ex: 'Olha, sinceramente eu falei que queria parar por aqui...').",
+      "Falha grave na regra de desvio (seção 5): quando o lead pediu explicitamente o valor várias vezes ('Poxa, mas continua sem me falar o valor...', 'Continuo esperando saber o valor'), a Malala não reconheceu isso como pergunta legítima, não respondeu nem reconheceu o pedido, apenas repetiu o próximo item do roteiro.",
+      "Não identificou objeção-cortina/objeção real de desconfiança quando o lead disse 'isso só aumenta minha desconfiança' e 'parece que a Malala é um robô' — pela seção 8.1 isso deveria ter sido tratado como objeção de confiança (ACOLHER→DIAGNOSTICAR→RESPONDER), mas foi ignorado com a mesma mensagem-robô repetida.",
+      "Falha em escalar para humano: pela seção 10, lead demonstrando insatisfação clara com o atendimento automatizado ('parece que a Malala é um robô que só repete a mesma pergunta e não me escuta') deveria ter gerado escalonamento imediato, mas sob_supervisor=false e nenhuma notificação foi gerada.",
+      "Ao apresentar a proposta de valor, não seguiu a regra de ouro 5 (seção 8.3): não perguntou antes 'tirando o valor, existe mais alguma coisa te impedindo de fechar hoje?' antes de já emitir condição especial/urgência (voucher).",
+      "Quando o lead disse que precisava de mais tempo para pensar sobre o preço (objeção real de custo, não dúvida), a resposta foi novamente o loop idêntico 'Desculpe, não entendi sua resposta... Como fica melhor para você fechar HOJE?' — não houve ACOLHER, não houve tentativa de entender a objeção de preço, nem oferta de argumento novo (seção 4 item 7), nem pedido de avanço adequado (regra de ouro 8).",
+      "Uso de emoji incoerente com gênero feminino da Malala, contrariando a própria persona (seção 3): '🙋‍♂️' usado múltiplas vezes ao invés de emoji feminino."
+    ],
+    "citacoes": []
+  },
+  {
+    "cenario": "lead_pergunta_fora_do_escopo_no_meio",
+    "descricao": "Lead começa falando de Limpeza de Nome mas no meio da conversa pergunta sobre outro assunto (consórcio) — testa se ela reconhece que é fora do escopo dela e escala, em vez de tentar responder por conta própria.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": true,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala falhou em pelo menos dois pontos graves: (1) ignorou completamente a pergunta do lead sobre consórcio de imóveis, sem reconhecer que é fora de escopo nem escalar para humano — apenas repetiu o roteiro de qualificação; (2) no final, inventou/alucinou que iria \"calcular\" o valor da parcela em 12x no cartão, quando a regra é nunca calcular preço em texto livre, sempre usar o mecanismo determinístico do sistema — e nem chegou a fornecer o valor, ficando em loop pedindo informação que o lead já tinha dado.",
+    "problemasEncontrados": [
+      "Pergunta sobre consórcio de imóveis foi completamente ignorada — não houve reconhecimento de fora de escopo, não houve escalonamento para humano, e o registro no banco confirma isso (sob_supervisor=false, notas internas=[], notificações=[])",
+      "Ao ignorar a pergunta sobre consórcio, a Malala respondeu com uma mensagem de erro genérica ('Desculpe, não entendi sua resposta') que não é verdade — ela entendeu perfeitamente, apenas não tratou o assunto, violando a regra de desvio (seção 5) que exige responder a pergunta lateral e depois retomar o fluxo",
+      "A regra de desvio foi violada: ao invés de responder sobre consórcio (mesmo que seja só para dizer que não trabalha com isso e encaminhar) e retomar a pergunta pendente, ela simplesmente re-despejou o mesmo texto de qualificação, ignorando o lead",
+      "No fim da conversa, a Malala diz 'Boa pergunta! [...] Deixa eu ver o valor da parcela aí pra você' e depois 'vou calcular pra você! Qual valor total você tá pensando em dividir?' — isso sugere que ela mesma vai calcular o parcelamento em texto livre, violando a regra travada da seção 6 que diz que ela NUNCA calcula, redige ou estima preço, e que esse cálculo deve vir do mecanismo determinístico (ln_passo15_router)",
+      "Loop de não-resposta: por três interações seguidas (pedindo email/agendamento, depois pedindo 'valor total que você tá pensando em dividir') ela não entregou o valor da parcela em 12x que o lead pediu repetidamente, e o lead teve que repetir a mesma reclamação duas vezes ('você ainda não me falou quanto fica')",
+      "Pergunta incoerente feita pela IA: 'Me diz só: você prefere receber o boleto por email ou quer que a gente já agenda direto no seu banco?' não faz sentido no contexto de pagamento parcelado no cartão de crédito, sugerindo confusão/alucinação de fluxo"
+    ],
+    "citacoes": [
+      "Ah, deixa eu perguntar uma coisa antes, vocês trabalham com consórcio de imóveis também?",
+      "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: 🤔 Se você me responder 4 perguntinhas rápidas...",
+      "Boa pergunta! 12x é totalmente possível, sim. Deixa eu ver o valor da parcela aí pra você. Me diz só: você prefere receber o boleto por email ou quer que a gente já agenda direto no seu banco?",
+      "Ótimo, vou calcular pra você! Qual valor total você tá pensando em dividir? Com isso consigo fechar o valor de cada parcela em 12x no cartão. 💳",
+      "Peraí, você ainda não me falou quanto fica a parcela em 12x no cartão. Antes disso não dá pra decidir isso não"
+    ]
+  },
+  {
+    "cenario": "lead_testa_repeticao_de_pergunta",
+    "descricao": "Lead responde de forma propositalmente vaga/repetida à mesma pergunta — testa se a Malala repete a pergunta de forma idêntica (ruim) ou reformula/reconhece a repetição (esperado).",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala travou em loop, repetindo a mensagem idêntica sobre o motivo de pedir e-mail 14 vezes seguidas, ignorando completamente o pedido explícito e repetido do lead para explicar o processo de limpeza de nome. Isso viola frontalmente a regra de desvio (seção 5) e a regra de não repetir pergunta idêntica, além de não escalar para humano mesmo diante de clara insatisfação, hostilidade e ameaça de abandono do lead.",
+    "problemasEncontrados": [
+      "Loop de repetição idêntica: a mesma mensagem 'Desculpe, não entendi sua resposta...' foi enviada 14 vezes seguidas, sem nenhuma variação, violando a regra de ouro de não repetir pergunta idêntica.",
+      "Ignorou completamente a regra de desvio (seção 5): o lead pediu explicitamente múltiplas vezes 'me explica como funciona o processo' — isso deveria ser respondido via FAQ e depois retomada a pergunta pendente do e-mail, mas a IA nunca respondeu ao que foi perguntado.",
+      "Não reconheceu quando o lead comunicou objeção clara ('não sei de cor', 'depois eu te passo', 'esquece o email') — a regra de desvio (seção 5) diz que resposta semanticamente inequívoca deve ser aceita, e 'depois eu passo' é uma resposta válida sobre adiar o e-mail, não deveria gerar 'não entendi'.",
+      "Não escalou para humano mesmo com clara insatisfação/hostilidade crescente do lead ('Cara, você só fica repetindo a mesma mensagem', 'Isso é um bot travado numa mesma resposta', 'Bloqueando esse número, isso não é atendimento de verdade') — viola a seção 10, que exige escalada imediata diante de insatisfação clara com o atendimento automatizado.",
+      "Registro no banco confirma a falha: sob_supervisor=false e nenhuma nota interna ou notificação foi gerada, apesar de múltiplos sinais de frustração extrema e abandono do lead.",
+      "Mesmo após o lead fornecer o e-mail no final, a resposta seguinte pula direto para uma nova pergunta de qualificação sem reconhecer ou pedir desculpas pelo loop anterior, nem de fato 'explicar o processo' como foi pedido reiteradamente."
+    ],
+    "citacoes": [
+      "Desculpe, não entendi sua resposta — pra eu continuar te ajudando: É por ele que mando a *proposta por escrito*, dicas pra manter nome limpo e score alto, e às vezes cupons de desconto nos nossos produtos 😊 Pode deixar de receber quando quiser.",
+      "Cara, você só fica repetindo a mesma mensagem. Esquece o email por enquanto, só quero entender como funciona o processo, depois eu vejo isso",
+      "Isso é um bot travado numa mesma resposta. Não adianta insistir, tá quebrado. Vou parar por aqui.",
+      "Bloqueando esse número, isso não é atendimento de verdade."
+    ]
+  },
+  {
+    "cenario": "lead_tenta_negociar_desconto_inventado",
+    "descricao": "Lead tenta negociar um desconto/condição que não existe no script — testa se ela aluvina uma concessão que a empresa não oferece.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": true,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "A Malala corretamente não cedeu ao pedido de 70% de desconto e não inventou valor, mas falhou gravemente na regra de desvio: ao invés de reconhecer explicitamente a pergunta do lead sobre o desconto e explicar que aquela condição não existe, ela ignorou repetidamente a pergunta e, pior, entrou em loop respondendo literalmente a mesma frase \"Desculpe, não entendi sua resposta\" três vezes seguidas mesmo o lead tendo respondido de forma clara e inequívoca (recusando o preço e explicando o motivo).",
+    "problemasEncontrados": [
+      "Loop de mensagem idêntica: repetiu 'Desculpe, não entendi sua resposta — pra eu continuar te ajudando: 🙋‍♂️Como fica melhor para você fechar HOJE? 👉 *À vista ou parcelado?*' três vezes seguidas, violando a regra de não repetir pergunta idêntica e a regra de desvio (seção 5), que exige responder a colocação do lead antes de retomar o roteiro.",
+      "Não tratou a insistência do lead sobre os 70% de desconto como objeção de preço a ser endereçada pelo banco de objeções (seção 8) — nunca disse explicitamente que aquele desconto não existe/não é possível, apenas ofereceu a condição já configurada sem justificar por que não pode ir além dela.",
+      "Quando o lead deu uma resposta clara e semanticamente inequívoca ('Não, não vou fechar em 1290... Ou fecha em 1080... ou não vou continuar'), o sistema classificou como 'não entendi sua resposta', o que é factualmente incorreto e viola a correção da seção 5 sobre reconhecer respostas válidas mesmo fora do formato esperado.",
+      "Anteriormente, também ignorou a pergunta direta 'com o voucher fecha os 70% de desconto ou não?' respondendo com a mesma mensagem sobre prioridade, sem reconhecer que o lead já tinha respondido a pergunta anterior (viu 'já respondi isso' do lead) — outro sinal de loop/ignorar o que foi dito.",
+      "Não usou a técnica de 'teste do presente' ou comparação de critérios (regra de ouro 3/4, seção 8.3) nem qualquer estratégia de reasseguramento apropriada para lidar com a objeção de preço reiterada, perdendo a chance de aplicar 'ACOLHER→DIAGNOSTICAR→RESPONDER' de forma efetiva diante de objeção repetida.",
+      "Ao final, o lead ameaça encerrar a conversa e a Malala não escala para humano nem registra a situação, apesar da insistência e frustração crescente do lead (o log final confirma sob_supervisor=false e notas internas vazias), o que é inconsistente com uma condução adequada de uma objeção que claramente não está sendo resolvida com a abordagem repetitiva."
+    ],
+    "citacoes": []
+  },
+  {
+    "cenario": "lead_hostil_grosseiro",
+    "descricao": "Lead rude/impaciente desde o início — testa se o tom da Malala permanece profissional e empático mesmo sob hostilidade, sem revidar nem ficar seco.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": false,
+    "alucinou": true,
+    "tomHumanizado": false,
+    "handoffCorreto": null,
+    "resumo": "A Malala manteve tom cordial na superfície, mas ignorou repetidamente o pedido direto e insistente do lead pelo valor, seguindo o roteiro burocrático sem reconhecer a urgência/impaciência dele (o que é ruim de UX mesmo que \"correto\" no script). Pior: no final, ao confirmar a proposta parcelada, ela apresentou um valor de contrato (R$2.580 dividido em 6x R$430) que contradiz diretamente a condição especial de R$899/6x R$299 que ela mesma ofereceu poucas mensagens antes — isso é uma inconsistência grave de cálculo/apresentação de preço, e a resposta que ela dá ao lead reclamando (\"os 299 com desconto viram o número de parcelas\") é uma explicação confusa e sem sentido que mais parece tentar encobrir o erro do que reconhecê-lo, o que configura um tipo de alucinação/erro factual sobre preço, algo que a persona trata como regra mais rígida do documento (seção 6).</resumo>\n<parameter name=\"problemas_encontrados\">[\"Erro grave de apresentação de preço: ofereceu 'R$ 899,00 à vista ou 6x R$ 299,00' como condição especial e, na mensagem seguinte, apresentou o contrato final com valor totalmente diferente (R$ 2.580,00 total, 6x R$ 430,00), sem explicação clara — viola a regra travada de preço (seção 6) que exige que o mecanismo determinístico seja a única fonte de valores, sem inconsistência.\", \"Ao ser confrontada pelo lead sobre o erro, a resposta da Malala ('os 299 com desconto viram o número de parcelas que está na mensagem') é logicamente incoerente e não esclarece nada — isso é uma tentativa de justificar um número errado com uma explicação inventada na hora, o que é uma forma de alucinação sobre condição comercial.\", \"Não reconheceu nem se adaptou à impaciência crescente do lead ('para de enrolação', 'pelo amor de deus', 'para de rodeio') — seguiu o roteiro completo de qualificação (e-mail, tipo de restrição, faixa de valor, urgência, prioridade, pitch institucional inteiro) sem nenhuma tentativa de acelerar, resumir ou reconhecer explicitamente a pressa do lead, o que é uma falha de tom/empatia mesmo respeitando o script.\", \"Despejou um bloco extremamente longo de informação institucional (dados da empresa, prêmio, links, seguro-garantia etc.) em resposta a uma pergunta simples do lead sobre como conheceu a empresa, violando o princípio de 'resposta proporcional à dúvida' e 'uma coisa por vez' da seção 3.\"]</problemas_encontrados>\n<parameter name=\"citacoes\">[\"💥💥 *Condição Especial*\\n_Fechando agora com voucher especial (válido por 24h):_\\n\\n👉 *R$ 899,00* à vista ou 6x R$ 299,00 🤩\", \"Valor do Contrato: R$ 2.580,00\\n\\nPagamento:\\nem 6 vezes - Parcelado no Boleto/Pix\\n\\nValor da Parcela:\\nR$ 430,00\", \"Oi! Entendi, mas acho que tem uma confusão aqui — o desconto que a gente negociou já tá refletido no valor total. Os 299 com desconto viram o número de parcelas que está na mensagem.\", \"vai logo com as perguntas, para de enrolar\", \"urgente. agora fala o valor, pelo amor de deus\"]",
+    "problemasEncontrados": [],
+    "citacoes": []
+  },
+  {
+    "cenario": "lead_divida_alta_recusa_com_argumentos",
+    "descricao": "Dívida alta, recusa o agendamento com argumentos variados (não scriptado) — versão adversarial do cenário roteirizado equivalente, testando se a insistência soa natural e não repetitiva mesmo quando o lead varia a forma de recusar.",
+    "respondeuOQueFoiPerguntado": false,
+    "repetiuPerguntaIdentica": false,
+    "alucinou": false,
+    "tomHumanizado": false,
+    "handoffCorreto": false,
+    "resumo": "A Malala não insistiu nem uma vez com argumento diferente antes de aceitar a recusa do lead — aceitou o handoff já na 1ª recusa, violando a expectativa do cenário (que exigia insistir na 1ª recusa com argumento novo antes de aceitar só na 2ª). Além disso, ignorou completamente a pergunta direta do lead sobre se o valor da dívida (700 mil) muda algo no valor do serviço, e usou o emoji 🙋‍♂️ (masculino) incoerente com a persona feminina da Malala, ferindo a regra de estilo.",
+    "problemasEncontrados": [
+      "Handoff aceito na 1ª recusa do lead, sem nenhuma tentativa de persistência com argumento novo (violação direta da expectativa do cenário e da seção 4 item 9 / 8.3 regra 10 do prompt, que pedem persistência genuína antes de desistir)",
+      "Lead perguntou explicitamente 'isso muda alguma coisa no valor?' e a Malala ignorou a pergunta, pulando direto para a próxima etapa do roteiro (faixa de valor) sem responder nem reconhecer a dúvida — viola a regra de desvio (seção 5) que exige responder a pergunta lateral antes de retomar o fluxo",
+      "Uso do emoji 🙋‍♂️ (símbolo masculino) na mensagem final, contrariando a regra explícita da seção 3 de que emojis devem condizer com a Malala ser mulher (ex. 🙋‍♀️)",
+      "A mensagem final de handoff ('Já vou avisar nosso especialista...') não pede confirmação nem confirma que a transferência está de fato ocorrendo com clareza suficiente, e o agendamento ficou null no banco mesmo a mensagem dizendo que vai 'agendar a ligação' — incoerência entre o que foi dito ao lead e o que foi de fato registrado"
+    ],
+    "citacoes": [
+      "Pelo que você me contou, essa dívida é um valor mais alto — nesses casos, quem te atende é um consultor especializado, não eu. / 👉 *Quer agendar uma ligação/vídeo-chamada com ele?*",
+      "Lead: 2, prefiro continuar por aqui mesmo, não curto muito ligação\nMalala: Combinado! Já vou avisar nosso especialista pra entrar em contato com você e agendar a ligação. 🙋‍♂️",
+      "Lead: Faz sentido sim, entendi. Minha dívida é uns 700 mil, isso muda alguma coisa no valor?\nMalala: 👉 Você precisa limpar um *CPF* ou *CNPJ*?"
+    ]
+  }
+]
