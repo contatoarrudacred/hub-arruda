@@ -1,7 +1,7 @@
 # Status — Marketing
 
-tarefa: Teste de ponta a ponta em produção achou e corrigiu 2 bugs reais + implementou reaproveitamento entre tentativas + persistência de custo em USD (pedidos do Luiz). 470/470 testes, tsc/eslint/next build limpos. 2 migrations novas aguardando envio ao Luiz (20260819170000 reaproveitamento, 20260819180000 custo).
-desde: 2026-08-19T20:00:00-03:00
-proxima: Luiz aplica as 2 migrations pendentes → testar de novo com o post que já está com texto aprovado (pauta 4cc08073) → Coordenador mescla a branch em main
-bloqueio:
-turno_fim: 2026-08-20T16:18:29-03:00
+tarefa: Bug real de produção resolvido — 2 pautas travadas pra sempre em "verificar_links" (achado, causa raiz confirmada e corrigida). Causa: a correção de link quebrado chama gerarConteudo de novo (chamada cheia à Claude + busca na internet) sem teto de tempo, e a geração inicial já vinha consumindo 160-200s dos 240s do tick — a correção estourava o timeout do Vercel e matava a função no meio, sem nunca gravar conclusão. Corrigido em processar-pauta.ts: se o orçamento de tempo do tick já está curto (>120s gastos) quando chega em verificar_links, pula a correção (não o pipeline) e segue com o conteúdo original — mesmo princípio de "nunca travar" já usado em gerar_imagens. Teste novo cobrindo o caso, 615/615 testes passando, tsc/eslint limpos. Causa SEPARADA também achada: o cronjob externo do Marketing sumiu do cron-job.org (só existe o de follow-up) — é isso que explica o pipeline 13h+ sem rodar nada, não um lock preso (o lock já expira sozinho em 240s). Passado ao Luiz o passo a passo pra recriar o cronjob.
+desde: 2026-08-21T00:00:00-03:00 (achado e corrigido entre ~13:15 e ~13:35)
+proxima: Luiz recria o cronjob no cron-job.org (URL /api/cron/marketing-pipeline, header Authorization Bearer CRON_SECRET, sugestão de 10 em 10 min) → depois disso as 2 pautas travadas se autorregeneram sozinhas via reclaim (nenhum reset manual necessário — max_tentativas do ArrudaCred é 6, ambas têm folga) → Coordenador mescla esta correção em main
+bloqueio: pipeline de conteúdo parado até o Luiz recriar o cronjob externo (fora do meu alcance — não tenho acesso ao cron-job.org)
+turno_fim: 2026-08-21T13:35:00-03:00

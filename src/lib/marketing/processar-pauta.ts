@@ -452,6 +452,11 @@ async function gerarEEmbutirImagens(
 }
 
 export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
+  // Marca o início real do processamento desta pauta — usado só pela etapa "verificar_links"
+  // (ver LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS abaixo) pra saber quanto do orçamento de tempo do
+  // tick (maxDuration=240s, route.ts) já foi gasto antes de tentar uma correção.
+  const inicioProcessamento = Date.now();
+
   const propriedade = await carregarPropriedade(propriedadeId);
 
   // Gating de cota/janela (spec seção 5) — roda ANTES de selecionarPauta: se a propriedade está
@@ -534,6 +539,18 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // continuar quebrado mesmo assim, segue pro Revisor do jeito que está (ele tende a pegar via
       // fontes_especificas de qualquer forma — Global Constraint do plano mestre: esta etapa nunca
       // trava o pipeline, só tenta uma vez consertar mais barato do que um ciclo de revisão).
+      //
+      // Orçamento de tempo (21/08/2026, achado real de produção): a rota do cron tem
+      // maxDuration=240s pro tick inteiro (route.ts). A geração inicial do Escritor sozinha já foi
+      // vista consumindo 160-200s em produção — quando isso acontece, tentar aqui uma CORREÇÃO (uma
+      // chamada nova e inteira à Claude, com busca na internet, sem teto de tempo próprio) quase
+      // garante estourar o timeout do Vercel antes de conseguir revisar/publicar. Foi exatamente
+      // isso que deixou 2 pautas travadas pra sempre em "verificar_links" (função morta no meio,
+      // nunca grava conclusão, log fica pra sempre em aberto). Se o orçamento já está curto quando
+      // chegamos aqui, pula a correção (não o pipeline inteiro) — mesmo espírito de "nunca travar"
+      // já aplicado em gerarEEmbutirImagens.
+      const LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS = 120_000;
+
       let conteudoFinal = conteudo;
       await registrarEtapa(
         pauta.id,
@@ -541,7 +558,12 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         async () => {
           const links = extrairLinksExternos(conteudoFinal.conteudoHtml);
           const quebrados = links.length > 0 ? (await verificarLinksExternos(links)).filter((r) => !r.ok) : [];
-          if (quebrados.length === 0) return { quebrados, usage: { inputTokens: 0, outputTokens: 0 } };
+          if (quebrados.length === 0) return { quebrados, usage: { inputTokens: 0, outputTokens: 0 }, correcaoPulada: false };
+
+          const tempoDecorridoMs = Date.now() - inicioProcessamento;
+          if (tempoDecorridoMs > LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS) {
+            return { quebrados, usage: { inputTokens: 0, outputTokens: 0 }, correcaoPulada: true };
+          }
 
           const motivoLinks = quebrados
             .map(
@@ -557,10 +579,16 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
           );
           conteudoFinal = corrigido;
           await salvarRascunho(pauta.id, conteudoFinal);
-          return { quebrados, usage };
+          return { quebrados, usage, correcaoPulada: false };
         },
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-        (r) => (r.quebrados.length > 0 ? `Link(s) quebrado(s) encontrado(s) e enviado(s) pro Escritor corrigir: ${r.quebrados.map((l) => `${l.url} (${l.motivo})`).join("; ")}` : undefined),
+        (r) => {
+          if (r.quebrados.length === 0) return undefined;
+          const lista = r.quebrados.map((l) => `${l.url} (${l.motivo})`).join("; ");
+          return r.correcaoPulada
+            ? `Link(s) quebrado(s) encontrado(s), mas correção pulada por orçamento de tempo curto (já > ${LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS / 1000}s de tick): ${lista}`
+            : `Link(s) quebrado(s) encontrado(s) e enviado(s) pro Escritor corrigir: ${lista}`;
+        },
       );
 
       // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio,
