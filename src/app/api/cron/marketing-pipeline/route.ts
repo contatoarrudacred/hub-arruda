@@ -4,6 +4,7 @@
 // processa uma tentativa completa (gerar→revisar→publicar) de uma pauta por matriz — ver
 // docs/superpowers/specs/2026-08-17-pipeline-conteudo-marketing-design.md seção 3.1.
 
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processarProximaPauta } from "@/lib/marketing/processar-pauta";
 
@@ -28,22 +29,30 @@ export async function GET(request: Request) {
     return Response.json({ erro: `Falha ao carregar matrizes de conteúdo: ${erroMatrizes.message}` }, { status: 500 });
   }
 
-  const resultados: Record<string, string> = {};
-  for (const matriz of matrizes ?? []) {
-    const idLock = `marketing-pipeline-${matriz.id}`;
-    const { data: obtido } = await supabase.rpc("fn_tentar_lock_cron", {
-      p_id: idLock,
-      p_duracao_segundos: DURACAO_LOCK_SEGUNDOS,
-    });
-    if (!obtido) continue;
+  // Responde IMEDIATAMENTE (via after(), mesmo padrão já usado nos webhooks — ver
+  // src/app/api/webhooks/zapster/route.ts) — achado real de produção (21/08/2026): o plano
+  // gratuito do cron-job.org desiste de esperar depois de só 30s, bem menos que os até 240s que
+  // uma tentativa completa de verdade pode legitimamente levar (a geração inicial do Escritor
+  // sozinha já foi vista consumindo 160-200s) — todo disparo aparecia como "Failed (timeout)" na
+  // tela do cron-job.org mesmo com o pipeline rodando certinho no servidor. after() mantém a
+  // função viva em background via waitUntil do Vercel, até o maxDuration acima — dissociado da
+  // espera (curta) do cliente que disparou o request.
+  after(async () => {
+    for (const matriz of matrizes ?? []) {
+      const idLock = `marketing-pipeline-${matriz.id}`;
+      const { data: obtido } = await supabase.rpc("fn_tentar_lock_cron", {
+        p_id: idLock,
+        p_duracao_segundos: DURACAO_LOCK_SEGUNDOS,
+      });
+      if (!obtido) continue;
 
-    try {
-      const resultado = await processarProximaPauta(matriz.id, matriz.propriedade_id);
-      resultados[matriz.id] = resultado.status;
-    } finally {
-      await supabase.rpc("fn_liberar_lock_cron", { p_id: idLock });
+      try {
+        await processarProximaPauta(matriz.id, matriz.propriedade_id);
+      } finally {
+        await supabase.rpc("fn_liberar_lock_cron", { p_id: idLock });
+      }
     }
-  }
+  });
 
-  return Response.json({ resultados });
+  return Response.json({ disparado: true, matrizes: (matrizes ?? []).length });
 }
