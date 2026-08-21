@@ -149,8 +149,20 @@ export type Contrato = {
   valorTotal: number;
   assinafyDocumentId: string | null;
   assinafyDocumentStatus: string | null;
+  // Preenchido só quando o contrato está de fato assinado por todos — registrado por
+  // atualizarStatusContrato (webhook document_ready ou confirmação manual), nunca lido de volta
+  // até o redesenho de Detalhes da Venda (Luiz, 21/08/2026): a tela precisa mostrar "assinado em
+  // X" direto do banco, sem depender de uma consulta ao vivo na Assinafy pra saber isso.
+  assinadoEm: string | null;
   ultimoErro: string | null;
   tentativasErro: number;
+  // Link do Checkout de cartão da Asaas — null quando ainda não foi gerado nenhum, ou quando o
+  // método de pagamento não é cartão. Expira em 24h (ver comentário da migration
+  // 20260821100000_vendas_checkout_cartao.sql) — quem consome isso decide se o link salvo ainda
+  // vale com base em asaasCheckoutGeradoEm.
+  asaasCheckoutId: string | null;
+  asaasCheckoutUrl: string | null;
+  asaasCheckoutGeradoEm: string | null;
   parcelas: ContratoParcela[];
 };
 
@@ -180,13 +192,17 @@ type LinhaContratoBruta = {
   valor_total: number;
   assinafy_document_id: string | null;
   assinafy_document_status: string | null;
+  assinado_em: string | null;
   ultimo_erro: string | null;
   tentativas_erro: number;
+  asaas_checkout_id: string | null;
+  asaas_checkout_url: string | null;
+  asaas_checkout_gerado_em: string | null;
   contrato_parcelas: LinhaContratoParcelaBruta[] | null;
 };
 
 const SELECT_CONTRATO =
-  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, max_parcelas_cartao, valor_total, assinafy_document_id, assinafy_document_status, ultimo_erro, tentativas_erro, contrato_parcelas(id, numero, valor, vencimento_previsto, status, asaas_payment_id)";
+  "id, oportunidade_id, contrato_template_id, pessoa_signatario_id, pessoa_arrudacred_signatario_id, fornecedor_id, status, motivo_cancelamento, pdf_url, forma_pagamento, metodo_pagamento, parcelas_qtd, max_parcelas_cartao, valor_total, assinafy_document_id, assinafy_document_status, assinado_em, ultimo_erro, tentativas_erro, asaas_checkout_id, asaas_checkout_url, asaas_checkout_gerado_em, contrato_parcelas(id, numero, valor, vencimento_previsto, status, asaas_payment_id)";
 
 function mapearContrato(linha: LinhaContratoBruta): Contrato {
   return {
@@ -206,8 +222,12 @@ function mapearContrato(linha: LinhaContratoBruta): Contrato {
     valorTotal: linha.valor_total,
     assinafyDocumentId: linha.assinafy_document_id,
     assinafyDocumentStatus: linha.assinafy_document_status,
+    assinadoEm: linha.assinado_em,
     ultimoErro: linha.ultimo_erro,
     tentativasErro: linha.tentativas_erro,
+    asaasCheckoutId: linha.asaas_checkout_id,
+    asaasCheckoutUrl: linha.asaas_checkout_url,
+    asaasCheckoutGeradoEm: linha.asaas_checkout_gerado_em,
     parcelas: (linha.contrato_parcelas ?? [])
       .map((parcela) => ({
         id: parcela.id,
@@ -309,6 +329,28 @@ export async function atualizarParcelaAsaas(parcelaId: string, asaasPaymentId: s
   const supabase = await createClient();
   const { error } = await supabase.from("contrato_parcelas").update({ asaas_payment_id: asaasPaymentId }).eq("id", parcelaId);
   if (error) throw new Error(`Falha ao atualizar parcela com id da Asaas: ${error.message}`);
+}
+
+/** Grava o Checkout de cartão recém-criado — chamado tanto na primeira geração automática quanto
+ * ao gerar um novo link sob demanda (o antigo expira em 24h, ver comentário do tipo Contrato). */
+export async function atualizarCheckoutContrato(contratoId: string, checkoutId: string, checkoutUrl: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("contratos")
+    .update({ asaas_checkout_id: checkoutId, asaas_checkout_url: checkoutUrl, asaas_checkout_gerado_em: new Date().toISOString() })
+    .eq("id", contratoId);
+  if (error) throw new Error(`Falha ao atualizar checkout do contrato: ${error.message}`);
+}
+
+/** Corrige `vencimento_previsto` quando a cobrança de verdade sai criada com uma data diferente da
+ * planejada — achado real (Luiz, 21/08/2026): a Asaas rejeita (400 `invalid_dueDate`) qualquer
+ * vencimento anterior a hoje, o que pode acontecer numa venda que demorou a ser assinada (webhook
+ * perdido, destravada manualmente bem depois do previsto). Sem gravar a correção aqui, o banco
+ * ficaria com uma data diferente da que a Asaas realmente vai cobrar. */
+export async function atualizarVencimentoParcela(parcelaId: string, novoVencimento: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contrato_parcelas").update({ vencimento_previsto: novoVencimento }).eq("id", parcelaId);
+  if (error) throw new Error(`Falha ao atualizar vencimento da parcela: ${error.message}`);
 }
 
 export async function marcarParcelaPaga(

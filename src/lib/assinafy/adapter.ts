@@ -1,6 +1,6 @@
-import { criarSignatario, solicitarAssinatura, uploadDocumento } from "./cliente";
-import { buscarContratoPorId, atualizarStatusContrato } from "@/lib/vendas/contratos";
-import { baixarPdfContrato } from "@/lib/vendas/geracao-pdf";
+import { baixarDocumentoCertificado, criarSignatario, solicitarAssinatura, uploadDocumento } from "./cliente";
+import { buscarContratoPorId, atualizarStatusContrato, type Contrato } from "@/lib/vendas/contratos";
+import { baixarPdfContrato, sobrescreverPdfContrato } from "@/lib/vendas/geracao-pdf";
 import { buscarOportunidadeParaFechamento } from "@/lib/vendas/oportunidades";
 import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
 
@@ -77,4 +77,22 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
     assinafyDocumentId: documento.id,
     enviadoEm: new Date().toISOString(),
   });
+}
+
+/**
+ * Troca o PDF sem assinatura pelo PDF final (com certificado de assinatura da Assinafy) — pedido
+ * do Luiz, 20/08/2026: a partir da confirmação de todas as assinaturas, o link que aparece em
+ * Detalhes da Venda precisa ser do contrato já assinado, não do rascunho enviado pra assinatura.
+ * Sobrescreve o mesmo caminho no Storage (contrato.pdfUrl não muda).
+ *
+ * Extraído do webhook `document_ready` (21/08/2026) pra ser chamado também pelo caminho manual
+ * (`confirmarAssinaturaManualAction`) — sem essa extração, um contrato destravado pelo botão
+ * manual (webhook nunca chegou) ficava com o PDF sem assinatura pra sempre, mesmo já assinado de
+ * verdade na Assinafy. Não lança erro: contrato está assinado independente de conseguirmos
+ * atualizar o arquivo, e quem chama já loga o erro do jeito que faz sentido pro seu contexto.
+ */
+export async function sincronizarPdfCertificado(contrato: Pick<Contrato, "id" | "pdfUrl">, assinafyDocumentId: string): Promise<void> {
+  if (!contrato.pdfUrl) return;
+  const pdfCertificado = await baixarDocumentoCertificado(assinafyDocumentId);
+  await sobrescreverPdfContrato(contrato.pdfUrl, pdfCertificado);
 }
