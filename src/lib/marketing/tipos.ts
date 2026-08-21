@@ -227,6 +227,13 @@ export type PostProntoParaPublicar = {
   metaDescription: string;
   slug: string;
   imagemDestaqueMediaId: string | null;
+  // Achado real de produção (21/08/2026): sem isto, uma tentativa anterior que já tinha criado o
+  // post no WordPress (etapa "publicar" com sucesso) mas morreu antes de "registrar_resultado"
+  // rodar fazia a PRÓXIMA tentativa criar um post NOVO no WordPress pro mesmo pauta — duplicidade
+  // real de conteúdo no site ao vivo. `rascunho_id` é persistido assim que criarRascunho tem
+  // sucesso (ver processar-pauta.ts, etapa "publicar") — quando presente aqui, o pipeline atualiza
+  // o post existente (atualizarPost) em vez de criar outro.
+  rascunhoIdWordpress: string | null;
 };
 
 

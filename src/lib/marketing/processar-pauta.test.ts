@@ -856,11 +856,19 @@ describe("processarProximaPauta", () => {
       "pauta-1",
       expect.stringContaining("https://teste.exemplo.com/como-limpar-nome-serasa/"),
     );
-    // atualizarStatusPost roda 1x (persistência das imagens, logo após "gerar_imagens", ANTES de
-    // publicar — mudança de 19/08/2026) mas NÃO uma 2ª vez com os campos de publicação: a pauta já
-    // foi resolvida (bloqueada) antes de chegar nesse ponto do bloco "registrar_resultado".
-    expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(1);
-    expect(atualizarStatusPostSpy).toHaveBeenCalledWith("post-1", "rascunho", expect.objectContaining({ imagensSecundarias: [] }));
+    // atualizarStatusPost roda 2x: (1) persistência das imagens, logo após "gerar_imagens", ANTES
+    // de publicar (mudança de 19/08/2026); (2) persistência do rascunho_id assim que criarRascunho
+    // tem sucesso, dentro de "publicar" (achado real de produção, 21/08/2026 — protege contra
+    // duplicidade). NÃO roda uma 3ª vez com os campos finais de publicação: a pauta já foi
+    // resolvida (bloqueada) antes de chegar nesse ponto do bloco "registrar_resultado".
+    expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(2);
+    expect(atualizarStatusPostSpy).toHaveBeenNthCalledWith(1, "post-1", "rascunho", expect.objectContaining({ imagensSecundarias: [] }));
+    expect(atualizarStatusPostSpy).toHaveBeenNthCalledWith(
+      2,
+      "post-1",
+      "rascunho",
+      expect.objectContaining({ canais: { wordpress: { rascunho_id: "123", status: "rascunho", url: undefined } } }),
+    );
     expect(erroSpy).toHaveBeenCalled();
     expect(etapasChamadas).toEqual([
       "buscar_checklist",
@@ -1130,6 +1138,7 @@ describe("processarProximaPauta", () => {
         metaDescription: "Guia completo.",
         slug: "como-limpar-nome-serasa",
         imagemDestaqueMediaId: "media-capa-reaproveitada",
+        rascunhoIdWordpress: null,
       });
       const gerarConteudoSpy = vi.spyOn(escritor, "gerarConteudo");
       const revisarConteudoSpy = vi.spyOn(revisor, "revisarConteudo");
@@ -1171,14 +1180,69 @@ describe("processarProximaPauta", () => {
         "media-capa-reaproveitada",
         undefined,
       );
-      // atualizarStatusPost só roda 1x aqui (bloco final de sucesso) — sem a chamada extra de
-      // persistência de imagens, que só existe no caminho de geração do zero.
-      expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(1);
-      expect(atualizarStatusPostSpy).toHaveBeenCalledWith(
+      // atualizarStatusPost roda 2x aqui: (1) persiste o rascunho_id assim que criarRascunho tem
+      // sucesso (achado real de produção, 21/08/2026 — protege contra duplicidade se a função
+      // morrer antes do bloco final abaixo) + (2) o bloco final de sucesso.
+      expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(2);
+      expect(atualizarStatusPostSpy).toHaveBeenNthCalledWith(
+        1,
+        "post-1",
+        "rascunho",
+        expect.objectContaining({ canais: { wordpress: { rascunho_id: "123", status: "rascunho", url: undefined } } }),
+      );
+      expect(atualizarStatusPostSpy).toHaveBeenNthCalledWith(
+        2,
         "post-1",
         "publicado",
         expect.objectContaining({ conteudoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>" }),
       );
+    });
+
+    // Achado real de produção (21/08/2026): sem isto, uma tentativa anterior que já criou o post
+    // no WordPress (mas morreu antes de "registrar_resultado" persistir isso) fazia a PRÓXIMA
+    // tentativa criar um post NOVO no WordPress pro mesmo post/pauta — duplicidade real de
+    // conteúdo no site ao vivo (2 posts idênticos agendados pro mesmo horário). Quando
+    // rascunhoIdWordpress já vem preenchido, a etapa "publicar" deve ATUALIZAR o post existente
+    // (atualizarPost) em vez de criar outro (criarRascunho nunca chamado).
+    it("quando o post já foi criado no WordPress numa tentativa anterior (rascunhoIdWordpress preenchido), atualiza em vez de criar um duplicado", async () => {
+      vi.spyOn(estrategista, "selecionarPauta").mockResolvedValue(pautaFalsa);
+      vi.spyOn(repositorio, "carregarPropriedade").mockResolvedValue(propriedadeFalsa);
+      vi.spyOn(repositorio, "carregarPostProntoParaPublicar").mockResolvedValue({
+        id: "post-1",
+        titulo: "Como Limpar o Nome no Serasa",
+        conteudoHtml: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>",
+        metaTitle: "Como Limpar Nome no Serasa",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-nome-serasa",
+        imagemDestaqueMediaId: "media-capa-reaproveitada",
+        rascunhoIdWordpress: "5289",
+      });
+      vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
+      vi.spyOn(repositorio, "marcarPautaPublicada").mockResolvedValue(undefined);
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "999-nao-deveria-ser-usado", status: "rascunho" });
+      const atualizarPost = vi.fn().mockResolvedValue({ link: "https://teste.exemplo.com/rascunho-atualizado/" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia: vi.fn(),
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost,
+      };
+      vi.mocked(criarAdaptadorWordPress).mockReturnValue(adaptadorFalso);
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(criarRascunho).not.toHaveBeenCalled();
+      expect(atualizarPost).toHaveBeenCalledWith("5289", {
+        title: "Como Limpar o Nome no Serasa",
+        content: "<h1>Como Limpar o Nome no Serasa</h1><p>Conteúdo já pronto de uma tentativa anterior.</p>",
+        slug: "como-limpar-nome-serasa",
+        meta: { _yoast_wpseo_title: "Como Limpar Nome no Serasa", _yoast_wpseo_metadesc: "Guia completo." },
+        featuredMedia: "media-capa-reaproveitada",
+      });
+      // verificarRascunho/aprovarPublicar seguem batendo no MESMO id existente, não num novo.
+      expect(adaptadorFalso.verificarRascunho).toHaveBeenCalledWith("5289");
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
     });
 
     // Cenário mais sutil que o anterior: o TEXTO precisa mudar (reprovação de conteúdo, motivo
