@@ -232,6 +232,7 @@ function percorrerAPartirDe(
         tipo: "encerrar_fluxo_automatizado",
         etapaKanban: etapa.conteudo.kanban_subetapa ?? KANBAN_SUBETAPA_PADRAO,
         sobSupervisor: etapa.conteudo.encerramento?.sob_supervisor ?? false,
+        etapaCodigo: etapa.conteudo.codigo,
       });
       return {
         mensagens,
@@ -540,6 +541,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
           tipo: "encerrar_fluxo_automatizado",
           etapaKanban: conteudo.kanban_subetapa ?? KANBAN_SUBETAPA_PADRAO,
           sobSupervisor: conteudo.encerramento?.sob_supervisor ?? false,
+          etapaCodigo: conteudo.codigo,
         },
       ],
       naoReconhecido: false,

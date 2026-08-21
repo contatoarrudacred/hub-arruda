@@ -1,7 +1,7 @@
 # Status — CRM
 
-tarefa: Agendamento com consultor pra leads de alto valor/pacote caro (spec 2026-08-20-agendamento-consultor-alto-valor.md) — **CONCLUÍDO E NO AR.** Migration aplicada, código em main (deploy Vercel confirmado via GitHub check), e o etapas_fluxo real de produção patcheado (Luiz rodou o SQL, verificado por leitura direta: ln_passo15_router→escalar_agendamento→ln_agendamento_oferta→ln_agendamento_horario→ln_agendamento_confirmado, tudo encadeado certo, ordens 19-25 sem colisão).
-desde: 2026-08-20T22:00:00-03:00
-proxima: Mensagens fora de ordem no WhatsApp (aguardando Luiz testar o message_delay 4-7s somado ao nosso), reset-conversa (aguardando teste do fix de FK), decisão sobre unique constraint em pessoas.whatsapp, Evolution API como backup do Zapster
-bloqueio: ANTHROPIC_API_KEY foi adicionada na Vercel (confirmado por Luiz) e falta confirmar se houve redeploy; patch_abertura_email_justificativa_na_retomada.sql enviado, rodar não confirmado
-turno_fim: 2026-08-20T23:20:00-03:00
+tarefa: Bateria de testes automatizados da conversa da Malala (spec 2026-08-21-testes-conversa-malala-e-nota-handoff.md, pedido do Luiz). 2 achados reais já corrigidos localmente (582/582 testes verdes): (1) nenhum handoff pra humano gravava nota interna — corrigido, migration 20260821140000 aguardando Luiz; (2) ln_passo15_selfservice tinha ficado órfã (recusa sempre ia pro handoff, mesmo em pacote caro) — corrigido, dívida alta agora insiste 1x antes de aceitar a recusa, pacote caro cai no self-service. Construindo agora o harness (scripts/testes-malala/): lead fictício "Testando da Silva", sem Zapster real, cenários roteirizados + adversariais, juiz de IA, relatório final.
+desde: 2026-08-21T13:00:00-03:00
+proxima: Terminar o harness → rodar a bateria contra produção (após migration) → relatório final pro Luiz. Depois: mensagens fora de ordem no WhatsApp (aguardando teste do message_delay), reset-conversa (aguardando teste), unique constraint em pessoas.whatsapp, Evolution API como backup do Zapster
+bloqueio: migration 20260821140000 aguardando Luiz (bloqueia rodar o harness contra produção, não bloqueia construir o harness); ANTHROPIC_API_KEY na Vercel — falta confirmar redeploy; patch_abertura_email_justificativa_na_retomada.sql enviado, rodar não confirmado
+turno_fim: 2026-08-21T13:00:00-03:00

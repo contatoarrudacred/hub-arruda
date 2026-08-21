@@ -214,7 +214,12 @@ describe("abertura e triagem", () => {
     const r = await responder("triagem_menu", {}, "2");
     expect(r.etapaFinal).toBeNull();
     expect(r.efeitos).toEqual([
-      { tipo: "encerrar_fluxo_automatizado", etapaKanban: "novo_lead_triagem", sobSupervisor: true },
+      {
+        tipo: "encerrar_fluxo_automatizado",
+        etapaKanban: "novo_lead_triagem",
+        sobSupervisor: true,
+        etapaCodigo: "handoff_humano",
+      },
     ]);
     expect(txt(r.mensagens[0])).toContain("consultores");
     expect(r.kanbanSubetapa).toBe("novo_lead_triagem");
@@ -348,7 +353,12 @@ describe("Limpeza de Nome — faixa intermediária (10-30 mil)", () => {
 
     expect(r.etapaFinal).toBeNull();
     expect(r.efeitos).toEqual([
-      { tipo: "encerrar_fluxo_automatizado", etapaKanban: "dados_contrato", sobSupervisor: true },
+      {
+        tipo: "encerrar_fluxo_automatizado",
+        etapaKanban: "dados_contrato",
+        sobSupervisor: true,
+        etapaCodigo: "ln_encerramento",
+      },
     ]);
     expect(txt(r.mensagens[0])).toContain("Perfeito");
     expect(r.kanbanSubetapa).toBe("dados_contrato");
@@ -396,19 +406,44 @@ describe("Limpeza de Nome — alto valor (>R$500 mil)", () => {
     expect(r.efeitos).toEqual([]);
   });
 
-  it("quando recusa agendar, escala pro supervisor e encerra o automatizado", async () => {
+  it("dívida alta: recusar 1x não escala direto — a Malala insiste antes de aceitar a recusa", async () => {
+    // Achado via editor de fluxo (spec 2026-08-21): recusar não pode ir direto pro handoff quando o
+    // motivo é dívida alta — a ligação é obrigatória nesse caso (decisão de Luiz).
     const dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
     const r = await responder("ln_agendamento_oferta", dados, "2");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_agendamento_insistencia");
+    expect(r.efeitos).toEqual([]);
+    expect(r.mensagens.some((m) => txt(m).includes("consultor especializado"))).toBe(true);
+  });
+
+  it("dívida alta: recusar 2x (insiste e recusa de novo) escala pro supervisor e encerra o automatizado", async () => {
+    const dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
+    const r = await responder("ln_agendamento_insistencia", dados, "2");
     expect(r.etapaFinal).toBeNull();
     expect(r.efeitos).toEqual([
       {
         tipo: "encerrar_fluxo_automatizado",
         etapaKanban: "negociacao_duvidas",
         sobSupervisor: true,
+        etapaCodigo: "ln_call_agendada",
       },
     ]);
     expect(r.kanbanSubetapa).toBe("negociacao_duvidas");
     expect(r.mensagens.some((m) => txt(m).includes("especialista"))).toBe(true);
+  });
+
+  it("dívida alta: aceitar na insistência vai pro checkpoint de escolha de horário, não escala", async () => {
+    const dados: DadosConversa = { alto_valor: "sim", valor_restricao_estimado: "800000" };
+    const r = await responder("ln_agendamento_insistencia", dados, "1");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_agendamento_horario");
+    expect(r.efeitos).toEqual([]);
+  });
+
+  it("pacote caro (sem dívida alta): recusar vai direto pro self-service, sem insistência nem handoff", async () => {
+    const dados: DadosConversa = { pacote_caro: "sim", alto_valor: "nao", valor_restricao_estimado: "2000" };
+    const r = await responder("ln_agendamento_oferta", dados, "2");
+    expect(r.etapaFinal?.conteudo.codigo).toBe("ln_passo15_selfservice");
+    expect(r.efeitos).toEqual([]);
   });
 });
 
@@ -467,7 +502,12 @@ describe("Agendamento com consultor (spec 2026-08-20-agendamento-consultor-alto-
     // como etapaFinal null, igual qualquer checkpoint de encerramento (ex.: ln_call_agendada acima).
     expect(r.etapaFinal).toBeNull();
     expect(r.efeitos).toEqual([
-      { tipo: "encerrar_fluxo_automatizado", etapaKanban: "negociacao_duvidas", sobSupervisor: true },
+      {
+        tipo: "encerrar_fluxo_automatizado",
+        etapaKanban: "negociacao_duvidas",
+        sobSupervisor: true,
+        etapaCodigo: "ln_agendamento_confirmado",
+      },
       { tipo: "agendar_consultor", inicio: dados._agendamento_opcao_1_inicio, fim: dados._agendamento_opcao_1_fim, motivo: "divida_alta" },
     ]);
     expect(r.mensagens.some((m) => txt(m).includes("Agendado"))).toBe(true);
