@@ -231,19 +231,51 @@ lá que os Achados 0b, 1 e 1b foram confirmados como reais.
 | 1b | Negociação de pagamento trava com perguntas de acompanhamento | 🟠 sério | Observado, causa raiz não confirmada | lead_ansioso_urgente, lead_pergunta_fora_do_escopo_no_meio |
 | 1c | Texto quebrado em `ln_passo17a` ("[parcela unica]... de 899") | ✅ **corrigido e verificado** | Confirmado (texto real em produção, patch re-verificado) | lead_ansioso_urgente |
 | 2 | Emoji de gênero inconsistente (🙋‍♂️ numa persona feminina) | 🟡 menor | Confirmado | triagem_handoff_outro_assunto, lead_divida_alta_recusa_com_argumentos |
+| 3 | `ln_passo6` trava pra sempre se o lead informa valores de 2 documentos sem passar pelo menu | 🔴 crítico | Confirmado (reproduzido, mesma causa raiz do 0b) | pacote_caro_recusa_vai_pro_selfservice |
 | — | Nota interna automática em handoff | ✅ funcionando | Confirmado | triagem_handoff_outro_assunto |
-| — | Recusa de agendamento (insistência/self-service) | ⏸️ não testável ainda | `etapas_fluxo` real não patcheado (código só local) | divida_alta_recusa_duas_vezes, pacote_caro_recusa_vai_pro_selfservice |
+| — | Recusa de agendamento (insistência/self-service) | ✅ **corrigido e verificado** (dívida alta) | Confirmado (roteirizado + adversarial, pós-patch) | divida_alta_recusa_duas_vezes, lead_divida_alta_recusa_com_argumentos |
 
-**Nota sobre os cenários de recusa:** ambos rodaram contra o comportamento ANTIGO (recusar sempre vira
-handoff direto) porque o patch de `ln_agendamento_router_recusa`/`ln_agendamento_insistencia` no
-`etapas_fluxo` real ainda não foi feito (aguardando código ir pra `main` primeiro, mesma regra de
-sequenciamento de sempre). Precisam ser re-testados depois desse patch.
+**Recusa de agendamento — re-testada em 21/08/2026 após o Luiz rodar
+`patch_etapas_fluxo_recusa_agendamento.sql`:** o caminho de dívida alta (insiste 1x, escala só na 2ª
+recusa) funciona corretamente em produção agora, confirmado por 2 cenários independentes (script fixo +
+IA fazendo o papel do lead reagindo de verdade). Detalhes de tom que sobraram (2ª insistência repete a
+1ª quase igual, nota interna não registra "2 recusas explícitas" com esse detalhe) são polimento, não
+bugs de roteamento — ficam pro "Pendente" abaixo. **O caminho de pacote caro (self-service) não pôde ser
+re-testado** — o cenário roteirizado esbarrou no Achado 3 (novo, abaixo) antes de chegar na pergunta de
+recusa; a lógica em si (`ln_agendamento_router_recusa` roteando por `alto_valor=nao` →
+`ln_passo15_selfservice`) é a mesma testada por unidade em `engine.test.ts` (4 testes verdes), só falta
+confirmação via conversa real depois que o Achado 3 for resolvido.
+
+### Achado 3 (novo, 21/08/2026): `ln_passo6` trava pra sempre — mesma causa raiz do 0b, checkpoint diferente
+
+Achado ao tentar re-testar `pacote_caro_recusa_vai_pro_selfservice`: quando o lead informa, na primeira
+resposta, valores **específicos e diferentes por documento** (ex.: "o CPF está em uns 25 mil e o CNPJ
+uns 40 mil") em vez de escolher uma faixa do menu, `interpretarEscolhaMenu` (dentro de
+`interpretar-faixas-documentos.ts`) retorna `nao_entendi` — e **não existe nenhum caminho de recuperação
+a partir daí**: `escolherFaixaDoMenu` só grava `_faixa_provisoria_indice` quando uma faixa É reconhecida,
+e só entra em `modo_livre` quando uma faixa provisória É reconhecida e depois REJEITADA na confirmação
+(`interpretar-faixas-documentos.ts:352-386`). Se a 1ª resposta já não vira nem uma coisa nem outra, a
+conversa fica presa em `ln_passo6` repetindo a mesma pergunta idêntica pra sempre — reproduzido ao vivo
+contra produção: 6 tentativas seguidas, todas idênticas, ignorando completamente tudo que o lead disse
+depois (inclusive uma recusa de agendamento explícita).
+
+Causa raiz confirmada por leitura direta do banco: `etapas_fluxo` real de `ln_passo6` **não tem
+`opcional_apos_tentativas`** (mesmo gap do Achado 0b, aqui nunca foi setado desde o início — não é uma
+regressão, é um checkpoint que nunca teve essa rede de segurança). Mas diferente do 0b (onde só faltava
+o dado), aqui falta também **código**: mesmo com `opcional_apos_tentativas` setado, não está claro que
+"desistir depois de N tentativas" resolveria bem — desistir de quê, exatamente? (não há um valor parcial
+puramente inferido pra usar como default, ao contrário de outros checkpoints). Provavelmente a correção
+certa é dar ao `nao_entendi` de `escolherFaixaDoMenu` um caminho pra cair em `modo_livre` direto (em vez
+de só a partir da rejeição de uma faixa provisória) — mas isso é uma decisão de desenho, não só um patch
+de dado, por isso não corrigi ainda sem validar com o Luiz.
 
 ## Pendente
 
-- ✅ 0a, 0b, 1 e 1c corrigidos e verificados (21/08/2026).
+- ✅ 0a, 0b, 1, 1c e a recusa de agendamento (caminho dívida alta) corrigidos e verificados (21/08/2026).
+- **Achado 3 (novo, crítico)**: `ln_passo6` trava pra sempre quando o lead pula o menu e já informa
+  valores específicos por documento — aguardando decisão do Luiz sobre corrigir agora (ver seção acima).
 - Investigar 1b (travas na negociação de pagamento com perguntas de acompanhamento) — mesma área de
   código do Achado 1, faz sentido revisitar quando mexer ali de novo.
-- Patchear `etapas_fluxo` real com a correção de recusa de agendamento (`ln_agendamento_router_recusa`/
-  `ln_agendamento_insistencia`) — código já em `main`, falta só o patch de conteúdo.
+- Re-testar o caminho de pacote caro (self-service) da recusa de agendamento depois do Achado 3 resolvido
+  — a lógica já está coberta por teste de unidade, só falta a confirmação via conversa real.
 - 2 (emoji de gênero) é cosmético, entra em qualquer correção que já mexer no texto do script.
