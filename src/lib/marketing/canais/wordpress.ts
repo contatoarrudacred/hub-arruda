@@ -53,6 +53,22 @@ export function criarAdaptadorWordPress(
   // WordPress liberar sozinho nesse horário, em vez de `"draft"` (ver processar-pauta.ts).
   criarRascunho(conteudo: ConteudoCanal, imagemDestacadaId?: string, agendadoPara?: Date): Promise<ResultadoRascunho>;
   enviarMidia(imagemUrl: string, nomeArquivo: string, altText: string): Promise<ResultadoMidia>;
+  // Agenda de Posts (20/08/2026) — atualiza um post JÁ EXISTENTE no WordPress, campos parciais.
+  // Um método único serve os três usos da tela (trocar foto, agendamento manual/reagendamento,
+  // edição completa do post) — todos são só "atualiza um subconjunto de campos de um post que já
+  // existe", mesmo mecanismo REST que aprovarPublicar (abaixo) já usa pra mudar só o status.
+  atualizarPost(
+    idRemoto: string,
+    corpo: {
+      title?: string;
+      content?: string;
+      slug?: string;
+      meta?: { _yoast_wpseo_title?: string; _yoast_wpseo_metadesc?: string };
+      featuredMedia?: string;
+      status?: "future";
+      dateGmt?: string;
+    },
+  ): Promise<{ link: string }>;
 } {
   const baseApi = `${urlBase.replace(/\/$/, "")}/wp-json/wp/v2`;
 
@@ -93,6 +109,30 @@ export function criarAdaptadorWordPress(
       // `post.link` (Fase 4e): o WordPress calcula o permalink a partir do slug já na criação,
       // mesmo pra status "future" — não precisa esperar aprovarPublicar pra ter a URL final.
       return { idRemoto: String(post.id), status: "rascunho", link: String(post.link) };
+    },
+
+    async atualizarPost(
+      idRemoto: string,
+      corpo: {
+        title?: string;
+        content?: string;
+        slug?: string;
+        meta?: { _yoast_wpseo_title?: string; _yoast_wpseo_metadesc?: string };
+        featuredMedia?: string;
+        status?: "future";
+        dateGmt?: string;
+      },
+    ): Promise<{ link: string }> {
+      const post = await chamarApi(`/posts/${idRemoto}`, {
+        ...(corpo.title !== undefined ? { title: corpo.title } : {}),
+        ...(corpo.content !== undefined ? { content: corpo.content } : {}),
+        ...(corpo.slug !== undefined ? { slug: corpo.slug } : {}),
+        ...(corpo.meta ? { meta: corpo.meta } : {}),
+        ...(corpo.featuredMedia ? { featured_media: corpo.featuredMedia } : {}),
+        ...(corpo.status ? { status: corpo.status } : {}),
+        ...(corpo.dateGmt ? { date_gmt: corpo.dateGmt } : {}),
+      });
+      return { link: String(post.link) };
     },
 
     // POST /wp/v2/media — confirmado via developer.wordpress.org/rest-api/reference/media/

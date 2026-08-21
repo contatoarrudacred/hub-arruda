@@ -1,7 +1,7 @@
 // src/lib/marketing/imagens/capa.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
-import { gerarCapa } from "./capa";
+import { gerarCapa, gerarImagemComPrompt } from "./capa";
 import * as geradorImagemOpenAI from "./gerador-imagem-openai";
 import * as revisorImagem from "./revisor-imagem";
 import type { ConteudoGerado, PautaCarregada, PersonaCarregada } from "../tipos";
@@ -39,6 +39,7 @@ const pauta: PautaCarregada = {
   tentativas: 0,
   motivoUltimaReprovacao: null,
   ultimoRascunho: null,
+  agendamentoForcado: null,
 };
 
 const conteudo: ConteudoGerado = {
@@ -281,5 +282,74 @@ describe("gerarCapa", () => {
     const chamadaEtapa3 = mockCreate.mock.calls[1][0];
     expect(chamadaEtapa3.messages[0].content).not.toContain(persona.conteudoCompleto);
     expect(chamadaEtapa3.messages[0].content).toMatch(/nenhuma persona/i);
+  });
+});
+
+// Agenda de Posts (Trocar Foto, 20/08/2026) — versão "prompt explícito" da etapa 5 de gerarCapa,
+// sem as etapas 1-4 (que derivam o prompt automaticamente a partir do post).
+describe("gerarImagemComPrompt", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("gera e aprova de primeira, sem nenhuma chamada Claude de derivação de prompt", async () => {
+    const mockCreate = obterMockCreate();
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({
+      url: "data:image/png;base64,aGVsbG8=",
+      usage: { custoUsd: 0.041 },
+    });
+    vi.mocked(revisorImagem.revisarImagem).mockResolvedValue({
+      resultado: { aprovada: true, motivo: null },
+      usage: { inputTokens: 200, outputTokens: 30 },
+    });
+
+    const { resultado, custoUsdOpenAi } = await gerarImagemComPrompt("um prompt digitado pelo Luiz", "trecho pra revisão");
+
+    expect(resultado).toEqual({ url: "data:image/png;base64,aGVsbG8=" });
+    expect(custoUsdOpenAi).toBe(0.041);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(geradorImagemOpenAI.gerarImagemOpenAI).toHaveBeenCalledWith("um prompt digitado pelo Luiz", "16:9");
+    expect(revisorImagem.revisarImagem).toHaveBeenCalledWith("data:image/png;base64,aGVsbG8=", "trecho pra revisão");
+  });
+
+  it("reprovada na 1ª tentativa: tenta de novo com o motivo anexado ao prompt original", async () => {
+    obterMockCreate();
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI)
+      .mockResolvedValueOnce({ url: "data:image/png;base64,primeira=", usage: { custoUsd: 0.041 } })
+      .mockResolvedValueOnce({ url: "data:image/png;base64,segunda=", usage: { custoUsd: 0.041 } });
+    vi.mocked(revisorImagem.revisarImagem)
+      .mockResolvedValueOnce({ resultado: { aprovada: false, motivo: "Tem bandeira dos EUA na cena." }, usage: { inputTokens: 1, outputTokens: 1 } })
+      .mockResolvedValueOnce({ resultado: { aprovada: true, motivo: null }, usage: { inputTokens: 1, outputTokens: 1 } });
+
+    const { resultado } = await gerarImagemComPrompt("prompt original", "trecho");
+
+    expect(resultado).toEqual({ url: "data:image/png;base64,segunda=" });
+    expect(geradorImagemOpenAI.gerarImagemOpenAI).toHaveBeenCalledTimes(2);
+    const promptSegundaTentativa = vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mock.calls[1][0];
+    expect(promptSegundaTentativa).toContain("prompt original");
+    expect(promptSegundaTentativa).toContain("Tem bandeira dos EUA na cena.");
+  });
+
+  it("esgota LIMITE_TENTATIVAS_IMAGEM sem aprovação → resultado null, não lança", async () => {
+    obterMockCreate();
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({ url: "data:image/png;base64,x=", usage: { custoUsd: 0.041 } });
+    vi.mocked(revisorImagem.revisarImagem).mockResolvedValue({
+      resultado: { aprovada: false, motivo: "Sempre reprovado." },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const { resultado } = await gerarImagemComPrompt("prompt", "trecho");
+
+    expect(resultado).toBeNull();
+    expect(geradorImagemOpenAI.gerarImagemOpenAI).toHaveBeenCalledTimes(2);
+  });
+
+  it("falha de infraestrutura (gerarImagemOpenAI lança) → resultado null, não lança", async () => {
+    obterMockCreate();
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockRejectedValue(new Error("OPENAI_API_KEY não configurada."));
+
+    const { resultado } = await gerarImagemComPrompt("prompt", "trecho");
+
+    expect(resultado).toBeNull();
   });
 });

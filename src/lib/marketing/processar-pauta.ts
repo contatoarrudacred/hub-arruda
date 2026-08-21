@@ -225,14 +225,19 @@ function encontrarPosicaoInsercao(html: string, posicaoSugerida: string): number
 // lugar nenhum pro leitor. Embutida aqui como a PRIMEIRA tag do corpo (antes até do parágrafo de
 // introdução) — como o corpo não tem mais <h1> próprio (ver Regra estrutural de título/H1 em
 // escritor.ts), o resultado visual é: título (H1 automático do WordPress) → capa → introdução.
+// `data-imagem` (Agenda de Posts, Trocar Foto, 20/08/2026): único marcador estável que liga uma
+// entrada de imagem (capa ou `ImagemSecundaria.slug`) ao seu <figure> no HTML salvo — sem isso, a
+// única forma de achar o <figure> certo pra trocar seria casar por `src="<url-antiga>"` (funciona,
+// mas mais frágil). Posts publicados ANTES desta mudança não têm o atributo — a troca de foto usa
+// o fallback por `src` pra esses.
 function construirFiguraCapa(url: string | null, alt: string): string {
   if (!url) return "";
-  return `<figure><img src="${url}" alt="${escaparAtributoHtml(alt)}"></figure>\n`;
+  return `<figure><img src="${url}" alt="${escaparAtributoHtml(alt)}" data-imagem="capa"></figure>\n`;
 }
 
 function inserirImagensSecundariasNoHtml(html: string, imagens: ImagemSecundaria[]): string {
   return imagens.reduce((htmlAtual, imagem) => {
-    const figura = `\n<figure><img src="${imagem.url}" alt="${escaparAtributoHtml(imagem.alt)}"><figcaption>${escaparAtributoHtml(imagem.legenda)}</figcaption></figure>\n`;
+    const figura = `\n<figure><img src="${imagem.url}" alt="${escaparAtributoHtml(imagem.alt)}" data-imagem="${escaparAtributoHtml(imagem.slug)}"><figcaption>${escaparAtributoHtml(imagem.legenda)}</figcaption></figure>\n`;
     const posicao = encontrarPosicaoInsercao(htmlAtual, imagem.posicaoAposSecao);
     return posicao !== null ? `${htmlAtual.slice(0, posicao)}${figura}${htmlAtual.slice(posicao)}` : `${htmlAtual}${figura}`;
   }, html);
@@ -651,13 +656,19 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       imagemDestacadaId = resultadoImagens.capaMediaId;
     }
 
-    // Etapa "agendar" (Fase 4e, Agente Agendador, 20/08/2026) — só roda quando a propriedade tem
-    // horários de publicação configurados; decide o próximo horário livre da agenda ANTES de criar
-    // o rascunho, pra "publicar" já saber se deve criar com status "future" (agendado) ou "draft"
-    // (comportamento anterior, publica na hora). Sem horários configurados, agendadoPara fica
-    // `null` e todo o resto do fluxo abaixo continua idêntico a antes desta feature.
+    // Etapa "agendar" (Fase 4e, Agente Agendador, 20/08/2026; estendida 21/08/2026 pro Novo Post
+    // Manual) — três cenários: (1) a pauta tem `agendamentoForcado` (criada à mão na Agenda de
+    // Posts com um horário específico) — usa direto, sem checagem de colisão, é uma sobreposição
+    // manual deliberada; (2) sem forçado, mas a propriedade tem horários de publicação configurados
+    // — decide o próximo horário livre automaticamente; (3) nenhum dos dois — `agendadoPara` fica
+    // `null` e todo o resto do fluxo abaixo continua idêntico a antes desta feature (publica na
+    // hora). Continua registrando a etapa "agendar" nos dois primeiros casos (consistência de
+    // observabilidade) — só muda de onde vem a data.
     let agendadoPara: Date | null = null;
-    if (propriedade.horariosPublicacao?.length) {
+    if (pauta.agendamentoForcado) {
+      const dataForcada = pauta.agendamentoForcado;
+      agendadoPara = await registrarEtapa(pauta.id, "agendar", async () => new Date(dataForcada));
+    } else if (propriedade.horariosPublicacao?.length) {
       agendadoPara = await registrarEtapa(pauta.id, "agendar", async () => {
         const jaAgendados = await carregarProximosAgendamentos(propriedade.id);
         return decidirProximoHorario(propriedade.horariosPublicacao!, jaAgendados, new Date());

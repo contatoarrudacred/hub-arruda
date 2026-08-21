@@ -28,7 +28,11 @@ export function sanitizarConteudoHtml(html: string): string {
     allowedTags: [...sanitizeHtml.defaults.allowedTags, "h1", "h2", "img", "script"],
     allowedAttributes: {
       ...sanitizeHtml.defaults.allowedAttributes,
-      img: ["src", "alt", "width", "height"],
+      // "data-imagem" (Agenda de Posts, Trocar Foto, 20/08/2026): marcador estável que liga uma
+      // entrada de imagem (capa/slug da secundária) ao seu <figure> no HTML salvo — ver
+      // construirFiguraCapa/inserirImagensSecundariasNoHtml em processar-pauta.ts. Precisa
+      // sobreviver a re-sanitização (ex.: botão "Sanitizar" do editor manual, Editar Post Completo).
+      img: ["src", "alt", "width", "height", "data-imagem"],
       script: ["type"],
     },
     // "mailto"/"tel" incluídos porque o checklist item 5 exige CTA pro canal de contato — sem

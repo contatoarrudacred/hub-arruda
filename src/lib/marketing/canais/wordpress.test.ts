@@ -120,6 +120,66 @@ describe("criarAdaptadorWordPress", () => {
     expect(corpo).not.toHaveProperty("date_gmt");
   });
 
+  // Agenda de Posts (20/08/2026) — um método único serve troca de foto, agendamento manual e
+  // edição completa; testa cada subconjunto de campos independentemente.
+  describe("atualizarPost", () => {
+    it("envia POST /posts/{id} só com os campos informados (content + featuredMedia, ex.: troca de foto)", async () => {
+      const fetchFalso = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ link: "https://teste.exemplo.com/post/" }) });
+      vi.stubGlobal("fetch", fetchFalso);
+
+      const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
+      const resultado = await adaptador.atualizarPost("123", { content: "<p>Novo corpo</p>", featuredMedia: "789" });
+
+      expect(resultado).toEqual({ link: "https://teste.exemplo.com/post/" });
+      const [url, opcoes] = fetchFalso.mock.calls[0];
+      expect(url).toBe("https://teste.exemplo.com/wp-json/wp/v2/posts/123");
+      expect(opcoes.method).toBe("POST");
+      const corpo = JSON.parse(opcoes.body);
+      expect(corpo).toEqual({ content: "<p>Novo corpo</p>", featured_media: "789" });
+    });
+
+    it("envia status:future + date_gmt (ex.: reagendamento manual)", async () => {
+      const fetchFalso = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ link: "https://teste.exemplo.com/post/" }) });
+      vi.stubGlobal("fetch", fetchFalso);
+      const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
+
+      await adaptador.atualizarPost("123", { status: "future", dateGmt: "2026-08-25T12:00:00.000Z" });
+
+      const [, opcoes] = fetchFalso.mock.calls[0];
+      expect(JSON.parse(opcoes.body)).toEqual({ status: "future", date_gmt: "2026-08-25T12:00:00.000Z" });
+    });
+
+    it("envia title/slug/meta (ex.: edição completa do post)", async () => {
+      const fetchFalso = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ link: "https://teste.exemplo.com/post/" }) });
+      vi.stubGlobal("fetch", fetchFalso);
+      const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
+
+      await adaptador.atualizarPost("123", {
+        title: "Novo título",
+        slug: "novo-slug",
+        meta: { _yoast_wpseo_title: "Meta title novo", _yoast_wpseo_metadesc: "Meta description nova" },
+      });
+
+      const [, opcoes] = fetchFalso.mock.calls[0];
+      expect(JSON.parse(opcoes.body)).toEqual({
+        title: "Novo título",
+        slug: "novo-slug",
+        meta: { _yoast_wpseo_title: "Meta title novo", _yoast_wpseo_metadesc: "Meta description nova" },
+      });
+    });
+
+    it("não envia nenhum campo além do informado (payload vazio quando corpo vazio)", async () => {
+      const fetchFalso = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ link: "https://teste.exemplo.com/post/" }) });
+      vi.stubGlobal("fetch", fetchFalso);
+      const adaptador = criarAdaptadorWordPress("https://teste.exemplo.com", credenciaisFalsas);
+
+      await adaptador.atualizarPost("123", {});
+
+      const [, opcoes] = fetchFalso.mock.calls[0];
+      expect(JSON.parse(opcoes.body)).toEqual({});
+    });
+  });
+
   it("enviarMidia sobe uma data URL (base64 real) pro endpoint /wp/v2/media e retorna idRemoto/url", async () => {
     const fetchFalso = vi.fn().mockResolvedValue({
       ok: true,
