@@ -643,10 +643,37 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // reprovada, upload que falhou, zero secundárias aprovadas) na mesma coluna `detalhes` que
       // as outras etapas usam pra rejeição de negócio, pra não ficar indistinguível de execução
       // perfeita no log.
+      //
+      // Orçamento de tempo (21/08/2026, mesmo achado real de produção do guard em "verificar_links"
+      // acima, mas surgindo aqui também): quando a geração inicial já consumiu quase todo o
+      // maxDuration da rota (route.ts), gerar_imagens é a próxima etapa cara o bastante pra ser
+      // morta pela Vercel no meio, travando a pauta. "Zero imagens" já é uma saída válida e
+      // esperada por design (ver comentário de gerarEEmbutirImagens) — então, com o orçamento
+      // curto, pula a chamada inteira em vez de arriscar ser morta no meio dela, e segue pro
+      // publicar/agendar sem imagem. Reaproveitamento de tentativa anterior (imagensExistentes)
+      // continua funcionando numa próxima tentativa desta mesma pauta, então isto não é permanente.
+      const LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS = 220_000;
       const resultadoImagens = await registrarEtapa(
         pauta.id,
         "gerar_imagens",
-        () => gerarEEmbutirImagens(pauta, conteudoFinal, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes),
+        async () => {
+          const tempoDecorridoMs = Date.now() - inicioProcessamento;
+          if (tempoDecorridoMs > LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS) {
+            return {
+              corpoHtmlFinal: corpoHtmlSanitizado,
+              capaMediaId: undefined,
+              imagemDestaqueUrl: null,
+              imagemDestaqueAlt: null,
+              imagemDestaqueSlug: null,
+              imagemDestaqueStorageUrl: null,
+              imagensSecundariasPersistir: [],
+              usage: { inputTokens: 0, outputTokens: 0 },
+              detalhesLog: `Geração de imagens pulada por orçamento de tempo curto (já > ${LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS / 1000}s de tick) — post segue sem imagem desta vez.`,
+              custoUsdOpenAi: 0,
+            };
+          }
+          return gerarEEmbutirImagens(pauta, conteudoFinal, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes);
+        },
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
         (r) => r.detalhesLog,
         (r) => r.custoUsdOpenAi,

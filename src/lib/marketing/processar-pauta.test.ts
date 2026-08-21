@@ -1400,6 +1400,49 @@ describe("processarProximaPauta", () => {
       expect(tokensExtraidos.gerar_imagens).toEqual({ tokensEntrada: 1400, tokensSaida: 700 });
     });
 
+    // Achado real de produção (21/08/2026), mesmo mecanismo do guard em "verificar_links": quando
+    // a geração inicial já consumiu quase todo o orçamento do tick (maxDuration da rota), chamar
+    // gerarEEmbutirImagens (capa + secundárias, potencialmente lento) arrisca ser morto no meio,
+    // travando a pauta. Este teste simula esse cenário (Date mockado) e confirma que a geração de
+    // imagens é PULADA (gerarCapa/gerarImagensSecundarias nunca chamados) — post publica sem
+    // imagem, em vez de arriscar travar.
+    it("pula a geração de imagens se o orçamento de tempo do tick já está curto, publicando sem imagem", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const inicio = new Date("2026-08-21T00:00:00.000Z");
+      vi.setSystemTime(inicio);
+
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia: vi.fn(),
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      // Sobrescreve o mock padrão de configurarCenarioBase: simula a geração inicial sozinha já
+      // consumindo 230s de wall-clock (achado real: 160-200s vistos em produção, aqui um pouco
+      // além do LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS de 220s pra garantir que o guard dispare).
+      vi.spyOn(escritor, "gerarConteudo").mockImplementationOnce(async () => {
+        vi.setSystemTime(new Date(inicio.getTime() + 230_000));
+        return { resultado: CONTEUDO_COM_H2, usage: { inputTokens: 1000, outputTokens: 2000 } };
+      });
+      const { detalhesExtraidos } = espiarRegistrarEtapa();
+
+      try {
+        const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+        expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+        expect(gerarCapa).not.toHaveBeenCalled();
+        expect(gerarImagensSecundarias).not.toHaveBeenCalled();
+        expect(detalhesExtraidos.gerar_imagens).toContain("orçamento de tempo curto");
+        // Publica sem imagem destacada — mesmo shape de "capa não gerada" do teste seguinte.
+        expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("capa não gerada (null): publica sem imagem destacada, schema sem campo image, nada lança", async () => {
       const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
       const adaptadorFalso = {
