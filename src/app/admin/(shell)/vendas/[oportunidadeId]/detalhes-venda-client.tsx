@@ -17,6 +17,7 @@ import {
   buscarStatusAssinaturaAction,
   buscarStatusCobrancasAction,
   cancelarVendaDetalhesAction,
+  confirmarAssinaturaManualAction,
   gerarUrlDownloadContratoAction,
   marcarComissaoRecebidaAction,
   reenviarLinkAction,
@@ -298,15 +299,19 @@ function CardPartesDoContrato({
   pessoa,
   representante,
   pessoaArrudaCred,
+  onAvancou,
 }: {
   contrato: Contrato;
   pessoa: PessoaCompleta;
   representante: PessoaCompleta | null;
   pessoaArrudaCred: PessoaCompleta | null;
+  onAvancou: () => void;
 }) {
   const [documento, setDocumento] = useState<AssinafyDocumento | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [erroConfirmar, setErroConfirmar] = useState<string | null>(null);
 
   const partes = montarPartes(pessoa, representante, pessoaArrudaCred);
 
@@ -321,6 +326,23 @@ function CardPartesDoContrato({
       return;
     }
     setDocumento(resultado.documento);
+  }
+
+  // Escape hatch pro caso do webhook document_ready da Assinafy nunca chegar (achado real, Luiz
+  // 21/08/2026): sem isso, um contrato já assinado por todos ficava preso em "Aguardando
+  // Assinaturas" pra sempre, sem erro nenhum — e sem erro, o botão de retentativa padrão nem
+  // aparecia. Confere de verdade na Assinafy antes de agir, não confia só no clique.
+  async function confirmarAssinatura() {
+    if (!contrato.assinafyDocumentId) return;
+    setConfirmando(true);
+    setErroConfirmar(null);
+    const resultado = await confirmarAssinaturaManualAction(contrato.id, contrato.assinafyDocumentId);
+    setConfirmando(false);
+    if (!resultado.sucesso) {
+      setErroConfirmar(resultado.erro);
+      return;
+    }
+    onAvancou();
   }
 
   function statusDaParte(email: string | null): AssinafySignatarioStatus | null {
@@ -358,6 +380,23 @@ function CardPartesDoContrato({
         </p>
       )}
       {erro && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{erro}</p>}
+      {aguardandoAssinatura && contrato.assinafyDocumentId && (
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-950">
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            Se já foi assinado por todos na Assinafy mas o card não avançou sozinho (o aviso automático pode não ter chegado), confirme
+            manualmente abaixo — o sistema confere de novo na Assinafy antes de avançar.
+          </p>
+          <button
+            type="button"
+            onClick={confirmarAssinatura}
+            disabled={confirmando}
+            className="mt-2 rounded-full border border-amber-400 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900"
+          >
+            {confirmando ? "Confirmando..." : "🔄 Já assinado? Confirmar e avançar"}
+          </button>
+          {erroConfirmar && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erroConfirmar}</p>}
+        </div>
+      )}
       <ul className="mt-3 space-y-3">
         {partes.map((parte) => {
           const status = statusDaParte(parte.email);
@@ -730,7 +769,13 @@ export function DetalhesVendaClient({
 
             {!ehComissionado && (
               <div className="md:col-span-2">
-                <CardPartesDoContrato contrato={contrato} pessoa={pessoa} representante={representante} pessoaArrudaCred={pessoaArrudaCred} />
+                <CardPartesDoContrato
+                  contrato={contrato}
+                  pessoa={pessoa}
+                  representante={representante}
+                  pessoaArrudaCred={pessoaArrudaCred}
+                  onAvancou={recarregarPagina}
+                />
               </div>
             )}
 
