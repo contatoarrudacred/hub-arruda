@@ -1,4 +1,4 @@
-import { atualizarStatusContrato, buscarContratoPorId } from "./contratos";
+import { atualizarStatusContrato, buscarContratoPorId, type MetodoPagamento } from "./contratos";
 import {
   buscarTemplatePorId,
   montarCamposClienteResolucao,
@@ -17,7 +17,11 @@ import { listarDocumentosPacote } from "./oportunidades";
 import { buscarPessoaCompleta } from "./pessoas";
 import { buscarRepresentante } from "./pessoa-representantes";
 
-const FORMA_PAGAMENTO_LABEL: Record<string, string> = { boleto_pix: "Boleto/Pix", cartao: "Cartão de crédito" };
+// Achado da auditoria de 21/08/2026: `Record<string, string>` não é exaustivo — o TS não avisa se
+// um valor de MetodoPagamento novo (ex.: pix separado de boleto no futuro) ficar sem entrada aqui,
+// o placeholder simplesmente sairia `undefined` no contrato gerado. `Record<MetodoPagamento, string>`
+// obriga o compilador a cobrir todos os valores do tipo.
+const FORMA_PAGAMENTO_LABEL: Record<MetodoPagamento, string> = { boleto_pix: "Boleto/Pix", cartao: "Cartão de crédito" };
 
 function enderecoParaTexto(endereco: Awaited<ReturnType<typeof buscarEnderecoPorPessoa>>): string | null {
   if (!endereco) return null;

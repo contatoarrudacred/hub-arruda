@@ -101,3 +101,12 @@ export async function sobrescreverPdfContrato(caminho: string, pdf: Buffer): Pro
   const { error } = await supabase.storage.from(BUCKET).upload(caminho, pdf, { contentType: "application/pdf", upsert: true });
   if (error) throw new Error(`Falha ao sobrescrever PDF do contrato: ${error.message}`);
 }
+
+/** Apaga o PDF do Storage — chamado quando a venda é excluída de vez (achado real da auditoria de
+ * 21/08/2026: `excluirVenda` apagava a linha do contrato mas nunca o arquivo, deixando-o órfão no
+ * bucket pra sempre). */
+export async function apagarPdfContrato(caminho: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.storage.from(BUCKET).remove([caminho]);
+  if (error) throw new Error(`Falha ao apagar PDF do contrato: ${error.message}`);
+}

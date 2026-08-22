@@ -9,6 +9,12 @@ import { buscarPessoaCompleta } from "@/lib/vendas/pessoas";
 import { buscarRepresentante } from "@/lib/vendas/pessoa-representantes";
 import { FechamentoVendaClient } from "./fechamento-client";
 
+// Server Actions herdam o maxDuration da página que os chama, não do arquivo actions.ts — mesmo
+// achado/mesmo ajuste feito em nova-oportunidade/page.tsx (auditoria de 21/08/2026, pendência
+// registrada desde 19/08): o submit desta tela também dispara tentarEmitirContrato (Puppeteer +
+// upload + Assinafy), síncrono antes da resposta.
+export const maxDuration = 60;
+
 export default async function FechamentoVendaPage({ params }: { params: Promise<{ oportunidadeId: string }> }) {
   const { oportunidadeId } = await params;
 
