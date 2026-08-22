@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.15"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       agenda_itens: {
@@ -82,6 +57,77 @@ export type Database = {
             columns: ["agenda_id"]
             isOneToOne: false
             referencedRelation: "agendas_followup"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agendamentos_consultor: {
+        Row: {
+          conversa_id: string
+          created_at: string
+          fim: string
+          id: string
+          inicio: string
+          lembrete_15min_enviado: boolean
+          lembrete_hora_enviado: boolean
+          motivo: string
+          pessoa_id: string
+          status: string
+          usuario_sistema_id: string
+        }
+        Insert: {
+          conversa_id: string
+          created_at?: string
+          fim: string
+          id?: string
+          inicio: string
+          lembrete_15min_enviado?: boolean
+          lembrete_hora_enviado?: boolean
+          motivo: string
+          pessoa_id: string
+          status?: string
+          usuario_sistema_id: string
+        }
+        Update: {
+          conversa_id?: string
+          created_at?: string
+          fim?: string
+          id?: string
+          inicio?: string
+          lembrete_15min_enviado?: boolean
+          lembrete_hora_enviado?: boolean
+          motivo?: string
+          pessoa_id?: string
+          status?: string
+          usuario_sistema_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentos_consultor_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agendamentos_consultor_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "conversas_resumo"
+            referencedColumns: ["conversa_id"]
+          },
+          {
+            foreignKeyName: "agendamentos_consultor_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agendamentos_consultor_usuario_sistema_id_fkey"
+            columns: ["usuario_sistema_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios_sistema"
             referencedColumns: ["id"]
           },
         ]
@@ -137,12 +183,37 @@ export type Database = {
         }
         Relationships: []
       }
+      categorias_comunicacao: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       checklist_qa_itens: {
         Row: {
           ativo: boolean
           created_at: string
           id: string
           item: string
+          item_para_revisor: string | null
           peso: number
           propriedade_id: string
         }
@@ -151,6 +222,7 @@ export type Database = {
           created_at?: string
           id?: string
           item: string
+          item_para_revisor?: string | null
           peso?: number
           propriedade_id: string
         }
@@ -159,6 +231,7 @@ export type Database = {
           created_at?: string
           id?: string
           item?: string
+          item_para_revisor?: string | null
           peso?: number
           propriedade_id?: string
         }
@@ -397,102 +470,85 @@ export type Database = {
           },
         ]
       }
-      contrato_templates: {
-        Row: {
-          ativo: boolean
-          conteudo_markdown: string
-          created_at: string
-          id: string
-          produto_id: string
-          updated_at: string
-          versao: number
-        }
-        Insert: {
-          ativo?: boolean
-          conteudo_markdown: string
-          created_at?: string
-          id?: string
-          produto_id: string
-          updated_at?: string
-          versao?: number
-        }
-        Update: {
-          ativo?: boolean
-          conteudo_markdown?: string
-          created_at?: string
-          id?: string
-          produto_id?: string
-          updated_at?: string
-          versao?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "contrato_templates_produto_id_fkey"
-            columns: ["produto_id"]
-            isOneToOne: false
-            referencedRelation: "produtos"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       contratos: {
         Row: {
+          asaas_checkout_gerado_em: string | null
+          asaas_checkout_id: string | null
+          asaas_checkout_url: string | null
           assinado_em: string | null
           assinafy_document_id: string | null
           assinafy_document_status: string | null
-          contrato_template_id: string
+          contrato_template_id: string | null
           created_at: string
           enviado_em: string | null
-          forma_pagamento: string
+          forma_pagamento: string | null
           fornecedor_id: string | null
           id: string
-          metodo_pagamento: string
+          max_parcelas_cartao: number | null
+          metodo_pagamento: string | null
+          motivo_cancelamento: string | null
           oportunidade_id: string
           parcelas_qtd: number
           pdf_url: string | null
-          pessoa_arrudacred_signatario_id: string
+          pessoa_arrudacred_signatario_id: string | null
           pessoa_signatario_id: string
           status: string
+          tentativas_erro: number
+          ultimo_erro: string | null
           updated_at: string
           valor_total: number
         }
         Insert: {
+          asaas_checkout_gerado_em?: string | null
+          asaas_checkout_id?: string | null
+          asaas_checkout_url?: string | null
           assinado_em?: string | null
           assinafy_document_id?: string | null
           assinafy_document_status?: string | null
-          contrato_template_id: string
+          contrato_template_id?: string | null
           created_at?: string
           enviado_em?: string | null
-          forma_pagamento: string
+          forma_pagamento?: string | null
           fornecedor_id?: string | null
           id?: string
-          metodo_pagamento: string
+          max_parcelas_cartao?: number | null
+          metodo_pagamento?: string | null
+          motivo_cancelamento?: string | null
           oportunidade_id: string
           parcelas_qtd?: number
           pdf_url?: string | null
-          pessoa_arrudacred_signatario_id: string
+          pessoa_arrudacred_signatario_id?: string | null
           pessoa_signatario_id: string
           status?: string
+          tentativas_erro?: number
+          ultimo_erro?: string | null
           updated_at?: string
           valor_total: number
         }
         Update: {
+          asaas_checkout_gerado_em?: string | null
+          asaas_checkout_id?: string | null
+          asaas_checkout_url?: string | null
           assinado_em?: string | null
           assinafy_document_id?: string | null
           assinafy_document_status?: string | null
-          contrato_template_id?: string
+          contrato_template_id?: string | null
           created_at?: string
           enviado_em?: string | null
-          forma_pagamento?: string
+          forma_pagamento?: string | null
           fornecedor_id?: string | null
           id?: string
-          metodo_pagamento?: string
+          max_parcelas_cartao?: number | null
+          metodo_pagamento?: string | null
+          motivo_cancelamento?: string | null
           oportunidade_id?: string
           parcelas_qtd?: number
           pdf_url?: string | null
-          pessoa_arrudacred_signatario_id?: string
+          pessoa_arrudacred_signatario_id?: string | null
           pessoa_signatario_id?: string
           status?: string
+          tentativas_erro?: number
+          ultimo_erro?: string | null
           updated_at?: string
           valor_total?: number
         }
@@ -501,7 +557,7 @@ export type Database = {
             foreignKeyName: "contratos_contrato_template_id_fkey"
             columns: ["contrato_template_id"]
             isOneToOne: false
-            referencedRelation: "contrato_templates"
+            referencedRelation: "documento_templates"
             referencedColumns: ["id"]
           },
           {
@@ -551,6 +607,7 @@ export type Database = {
           followup_manual_ativo: boolean
           followup_whatsapp_bloqueado: boolean
           id: string
+          instancia: string | null
           oportunidade_id: string | null
           pessoa_id: string
           proximo_item_agenda: number
@@ -574,6 +631,7 @@ export type Database = {
           followup_manual_ativo?: boolean
           followup_whatsapp_bloqueado?: boolean
           id?: string
+          instancia?: string | null
           oportunidade_id?: string | null
           pessoa_id: string
           proximo_item_agenda?: number
@@ -597,6 +655,7 @@ export type Database = {
           followup_manual_ativo?: boolean
           followup_whatsapp_bloqueado?: boolean
           id?: string
+          instancia?: string | null
           oportunidade_id?: string | null
           pessoa_id?: string
           proximo_item_agenda?: number
@@ -663,6 +722,91 @@ export type Database = {
           locked_until?: string
         }
         Relationships: []
+      }
+      disponibilidade_atendente: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          dia_semana: number
+          hora_fim: string
+          hora_inicio: string
+          id: string
+          updated_at: string
+          usuario_sistema_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          dia_semana: number
+          hora_fim: string
+          hora_inicio: string
+          id?: string
+          updated_at?: string
+          usuario_sistema_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          dia_semana?: number
+          hora_fim?: string
+          hora_inicio?: string
+          id?: string
+          updated_at?: string
+          usuario_sistema_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "disponibilidade_atendente_usuario_sistema_id_fkey"
+            columns: ["usuario_sistema_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios_sistema"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documento_templates: {
+        Row: {
+          ativo: boolean
+          conteudo_html: string
+          created_at: string
+          id: string
+          nome: string
+          produto_id: string | null
+          tipo: string
+          updated_at: string
+          versao: number
+        }
+        Insert: {
+          ativo?: boolean
+          conteudo_html: string
+          created_at?: string
+          id?: string
+          nome: string
+          produto_id?: string | null
+          tipo?: string
+          updated_at?: string
+          versao?: number
+        }
+        Update: {
+          ativo?: boolean
+          conteudo_html?: string
+          created_at?: string
+          id?: string
+          nome?: string
+          produto_id?: string | null
+          tipo?: string
+          updated_at?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contrato_templates_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       enderecos: {
         Row: {
@@ -827,6 +971,33 @@ export type Database = {
           },
         ]
       }
+      fluxo_pastas: {
+        Row: {
+          cor: string
+          created_at: string
+          id: string
+          nome: string
+          posicao: number
+          updated_at: string
+        }
+        Insert: {
+          cor?: string
+          created_at?: string
+          id?: string
+          nome: string
+          posicao?: number
+          updated_at?: string
+        }
+        Update: {
+          cor?: string
+          created_at?: string
+          id?: string
+          nome?: string
+          posicao?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fluxos: {
         Row: {
           ativo: boolean
@@ -860,47 +1031,20 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "fluxos_produto_id_fkey"
-            columns: ["produto_id"]
-            isOneToOne: false
-            referencedRelation: "produtos"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "fluxos_pasta_id_fkey"
             columns: ["pasta_id"]
             isOneToOne: false
             referencedRelation: "fluxo_pastas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "fluxos_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
         ]
-      }
-      fluxo_pastas: {
-        Row: {
-          id: string
-          nome: string
-          cor: string
-          posicao: number
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          nome: string
-          cor?: string
-          posicao?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          nome?: string
-          cor?: string
-          posicao?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
       }
       followup_emails: {
         Row: {
@@ -1127,6 +1271,8 @@ export type Database = {
       }
       mensagens: {
         Row: {
+          categoria_id: string | null
+          chave_idempotencia: string | null
           conteudo: string | null
           conversa_id: string
           entregue_em: string | null
@@ -1137,10 +1283,13 @@ export type Database = {
           midia_tipo: string | null
           midia_url: string | null
           origem_followup: boolean
+          provedor_message_id: string | null
           remetente: string
           zapster_message_id: string | null
         }
         Insert: {
+          categoria_id?: string | null
+          chave_idempotencia?: string | null
           conteudo?: string | null
           conversa_id: string
           entregue_em?: string | null
@@ -1151,10 +1300,13 @@ export type Database = {
           midia_tipo?: string | null
           midia_url?: string | null
           origem_followup?: boolean
+          provedor_message_id?: string | null
           remetente: string
           zapster_message_id?: string | null
         }
         Update: {
+          categoria_id?: string | null
+          chave_idempotencia?: string | null
           conteudo?: string | null
           conversa_id?: string
           entregue_em?: string | null
@@ -1165,10 +1317,18 @@ export type Database = {
           midia_tipo?: string | null
           midia_url?: string | null
           origem_followup?: boolean
+          provedor_message_id?: string | null
           remetente?: string
           zapster_message_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "mensagens_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias_comunicacao"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "mensagens_conversa_id_fkey"
             columns: ["conversa_id"]
@@ -1271,6 +1431,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "notificacoes_agendamento_id_fkey"
+            columns: ["agendamento_id"]
+            isOneToOne: false
+            referencedRelation: "agendamentos_consultor"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "notificacoes_conversa_id_fkey"
             columns: ["conversa_id"]
             isOneToOne: false
@@ -1289,13 +1456,6 @@ export type Database = {
             columns: ["nota_id"]
             isOneToOne: false
             referencedRelation: "notas_internas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notificacoes_agendamento_id_fkey"
-            columns: ["agendamento_id"]
-            isOneToOne: false
-            referencedRelation: "agendamentos_consultor"
             referencedColumns: ["id"]
           },
           {
@@ -1353,6 +1513,7 @@ export type Database = {
           faixa_valor: string | null
           faixa_valor_detalhe: string | null
           id: string
+          nome_razao_social: string | null
           oportunidade_id: string
           tipo_documento: string
           updated_at: string
@@ -1366,6 +1527,7 @@ export type Database = {
           faixa_valor?: string | null
           faixa_valor_detalhe?: string | null
           id?: string
+          nome_razao_social?: string | null
           oportunidade_id: string
           tipo_documento: string
           updated_at?: string
@@ -1379,6 +1541,7 @@ export type Database = {
           faixa_valor?: string | null
           faixa_valor_detalhe?: string | null
           id?: string
+          nome_razao_social?: string | null
           oportunidade_id?: string
           tipo_documento?: string
           updated_at?: string
@@ -1451,6 +1614,7 @@ export type Database = {
       }
       pautas: {
         Row: {
+          agendamento_forcado: string | null
           angulo: string
           atualizado_em: string
           created_at: string
@@ -1461,12 +1625,16 @@ export type Database = {
           motivo_ultima_reprovacao: string | null
           palavra_chave_principal: string
           palavras_secundarias: Json
+          persona_id: string | null
           prioridade_score: number
           status: string
           tentativas: number
+          tipo_angulo: string | null
           tipo_conteudo: string
+          ultimo_rascunho: Json | null
         }
         Insert: {
+          agendamento_forcado?: string | null
           angulo: string
           atualizado_em?: string
           created_at?: string
@@ -1477,12 +1645,16 @@ export type Database = {
           motivo_ultima_reprovacao?: string | null
           palavra_chave_principal: string
           palavras_secundarias?: Json
+          persona_id?: string | null
           prioridade_score?: number
           status?: string
           tentativas?: number
+          tipo_angulo?: string | null
           tipo_conteudo?: string
+          ultimo_rascunho?: Json | null
         }
         Update: {
+          agendamento_forcado?: string | null
           angulo?: string
           atualizado_em?: string
           created_at?: string
@@ -1493,10 +1665,13 @@ export type Database = {
           motivo_ultima_reprovacao?: string | null
           palavra_chave_principal?: string
           palavras_secundarias?: Json
+          persona_id?: string | null
           prioridade_score?: number
           status?: string
           tentativas?: number
+          tipo_angulo?: string | null
           tipo_conteudo?: string
+          ultimo_rascunho?: Json | null
         }
         Relationships: [
           {
@@ -1506,12 +1681,20 @@ export type Database = {
             referencedRelation: "matrizes_conteudo"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pautas_persona_id_fkey"
+            columns: ["persona_id"]
+            isOneToOne: false
+            referencedRelation: "personas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       pautas_execucao_log: {
         Row: {
           concluido_em: string | null
           created_at: string
+          custo_usd: number | null
           detalhes: string | null
           etapa: string
           id: string
@@ -1524,6 +1707,7 @@ export type Database = {
         Insert: {
           concluido_em?: string | null
           created_at?: string
+          custo_usd?: number | null
           detalhes?: string | null
           etapa: string
           id?: string
@@ -1536,6 +1720,7 @@ export type Database = {
         Update: {
           concluido_em?: string | null
           created_at?: string
+          custo_usd?: number | null
           detalhes?: string | null
           etapa?: string
           id?: string
@@ -1551,6 +1736,56 @@ export type Database = {
             columns: ["pauta_id"]
             isOneToOne: false
             referencedRelation: "pautas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      personas: {
+        Row: {
+          angulos_prontos: Json
+          ativo: boolean
+          conteudo_completo: string
+          created_at: string
+          dor_entrada: string
+          id: string
+          nome: string
+          numero: number
+          produto: string
+          propriedade_id: string
+          publico: string
+        }
+        Insert: {
+          angulos_prontos?: Json
+          ativo?: boolean
+          conteudo_completo: string
+          created_at?: string
+          dor_entrada: string
+          id?: string
+          nome: string
+          numero: number
+          produto: string
+          propriedade_id: string
+          publico: string
+        }
+        Update: {
+          angulos_prontos?: Json
+          ativo?: boolean
+          conteudo_completo?: string
+          created_at?: string
+          dor_entrada?: string
+          id?: string
+          nome?: string
+          numero?: number
+          produto?: string
+          propriedade_id?: string
+          publico?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "personas_propriedade_id_fkey"
+            columns: ["propriedade_id"]
+            isOneToOne: false
+            referencedRelation: "propriedades_digitais"
             referencedColumns: ["id"]
           },
         ]
@@ -1726,8 +1961,11 @@ export type Database = {
           email: string | null
           email_boas_vindas_enviado: boolean
           email_marketing_opt_out: boolean
+          estado_civil: string | null
           id: string
           nome_razao_social: string
+          profissao: string | null
+          rg: string | null
           tipo_pessoa: string
           updated_at: string
           whatsapp: string | null
@@ -1739,8 +1977,11 @@ export type Database = {
           email?: string | null
           email_boas_vindas_enviado?: boolean
           email_marketing_opt_out?: boolean
+          estado_civil?: string | null
           id?: string
           nome_razao_social: string
+          profissao?: string | null
+          rg?: string | null
           tipo_pessoa: string
           updated_at?: string
           whatsapp?: string | null
@@ -1752,8 +1993,11 @@ export type Database = {
           email?: string | null
           email_boas_vindas_enviado?: boolean
           email_marketing_opt_out?: boolean
+          estado_civil?: string | null
           id?: string
           nome_razao_social?: string
+          profissao?: string | null
+          rg?: string | null
           tipo_pessoa?: string
           updated_at?: string
           whatsapp?: string | null
@@ -1762,15 +2006,22 @@ export type Database = {
       }
       posts: {
         Row: {
+          agendado_para: string | null
           atualizado_em: string
           canais: Json
           conteudo_html: string
           created_at: string
           id: string
+          imagem_destaque_alt: string | null
+          imagem_destaque_media_id: string | null
+          imagem_destaque_slug: string | null
+          imagem_destaque_storage_url: string | null
           imagem_destaque_url: string | null
+          imagens_secundarias: Json
           meta_description: string
           meta_title: string
           pauta_id: string
+          pronto_para_publicar: boolean
           propriedade_id: string
           publicado_em: string | null
           score_qa: number | null
@@ -1780,15 +2031,22 @@ export type Database = {
           titulo: string
         }
         Insert: {
+          agendado_para?: string | null
           atualizado_em?: string
           canais?: Json
           conteudo_html: string
           created_at?: string
           id?: string
+          imagem_destaque_alt?: string | null
+          imagem_destaque_media_id?: string | null
+          imagem_destaque_slug?: string | null
+          imagem_destaque_storage_url?: string | null
           imagem_destaque_url?: string | null
+          imagens_secundarias?: Json
           meta_description: string
           meta_title: string
           pauta_id: string
+          pronto_para_publicar?: boolean
           propriedade_id: string
           publicado_em?: string | null
           score_qa?: number | null
@@ -1798,15 +2056,22 @@ export type Database = {
           titulo: string
         }
         Update: {
+          agendado_para?: string | null
           atualizado_em?: string
           canais?: Json
           conteudo_html?: string
           created_at?: string
           id?: string
+          imagem_destaque_alt?: string | null
+          imagem_destaque_media_id?: string | null
+          imagem_destaque_slug?: string | null
+          imagem_destaque_storage_url?: string | null
           imagem_destaque_url?: string | null
+          imagens_secundarias?: Json
           meta_description?: string
           meta_title?: string
           pauta_id?: string
+          pronto_para_publicar?: boolean
           propriedade_id?: string
           publicado_em?: string | null
           score_qa?: number | null
@@ -1895,6 +2160,7 @@ export type Database = {
         Row: {
           ativo: boolean
           created_at: string
+          exige_lista_documentos: boolean
           fonte_receita: string
           fornecedor_definido_em: string | null
           fornecedor_id: string | null
@@ -1909,6 +2175,7 @@ export type Database = {
         Insert: {
           ativo?: boolean
           created_at?: string
+          exige_lista_documentos?: boolean
           fonte_receita: string
           fornecedor_definido_em?: string | null
           fornecedor_id?: string | null
@@ -1923,6 +2190,7 @@ export type Database = {
         Update: {
           ativo?: boolean
           created_at?: string
+          exige_lista_documentos?: boolean
           fonte_receita?: string
           fornecedor_definido_em?: string | null
           fornecedor_id?: string | null
@@ -1954,6 +2222,7 @@ export type Database = {
       propriedades_digitais: {
         Row: {
           ativo: boolean
+          autoria: Json | null
           config_pipeline: Json
           created_at: string
           credenciais_canais: Json
@@ -1967,6 +2236,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          autoria?: Json | null
           config_pipeline?: Json
           created_at?: string
           credenciais_canais?: Json
@@ -1980,6 +2250,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          autoria?: Json | null
           config_pipeline?: Json
           created_at?: string
           credenciais_canais?: Json
@@ -2148,111 +2419,6 @@ export type Database = {
             foreignKeyName: "usuarios_sistema_pessoa_id_fkey"
             columns: ["pessoa_id"]
             isOneToOne: true
-            referencedRelation: "pessoas"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      disponibilidade_atendente: {
-        Row: {
-          id: string
-          usuario_sistema_id: string
-          dia_semana: number
-          hora_inicio: string
-          hora_fim: string
-          ativo: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          usuario_sistema_id: string
-          dia_semana: number
-          hora_inicio: string
-          hora_fim: string
-          ativo?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          usuario_sistema_id?: string
-          dia_semana?: number
-          hora_inicio?: string
-          hora_fim?: string
-          ativo?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "disponibilidade_atendente_usuario_sistema_id_fkey"
-            columns: ["usuario_sistema_id"]
-            isOneToOne: false
-            referencedRelation: "usuarios_sistema"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      agendamentos_consultor: {
-        Row: {
-          id: string
-          usuario_sistema_id: string
-          conversa_id: string
-          pessoa_id: string
-          inicio: string
-          fim: string
-          status: string
-          lembrete_15min_enviado: boolean
-          lembrete_hora_enviado: boolean
-          motivo: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          usuario_sistema_id: string
-          conversa_id: string
-          pessoa_id: string
-          inicio: string
-          fim: string
-          status?: string
-          lembrete_15min_enviado?: boolean
-          lembrete_hora_enviado?: boolean
-          motivo: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          usuario_sistema_id?: string
-          conversa_id?: string
-          pessoa_id?: string
-          inicio?: string
-          fim?: string
-          status?: string
-          lembrete_15min_enviado?: boolean
-          lembrete_hora_enviado?: boolean
-          motivo?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agendamentos_consultor_usuario_sistema_id_fkey"
-            columns: ["usuario_sistema_id"]
-            isOneToOne: false
-            referencedRelation: "usuarios_sistema"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agendamentos_consultor_conversa_id_fkey"
-            columns: ["conversa_id"]
-            isOneToOne: false
-            referencedRelation: "conversas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agendamentos_consultor_pessoa_id_fkey"
-            columns: ["pessoa_id"]
-            isOneToOne: false
             referencedRelation: "pessoas"
             referencedColumns: ["id"]
           },
@@ -2449,9 +2615,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
