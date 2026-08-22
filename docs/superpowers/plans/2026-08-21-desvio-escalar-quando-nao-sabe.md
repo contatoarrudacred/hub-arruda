@@ -97,9 +97,53 @@ interna, nunca mais repetir a mesma frase ignorando a pergunta.
 
 ## Pendente / fora de escopo (próxima rodada, se fizer sentido)
 
-- Banco de objeções integrado ao mesmo mecanismo (precisa de geração com nuance, Sonnet + playbook seção
-  8 — maior escopo).
 - Tela de admin pra revisar as "dúvidas não respondidas" (hoje só ficam nas notas internas de cada
   conversa — funcional, mas sem visão agregada entre conversas).
 - Estender o mesmo tratamento pros interpretadores especializados (`faixas_documentos`,
   `lista_documentos`) quando eles também não reconhecerem nada.
+
+## Atualização 21/08/2026 — bateria completa revelou 2 achados importantes
+
+Depois de implementado, rodei a bateria completa (17 cenários) duas vezes: a 1ª revelou que `escalar`
+estava sendo usado demais (respostas válidas mal interpretadas, objeções, hesitações — cortando o lead
+do automatizado sem necessidade). Corrigido com um 3º status, `ambiguo` (mais seguro: cai no
+comportamento padrão de repetir a pergunta, em vez de escalar por engano) — reduz `ResultadoDesvio` pra
+`faq | escalar | ambiguo`, e reservou `escalar` só pra confiança real de outro assunto/pedido explícito
+de humano. Confirmado na 2ª rodada: nenhuma escalação indevida.
+
+### Banco de objeções — implementado (não estava no escopo original, virou pedido explícito do Luiz)
+
+Luiz, assistindo conversas reais pela Tela de Atendimento, notou que a Malala **nunca** respondia a
+objeções/hesitações — só empurrava o roteiro adiante, "indistinguível de um bot de árvore de decisão
+(ManyChat)". Investigação confirmou a causa: das 3 válvulas de escape da persona (FAQ, banco de
+objeções, regra de desvio), só a FAQ estava ligada — o banco de objeções (seção 8 da persona, 50 itens
+cadastrados) nunca tinha sido conectado a nenhum código.
+
+**Implementado**: `ResultadoDesvio` ganhou um 4º status, `objecao`. O classificador (Haiku) agora decide
+entre `faq | objecao | escalar | ambiguo` numa chamada só (reaproveita `listarObjecoesAtivas`, já
+existente pro composer-assist/detector automático). Quando `objecao`, uma 2ª chamada (Sonnet, com o
+texto completo da persona como system prompt — reaproveitado de `composer-assist.ts`, agora em
+`repositorio.ts::carregarPersonaTexto`) **gera** a resposta seguindo o princípio de tratamento de
+objeção da seção 8.2 (ACOLHER → DIAGNOSTICAR → RESPONDER → REDUZIR BARREIRA → PEDIR AVANÇO), usando
+`como_lidar` como raciocínio, nunca como script decorado — e retoma a pergunta pendente na mesma
+mensagem. A resposta de FAQ também passou a usar essa mesma geração (antes era `resposta oficial +
+pergunta colada crua`, mecânico demais — achado do próprio Luiz: "faq idem né?").
+
+**Verificado**: testes de unidade (`interpretar-desvio-validacao.test.ts` cobre a resolução de
+faq/objecao/escalar/ambiguo; `engine.test.ts` cobre os 4 caminhos no motor) + 647 testes totais verdes.
+Ao vivo contra produção: 1 acionamento limpo confirmado funcionando bem (`lead_muda_de_ideia_varias_vezes`,
+turno 12 → objeção "isso é legal?" endereçada, o lead reconhece "agora sim, obrigado por explicar" no
+turno seguinte).
+
+**Achado importante que limita o impacto prático (não é bug da feature em si)**: em 2 cenários
+adversariais de objeção (`lead_muda_de_ideia_varias_vezes`, `lead_tenta_negociar_desconto_inventado`),
+a objeção quase sempre vinha **embutida na mesma mensagem que uma resposta válida** (ex.: "2, entre 10 e
+30 mil. Mas você ainda não me confirmou os 70% de desconto..."). Nesses casos, o classificador do
+checkpoint (`interpretacao-ia.ts` ou o parser determinístico) já reconhece a parte da resposta válida e
+avança o fluxo — `naoReconhecido` fica `false`, e o desvio (que só roda quando `!reconhecido`) nunca
+chega a rodar. A pergunta/objeção embutida se perde silenciosamente. Isso é uma limitação estrutural
+mais profunda que a feature de hoje não resolve sozinha — provavelmente exige que TODO checkpoint (não
+só o fallback) também verifique "esta resposta tem algo além do que eu esperava?", mesmo quando já
+reconhece uma resposta válida. Fica registrado como a extensão natural do item (b) já combinado com o
+Luiz (investigar a precisão do classificador em respostas "sim, mas...") — o escopo real é maior do que
+só isso: é sobre conteúdo extra embutido em qualquer resposta, não só hedges tipo "sim, mas...".

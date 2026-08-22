@@ -31,6 +31,8 @@ import {
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
   carregarFaqsAtivas,
+  carregarPersonaTexto,
+  listarObjecoesAtivas,
   listarRegrasRoteamentoAtivas,
 } from "@/lib/motor-fluxo/repositorio";
 import { resolverEtapaInicialLeadNovo } from "@/lib/motor-fluxo/roteamento-lead-novo";
@@ -70,12 +72,14 @@ const DEBOUNCE_MS = 3500;
 // checkpoint). Responder na hora elimina o motivo do reenvio.
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas, objecoesAtivas, personaTexto] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
     carregarDadosAgendamentoConsultor(),
     carregarFaqsAtivas(),
+    listarObjecoesAtivas(),
+    carregarPersonaTexto(),
   ]);
   return {
     etapasPorCodigo,
@@ -85,7 +89,7 @@ async function montarDependencias() {
       agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
     }),
     interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
-    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas),
+    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas, objecoesAtivas, personaTexto),
   };
 }
 

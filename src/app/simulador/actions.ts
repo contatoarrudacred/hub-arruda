@@ -17,6 +17,8 @@ import {
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
   carregarFaqsAtivas,
+  carregarPersonaTexto,
+  listarObjecoesAtivas,
 } from "@/lib/motor-fluxo/repositorio";
 import type { DadosConversa, MensagemEnviada } from "@/lib/motor-fluxo/tipos";
 
@@ -46,12 +48,14 @@ export type PassoSimulador = {
 };
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas, objecoesAtivas, personaTexto] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
     carregarDadosAgendamentoConsultor(),
     carregarFaqsAtivas(),
+    listarObjecoesAtivas(),
+    carregarPersonaTexto(),
   ]);
   return {
     etapasPorCodigo,
@@ -61,7 +65,7 @@ async function montarDependencias() {
       agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
     }),
     interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
-    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas),
+    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas, objecoesAtivas, personaTexto),
   };
 }
 
