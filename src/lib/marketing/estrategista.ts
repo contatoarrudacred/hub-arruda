@@ -14,12 +14,28 @@ import { gerarAngulo } from "./gerador-angulo";
 import {
   carregarAngulosUsadosPorPersona,
   carregarPersona,
+  carregarUltimoUsoPorTipoAngulo,
   criarPautaDePersona,
   listarPersonasAtivasComAngulosDisponiveis,
   marcarPautaEmProducao,
   selecionarProximaPautaPendente,
 } from "./repositorio";
-import type { FunilPauta, PautaCarregada, PersonaAtiva, TipoConteudo } from "./tipos";
+import { CATALOGO_TIPOS_ANGULO } from "./tipos";
+import type { FunilPauta, PautaCarregada, PersonaAtiva, TipoAngulo, TipoConteudo } from "./tipos";
+
+/**
+ * Comparador genérico de recência ascendente — `null` (nunca usado) sempre vem primeiro
+ * (prioridade máxima); strings ISO 8601 de mesma largura comparam lexicograficamente igual a
+ * cronologicamente. Reaproveitado pelos dois eixos de sorteio ponderado "menos usado
+ * recentemente": persona (spec seção 5) e, desde 22/08/2026, tipo de ângulo (ver
+ * ordenarTiposPorMenosUsadoRecentemente abaixo) — extraído daqui em vez de duplicado.
+ */
+function ordenarPorRecenciaAscendente(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a === null) return -1;
+  if (b === null) return 1;
+  return a < b ? -1 : 1;
+}
 
 /**
  * Sorteio ponderado "menos usada recentemente tem mais peso" (spec seção 5) — decisão de
@@ -32,24 +48,39 @@ import type { FunilPauta, PautaCarregada, PersonaAtiva, TipoConteudo } from "./t
  * (a) a spec não manda um algoritmo específico, só a intenção; (b) fica determinística e testável
  * sem precisar mockar Math.random(); (c) com o volume esperado (75 personas, sorteio a cada
  * poucos posts) o efeito prático — nunca deixar uma persona esquecida — é o mesmo que se buscava
- * com "peso maior pra quem foi menos usada". Comparação de string funciona porque ISO 8601 com a
- * mesma largura ordena lexicograficamente igual a cronologicamente (mesma premissa já usada em
- * listarPersonasAtivasComAngulosDisponiveis, repositorio.ts).
+ * com "peso maior pra quem foi menos usada".
  */
 function escolherPersonaMenosUsadaRecentemente(personas: PersonaAtiva[]): PersonaAtiva {
-  return [...personas].sort((a, b) => {
-    if (a.usadaPelaUltimaVezEm === b.usadaPelaUltimaVezEm) return 0;
-    if (a.usadaPelaUltimaVezEm === null) return -1;
-    if (b.usadaPelaUltimaVezEm === null) return 1;
-    return a.usadaPelaUltimaVezEm < b.usadaPelaUltimaVezEm ? -1 : 1;
-  })[0];
+  return [...personas].sort((a, b) => ordenarPorRecenciaAscendente(a.usadaPelaUltimaVezEm, b.usadaPelaUltimaVezEm))[0];
+}
+
+/**
+ * Sorteio de TIPO de ângulo (22/08/2026, pedido do Luiz) — achado real de produção: os ângulos
+ * prontos de cada persona (Bloco 11) quase sempre seguem o mesmo tipo retórico (reformulação/
+ * contraste), fazendo os posts saírem parecidos mesmo com ângulos de texto diferentes. Decisão do
+ * Luiz (não é uma heurística minha a validar): sortear o TIPO — ponderado por "tipo menos usado
+ * recentemente NESTA MATRIZ", mesmo princípio de `escolherPersonaMenosUsadaRecentemente` acima,
+ * aplicado a um eixo ortogonal — em vez de alguma lógica "decidir" qual tipo é o melhor (ele
+ * rejeitou explicitamente isso: no julgamento dele, qualquer "escolha" tende a convergir sempre
+ * pro mesmo tipo, foi exatamente o que aconteceu quando ele mesmo escreveu os ângulos à mão).
+ *
+ * Com histórico vazio (nenhuma pauta desta matriz tem `tipo_angulo` ainda), `carregarUltimoUsoPorTipoAngulo`
+ * devolve `null` pra todos os 15 — `Array.prototype.sort` é estável, então ordenar com tudo `null`
+ * preserva a ordem do `CATALOGO_TIPOS_ANGULO` tal como está: sempre resolve pra
+ * "informacional_direto" primeiro até algo ser usado de verdade. Determinístico, sem Math.random,
+ * nunca trava.
+ */
+async function ordenarTiposPorMenosUsadoRecentemente(matrizConteudoId: string): Promise<TipoAngulo[]> {
+  const ultimoUsoPorTipo = await carregarUltimoUsoPorTipoAngulo(matrizConteudoId);
+  return [...CATALOGO_TIPOS_ANGULO].sort((a, b) => ordenarPorRecenciaAscendente(ultimoUsoPorTipo[a], ultimoUsoPorTipo[b]));
 }
 
 /** "Sorteio simples" (spec seção 5) do ângulo dentro dos `angulosProntos` de UMA persona já
- * escolhida — ao contrário da escolha de persona acima, aqui a spec não fala em ponderar por
- * nada, é uma escolha aleatória simples entre os ângulos disponíveis dela. */
-function escolherAnguloAleatorio(angulosDisponiveis: string[]): string {
-  return angulosDisponiveis[Math.floor(Math.random() * angulosDisponiveis.length)];
+ * escolhida (já filtrados pelo tipo sorteado, ver `selecionarPauta`) — ao contrário da escolha de
+ * persona/tipo acima, aqui não há ponderação por nada, é uma escolha aleatória simples entre os
+ * candidatos restantes. */
+function escolherAleatorio<T>(candidatos: T[]): T {
+  return candidatos[Math.floor(Math.random() * candidatos.length)];
 }
 
 /**
@@ -81,32 +112,43 @@ export async function selecionarPauta(matrizConteudoId: string, propriedadeId: s
   if (personasAtivas.length === 0) return null; // nenhuma persona ativa ainda — nada a produzir.
 
   const personasComAnguloPronto = personasAtivas.filter((persona) => persona.angulosProntos.length > 0);
+  const tiposOrdenados = await ordenarTiposPorMenosUsadoRecentemente(matrizConteudoId);
 
-  if (personasComAnguloPronto.length > 0) {
-    // Sub-caso A: ao menos uma persona ativa ainda tem ângulo pronto do Bloco 11 — zero custo de
-    // IA nesta etapa.
-    const persona = escolherPersonaMenosUsadaRecentemente(personasComAnguloPronto);
-    const angulo = escolherAnguloAleatorio(persona.angulosProntos);
+  // Sub-caso A: percorre os 15 tipos na ordem sorteada (menos usado recentemente primeiro); pro
+  // primeiro tipo em que alguma persona ativa tem ângulo pronto DAQUELE tipo, produz a pauta sem
+  // custo de IA. Não assume persona mono-tipo (verdade hoje, deixa de ser garantido depois da
+  // reclassificação dos ângulos existentes) — filtra pelo tipo de novo dentro da persona escolhida
+  // antes de sortear.
+  for (const tipo of tiposOrdenados) {
+    const personasComEsteTipo = personasComAnguloPronto.filter((persona) => persona.angulosProntos.some((angulo) => angulo.tipo === tipo));
+    if (personasComEsteTipo.length === 0) continue;
+
+    const persona = escolherPersonaMenosUsadaRecentemente(personasComEsteTipo);
+    const candidatos = persona.angulosProntos.filter((angulo) => angulo.tipo === tipo);
+    const anguloEscolhido = escolherAleatorio(candidatos);
     return criarPautaDePersona({
       matrizConteudoId,
       personaId: persona.id,
-      angulo,
+      angulo: anguloEscolhido.texto,
       palavraChavePrincipal: persona.dorEntrada,
       palavrasSecundarias: [],
       funil: FUNIL_DEFAULT_ANGULO_PRONTO,
       tipoConteudo: TIPO_CONTEUDO_DEFAULT_ANGULO_PRONTO,
+      tipoAngulo: tipo,
     });
   }
 
-  // Sub-caso B: TODAS as personas ativas esgotaram os ângulos prontos — fallback de IA (Gerador
-  // de Ângulo, Task 3), com os ângulos já usados por essa persona (prontos + gerados por IA em
-  // ciclos anteriores) pra nunca repetir.
+  // Sub-caso B: TODAS as personas ativas esgotaram os ângulos prontos de TODOS os tipos — fallback
+  // de IA (Gerador de Ângulo, Task 3), usando o tipo de maior prioridade (o primeiro da lista
+  // ordenada) como `tipoRequerido`. Ângulos já usados por essa persona (prontos + gerados por IA
+  // em ciclos anteriores) pra nunca repetir.
+  const tipoParaGerar = tiposOrdenados[0];
   const personaEscolhida = escolherPersonaMenosUsadaRecentemente(personasAtivas);
   const [angulosUsados, personaCompleta] = await Promise.all([
     carregarAngulosUsadosPorPersona(personaEscolhida.id),
     carregarPersona(personaEscolhida.id),
   ]);
-  const { resultado } = await gerarAngulo(personaCompleta, angulosUsados);
+  const { resultado } = await gerarAngulo(personaCompleta, angulosUsados, tipoParaGerar);
 
   return criarPautaDePersona({
     matrizConteudoId,
@@ -116,5 +158,6 @@ export async function selecionarPauta(matrizConteudoId: string, propriedadeId: s
     palavrasSecundarias: resultado.palavrasSecundarias,
     funil: resultado.funil,
     tipoConteudo: resultado.tipoConteudo,
+    tipoAngulo: tipoParaGerar,
   });
 }

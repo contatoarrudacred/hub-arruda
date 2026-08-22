@@ -32,12 +32,16 @@ import {
   type RespostaBrutaEscolhaFaixaMenu,
   type RespostaBrutaModoLivre,
 } from "./interpretar-faixas-documentos-validacao";
+import { blocoPromptConteudoExtra, propriedadesSchemaConteudoExtra, resolverConteudoExtra } from "./interpretar-desvio-validacao";
 import { formatarMenuFaixas, montarMensagemConfirmacaoFaixa, ordenarFaixasPreco, valorRepresentativoFaixa, type FaixaPreco } from "./regras-limpeza-nome";
 import type {
+  ConteudoExtraDetectado,
   DadosConversa,
   EtapaCarregada,
   FaixaDocumentoCapturada,
+  FaqParaDesvio,
   InterpretadorFaixasDocumentos,
+  ObjecaoParaDesvio,
   ResultadoInterpretacaoFaixasDocumentos,
 } from "./tipos";
 
@@ -132,7 +136,7 @@ async function interpretarEscolhaMenu(params: {
 
 // --- Rodada 2: confirmação da faixa escolhida ------------------------------------------------
 
-function ferramentaConfirmacaoFaixa() {
+function ferramentaConfirmacaoFaixa(qtdFaqs: number, qtdObjecoes: number) {
   return {
     name: "interpretar_confirmacao_faixa",
     description:
@@ -141,13 +145,19 @@ function ferramentaConfirmacaoFaixa() {
       type: "object" as const,
       properties: {
         status: { type: "string", enum: ["confirmado", "quer_consulta_paga", "nao_confirmado"] },
+        ...propriedadesSchemaConteudoExtra(qtdFaqs, qtdObjecoes),
       },
       required: ["status"],
     },
   };
 }
 
-function montarPromptConfirmacaoFaixa(params: { perguntaConfirmacao: string; respostaLead: string }): string {
+function montarPromptConfirmacaoFaixa(params: {
+  perguntaConfirmacao: string;
+  respostaLead: string;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
+}): string {
   return [
     "Você ajuda a entender se um lead confirmou uma faixa de restrição estimada, num atendimento automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). A Malala perguntou:",
     "",
@@ -156,31 +166,38 @@ function montarPromptConfirmacaoFaixa(params: { perguntaConfirmacao: string; res
     `Resposta do lead: "${params.respostaLead}"`,
     "",
     "Use a ferramenta pra registrar se ele confirmou, se pediu a consulta oficial paga (R$39/documento), ou se não confirmou (qualquer coisa diferente de uma confirmação clara — inclusive quando ele começa a explicar valores diferentes).",
+    blocoPromptConteudoExtra(params.faqsAtivas, params.objecoesAtivas),
   ].join("\n");
 }
 
 async function interpretarConfirmacao(params: {
   perguntaConfirmacao: string;
   respostaLead: string;
-}): Promise<ReturnType<typeof validarConfirmacaoFaixa>> {
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
+}): Promise<{ resultado: ReturnType<typeof validarConfirmacaoFaixa>; conteudoExtra: ConteudoExtraDetectado }> {
+  const { faqsAtivas, objecoesAtivas } = params;
   try {
     const cliente = obterCliente();
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 200,
-      tools: [ferramentaConfirmacaoFaixa()],
+      tools: [ferramentaConfirmacaoFaixa(faqsAtivas.length, objecoesAtivas.length)],
       tool_choice: { type: "tool", name: "interpretar_confirmacao_faixa" },
       messages: [{ role: "user", content: montarPromptConfirmacaoFaixa(params) }],
     });
 
     const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
-    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return "nao_confirmado";
+    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return { resultado: "nao_confirmado", conteudoExtra: null };
 
-    const bruta = blocoFerramenta.input as RespostaBrutaConfirmacaoFaixa;
-    return validarConfirmacaoFaixa(bruta);
+    const bruta = blocoFerramenta.input as RespostaBrutaConfirmacaoFaixa & { indice_faq_extra?: number; indice_objecao_extra?: number };
+    return {
+      resultado: validarConfirmacaoFaixa(bruta),
+      conteudoExtra: resolverConteudoExtra(bruta, faqsAtivas, objecoesAtivas),
+    };
   } catch (e) {
     console.error("[interpretar-faixas-documentos] erro ao chamar Claude (confirmação):", e);
-    return "nao_confirmado";
+    return { resultado: "nao_confirmado", conteudoExtra: null };
   }
 }
 
@@ -194,7 +211,7 @@ async function interpretarConfirmacao(params: {
 // dizer o que a resposta ATUAL esclarece ou corrige (`atualizacoes`, por índice) — a mesclagem com
 // o que já era sabido é feita em código (`mesclarAtualizacoesParciais`), nunca esquecida.
 
-function ferramentaModoLivre(tiposEsperados: ("cpf" | "cnpj")[]) {
+function ferramentaModoLivre(tiposEsperados: ("cpf" | "cnpj")[], qtdFaqs: number, qtdObjecoes: number) {
   const legenda = tiposEsperados.map((t, i) => `${i + 1}=${t.toUpperCase()}`).join(", ");
   return {
     name: "atualizar_faixas_documentos",
@@ -234,6 +251,7 @@ function ferramentaModoLivre(tiposEsperados: ("cpf" | "cnpj")[]) {
           description:
             "Só quando ainda faltar informação depois desta resposta: pergunta curta e específica em português, no tom da Malala, pedindo só o que falta — NUNCA pergunte de novo algo que já sabemos (ver 'o que já sabemos' no prompt).",
         },
+        ...propriedadesSchemaConteudoExtra(qtdFaqs, qtdObjecoes),
       },
       required: ["status", "atualizacoes", "pergunta_esclarecimento"],
     },
@@ -245,8 +263,10 @@ function montarPromptModoLivre(params: {
   respostaLead: string;
   tiposEsperados: ("cpf" | "cnpj")[];
   parcialAnterior: (FaixaDocumentoCapturada | null)[];
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
 }): string {
-  const { etapaAtual, respostaLead, tiposEsperados, parcialAnterior } = params;
+  const { etapaAtual, respostaLead, tiposEsperados, parcialAnterior, faqsAtivas, objecoesAtivas } = params;
   const pergunta = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
   const linhasConhecidas = tiposEsperados
     .map((tipo, i) => {
@@ -268,6 +288,7 @@ function montarPromptModoLivre(params: {
     `Resposta do lead agora: "${respostaLead}"`,
     "",
     "Use a ferramenta pra registrar SÓ o que esta resposta esclarece ou corrige — não repita o que já sabíamos e não foi mencionado agora. Se o lead corrigir um valor que já tínhamos (ex.: 'não, o do meu filho é menos de 10'), inclua uma atualização só pra aquele índice. PREFIRA extrair o que der com confiança razoável — não exija precisão além do que o lead deu, e não peça nenhum detalhe que não seja o valor aproximado (não pergunte de quem é o documento, forma de pagamento, ou qualquer coisa que não mude o valor).",
+    blocoPromptConteudoExtra(faqsAtivas, objecoesAtivas),
   ].join("\n");
 }
 
@@ -277,15 +298,21 @@ async function interpretarModoLivre(params: {
   tiposEsperados: ("cpf" | "cnpj")[];
   dados: DadosConversa;
   dadosExtras: DadosConversa;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
 }): Promise<ResultadoInterpretacaoFaixasDocumentos> {
-  const { etapaAtual, respostaLead, tiposEsperados, dados, dadosExtras } = params;
+  const { etapaAtual, respostaLead, tiposEsperados, dados, dadosExtras, faqsAtivas, objecoesAtivas } = params;
   const parcialAnterior = decodificarParcialFaixas(dados._faixas_parcial_valores ?? "", tiposEsperados);
   const nadaSabidoAinda = parcialAnterior.every((item) => item === null);
 
-  const construir = (atualizacoes: ItemAtualizacaoParcial[], perguntaSugerida: string | undefined): ResultadoInterpretacaoFaixasDocumentos => {
+  const construir = (
+    atualizacoes: ItemAtualizacaoParcial[],
+    perguntaSugerida: string | undefined,
+    conteudoExtra: ConteudoExtraDetectado,
+  ): ResultadoInterpretacaoFaixasDocumentos => {
     const mesclado = mesclarAtualizacoesParciais(parcialAnterior, atualizacoes, tiposEsperados);
     if (mesclado.every((item): item is FaixaDocumentoCapturada => item !== null)) {
-      return { status: "completo", itens: mesclado };
+      return { status: "completo", itens: mesclado, conteudoExtra };
     }
     const pergunta = perguntaSugerida?.trim() || "Só falta confirmar o valor aproximado (ou 'não sei') do(s) documento(s) que ainda faltam — pode me dizer?";
     return {
@@ -300,9 +327,14 @@ async function interpretarModoLivre(params: {
     const resposta = await cliente.messages.create({
       model: MODELO_INTERPRETACAO,
       max_tokens: 800,
-      tools: [ferramentaModoLivre(tiposEsperados)],
+      tools: [ferramentaModoLivre(tiposEsperados, faqsAtivas.length, objecoesAtivas.length)],
       tool_choice: { type: "tool", name: "atualizar_faixas_documentos" },
-      messages: [{ role: "user", content: montarPromptModoLivre({ etapaAtual, respostaLead, tiposEsperados, parcialAnterior }) }],
+      messages: [
+        {
+          role: "user",
+          content: montarPromptModoLivre({ etapaAtual, respostaLead, tiposEsperados, parcialAnterior, faqsAtivas, objecoesAtivas }),
+        },
+      ],
     });
 
     const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
@@ -310,18 +342,19 @@ async function interpretarModoLivre(params: {
       // Falha bruta da IA — se já tínhamos progresso, não descarta: repete o que falta em vez de
       // voltar pro fallback genérico (que reexibiria o menu do ln_passo6, perdendo o contexto).
       if (nadaSabidoAinda) return { status: "nao_entendi" };
-      return construir([], undefined);
+      return construir([], undefined, null);
     }
 
-    const bruta = blocoFerramenta.input as RespostaBrutaModoLivre;
+    const bruta = blocoFerramenta.input as RespostaBrutaModoLivre & { indice_faq_extra?: number; indice_objecao_extra?: number };
     if ((!bruta.atualizacoes || bruta.atualizacoes.length === 0) && nadaSabidoAinda) {
       return { status: "nao_entendi" };
     }
-    return construir(bruta.atualizacoes ?? [], bruta.pergunta_esclarecimento);
+    const conteudoExtra = resolverConteudoExtra(bruta, faqsAtivas, objecoesAtivas);
+    return construir(bruta.atualizacoes ?? [], bruta.pergunta_esclarecimento, conteudoExtra);
   } catch (e) {
     console.error("[interpretar-faixas-documentos] erro ao chamar Claude (modo livre):", e);
     if (nadaSabidoAinda) return { status: "nao_entendi" };
-    return construir([], undefined);
+    return construir([], undefined, null);
   }
 }
 
@@ -334,7 +367,12 @@ async function interpretarModoLivre(params: {
  * (decisão de Luiz: não faz sentido confirmar um valor que não existe de verdade) — o `engine.ts`
  * roteia isso pro fluxo de agendamento com consultor, sem perguntar a faixa dos outros documentos.
  */
-export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], corteAltoValor?: number): InterpretadorFaixasDocumentos {
+export function criarInterpretadorFaixasDocumentos(
+  faixasPrecos: FaixaPreco[],
+  corteAltoValor?: number,
+  faqsAtivas: FaqParaDesvio[] = [],
+  objecoesAtivas: ObjecaoParaDesvio[] = [],
+): InterpretadorFaixasDocumentos {
   const faixasOrdenadas = ordenarFaixasPreco(faixasPrecos);
   const menu = formatarMenuFaixas(faixasPrecos, corteAltoValor);
   const temOpcaoAcimaDoCorte = corteAltoValor !== undefined;
@@ -346,7 +384,15 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], c
     if (tiposEsperados.length === 0) return { status: "nao_entendi" };
 
     if (dados._faixas_modo_livre === "1") {
-      return await interpretarModoLivre({ etapaAtual, respostaLead, tiposEsperados, dados, dadosExtras: { _faixas_modo_livre: "1" } });
+      return await interpretarModoLivre({
+        etapaAtual,
+        respostaLead,
+        tiposEsperados,
+        dados,
+        dadosExtras: { _faixas_modo_livre: "1" },
+        faqsAtivas,
+        objecoesAtivas,
+      });
     }
 
     if (dados._faixa_provisoria_indice) {
@@ -354,17 +400,21 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], c
       const faixa = faixasOrdenadas[indice];
       if (!faixa) {
         // estado provisório inconsistente (defensivo) — trata como se a rodada de confirmação não existisse.
-        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados });
+        return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados, faqsAtivas, objecoesAtivas });
       }
 
       const perguntaConfirmacao = montarMensagemConfirmacaoFaixa(faixa, indice === 0, tiposEsperados);
-      const confirmacao = await interpretarConfirmacao({ perguntaConfirmacao, respostaLead });
+      const confirmacao = await interpretarConfirmacao({ perguntaConfirmacao, respostaLead, faqsAtivas, objecoesAtivas });
 
-      if (confirmacao === "confirmado") {
+      if (confirmacao.resultado === "confirmado") {
         const valor = valorRepresentativoFaixa(faixa);
-        return { status: "completo", itens: tiposEsperados.map((tipo) => ({ tipo, valorAproximado: valor })) };
+        return {
+          status: "completo",
+          itens: tiposEsperados.map((tipo) => ({ tipo, valorAproximado: valor })),
+          conteudoExtra: confirmacao.conteudoExtra,
+        };
       }
-      if (confirmacao === "quer_consulta_paga") {
+      if (confirmacao.resultado === "quer_consulta_paga") {
         return { status: "escalar_consulta_paga", mensagem: MENSAGEM_CONSULTA_PAGA };
       }
 
@@ -383,10 +433,12 @@ export function criarInterpretadorFaixasDocumentos(faixasPrecos: FaixaPreco[], c
         tiposEsperados,
         dados: dadosComSeed,
         dadosExtras: { _faixa_provisoria_indice: "", _faixas_modo_livre: "1" },
+        faqsAtivas,
+        objecoesAtivas,
       });
     }
 
-    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados });
+    return await escolherFaixaDoMenu({ menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados, faqsAtivas, objecoesAtivas });
   };
 }
 
@@ -398,8 +450,10 @@ async function escolherFaixaDoMenu(params: {
   temOpcaoAcimaDoCorte: boolean;
   etapaAtual: EtapaCarregada;
   dados: DadosConversa;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
 }): Promise<ResultadoInterpretacaoFaixasDocumentos> {
-  const { menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados } = params;
+  const { menu, faixasOrdenadas, respostaLead, tiposEsperados, temOpcaoAcimaDoCorte, etapaAtual, dados, faqsAtivas, objecoesAtivas } = params;
   const escolha = await interpretarEscolhaMenu({ menu, respostaLead, qtdFaixas: faixasOrdenadas.length, temOpcaoAcimaDoCorte });
 
   if (escolha.tipo === "quer_consulta_paga") {
@@ -420,6 +474,8 @@ async function escolherFaixaDoMenu(params: {
       tiposEsperados,
       dados,
       dadosExtras: { _faixas_modo_livre: "1" },
+      faqsAtivas,
+      objecoesAtivas,
     });
   }
 

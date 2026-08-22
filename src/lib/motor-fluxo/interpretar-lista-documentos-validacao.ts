@@ -1,13 +1,17 @@
 // Parte pura de interpretar-lista-documentos.ts, separada sem `server-only` de propósito — mesmo
 // motivo de interpretacao-ia-validacao.ts (o SDK da Anthropic quebra o Vitest se importado direto).
 
-import type { DadosConversa, ItemDocumentoPendente, ResultadoInterpretacaoListaDocumentos } from "./tipos";
+import { resolverConteudoExtra } from "./interpretar-desvio-validacao";
+import type { DadosConversa, FaqParaDesvio, ItemDocumentoPendente, ObjecaoParaDesvio, ResultadoInterpretacaoListaDocumentos } from "./tipos";
 
 export type RespostaBrutaListaDocumentos = {
   status: "completo" | "incompleto" | "nao_entendi";
   quantidade_cpf: number;
   quantidade_cnpj: number;
   pergunta_esclarecimento: string;
+  /** Conteúdo extra embutido (achado 22/08/2026) — só relevante quando status=completo (ver `validarRespostaListaDocumentos`). */
+  indice_faq_extra?: number;
+  indice_objecao_extra?: number;
 };
 
 /**
@@ -22,6 +26,8 @@ export type RespostaBrutaListaDocumentos = {
  */
 export function validarRespostaListaDocumentos(
   bruta: RespostaBrutaListaDocumentos,
+  faqsAtivas: FaqParaDesvio[] = [],
+  objecoesAtivas: ObjecaoParaDesvio[] = [],
 ): ResultadoInterpretacaoListaDocumentos {
   if (bruta.status === "incompleto") {
     const pergunta = bruta.pergunta_esclarecimento?.trim();
@@ -50,5 +56,6 @@ export function validarRespostaListaDocumentos(
     ...Array(qtdCpf).fill({ tipo: "cpf" as const }),
     ...Array(qtdCnpj).fill({ tipo: "cnpj" as const }),
   ];
-  return { status: "completo", itens };
+  const conteudoExtra = resolverConteudoExtra(bruta, faqsAtivas, objecoesAtivas);
+  return conteudoExtra ? { status: "completo", itens, conteudoExtra } : { status: "completo", itens };
 }

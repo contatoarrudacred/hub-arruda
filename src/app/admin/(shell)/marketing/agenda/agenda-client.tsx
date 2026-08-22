@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { Ajuda } from "@/components/marketing/ajuda";
 import { decidirProximoHorario } from "@/lib/marketing/agendador";
+import { NOME_TIPO_ANGULO } from "@/lib/marketing/tipos";
 import type { DadosPautaManual, FunilPauta, MatrizAdmin, PersonaAtiva, PostAgendaAdmin, TipoConteudo } from "@/lib/marketing/tipos";
 import { agendarPostAction } from "./agendamento-actions";
 import { carregarImagensPostAction, trocarCapaAction, trocarImagemSecundariaAction, type ImagensPost } from "./imagens-actions";
@@ -943,13 +944,16 @@ function ModalNovoPostManual({
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {personaSelecionada.angulosProntos.map((sugestao) => (
                   <button
-                    key={sugestao}
+                    key={sugestao.texto}
                     type="button"
-                    onClick={() => setAngulo(sugestao)}
+                    onClick={() => setAngulo(sugestao.texto)}
                     className="rounded-full border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    title="Usar este ângulo pronto"
+                    title={`Usar este ângulo pronto — tipo: ${NOME_TIPO_ANGULO[sugestao.tipo].label}`}
                   >
-                    {sugestao}
+                    <span className="mr-1 text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                      {NOME_TIPO_ANGULO[sugestao.tipo].label}
+                    </span>
+                    {sugestao.texto}
                   </button>
                 ))}
               </div>
@@ -1093,13 +1097,32 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
     };
   }, [postId]);
 
+  // Trava de saída (22/08/2026, pedido do Luiz): sem isto, um clique fora da área da modal, o
+  // botão ✕ ou Esc fechavam direto ENQUANTO uma geração de imagem estava em andamento — cancelando
+  // a chamada em voo e perdendo os tokens de IA já gastos nela, sem nenhum aviso. `window.confirm`
+  // (nativo, bloqueante) em vez de um modal de confirmação próprio: mais simples de acoplar num
+  // "guard" que precisa interceptar 3 caminhos de saída diferentes (backdrop, Esc, ✕) sem duplicar
+  // estado de confirmação por cima de uma modal que já está aberta. Só pergunta quando `enviando`
+  // é true — antes de clicar "Confirmar" nenhum token foi gasto ainda, fechar é sempre de graça.
+  const tentarFechar = useCallback(() => {
+    if (
+      enviando &&
+      !window.confirm(
+        "A geração de imagem está em andamento. Se você sair agora, o processo é cancelado e os tokens de IA já gastos são perdidos. Quer sair mesmo assim?",
+      )
+    ) {
+      return;
+    }
+    onFechar();
+  }, [enviando, onFechar]);
+
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onFechar();
+      if (e.key === "Escape") tentarFechar();
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [onFechar]);
+  }, [tentarFechar]);
 
   function abrirFormulario(novoAlvo: AlvoTroca) {
     setAlvo(novoAlvo);
@@ -1141,13 +1164,13 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-10" onClick={onFechar}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-10" onClick={tentarFechar}>
       <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{dados?.titulo ?? "Trocar foto"}</h2>
           <button
             type="button"
-            onClick={onFechar}
+            onClick={tentarFechar}
             className="shrink-0 rounded-full px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
             ✕

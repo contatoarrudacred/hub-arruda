@@ -43,6 +43,16 @@ export type PautaCarregada = {
    * automático de sempre.
    */
   agendamentoForcado: string | null;
+  /**
+   * Tipo retórico do ângulo desta pauta (catálogo de 15, seção 5.1 de
+   * MODULO_MARKETING_CONTEUDO_ARRUDACRED.md), sorteado pelo Estrategista ANTES de escolher/gerar o
+   * ângulo em si — ver TipoAngulo/CATALOGO_TIPOS_ANGULO abaixo e o comentário de
+   * `selecionarPauta` (estrategista.ts). `null` em pautas de antes desta coluna existir e em
+   * pautas manuais (sem backfill retroativo, decisão deliberada de escopo, 22/08/2026). Só
+   * observabilidade por enquanto (nada no pipeline downstream de processar-pauta.ts lê este
+   * campo) — guardado aqui pra viabilizar mostrar o tipo em telas de admin no futuro.
+   */
+  tipoAngulo: TipoAngulo | null;
 };
 
 /**
@@ -510,6 +520,83 @@ export type DetalhesPostVisualizacao = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Catálogo de 15 tipos de ângulo (docs/MODULO_MARKETING_CONTEUDO_ARRUDACRED.md, seção 5.1) — achado
+ * real de produção (22/08/2026, pedido do Luiz): os ângulos prontos de cada persona (Bloco 11)
+ * quase sempre seguem o MESMO tipo retórico (reformulação/contraste — "Você tem X, o problema não
+ * é Y, é Z"), fazendo os posts saírem parecidos mesmo com ângulos de texto diferentes. Este
+ * catálogo existia só na documentação até agora — nunca tinha sido implementado no código.
+ *
+ * Decisão do Luiz (não é uma heurística minha a validar): o TIPO é sorteado — ponderado por "tipo
+ * menos usado recentemente", mesmo princípio já usado pra sortear qual persona usar
+ * (escolherPersonaMenosUsadaRecentemente, estrategista.ts) — em vez de alguma lógica "decidir" qual
+ * tipo é o melhor. Ele explicitamente rejeitou uma decisão heurística/de IA aqui: no julgamento
+ * dele, qualquer "escolha" tende a convergir sempre pro mesmo tipo — foi exatamente isso que
+ * aconteceu quando ele mesmo escreveu os ângulos prontos à mão.
+ */
+export type TipoAngulo =
+  | "informacional_direto"
+  | "passo_a_passo_tutorial"
+  | "mito_ou_verdade"
+  | "storytelling_virada_de_jogo"
+  | "comparativo"
+  | "urgencia_temporal"
+  | "duvida_ceticismo"
+  | "consequencia_medo"
+  | "perfil_segmento"
+  | "objecao_confianca"
+  | "ranking_lista"
+  | "antes_e_depois"
+  | "geografico_local"
+  | "para_empresas_b2b"
+  | "pergunta_direta";
+
+/**
+ * Ordem canônica do catálogo (mesma ordem do doc, seção 5.1) — fonte de verdade de desempate
+ * quando nenhum tipo tem histórico de uso ainda: `Array.prototype.sort` é estável, então ordenar
+ * por recência com todos os valores em `null` preserva esta ordem — sempre resolve pra
+ * "informacional_direto" primeiro até algo ser usado de verdade. Ver
+ * escolherTipoMenosUsadoRecentemente (estrategista.ts).
+ */
+export const CATALOGO_TIPOS_ANGULO: TipoAngulo[] = [
+  "informacional_direto",
+  "passo_a_passo_tutorial",
+  "mito_ou_verdade",
+  "storytelling_virada_de_jogo",
+  "comparativo",
+  "urgencia_temporal",
+  "duvida_ceticismo",
+  "consequencia_medo",
+  "perfil_segmento",
+  "objecao_confianca",
+  "ranking_lista",
+  "antes_e_depois",
+  "geografico_local",
+  "para_empresas_b2b",
+  "pergunta_direta",
+];
+
+/** Label + descrição curta de cada tipo — reaproveitado tanto no prompt do Gerador de Ângulo
+ * (gerador-angulo.ts) quanto no script de classificação (scripts/reclassificar-angulos-prontos.ts),
+ * pra IA não confundir tipos parecidos (ex.: "Dúvida/Ceticismo" vs "Objeção/Confiança"). */
+export const NOME_TIPO_ANGULO: Record<TipoAngulo, { label: string; descricao: string }> = {
+  informacional_direto: { label: "Informacional direto", descricao: "Explica o conceito ou fato diretamente, sem gancho emocional forte." },
+  passo_a_passo_tutorial: { label: "Passo a passo/Tutorial", descricao: "Guia prático em etapas pra resolver algo específico." },
+  mito_ou_verdade: { label: "Mito ou Verdade", descricao: "Desmente uma crença comum ou reformula um pressuposto errado do leitor." },
+  storytelling_virada_de_jogo: { label: "Storytelling/Virada de Jogo", descricao: "Conta uma situação ou história com uma virada/reviravolta." },
+  comparativo: { label: "Comparativo", descricao: "Compara duas opções, caminhos ou instituições lado a lado." },
+  urgencia_temporal: { label: "Urgência/Temporal", descricao: "Cria urgência ligada a um prazo, data ou janela de tempo." },
+  duvida_ceticismo: { label: "Dúvida/Ceticismo", descricao: "Parte de uma dúvida ou desconfiança genuína do leitor sobre o assunto." },
+  consequencia_medo: { label: "Consequência/Medo", descricao: "Explora o que acontece se a pessoa não agir — risco ou consequência." },
+  perfil_segmento: { label: "Perfil/Segmento", descricao: "Fala direto com um perfil ou situação específica do público." },
+  objecao_confianca: { label: "Objeção/Confiança", descricao: "Responde a uma objeção comum ou constrói confiança/credibilidade." },
+  ranking_lista: { label: "Ranking/Lista", descricao: "Lista numerada de itens, erros, opções ou passos." },
+  antes_e_depois: { label: "Antes e Depois", descricao: "Mostra a transformação entre um estado inicial e um resultado." },
+  geografico_local: { label: "Geográfico/Local", descricao: "Ângulo amarrado a uma cidade ou região específica." },
+  para_empresas_b2b: { label: "Para empresas/Segmento B2B", descricao: "Voltado pra empresas/CNPJ, não pessoa física." },
+  pergunta_direta: { label: "Pergunta direta", descricao: "O título é a própria pergunta que o leitor buscaria." },
+};
+
+/**
  * Persona ativa candidata ao sorteio ponderado do Estrategista (Task 4) —
  * `listarPersonasAtivasComAngulosDisponiveis` já entrega `angulosProntos` com os ângulos já
  * usados subtraídos (ver spec seção 5) e `usadaPelaUltimaVezEm` pronto pra decidir peso do
@@ -519,7 +606,8 @@ export type DetalhesPostVisualizacao = {
 export type PersonaAtiva = {
   id: string;
   nome: string;
-  angulosProntos: string[];
+  /** Cada ângulo pronto (Bloco 11) já classificado por tipo (22/08/2026) — ver TipoAngulo acima. */
+  angulosProntos: { texto: string; tipo: TipoAngulo }[];
   /** `created_at` mais recente entre as pautas dessa persona, ou `null` se ela nunca foi usada. */
   usadaPelaUltimaVezEm: string | null;
   /**

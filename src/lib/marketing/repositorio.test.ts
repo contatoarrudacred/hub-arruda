@@ -8,8 +8,10 @@ import {
   carregarAngulosUsadosPorPersona,
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
+  carregarPautaAguardandoImagens,
   carregarPersonaFormulario,
   carregarPostProntoParaPublicar,
+  carregarUltimoUsoPorTipoAngulo,
   carregarPostsRecentes,
   carregarProximosAgendamentos,
   carregarPropriedade,
@@ -1819,6 +1821,101 @@ describe("carregarPostProntoParaPublicar", () => {
   });
 });
 
+// Split de orçamento de tempo entre texto e imagem (22/08/2026) — checkpoint de uma pausa
+// anterior (texto já aprovado/persistido, imagem ainda não tentada) que processar-pauta.ts retoma
+// com prioridade máxima, antes de selecionarPauta.
+describe("carregarPautaAguardandoImagens", () => {
+  const postAguardandoBruto = {
+    id: "post-1",
+    pauta_id: "pauta-1",
+    titulo: "Como Limpar o Nome",
+    conteudo_html: "<h2>Documentos</h2><p>Leve RG e CPF.</p>",
+    meta_title: "Como Limpar o Nome | Guia",
+    meta_description: "Guia completo.",
+    slug: "como-limpar-o-nome",
+  };
+  const pautaBruta = {
+    id: "pauta-1",
+    matriz_conteudo_id: "matriz-1",
+    persona_id: null,
+    palavra_chave_principal: "limpar nome serasa",
+    palavras_secundarias: [],
+    angulo: "passo_a_passo",
+    geografia: null,
+    tipo_conteudo: "post_padrao",
+    funil: "topo",
+    status: "em_producao",
+    tentativas: 0,
+    motivo_ultima_reprovacao: null,
+  };
+
+  it("devolve pauta + post quando existe um checkpoint (post rascunho, pronto_para_publicar=false)", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }), // pautas em_producao da matriz
+      criarQueryFalsa({ data: postAguardandoBruto, error: null }), // post aguardando imagens
+      criarQueryFalsa({ data: pautaBruta, error: null }), // carregarPauta (reidrata a pauta inteira)
+    );
+
+    const resultado = await carregarPautaAguardandoImagens("matriz-1");
+
+    expect(resultado).toEqual({
+      pauta: expect.objectContaining({ id: "pauta-1", status: "em_producao" }),
+      post: {
+        id: "post-1",
+        titulo: "Como Limpar o Nome",
+        conteudoHtml: "<h2>Documentos</h2><p>Leve RG e CPF.</p>",
+        metaTitle: "Como Limpar o Nome | Guia",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-o-nome",
+      },
+    });
+  });
+
+  it("devolve null sem consultar posts quando não existe nenhuma pauta em_producao nesta matriz", async () => {
+    const from = mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    const resultado = await carregarPautaAguardandoImagens("matriz-1");
+
+    expect(resultado).toBeNull();
+    expect(from).toHaveBeenCalledTimes(1); // não bate em "posts" sem nenhuma pauta candidata
+  });
+
+  it("devolve null quando existe pauta em_producao mas nenhum post aguardando imagens (ainda gerando texto, ou já pronto_para_publicar)", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }),
+      criarQueryFalsa({ data: null, error: null }),
+    );
+
+    expect(await carregarPautaAguardandoImagens("matriz-1")).toBeNull();
+  });
+
+  it("filtra a query de posts por status=rascunho e pronto_para_publicar=false", async () => {
+    const builderPosts = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }), builderPosts);
+
+    await carregarPautaAguardandoImagens("matriz-1");
+
+    expect(builderPosts.eq).toHaveBeenCalledWith("status", "rascunho");
+    expect(builderPosts.eq).toHaveBeenCalledWith("pronto_para_publicar", false);
+  });
+
+  it("lança erro claro quando a query de pautas em_producao falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPautaAguardandoImagens("matriz-1")).rejects.toThrow(
+      /Falha ao checar pautas em produção da matriz matriz-1.*erro de teste/,
+    );
+  });
+
+  it("lança erro claro quando a query de posts falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }), criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPautaAguardandoImagens("matriz-1")).rejects.toThrow(
+      /Falha ao checar post aguardando imagens da matriz matriz-1.*erro de teste/,
+    );
+  });
+});
+
 // Agenda de Posts, Editar Post Completo (21/08/2026).
 describe("atualizarConteudoPost", () => {
   it("grava todos os campos sempre, sem write condicional (diferente de atualizarStatusPost)", async () => {
@@ -2348,8 +2445,10 @@ describe("carregarDuracaoMediaPorEtapa", () => {
 
 describe("listarPersonasAtivasComAngulosDisponiveis", () => {
   // Caso exato do worked example da spec seção 5 / brief da Task 2, Step 2: persona com
-  // angulos_prontos ["A","B","C"] e uma pauta já registrada com angulo "B" pra essa persona deve
-  // devolver angulosProntos ["A","C"] — subtração de conjunto, não é uma query "distinct" simples.
+  // angulos_prontos [A,B,C] e uma pauta já registrada com angulo "B" pra essa persona deve
+  // devolver angulosProntos [A,C] — subtração de conjunto por `.texto` (22/08/2026: o shape virou
+  // {texto,tipo}[], ver comentário de listarPersonasAtivasComAngulosDisponiveis em repositorio.ts),
+  // não é uma query "distinct" simples.
   it("subtrai os ângulos já usados dos angulos_prontos da persona (worked example da spec)", async () => {
     mockarFrom(
       criarQueryFalsa({
@@ -2358,7 +2457,11 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
             id: "persona-1",
             nome: "Marcelo Andrade",
             dor_entrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
-            angulos_prontos: ["A", "B", "C"],
+            angulos_prontos: [
+              { texto: "A", tipo: "informacional_direto" },
+              { texto: "B", tipo: "mito_ou_verdade" },
+              { texto: "C", tipo: "comparativo" },
+            ],
           },
         ],
         error: null,
@@ -2376,7 +2479,10 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
         id: "persona-1",
         nome: "Marcelo Andrade",
         dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
-        angulosProntos: ["A", "C"],
+        angulosProntos: [
+          { texto: "A", tipo: "informacional_direto" },
+          { texto: "C", tipo: "comparativo" },
+        ],
         usadaPelaUltimaVezEm: "2026-08-18T10:00:00Z",
       },
     ]);
@@ -2387,7 +2493,7 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
   it("retorna angulosProntos vazio quando todos os ângulos da persona já foram usados (sinal de esgotamento, não erro)", async () => {
     mockarFrom(
       criarQueryFalsa({
-        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A"] }],
+        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: [{ texto: "A", tipo: "informacional_direto" }] }],
         error: null,
       }),
       criarQueryFalsa({
@@ -2403,14 +2509,29 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
 
   it("usadaPelaUltimaVezEm é null quando a persona nunca foi usada em nenhuma pauta", async () => {
     mockarFrom(
-      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A", "B"] }], error: null }),
+      criarQueryFalsa({
+        data: [
+          {
+            id: "persona-1",
+            nome: "Marcelo Andrade",
+            angulos_prontos: [
+              { texto: "A", tipo: "informacional_direto" },
+              { texto: "B", tipo: "mito_ou_verdade" },
+            ],
+          },
+        ],
+        error: null,
+      }),
       criarQueryFalsa({ data: [], error: null }),
     );
 
     const [persona] = await listarPersonasAtivasComAngulosDisponiveis("prop-1");
 
     expect(persona.usadaPelaUltimaVezEm).toBeNull();
-    expect(persona.angulosProntos).toEqual(["A", "B"]);
+    expect(persona.angulosProntos).toEqual([
+      { texto: "A", tipo: "informacional_direto" },
+      { texto: "B", tipo: "mito_ou_verdade" },
+    ]);
   });
 
   it("usadaPelaUltimaVezEm é o created_at MAIS RECENTE entre as pautas da persona", async () => {
@@ -2460,7 +2581,10 @@ describe("listarPersonasAtivasComAngulosDisponiveis", () => {
 
   it("lança erro claro quando a query de pautas (pra calcular ângulos usados) falha", async () => {
     mockarFrom(
-      criarQueryFalsa({ data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: ["A"] }], error: null }),
+      criarQueryFalsa({
+        data: [{ id: "persona-1", nome: "Marcelo Andrade", angulos_prontos: [{ texto: "A", tipo: "informacional_direto" }] }],
+        error: null,
+      }),
       criarQueryFalsa({ data: null, error: erro }),
     );
 
@@ -2478,7 +2602,10 @@ describe("carregarPersona", () => {
           id: "persona-1",
           nome: "Marcelo Andrade",
           dor_entrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
-          angulos_prontos: ["A", "B"],
+          angulos_prontos: [
+            { texto: "A", tipo: "informacional_direto" },
+            { texto: "B", tipo: "mito_ou_verdade" },
+          ],
           conteudo_completo: "## Bloco 1 — Ficha rápida\n...",
         },
         error: null,
@@ -2491,7 +2618,10 @@ describe("carregarPersona", () => {
       id: "persona-1",
       nome: "Marcelo Andrade",
       dorEntrada: "Nome negativado no Serasa há meses, sem conseguir crédito.",
-      angulosProntos: ["A", "B"],
+      angulosProntos: [
+        { texto: "A", tipo: "informacional_direto" },
+        { texto: "B", tipo: "mito_ou_verdade" },
+      ],
       usadaPelaUltimaVezEm: null,
       conteudoCompleto: "## Bloco 1 — Ficha rápida\n...",
     });
@@ -2507,6 +2637,80 @@ describe("carregarPersona", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(carregarPersona("persona-1")).rejects.toThrow(/Falha ao carregar persona persona-1.*erro de teste/);
+  });
+});
+
+// 22/08/2026 (sorteio de tipo de ângulo) — usado pelo Estrategista pra ordenar CATALOGO_TIPOS_ANGULO
+// por "tipo menos usado recentemente NESTA MATRIZ" antes de escolher/gerar o ângulo.
+describe("carregarUltimoUsoPorTipoAngulo", () => {
+  it("devolve todos os 15 tipos com null quando a matriz não tem nenhuma pauta com tipo_angulo", async () => {
+    mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    const resultado = await carregarUltimoUsoPorTipoAngulo("matriz-1");
+
+    expect(Object.keys(resultado)).toHaveLength(15);
+    expect(Object.values(resultado).every((v) => v === null)).toBe(true);
+  });
+
+  it("preenche o created_at só dos tipos usados, deixando os demais null (histórico parcial)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ tipo_angulo: "mito_ou_verdade", created_at: "2026-08-10T00:00:00Z" }],
+        error: null,
+      }),
+    );
+
+    const resultado = await carregarUltimoUsoPorTipoAngulo("matriz-1");
+
+    expect(resultado.mito_ou_verdade).toBe("2026-08-10T00:00:00Z");
+    expect(resultado.comparativo).toBeNull();
+  });
+
+  it("usa o created_at MAIS RECENTE quando um tipo tem várias pautas (histórico cheio)", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [
+          { tipo_angulo: "ranking_lista", created_at: "2026-08-01T00:00:00Z" },
+          { tipo_angulo: "ranking_lista", created_at: "2026-08-15T00:00:00Z" },
+          { tipo_angulo: "ranking_lista", created_at: "2026-08-05T00:00:00Z" },
+        ],
+        error: null,
+      }),
+    );
+
+    const resultado = await carregarUltimoUsoPorTipoAngulo("matriz-1");
+
+    expect(resultado.ranking_lista).toBe("2026-08-15T00:00:00Z");
+  });
+
+  it("ignora pautas com tipo_angulo null (pautas antigas/manuais) sem contar pra nenhum tipo", async () => {
+    mockarFrom(
+      criarQueryFalsa({
+        data: [{ tipo_angulo: null, created_at: "2026-08-19T00:00:00Z" }],
+        error: null,
+      }),
+    );
+
+    const resultado = await carregarUltimoUsoPorTipoAngulo("matriz-1");
+
+    expect(Object.values(resultado).every((v) => v === null)).toBe(true);
+  });
+
+  it("filtra por matriz_conteudo_id", async () => {
+    const builder = criarQueryFalsa({ data: [], error: null });
+    mockarFrom(builder);
+
+    await carregarUltimoUsoPorTipoAngulo("matriz-1");
+
+    expect(builder.eq).toHaveBeenCalledWith("matriz_conteudo_id", "matriz-1");
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarUltimoUsoPorTipoAngulo("matriz-1")).rejects.toThrow(
+      /Falha ao carregar histórico de tipo de ângulo da matriz matriz-1.*erro de teste/,
+    );
   });
 });
 
@@ -2552,6 +2756,7 @@ describe("criarPautaDePersona", () => {
     palavrasSecundarias: ["score de crédito", "SPC Serasa"],
     funil: "topo" as const,
     tipoConteudo: "post_storytelling" as const,
+    tipoAngulo: "storytelling_virada_de_jogo" as const,
   };
 
   // Step 4 do brief: a pauta nasce DIRETO em em_producao, não pendente — não existe "esperar na
@@ -2570,6 +2775,7 @@ describe("criarPautaDePersona", () => {
         status: "em_producao",
         tentativas: 0,
         motivo_ultima_reprovacao: null,
+        tipo_angulo: "storytelling_virada_de_jogo",
       },
       error: null,
     });
@@ -2587,10 +2793,40 @@ describe("criarPautaDePersona", () => {
         palavras_secundarias: ["score de crédito", "SPC Serasa"],
         funil: "topo",
         tipo_conteudo: "post_storytelling",
+        tipo_angulo: "storytelling_virada_de_jogo",
         geografia: null,
         status: "em_producao",
       }),
     );
+  });
+
+  // 22/08/2026 (sorteio de tipo de ângulo) — tipoAngulo não é mais opcional: todo caminho que
+  // chama criarPautaDePersona já sorteou um tipo antes (ver estrategista.ts). Este teste cobre só
+  // a persistência da coluna nova — os demais campos já são cobertos pelo teste acima.
+  it("persiste tipoAngulo na coluna tipo_angulo", async () => {
+    const builder = criarQueryFalsa({
+      data: {
+        id: "pauta-nova",
+        matriz_conteudo_id: "matriz-1",
+        palavra_chave_principal: "limpar nome negativado",
+        palavras_secundarias: ["score de crédito", "SPC Serasa"],
+        angulo: paramsBase.angulo,
+        geografia: null,
+        tipo_conteudo: "post_storytelling",
+        funil: "topo",
+        status: "em_producao",
+        tentativas: 0,
+        motivo_ultima_reprovacao: null,
+        tipo_angulo: "storytelling_virada_de_jogo",
+      },
+      error: null,
+    });
+    mockarFrom(builder);
+
+    const pauta = await criarPautaDePersona(paramsBase);
+
+    expect(pauta.tipoAngulo).toBe("storytelling_virada_de_jogo");
+    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ tipo_angulo: "storytelling_virada_de_jogo" }));
   });
 
   // Spec seção 9, Pendências: personas não têm campo estruturado de geografia — geografia fica

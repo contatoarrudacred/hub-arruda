@@ -46,6 +46,55 @@ const LIMITE_TENTATIVAS_IMAGEM = 2;
 const RESUMO_PERSONA_AUSENTE =
   "Nenhuma persona está associada a este post — a cena deve se basear apenas no assunto, conflito e emoção do próprio post, sem direcionamento psicológico de uma persona específica.";
 
+/**
+ * Achado real de produção (22/08/2026, pedido do Luiz): as capas estavam saindo quase todas com a
+ * mesma cena — personagem sentado à mesa de casa. Duas causas, corrigidas juntas nesta mudança:
+ *
+ * 1. BUG de wiring: a etapa 3 (`gerarCruzamento`) computa a "ideia visual única" — que já inclui um
+ *    ambiente, seguindo a cadeia emoção→conflito→momento→personagem→AMBIENTE→objeto/sinal (spec
+ *    seção 6) — mas `gerarCapa` nunca repassava `etapa3.ideiaVisual` pra etapa 4
+ *    (`gerarPromptCapa`), que re-derivava uma cena do zero direto de resumoPost+resumoPersona,
+ *    ignorando por completo o que a etapa 3 tinha acabado de decidir. Corrigido abaixo: `gerarCapa`
+ *    passa `etapa3.ideiaVisual` pra `gerarPromptCapa`, que agora TRADUZ essa ideia num prompt de
+ *    imagem em vez de reinventar a cena.
+ * 2. Convergência da IA: mesmo com a costura acima, nada IMPEDIA a IA de continuar escolhendo o
+ *    ambiente "mais seguro" (mesa de casa) toda vez que raciocinava livremente sobre isso — mesmo
+ *    princípio já observado e corrigido pro tipo de ângulo do texto (ver TipoAngulo/
+ *    CATALOGO_TIPOS_ANGULO em tipos.ts e o comentário de `selecionarPauta`, estrategista.ts):
+ *    deixada livre, a IA converge sempre pra mesma escolha "segura". A correção é a mesma:
+ *    SORTEAR o ambiente (não deixar a IA decidir) e só então construir a cena em cima dele.
+ *    Diferente do tipo de ângulo, aqui o sorteio é uniforme (`Math.random`), sem peso por
+ *    "ambiente menos usado recentemente" — decisão de escopo cirúrgica pedida pelo Luiz
+ *    ("de forma aleatória"): não precisa de coluna nova/migration pra resolver "sempre no mesmo
+ *    lugar", só precisa parar de ser SEMPRE o mesmo lugar. Com 14 ambientes, a chance de repetir o
+ *    mesmo ambiente duas vezes seguidas já cai de ~100% (hoje) pra ~7%.
+ *
+ * Ambientes cotidianos plausíveis pra uma pessoa negativada/em dificuldade financeira (mesmo
+ * universo das personas, Bloco 1 "Ficha rápida") — nem todo ambiente serve pra toda cena (a IA
+ * ainda decide a encenação em cima do ambiente sorteado), mas todos são cenas do dia a dia
+ * realistas o bastante pra qualquer uma delas.
+ */
+export const CATALOGO_AMBIENTES_CENA = [
+  "na cozinha de casa",
+  "no sofá da sala",
+  "na varanda ou no quintal de casa",
+  "na garagem, mexendo em ferramentas ou no carro",
+  "caminhando na calçada ou na rua do bairro",
+  "esperando em um ponto de ônibus",
+  "dentro do carro, parado no trânsito ou estacionado",
+  "no ambiente de trabalho (oficina, loja ou escritório simples)",
+  "em um mercado ou supermercado",
+  "na fila de um banco ou correspondente bancário",
+  "em um parque ou praça pública",
+  "na porta de casa",
+  "em uma feira livre",
+  "dirigindo, como motorista de aplicativo",
+] as const;
+
+function sortearAmbienteCena(): string {
+  return CATALOGO_AMBIENTES_CENA[Math.floor(Math.random() * CATALOGO_AMBIENTES_CENA.length)];
+}
+
 let clienteSingleton: Anthropic | null = null;
 
 function obterCliente(): Anthropic {
@@ -135,7 +184,7 @@ const FERRAMENTA_RESUMO_PERSONA = {
       resumo: {
         type: "string",
         description:
-          "Um único parágrafo de ~120-200 palavras: quem é a pessoa, situação atual, problema, objetivo aparente, desejo profundo, emoção dominante, principais medos, identidade ameaçada, relações importantes, situações cotidianas visualmente relevantes. Não invente características ausentes, não transforme em caricatura, não descreva ainda a imagem final.",
+          "Um único parágrafo de ~120-200 palavras: quem é a pessoa, situação atual, problema, objetivo aparente, desejo profundo, emoção dominante, principais medos, identidade ameaçada, relações importantes, situações cotidianas visualmente relevantes, E o nível socioeconômico real dela (renda, moradia, objetos, forma de vestir implícita pela persona). Não invente características ausentes, não transforme em caricatura, não descreva ainda a imagem final.",
       },
     },
     required: ["resumo"],
@@ -151,6 +200,7 @@ async function gerarResumoPersona(persona: PersonaCarregada | null): Promise<{ r
   const prompt = [
     "Você é um especialista em psicologia do consumidor, neuromarketing, comportamento humano, storytelling e direção criativa.",
     "Analise a persona completa e produza um RESUMO PSICOLÓGICO-VISUAL destinado exclusivamente à criação posterior de imagens de capa — não um resumo convencional. Extraia somente características capazes de influenciar personagem, situação, emoção, expressão, linguagem corporal, ambiente, objetos, relações humanas e narrativa visual: quem é essa pessoa, situação atual, objetivo aparente, desejo profundo, dor emocional central, até 3 medos mais profundos, identidade ameaçada, pessoas emocionalmente importantes, até 3 momentos de maior tensão (potencialmente fotografáveis), até 3 momentos de desejo, ambientes/objetos do universo da persona, e gatilhos de identificação.",
+    "Achado real (22/08/2026): o nível socioeconômico REAL da persona (renda, tipo de moradia, patrimônio, objetos que ela tem) precisa aparecer no resumo com a MESMA fidelidade que a dor emocional — nunca generalize pra um estereótipo genérico de dificuldade financeira só porque o assunto é crédito/dívida/banco. As 75 personas deste banco cobrem uma faixa larga: de quem está negativado e com dificuldade financeira real até profissionais de renda alta com patrimônio e crédito limpo que só têm uma dúvida técnica sobre como o banco lê o perfil deles — as duas situações pedem cenas visualmente MUITO diferentes (roupas, organização e qualidade do ambiente, objetos), mesmo quando ambas mencionam \"banco\" ou \"crédito\".",
     "Regras: não invente características ausentes; não transforme a persona em caricatura; não escreva anúncio ou copy; não sugira frases para a imagem; não descreva ainda a imagem final; diferencie objetivo funcional de desejo emocional; priorize emoções demonstráveis visualmente.",
     "",
     `PERSONA COMPLETA:\n${persona.conteudoCompleto}`,
@@ -192,13 +242,22 @@ const FERRAMENTA_CRUZAMENTO = {
   },
 };
 
-async function gerarCruzamento(titulo: string, resumoPost: string, resumoPersona: string): Promise<{ ideiaVisual: string; usage: UsageTokens }> {
+async function gerarCruzamento(
+  titulo: string,
+  resumoPost: string,
+  resumoPersona: string,
+  ambiente: string,
+): Promise<{ ideiaVisual: string; usage: UsageTokens }> {
   const cliente = obterCliente();
   const prompt = [
     "Você é um diretor de arte e estrategista de conteúdo. Cruze o título, o resumo do post e o resumo da persona abaixo pra encontrar a interseção entre o assunto do post e a psicologia da persona.",
     "Não escolha simplesmente a característica mais dramática da persona. Não escolha simplesmente uma ilustração literal do título.",
     "Pergunte internamente: qual parte do problema do post toca mais profundamente essa persona? Qual emoção da persona é ativada especificamente por este assunto? Em qual situação cotidiana essa combinação poderia acontecer? Qual momento pode ser entendido visualmente em 1-2 segundos? Qual cena cria identificação sem revelar toda a resposta do artigo? Qual detalhe cria uma pequena lacuna de curiosidade? Essa cena continuaria fazendo sentido sem nenhum texto sobreposto?",
     "Escolha UMA única ideia visual principal — não tente combinar várias cenas, vários medos ou várias promessas na mesma imagem.",
+    "O momento/personagem escolhido precisa ser coerente com o nível socioeconômico REAL da persona (renda, moradia, patrimônio, descrito no resumo dela) — não escolha por padrão o momento mais \"precário\" ou \"em dificuldade\" só porque o assunto é banco/crédito/dívida: uma persona de renda alta com crédito limpo tem uma preocupação real (ex.: uma dúvida técnica, uma reprovação inesperada), mas ela não vive num cenário de precariedade, e a cena não pode sugerir isso.",
+    "",
+    `O AMBIENTE desta cena é OBRIGATORIAMENTE: ${ambiente} — não escolha nem sugira outro ambiente, mesmo que outro pareça mais natural pra este post; essa escolha já foi decidida fora desta chamada, pra variar o cenário entre posts diferentes e as capas pararem de parecer sempre a mesma cena.`,
+    `IMPORTANTE — o ambiente é só o CENÁRIO, nunca o assunto da cena: a ideia visual ainda precisa representar o conflito/emoção REAL deste post específico, exatamente como pedido acima. Errado: usar o ambiente pra ilustrar uma cena genérica e desconectada do post (ex.: "${ambiente}" virar só uma foto qualquer de alguém nesse lugar, sem nenhum sinal do assunto do artigo). Certo: encontrar como o conflito/emoção do post SE MANIFESTA dentro desse ambiente — um objeto, uma expressão, um gesto, uma tela de celular, um documento na mesa, o que for coerente com o ambiente sorteado e ao mesmo tempo carregar o assunto do post. Se a conexão não for óbvia à primeira vista, é sua função de diretor de arte encontrá-la — não abandone o conflito do post só porque o ambiente não é o mais óbvio pra esse assunto.`,
     "",
     `TÍTULO:\n${titulo}`,
     "",
@@ -256,17 +315,30 @@ const FERRAMENTA_PROMPT_CAPA = {
 
 type ResultadoEtapa4 = { promptImagem: string; alt: string; slug: string; titulo: string };
 
-async function gerarPromptCapa(titulo: string, resumoPost: string, resumoPersona: string): Promise<{ resultado: ResultadoEtapa4; usage: UsageTokens }> {
+async function gerarPromptCapa(
+  titulo: string,
+  resumoPost: string,
+  resumoPersona: string,
+  ideiaVisual: string,
+  ambiente: string,
+): Promise<{ resultado: ResultadoEtapa4; usage: UsageTokens }> {
   const cliente = obterCliente();
   const prompt = [
     "Você é um diretor de arte, fotógrafo publicitário e especialista em neuromarketing, comportamento humano e comunicação emocional.",
     "Crie o prompt para uma imagem FOTO-REALISTA, para ser usada como capa de um artigo de blog no WordPress, a partir das informações abaixo. A imagem não deve simplesmente ilustrar literalmente o título — deve representar visualmente a situação, conflito, desejo ou emoção mais importante que conecta o conteúdo do artigo à persona, criando identificação + emoção + curiosidade, sem tentar explicar visualmente todo o artigo (uma imagem = uma ideia dominante).",
+    "A IDEIA VISUAL ÚNICA já foi decidida na etapa anterior (abaixo) — sua tarefa aqui é TRADUZIR essa ideia num prompt de imagem foto-realista fiel a ela, não reinventar uma cena diferente do zero.",
+    "",
+    `IDEIA VISUAL DEFINIDA (a cena que a imagem deve retratar):\n${ideiaVisual}`,
+    "",
+    `AMBIENTE OBRIGATÓRIO DESTA CENA: ${ambiente} — mantenha exatamente este ambiente no prompt final, não substitua por outro. O ambiente é só o cenário: o prompt final ainda precisa deixar claro, através de um objeto/gesto/tela/expressão coerente com a IDEIA VISUAL acima, que a cena é sobre o conflito real deste post — não vire uma foto genérica desse ambiente sem nenhum sinal do assunto do artigo.`,
     "",
     `TÍTULO:\n${titulo}`,
     "",
     `RESUMO ESTRATÉGICO DO POST:\n${resumoPost}`,
     "",
     `RESUMO PSICOLÓGICO-VISUAL DA PERSONA:\n${resumoPersona}`,
+    "",
+    "Os marcadores visuais de classe social na cena (roupas, qualidade e organização do ambiente, objetos, postura) precisam ser fiéis ao nível socioeconômico REAL descrito acima — não generalize pra uma estética genérica de dificuldade financeira quando a pessoa descrita não é assim (ex.: uma persona de renda alta, com patrimônio e crédito limpo, não pode virar uma cena que sugira precariedade só porque o assunto é banco/crédito).",
     "",
     "Além do prompt de imagem, gere os metadados (ALT, slug, título) derivados do mesmo material.",
     "Use a ferramenta para registrar o resultado.",
@@ -362,10 +434,13 @@ export async function gerarCapa(
     const etapa2 = await gerarResumoPersona(persona);
     usage = somarUsage(usage, etapa2.usage);
 
-    const etapa3 = await gerarCruzamento(conteudo.titulo, etapa1.resumo, etapa2.resumo);
+    // Sorteado UMA vez por capa, antes da etapa 3 — ver comentário de CATALOGO_AMBIENTES_CENA.
+    const ambienteSorteado = sortearAmbienteCena();
+
+    const etapa3 = await gerarCruzamento(conteudo.titulo, etapa1.resumo, etapa2.resumo, ambienteSorteado);
     usage = somarUsage(usage, etapa3.usage);
 
-    const etapa4 = await gerarPromptCapa(conteudo.titulo, etapa1.resumo, etapa2.resumo);
+    const etapa4 = await gerarPromptCapa(conteudo.titulo, etapa1.resumo, etapa2.resumo, etapa3.ideiaVisual, ambienteSorteado);
     usage = somarUsage(usage, etapa4.usage);
 
     // Etapa 5 — geração (OpenAI) + revisão (Claude com visão, Task 6), com retry até

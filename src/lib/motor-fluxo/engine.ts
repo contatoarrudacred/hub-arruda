@@ -13,6 +13,7 @@ import type {
   ConfigDelay,
   ContextoAvanco,
   ConteudoEtapa,
+  ConteudoExtraDetectado,
   DadosConversa,
   EfeitoNegocio,
   EtapaCarregada,
@@ -70,6 +71,24 @@ function mensagemRetomada(conteudo: ConteudoEtapa, mensagensResolvidas?: Mensage
     tipo: "texto",
     texto: `Desculpe, não entendi sua resposta — pra eu continuar te ajudando: ${pergunta}`,
   };
+}
+
+/**
+ * Texto da pergunta que o lead REALMENTE viu neste checkpoint — usado como "pergunta pendente" nos
+ * prompts de desvio/conteúdo extra (interpretar-desvio.ts). Mesma prioridade de `mensagemRetomada`
+ * (mensagem dinâmica resolvida > texto estático de `conteudo.mensagens`): achado 22/08/2026
+ * (re-teste `lead_muda_de_ideia_varias_vezes`) — sem isto, checkpoints com mensagem dinâmica (ex.:
+ * ln_passo14) mandavam pra IA o placeholder cru gravado no banco ("(pergunta de voucher calculada
+ * dinamicamente...)"), não a pergunta de verdade — a IA, sem uma pergunta real pra retomar (e sem o
+ * nome do lead, ver `nomeLead` nos dois pontos de chamada), inventou os dois.
+ */
+function textoPerguntaAtual(
+  conteudo: ConteudoEtapa,
+  dados: DadosConversa,
+  resolverMensagensDinamicas?: ResolverMensagensDinamicas,
+): string {
+  const mensagens = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? conteudo.mensagens;
+  return mensagens.map(textoDeMensagem).join("\n");
 }
 
 /**
@@ -276,15 +295,24 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     interpretarComIA,
     interpretarListaDocumentos,
     interpretarDesvio,
+    gerarRespostaConteudoExtra,
     variaveisGlobais = {},
   } = contexto;
   const conteudo = etapaAtual.conteudo;
 
   const parse = parseResposta(conteudo, respostaLead);
 
-  let reconhecido: { valor: string; opcaoEscolhida?: Opcao } | null = parse.reconhecido
+  let reconhecido: { valor: string; opcaoEscolhida?: Opcao; conteudoExtra?: ConteudoExtraDetectado } | null = parse.reconhecido
     ? { valor: parse.valor, opcaoEscolhida: parse.opcaoEscolhida }
     : null;
+
+  // Conteúdo extra (FAQ/objeção) detectado EMBUTIDO numa resposta que os blocos abaixo já
+  // reconhecem como válida pro checkpoint atual (achado 22/08/2026 — ver ConteudoExtraDetectado em
+  // tipos.ts). Cada um dos 4 interpretadores (lista_documentos, faixas_documentos,
+  // negociacao_pagamento, interpretarComIA) já detecta isso na MESMA chamada de IA que reconhece a
+  // resposta; aqui só carregamos o resultado até o fim do turno pra gerar (e prepend) a mensagem
+  // que endereça, sem interromper o avanço normal do checkpoint.
+  let conteudoExtraDetectado: ConteudoExtraDetectado = null;
 
   // "nome" é regra de negócio fixa do motor (mesma exceção já registrada em substituirVariaveisTexto,
   // pro [Primeiro_Nome]) — sem isto, uma resposta tipo "sou Luiz, boa tarde!" vira o nome inteiro
@@ -305,6 +333,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
 
     if (resultado.status === "completo") {
       reconhecido = { valor: resultado.itens.map((item) => item.tipo).join(",") };
+      conteudoExtraDetectado = resultado.conteudoExtra ?? null;
     } else if (resultado.status === "incompleto") {
       const retomada: MensagemEtapa = { tipo: "texto", texto: resultado.perguntaEsclarecimento };
       return {
@@ -334,6 +363,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
       reconhecido = {
         valor: resultado.itens.map((item) => (item.valorAproximado === null ? "nao_sei" : String(item.valorAproximado))).join(","),
       };
+      conteudoExtraDetectado = resultado.conteudoExtra ?? null;
     } else if (resultado.status === "incompleto") {
       const retomada: MensagemEtapa = { tipo: "texto", texto: resultado.perguntaEsclarecimento };
       return {
@@ -407,6 +437,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
         dados.parcelas_vencimentos ?? "",
       ].join("|");
       reconhecido = { valor: composto };
+      conteudoExtraDetectado = resultado.conteudoExtra ?? null;
       // cai pro bloco genérico abaixo, que grava em campoSalvo e segue pro próximo código
     } else if (resultado.status === "ajuste_valido") {
       const tiers: ParcelaTier[] = (dados.parcelas_valores ?? "")
@@ -450,6 +481,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarComIA) {
     reconhecido = await interpretarComIA({ etapaAtual, respostaLead, dados });
     interpretadoPorIA = reconhecido !== null;
+    conteudoExtraDetectado = reconhecido?.conteudoExtra ?? null;
   }
 
   // Desvio (spec docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md, estendido pro
@@ -459,7 +491,12 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   // uma objeção/hesitação, ou algo que a Malala genuinamente não sabe responder (escala pro humano em
   // vez de repetir a pergunta ignorando o lead).
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarDesvio) {
-    const resultadoDesvio = await interpretarDesvio({ etapaAtual, respostaLead });
+    const resultadoDesvio = await interpretarDesvio({
+      etapaAtual,
+      respostaLead,
+      perguntaPendente: textoPerguntaAtual(conteudo, dados, resolverMensagensDinamicas),
+      nomeLead: dados.nome ?? null,
+    });
 
     if (resultadoDesvio.status === "faq" || resultadoDesvio.status === "objecao") {
       // A mensagem já vem pronta (gerada com a voz da persona, respondendo/acolhendo e retomando a
@@ -627,8 +664,24 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     }
   }
 
+  // Prepend da mensagem que endereça o conteúdo extra detectado (achado 22/08/2026) — só quando
+  // algum dos 4 interpretadores encontrou algo, e só se a geração de fato produzir texto (nunca
+  // trava o turno por causa disso: falha na geração simplesmente não adiciona nada).
+  let mensagensComExtra = percurso.mensagens;
+  if (conteudoExtraDetectado && gerarRespostaConteudoExtra) {
+    const mensagemExtra = await gerarRespostaConteudoExtra({
+      conteudoExtra: conteudoExtraDetectado,
+      respostaLead,
+      perguntaPendente: textoPerguntaAtual(conteudo, dados, resolverMensagensDinamicas),
+      nomeLead: dados.nome ?? null,
+    });
+    if (mensagemExtra) {
+      mensagensComExtra = [empacotar({ tipo: "texto", texto: mensagemExtra }, conteudo), ...percurso.mensagens];
+    }
+  }
+
   return {
-    mensagens: percurso.mensagens,
+    mensagens: mensagensComExtra,
     etapaFinal: percurso.etapaFinal,
     dadosNovos,
     efeitos: [...percurso.efeitos, ...efeitosExtras],

@@ -34,8 +34,10 @@ import type {
   ResumoVisaoGeral,
   StatusPauta,
   StatusPost,
+  TipoAngulo,
   TipoConteudo,
 } from "./tipos";
+import { CATALOGO_TIPOS_ANGULO } from "./tipos";
 // Tipo da imagem secundária (Fase 4b, Task 8) importado do próprio orquestrador em vez de
 // duplicado aqui — reaproveita a mesma forma que processar-pauta.ts (Task 10) já recebe de
 // gerarImagensSecundarias, sem uma segunda definição que possa divergir. Sem ciclo de import:
@@ -48,7 +50,7 @@ import type { ImagemSecundaria } from "./imagens/secundarias";
 // a persona completa pro Escritor, spec seção 7). Nulo em pautas antigas/manuais — a coluna aceita
 // null (migration da Task 1).
 const CAMPOS_PAUTA =
-  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho, agendamento_forcado";
+  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho, agendamento_forcado, tipo_angulo";
 
 // Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
 // porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
@@ -113,6 +115,7 @@ function mapearPauta(data: {
   motivo_ultima_reprovacao: string | null;
   ultimo_rascunho?: unknown;
   agendamento_forcado?: string | null;
+  tipo_angulo?: TipoAngulo | null;
 }): PautaCarregada {
   return {
     id: data.id,
@@ -132,6 +135,7 @@ function mapearPauta(data: {
     motivoUltimaReprovacao: data.motivo_ultima_reprovacao,
     ultimoRascunho: mapearRascunho(data.ultimo_rascunho),
     agendamentoForcado: data.agendamento_forcado ?? null,
+    tipoAngulo: data.tipo_angulo ?? null,
   };
 }
 
@@ -431,6 +435,83 @@ export async function carregarPostProntoParaPublicar(pautaId: string): Promise<P
     rascunhoIdWordpress: canais?.wordpress?.rascunho_id ?? null,
     slug: data.slug,
     imagemDestaqueMediaId: data.imagem_destaque_media_id,
+  };
+}
+
+/** Campos do post já persistidos quando o texto foi aprovado mas a geração de imagem ainda não foi
+ * tentada — ver `carregarPautaAguardandoImagens` logo abaixo. `conteudoHtml` aqui já passou por
+ * "inserir_links" + "sanitizar" (processar-pauta.ts persiste a versão final antes de pausar, não a
+ * versão crua do Escritor) — pronto pra `gerarEEmbutirImagens` embutir as imagens em cima dele. */
+export type PostAguardandoImagens = {
+  id: string;
+  titulo: string;
+  conteudoHtml: string;
+  metaTitle: string;
+  metaDescription: string;
+  slug: string;
+};
+
+/**
+ * Prioridade máxima em `processarProximaPauta` (checada ANTES de `selecionarPauta`) — achado real
+ * de produção, 22/08/2026: o teto de tempo da rota (maxDuration, route.ts) às vezes não sobra o
+ * suficiente pra gerar_conteudo+revisar E gerar_imagens na MESMA invocação (gerar_conteudo sozinho
+ * já foi visto consumindo até 235s dos 290s totais). Em vez de publicar o post sem imagem quando
+ * isso acontece (comportamento antigo do guard de orçamento em processar-pauta.ts), a tentativa
+ * PAUSA logo antes de gerar_imagens — o post já existe (`criarPost` já rodou, texto aprovado e
+ * persistido), só falta a imagem. Esta função reconhece esse post na PRÓXIMA invocação e permite
+ * retomar direto da geração de imagem, com o relógio (`inicioProcessamento`) zerado de novo.
+ *
+ * Diferente do reclaim de `selecionarProximaPautaPendente` (baseado em staleness, RECLAIM_MINUTOS
+ * = 10 minutos) — essa pausa não precisa esperar nada: o sinal não é "quanto tempo faz", é "existe
+ * um post com texto pronto, ainda sem imagem, associado a uma pauta em_producao desta matriz". Por
+ * isso é checada ANTES de `selecionarPauta` (e não dentro dela) — sempre termina o que já foi
+ * começado antes de competir por uma pauta nova.
+ *
+ * `pauta.status = 'em_producao'` primeiro (não busca direto em `posts`) porque `posts` não tem
+ * `matriz_conteudo_id` — o escopo por matriz só existe via `pautas`. Em teoria só existe uma pauta
+ * em_producao por matriz por vez (o lock do cron serializa as tentativas), mas a query não assume
+ * isso — pega a mais recente entre as pautas que casarem.
+ */
+export async function carregarPautaAguardandoImagens(
+  matrizConteudoId: string,
+): Promise<{ pauta: PautaCarregada; post: PostAguardandoImagens } | null> {
+  const supabase = createAdminClient();
+  const { data: pautasEmProducao, error: erroPautas } = await supabase
+    .from("pautas")
+    .select("id")
+    .eq("matriz_conteudo_id", matrizConteudoId)
+    .eq("status", "em_producao");
+  if (erroPautas) throw new Error(`Falha ao checar pautas em produção da matriz ${matrizConteudoId}: ${erroPautas.message}`);
+  if (!pautasEmProducao || pautasEmProducao.length === 0) return null;
+
+  const idsPautas = pautasEmProducao.map((p) => p.id as string);
+  const { data: post, error: erroPost } = await supabase
+    .from("posts")
+    .select("id, pauta_id, titulo, conteudo_html, meta_title, meta_description, slug")
+    .in("pauta_id", idsPautas)
+    .eq("status", "rascunho")
+    .eq("pronto_para_publicar", false)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroPost) throw new Error(`Falha ao checar post aguardando imagens da matriz ${matrizConteudoId}: ${erroPost.message}`);
+  if (!post) return null;
+
+  const pauta = await carregarPauta(post.pauta_id as string);
+  // Defensivo: a pauta sumiu entre as duas queries (não deveria acontecer) — próxima tentativa
+  // reavalia do zero, não trava aqui.
+  if (!pauta) return null;
+
+  return {
+    pauta,
+    post: {
+      id: post.id as string,
+      titulo: post.titulo as string,
+      conteudoHtml: post.conteudo_html as string,
+      metaTitle: post.meta_title as string,
+      metaDescription: post.meta_description as string,
+      slug: post.slug as string,
+    },
   };
 }
 
@@ -1176,16 +1257,46 @@ export async function listarPersonasAtivasComAngulosDisponiveis(propriedadeId: s
 
   return personas.map((persona) => {
     const personaId = persona.id as string;
-    const angulosProntos = (persona.angulos_prontos as string[]) ?? [];
+    // 22/08/2026: angulos_prontos passou de string[] pra {texto,tipo}[] (sorteio de tipo de
+    // ângulo, ver estrategista.ts) — a subtração dos já usados agora compara por `.texto`.
+    const angulosProntos = (persona.angulos_prontos as { texto: string; tipo: TipoAngulo }[]) ?? [];
     const angulosUsados = angulosUsadosPorPersona.get(personaId) ?? new Set<string>();
     return {
       id: personaId,
       nome: persona.nome as string,
       dorEntrada: persona.dor_entrada as string,
-      angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo)),
+      angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo.texto)),
       usadaPelaUltimaVezEm: ultimoUsoPorPersona.get(personaId) ?? null,
     };
   });
+}
+
+/**
+ * `created_at` mais recente entre pautas desta MATRIZ pra cada um dos 15 tipos de ângulo — usado
+ * pelo Estrategista (`escolherTipoMenosUsadoRecentemente`, estrategista.ts) pra sortear qual tipo
+ * usar na próxima pauta (achado real de produção, 22/08/2026: sem isto, os ângulos prontos de cada
+ * persona quase sempre saem do mesmo tipo retórico, deixando os posts parecidos). Escopo por
+ * MATRIZ, não propriedade — mesmo escopo que `selecionarPauta` já recebe; é uma query separada de
+ * `listarPersonasAtivasComAngulosDisponiveis` (que é por `propriedadeId`). Tipos sem nenhuma pauta
+ * ainda vêm com valor `null` no mapa — tratados como "nunca usado" (prioridade máxima) por quem
+ * ordena o resultado.
+ */
+export async function carregarUltimoUsoPorTipoAngulo(matrizConteudoId: string): Promise<Record<TipoAngulo, string | null>> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("pautas").select("tipo_angulo, created_at").eq("matriz_conteudo_id", matrizConteudoId);
+  if (error) throw new Error(`Falha ao carregar histórico de tipo de ângulo da matriz ${matrizConteudoId}: ${error.message}`);
+
+  const ultimoUsoPorTipo = {} as Record<TipoAngulo, string | null>;
+  for (const tipo of CATALOGO_TIPOS_ANGULO) ultimoUsoPorTipo[tipo] = null;
+
+  for (const pauta of data ?? []) {
+    const tipo = pauta.tipo_angulo as TipoAngulo | null;
+    if (!tipo) continue; // pauta antiga/manual sem tipo registrado — não conta pra recência de nenhum tipo
+    const createdAt = pauta.created_at as string;
+    const atual = ultimoUsoPorTipo[tipo];
+    if (!atual || createdAt > atual) ultimoUsoPorTipo[tipo] = createdAt;
+  }
+  return ultimoUsoPorTipo;
 }
 
 function mapearPersonaCarregada(data: {
@@ -1199,7 +1310,7 @@ function mapearPersonaCarregada(data: {
     id: data.id,
     nome: data.nome,
     dorEntrada: data.dor_entrada,
-    angulosProntos: (data.angulos_prontos as string[]) ?? [],
+    angulosProntos: (data.angulos_prontos as { texto: string; tipo: TipoAngulo }[]) ?? [],
     // Não computado aqui (exigiria uma 2ª query agregando pautas, igual a
     // listarPersonasAtivasComAngulosDisponiveis) — nenhum consumidor de carregarPersona (Gerador
     // de Ângulo, Task 3; Escritor, Task 5) usa usadaPelaUltimaVezEm, só conteudoCompleto. Quem
@@ -1260,6 +1371,9 @@ export async function criarPautaDePersona(params: {
   palavrasSecundarias: string[];
   funil: FunilPauta;
   tipoConteudo: TipoConteudo;
+  // Obrigatório (22/08/2026): todo caminho que chama esta função já sorteou um tipo de ângulo
+  // antes de chegar aqui (ver selecionarPauta, estrategista.ts) — nunca é opcional na prática.
+  tipoAngulo: TipoAngulo;
 }): Promise<PautaCarregada> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -1272,6 +1386,7 @@ export async function criarPautaDePersona(params: {
       palavras_secundarias: params.palavrasSecundarias,
       funil: params.funil,
       tipo_conteudo: params.tipoConteudo,
+      tipo_angulo: params.tipoAngulo,
       geografia: null,
       status: "em_producao",
     })
