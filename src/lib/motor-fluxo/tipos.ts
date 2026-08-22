@@ -289,6 +289,24 @@ export type InterpretadorNegociacaoPagamento = (params: {
   dados: DadosConversa;
 }) => Promise<ResultadoNegociacaoPagamento>;
 
+/** Uma FAQ ativa, como o interpretador de desvio precisa pra decidir se a pergunta do lead já tem resposta oficial. */
+export type FaqParaDesvio = { pergunta: string; resposta: string };
+
+/**
+ * Resultado do interpretador de desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — só roda
+ * quando o `InterpretadorIA` genérico não reconheceu a resposta do lead como sendo sobre o checkpoint
+ * atual, pra decidir se é uma pergunta lateral que já tem resposta (FAQ) ou algo que a Malala
+ * genuinamente não sabe responder (escalar pra humano em vez de repetir a pergunta ignorando o lead):
+ * - `faq`: a pergunta do lead bate com uma FAQ ativa — motor responde com o texto oficial e retoma a
+ *   pergunta pendente na mesma mensagem (regra de desvio), permanece no mesmo checkpoint.
+ * - `escalar`: não bate com nada — motor encerra o automatizado e escala pro supervisor, registrando o
+ *   motivo (que já vira nota interna automaticamente, ver `escalar_supervisor` em `persistencia.ts`).
+ */
+export type ResultadoDesvio = { status: "faq"; faq: FaqParaDesvio } | { status: "escalar" };
+
+/** As FAQs ativas são capturadas por closure na fábrica (mesmo padrão de `criarInterpretadorFaixasDocumentos`), não passadas a cada chamada — por isso a assinatura é igual à do `InterpretadorIA` genérico. */
+export type InterpretadorDesvio = (params: { etapaAtual: EtapaCarregada; respostaLead: string }) => Promise<ResultadoDesvio>;
+
 /** O que o motor precisa pra decidir o próximo passo — tudo isolado do Supabase, testável puro (exceto o hook de IA, que é assíncrono por natureza). */
 export type ContextoAvanco = {
   etapaAtual: EtapaCarregada;
@@ -302,6 +320,7 @@ export type ContextoAvanco = {
   interpretarListaDocumentos?: InterpretadorListaDocumentos;
   interpretarFaixasDocumentos?: InterpretadorFaixasDocumentos;
   interpretarNegociacaoPagamento?: InterpretadorNegociacaoPagamento;
+  interpretarDesvio?: InterpretadorDesvio;
   /** placeholders tipo `[saudacao]` que não vêm de `dados` (ex.: hora do dia) — computados por quem chama o motor, pra manter o motor determinístico/testável */
   variaveisGlobais?: Record<string, string>;
 };

@@ -746,3 +746,63 @@ describe("negociacao_pagamento", () => {
     expect(txt(resultado.mensagens[0])).toBe("Só temos os dias 01, 10 ou 20 como opção — qual prefere?");
   });
 });
+
+describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra de Luiz: nunca adivinhar nem protelar", () => {
+  const etapaGenerica = {
+    id: "etapa-teste-desvio",
+    fluxoId: "fluxo-limpeza-nome",
+    ordem: 1,
+    campoSalvo: "confirmacao_teste",
+    agendaFollowupId: null,
+    conteudo: {
+      codigo: "checkpoint_teste_desvio",
+      mensagens: [{ tipo: "texto" as const, texto: "Com quem eu falo?" }],
+      aguarda_resposta: true,
+      tipo_resposta: "menu" as const,
+      opcoes: [
+        { valor: "sim", rotulos: ["sim"], proximo_codigo: "proxima_etapa" },
+        { valor: "nao", rotulos: ["nao"], proximo_codigo: "proxima_etapa" },
+      ],
+      interpretacao_ia: { habilitado: true },
+    },
+  };
+
+  it("FAQ bate: responde com o texto oficial + retoma a pergunta pendente na mesma mensagem, sem avançar", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenerica,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "vocês trabalham com CNPJ também?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => null,
+      interpretarDesvio: async () => ({ status: "faq", faq: { pergunta: "Trabalham com CNPJ?", resposta: "Sim, atendemos CPF e CNPJ." } }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("checkpoint_teste_desvio");
+    expect(resultado.naoReconhecido).toBe(true);
+    expect(resultado.efeitos).toEqual([]);
+    expect(resultado.dadosNovos).toEqual({});
+    expect(txt(resultado.mensagens[0])).toBe("Sim, atendemos CPF e CNPJ.\n\nCom quem eu falo?");
+  });
+
+  it("nada bate (escalar): encerra o automatizado e escala pro supervisor com o motivo certo, sem repetir a pergunta ignorando o lead", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenerica,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "vocês fazem consórcio de imóveis?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => null,
+      interpretarDesvio: async () => ({ status: "escalar" }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal).toBeNull();
+    expect(resultado.naoReconhecido).toBe(false);
+    expect(resultado.efeitos).toEqual([
+      { tipo: "escalar_supervisor", motivo: 'Pergunta fora do escopo ou desconhecida: "vocês fazem consórcio de imóveis?"' },
+    ]);
+    expect(resultado.mensagens.length).toBeGreaterThan(0);
+  });
+});

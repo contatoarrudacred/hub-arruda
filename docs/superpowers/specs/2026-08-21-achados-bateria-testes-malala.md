@@ -144,15 +144,32 @@ com a Condição Especial oferecida (R$399, não mais R$600).
 
 ---
 
-## Achado 1b (🟠 sério, não totalmente investigado) — Negociação de pagamento (`ln_passo16_1`) trava com perguntas de acompanhamento
+## Achado 1b (✅ corrigido e verificado em 21/08/2026) — Negociação de pagamento (`ln_passo16_1`) trava com perguntas de acompanhamento
 
 Em pelo menos 2 cenários adversariais (`lead_ansioso_urgente`, `lead_pergunta_fora_do_escopo_no_meio`), a
 Malala travou repetindo mensagens em `ln_passo16_1`/`ln_passo15_normal` quando o lead fazia uma pergunta
 de acompanhamento genuína sobre a forma de pagamento (ex.: "no cartão em quantas vezes pode ser?", "essa
-parcela é a do boleto ou do cartão?"). Diferente do Achado 0b, não confirmei a causa raiz exata (pode ser
-o interpretador de negociação de pagamento não cobrindo essas variações, ou pode ter uma relação com o
-Achado 1 — o cálculo de parcela por forma de pagamento). Vale investigar junto quando formos mexer nessa
-área.
+parcela é a do boleto ou do cartão?").
+
+**Causa raiz confirmada**: `interpretar-negociacao-pagamento.ts` nunca tinha o valor total do contrato
+nem instrução nenhuma sobre parcelamento no cartão — o sistema simplesmente não calcula (nem nunca
+calculou) valor exato de parcela por quantidade no cartão em lugar nenhum (isso é decidido depois, no
+Checkout da operadora — confirmado no comentário de `src/lib/asaas/cliente.ts:63`, que documenta
+explicitamente essa decisão de arquitetura). A IA ficava tentando adivinhar um número que não existe,
+travando em vez de admitir que é uma estimativa.
+
+**Correção**: o prompt agora recebe o valor total do contrato e instrução explícita pra estimar a parcela
+no cartão (total ÷ quantidade, sem juros, deixando claro que é estimativa e o valor final exato é
+confirmado no pagamento) — decisão do Luiz, 21/08/2026. Re-testado ao vivo: a negociação de cartão +
+pergunta de acompanhamento sobre assinatura não travou mais nenhuma vez.
+
+**Achado maior, na mesma investigação**: ao re-testar, `lead_pergunta_fora_do_escopo_no_meio` revelou um
+problema mais sério e arquitetural — a Malala **ignorava completamente** qualquer pergunta fora do
+checkpoint atual (ex.: "vocês trabalham com consórcio de imóveis?"), repetindo a mesma frase pra sempre em
+vez de responder ou escalar. Virou a spec/feature própria
+`docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md` (regra de Luiz: nunca adivinhar nem
+protelar, escalar pra humano quando não sabe) — ✅ implementada, testada (unidade + harness ao vivo, 2
+cenários: FAQ respondida + retomada, e escalação honesta pro humano) e no ar.
 
 ---
 
@@ -228,7 +245,7 @@ lá que os Achados 0b, 1 e 1b foram confirmados como reais.
 | 0a | `agendar_consultor` sempre falha (CHECK constraint desatualizado) | ✅ **corrigido e verificado** | Confirmado (erro reproduzido, fix re-testado) | divida_alta_aceita_agendamento |
 | 0b | `abertura_email` trava pra sempre sem `opcional_apos_tentativas` | ✅ **corrigido e verificado** | Confirmado (diagnóstico isolado, fix re-testado) | lead_desconfiado_pede_provas, lead_testa_repeticao_de_pergunta |
 | 1 | Parcela cobrada não bate com a Condição Especial oferecida | ✅ **corrigido e verificado** | Confirmado (2 ocorrências, causa raiz achada, fix re-testado) | lead_ansioso_urgente, lead_hostil_grosseiro |
-| 1b | Negociação de pagamento trava com perguntas de acompanhamento | 🟠 sério | Observado, causa raiz não confirmada | lead_ansioso_urgente, lead_pergunta_fora_do_escopo_no_meio |
+| 1b | Negociação de pagamento trava com perguntas de acompanhamento | ✅ **corrigido e verificado** | Confirmado (causa raiz achada, fix + feature de desvio re-testados) | lead_ansioso_urgente, lead_pergunta_fora_do_escopo_no_meio |
 | 1c | Texto quebrado em `ln_passo17a` ("[parcela unica]... de 899") | ✅ **corrigido e verificado** | Confirmado (texto real em produção, patch re-verificado) | lead_ansioso_urgente |
 | 2 | Emoji de gênero inconsistente (🙋‍♂️ numa persona feminina) | 🟡 menor | Confirmado | triagem_handoff_outro_assunto, lead_divida_alta_recusa_com_argumentos |
 | 3 | `ln_passo6` trava pra sempre se o lead informa valores de 2 documentos sem passar pelo menu | ✅ **corrigido e verificado** | Confirmado (reproduzido, causa raiz achada, fix re-testado) | pacote_caro_recusa_vai_pro_selfservice |
@@ -277,10 +294,11 @@ escalar pro agendamento — é o roteiro do cenário que precisa de valores maio
 
 ## Pendente
 
-- ✅ 0a, 0b, 1, 1c, 3 e a recusa de agendamento (caminho dívida alta) corrigidos e verificados
+- ✅ 0a, 0b, 1, 1b, 1c, 3 e a recusa de agendamento (caminho dívida alta) corrigidos e verificados
   (21/08/2026).
-- Investigar 1b (travas na negociação de pagamento com perguntas de acompanhamento) — mesma área de
-  código do Achado 1, faz sentido revisitar quando mexer ali de novo.
+- Nova feature (spec `2026-08-21-desvio-escalar-quando-nao-sabe.md`) cobre só FAQ por enquanto — banco de
+  objeções, tela de admin pra revisar dúvidas escaladas, e estender o mesmo tratamento pros
+  interpretadores especializados (`faixas_documentos`, `lista_documentos`) ficam pra próxima rodada.
 - Ajustar os valores do cenário `pacote_caro_recusa_vai_pro_selfservice` em `cenarios.ts` pra realmente
   ultrapassar `CORTE_PACOTE_CARO` e confirmar o caminho de self-service da recusa de agendamento — a
   lógica já está coberta por teste de unidade (`engine.test.ts`), só falta a confirmação via conversa

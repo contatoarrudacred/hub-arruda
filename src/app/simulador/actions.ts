@@ -7,6 +7,7 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
+import { criarInterpretadorDesvio } from "@/lib/motor-fluxo/interpretar-desvio";
 import { criarInterpretadorFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
@@ -15,6 +16,7 @@ import {
   carregarDadosAgendamentoConsultor,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
+  carregarFaqsAtivas,
 } from "@/lib/motor-fluxo/repositorio";
 import type { DadosConversa, MensagemEnviada } from "@/lib/motor-fluxo/tipos";
 
@@ -44,11 +46,12 @@ export type PassoSimulador = {
 };
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config, dadosAgendamento] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
     carregarDadosAgendamentoConsultor(),
+    carregarFaqsAtivas(),
   ]);
   return {
     etapasPorCodigo,
@@ -58,6 +61,7 @@ async function montarDependencias() {
       agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
     }),
     interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
+    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas),
   };
 }
 
@@ -101,7 +105,7 @@ export async function enviarResposta(
     return { mensagens: [], estado, encerrado: true, naoReconhecido: false };
   }
 
-  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos } =
+  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos, interpretarDesvio } =
     await montarDependencias();
   const etapaAtual = etapasPorCodigo[estado.etapaAtualCodigo];
 
@@ -116,6 +120,7 @@ export async function enviarResposta(
     interpretarListaDocumentos,
     interpretarFaixasDocumentos,
     interpretarNegociacaoPagamento,
+    interpretarDesvio,
     variaveisGlobais: { saudacao: saudacaoPorHorario() },
   });
 

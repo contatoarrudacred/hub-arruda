@@ -7,6 +7,7 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
+import { criarInterpretadorDesvio } from "@/lib/motor-fluxo/interpretar-desvio";
 import { criarInterpretadorFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
@@ -29,6 +30,7 @@ import {
   carregarDadosAgendamentoConsultor,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
+  carregarFaqsAtivas,
   listarRegrasRoteamentoAtivas,
 } from "@/lib/motor-fluxo/repositorio";
 import { resolverEtapaInicialLeadNovo } from "@/lib/motor-fluxo/roteamento-lead-novo";
@@ -68,11 +70,12 @@ const DEBOUNCE_MS = 3500;
 // checkpoint). Responder na hora elimina o motivo do reenvio.
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config, dadosAgendamento] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
     carregarDadosAgendamentoConsultor(),
+    carregarFaqsAtivas(),
   ]);
   return {
     etapasPorCodigo,
@@ -82,6 +85,7 @@ async function montarDependencias() {
       agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
     }),
     interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
+    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas),
   };
 }
 
@@ -154,7 +158,7 @@ async function processarMensagemRecebida(
   const { texto, codigo: codigoRastreio } = extrairCodigoRastreio(textoRecebido);
 
   try {
-    const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos } =
+    const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos, interpretarDesvio } =
       await montarDependencias();
     const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
     await capturarFotoPerfilSeNecessario(estado.pessoaId, fotoPerfil);
@@ -220,6 +224,7 @@ async function processarMensagemRecebida(
         interpretarListaDocumentos,
         interpretarFaixasDocumentos,
         interpretarNegociacaoPagamento,
+        interpretarDesvio,
         variaveisGlobais: { saudacao: saudacaoPorHorario() },
       });
       dadosNovos = resultado.dadosNovos;

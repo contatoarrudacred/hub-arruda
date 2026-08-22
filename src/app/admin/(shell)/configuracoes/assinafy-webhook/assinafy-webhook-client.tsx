@@ -18,7 +18,15 @@ const EVENTOS_ESPERADOS = ["document_ready", "signer_rejected_document"];
 // exatamente, senão essa comparação usa uma base diferente da URL que foi realmente registrada.
 const PREFIXO_URL_ESPERADA = `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"}/api/webhooks/assinafy`;
 
-function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | undefined; erro: string | null }) {
+function StatusAtual({
+  status,
+  segredoBate,
+  erro,
+}: {
+  status: StatusWebhookAssinafy | null | undefined;
+  segredoBate: boolean | null;
+  erro: string | null;
+}) {
   if (erro) {
     return (
       <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-300">
@@ -41,7 +49,12 @@ function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | 
 
   const eventosFaltando = EVENTOS_ESPERADOS.filter((e) => !status.events.includes(e));
   const urlBate = status.url.startsWith(PREFIXO_URL_ESPERADA);
-  const tudoCerto = status.ativo && eventosFaltando.length === 0 && urlBate;
+  // Achado real, Luiz 21/08/2026 (2ª vez que um contrato assinado fica preso): antes disto, "tudo
+  // certo" só conferia o começo da URL — nunca o `?secret=` no final dela, então dava pra mostrar
+  // ✅ mesmo com o segredo desatualizado entre Vercel e Assinafy (o cenário exato que intrigou uma
+  // venda travada). `segredoBate === null` acontece quando ASSINAFY_WEBHOOK_SECRET não está
+  // configurada localmente pra comparar — trata como "não verificável", não como erro.
+  const tudoCerto = status.ativo && eventosFaltando.length === 0 && urlBate && segredoBate !== false;
 
   return (
     <div
@@ -56,7 +69,9 @@ function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | 
           ? "✅ Webhook configurado corretamente"
           : !urlBate
             ? "🚫 URL cadastrada não é a nossa — esse webhook não vai avisar o sistema"
-            : "⚠ Webhook cadastrado, mas incompleto"}
+            : segredoBate === false
+              ? "🚫 Segredo desatualizado — a Assinafy vai mandar avisos, mas o sistema vai rejeitar (401) sem processar nada"
+              : "⚠ Webhook cadastrado, mas incompleto"}
       </p>
       <p>
         Ativo: <strong>{status.ativo ? "sim" : "não"}</strong>
@@ -74,6 +89,12 @@ function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | 
           </>
         )}
       </p>
+      <p>
+        Segredo:{" "}
+        <strong>
+          {segredoBate === null ? "não verificável (ASSINAFY_WEBHOOK_SECRET não configurada aqui)" : segredoBate ? "bate ✅" : "NÃO bate 🚫"}
+        </strong>
+      </p>
       <p>E-mail: {status.email}</p>
       <p className="text-xs opacity-80">Atualizado em: {new Date(status.atualizadoEm).toLocaleString("pt-BR")}</p>
     </div>
@@ -82,15 +103,18 @@ function StatusAtual({ status, erro }: { status: StatusWebhookAssinafy | null | 
 
 export function AssinafyWebhookClient({
   statusInicial,
+  segredoBateInicial,
   erroInicial,
 }: {
   statusInicial: StatusWebhookAssinafy | null;
+  segredoBateInicial: boolean | null;
   erroInicial: string | null;
 }) {
   const [email, setEmail] = useState("lhdoria2011@gmail.com");
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
   const [status, setStatus] = useState<StatusWebhookAssinafy | null | undefined>(statusInicial);
+  const [segredoBate, setSegredoBate] = useState<boolean | null>(segredoBateInicial);
   const [erroStatus, setErroStatus] = useState<string | null>(erroInicial);
 
   async function consultarStatus() {
@@ -101,6 +125,7 @@ export function AssinafyWebhookClient({
       return;
     }
     setStatus(resposta.status);
+    setSegredoBate(resposta.segredoBate);
   }
 
   async function configurar() {
@@ -145,7 +170,7 @@ export function AssinafyWebhookClient({
             Atualizar
           </button>
         </div>
-        <StatusAtual status={status} erro={erroStatus} />
+        <StatusAtual status={status} segredoBate={segredoBate} erro={erroStatus} />
       </div>
 
       <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">

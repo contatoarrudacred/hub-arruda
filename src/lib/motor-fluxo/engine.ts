@@ -6,6 +6,7 @@
 
 import { expandirParcelas } from "./calculo-vencimentos-pagamento";
 import { extrairNomeDeResposta } from "./extracao";
+import { montarMensagemDesvio } from "./interpretar-desvio-validacao";
 import { parseResposta } from "./parser";
 import type { ParcelaTier } from "./regras-limpeza-nome";
 import type {
@@ -275,6 +276,7 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
     calcularDadosDerivados,
     interpretarComIA,
     interpretarListaDocumentos,
+    interpretarDesvio,
     variaveisGlobais = {},
   } = contexto;
   const conteudo = etapaAtual.conteudo;
@@ -449,6 +451,59 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarComIA) {
     reconhecido = await interpretarComIA({ etapaAtual, respostaLead, dados });
     interpretadoPorIA = reconhecido !== null;
+  }
+
+  // Desvio (spec docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md, regra de Luiz
+  // 21/08/2026: nunca adivinhar nem protelar quando não sabe) — só depois que o InterpretadorIA
+  // genérico acima já desistiu de reconhecer a resposta como sendo sobre ESTE checkpoint. Decide se é
+  // uma pergunta lateral que já tem resposta oficial (FAQ) ou algo que a Malala genuinamente não sabe
+  // responder (escala pro humano em vez de repetir a pergunta ignorando o lead).
+  if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarDesvio) {
+    const resultadoDesvio = await interpretarDesvio({ etapaAtual, respostaLead });
+
+    if (resultadoDesvio.status === "faq") {
+      // O lead foi atendido de verdade (só ainda não respondeu o checkpoint) — não conta como
+      // "tentativa" pro contador de desistência (opcional_apos_tentativas) logo abaixo. Retoma a
+      // pergunta original tal como foi feita (sem o prefixo "Desculpe, não entendi" que
+      // mensagemRetomada usa pro fallback genérico — aqui a Malala entendeu perfeitamente, só
+      // respondeu uma pergunta lateral antes).
+      const dinamicasDesvio = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? undefined;
+      const listaMensagens = dinamicasDesvio ?? conteudo.mensagens;
+      const perguntaOriginal: MensagemEtapa = { tipo: "texto", texto: textoDeMensagem(listaMensagens[listaMensagens.length - 1]) };
+      const perguntaPendente = textoDeMensagem(substituirVariaveisMensagem(perguntaOriginal, dados, variaveisGlobais));
+      const mensagemDesvio: MensagemEtapa = {
+        tipo: "texto",
+        texto: montarMensagemDesvio(resultadoDesvio.faq, perguntaPendente),
+      };
+      return {
+        mensagens: [empacotar(mensagemDesvio, conteudo)],
+        etapaFinal: etapaAtual,
+        dadosNovos: {},
+        efeitos: [],
+        naoReconhecido: true,
+        interpretadoPorIA: true,
+        kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+      };
+    }
+
+    // "escalar" — nem FAQ nem o checkpoint atual cobrem a resposta do lead. Encerra o automatizado e
+    // escala pro supervisor em vez de repetir a pergunta como se o lead não tivesse dito nada
+    // (`escalar_supervisor` já grava a nota interna com este motivo, persistencia.ts — vira o "banco de
+    // dúvidas não respondidas" pedido por Luiz, sem tabela nova).
+    const mensagemEscalar: MensagemEtapa = {
+      tipo: "texto",
+      texto:
+        "Essa é uma pergunta bem específica — deixa eu te transferir pra um dos nossos consultores, que vai poder te ajudar melhor com isso! 🙋‍♀️",
+    };
+    return {
+      mensagens: [empacotar(substituirVariaveisMensagem(mensagemEscalar, dados, variaveisGlobais), conteudo)],
+      etapaFinal: null,
+      dadosNovos: {},
+      efeitos: [{ tipo: "escalar_supervisor", motivo: `Pergunta fora do escopo ou desconhecida: "${respostaLead}"` }],
+      naoReconhecido: false,
+      interpretadoPorIA: true,
+      kanbanSubetapa: conteudo.kanban_subetapa ?? null,
+    };
   }
 
   if (!reconhecido) {
