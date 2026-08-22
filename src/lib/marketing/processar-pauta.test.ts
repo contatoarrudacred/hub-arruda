@@ -224,6 +224,10 @@ describe("processarProximaPauta", () => {
     // gera do zero). Testes dedicados de reaproveitamento sobrescrevem.
     vi.spyOn(repositorio, "carregarPostProntoParaPublicar").mockResolvedValue(null);
     vi.spyOn(repositorio, "carregarImagensPostAnterior").mockResolvedValue(null);
+    // Split de orçamento de tempo entre texto e imagem (22/08/2026) — default "nenhuma pauta
+    // aguardando imagens ainda" (mesmo comportamento de antes desta mudança existir: sempre chama
+    // selecionarPauta). Testes dedicados de retomada sobrescrevem.
+    vi.spyOn(repositorio, "carregarPautaAguardandoImagens").mockResolvedValue(null);
     // Task 10 — default "sem imagem nenhuma" (mesmo comportamento de antes desta task existir):
     // capa reprovada/sem resultado, zero secundárias aprovadas. Testes dedicados de imagem
     // (describe "gerar_imagens (Task 10)" abaixo) sobrescrevem com seus próprios resultados.
@@ -1465,13 +1469,15 @@ describe("processarProximaPauta", () => {
       expect(tokensExtraidos.gerar_imagens).toEqual({ tokensEntrada: 1400, tokensSaida: 700 });
     });
 
-    // Achado real de produção (21/08/2026), mesmo mecanismo do guard em "verificar_links": quando
-    // a geração inicial já consumiu quase todo o orçamento do tick (maxDuration da rota), chamar
-    // gerarEEmbutirImagens (capa + secundárias, potencialmente lento) arrisca ser morto no meio,
-    // travando a pauta. Este teste simula esse cenário (Date mockado) e confirma que a geração de
-    // imagens é PULADA (gerarCapa/gerarImagensSecundarias nunca chamados) — post publica sem
-    // imagem, em vez de arriscar travar.
-    it("pula a geração de imagens se o orçamento de tempo do tick já está curto, publicando sem imagem", async () => {
+    // Achado real de produção (21/08/2026), reformulado 22/08/2026 (split de orçamento de tempo
+    // entre texto e imagem): quando a geração inicial já consumiu quase todo o orçamento do tick
+    // (maxDuration da rota), chamar gerarEEmbutirImagens (capa + secundárias, potencialmente
+    // lento) arrisca ser morto no meio, travando a pauta. Até 21/08/2026 o comportamento aqui era
+    // pular a geração de imagem pra sempre e publicar sem ela — agora PAUSA em vez de desistir: o
+    // post fica persistido (rascunho, ainda sem imagem), a pauta continua em_producao, e a função
+    // retorna sem chamar gerar_imagens/agendar/publicar. Ver "retoma direto da geração de imagens"
+    // logo abaixo pro outro lado desta mesma mudança.
+    it("pausa (não publica) quando o orçamento de tempo do tick já está curto, persistindo o texto pronto pra retomar depois", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       const inicio = new Date("2026-08-21T00:00:00.000Z");
       vi.setSystemTime(inicio);
@@ -1485,27 +1491,77 @@ describe("processarProximaPauta", () => {
         atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
+      const atualizarStatusPostSpy = vi.spyOn(repositorio, "atualizarStatusPost").mockResolvedValue(undefined);
       // Sobrescreve o mock padrão de configurarCenarioBase: simula a geração inicial sozinha já
-      // consumindo 230s de wall-clock (achado real: 160-200s vistos em produção, aqui um pouco
+      // consumindo 230s de wall-clock (achado real: até 235s vistos em produção, aqui um pouco
       // além do LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS de 220s pra garantir que o guard dispare).
       vi.spyOn(escritor, "gerarConteudo").mockImplementationOnce(async () => {
         vi.setSystemTime(new Date(inicio.getTime() + 230_000));
         return { resultado: CONTEUDO_COM_H2, usage: { inputTokens: 1000, outputTokens: 2000 } };
       });
-      const { detalhesExtraidos } = espiarRegistrarEtapa();
 
       try {
         const resultado = await processarProximaPauta("matriz-1", "prop-1");
 
-        expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+        expect(resultado).toEqual({ status: "aguardando_imagens", pautaId: "pauta-1" });
         expect(gerarCapa).not.toHaveBeenCalled();
         expect(gerarImagensSecundarias).not.toHaveBeenCalled();
-        expect(detalhesExtraidos.gerar_imagens).toContain("orçamento de tempo curto");
-        // Publica sem imagem destacada — mesmo shape de "capa não gerada" do teste seguinte.
-        expect(criarRascunho).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
+        expect(criarRascunho).not.toHaveBeenCalled(); // não chega a publicar
+        // Persiste o checkpoint (HTML já com links inseridos/sanitizado, não o cru do Escritor —
+        // sanitizarConteudoHtml remove o <h1> do corpo, ver escritor.ts) pra retomada futura, sem
+        // marcar pronto_para_publicar (fica com o default false da coluna).
+        expect(atualizarStatusPostSpy).toHaveBeenCalledTimes(1);
+        const [postIdChamado, statusChamado, extraChamado] = atualizarStatusPostSpy.mock.calls[0];
+        expect(postIdChamado).toBe("post-1");
+        expect(statusChamado).toBe("rascunho");
+        expect(extraChamado).toEqual({ conteudoHtml: expect.any(String) });
+        expect((extraChamado as { conteudoHtml: string }).conteudoHtml).not.toContain("<h1>");
+        expect((extraChamado as { conteudoHtml: string }).conteudoHtml).toContain("Documentos necessários");
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    // Outro lado da mesma mudança (22/08/2026): uma tentativa ANTERIOR desta pauta já pausou aqui
+    // (carregarPautaAguardandoImagens acha o checkpoint) — a retomada pula Escritor/Revisor/
+    // criarPost/inserir_links/sanitizar por completo e vai direto pra gerar_imagens, com o relógio
+    // desta nova invocação (não mais estourado).
+    it("retoma direto da geração de imagens quando existe uma pauta aguardando imagens (checkpoint de uma pausa anterior)", async () => {
+      const criarRascunho = vi.fn().mockResolvedValue({ idRemoto: "123", status: "rascunho" });
+      const adaptadorFalso = {
+        criarRascunho,
+        enviarMidia: vi.fn(),
+        verificarRascunho: vi.fn().mockResolvedValue({ ok: true }),
+        aprovarPublicar: vi.fn().mockResolvedValue({ urlPublicada: "https://teste.exemplo.com/como-limpar-nome-serasa/" }),
+        atualizarPost: vi.fn(),
+      };
+      configurarCenarioBase(adaptadorFalso);
+      vi.spyOn(repositorio, "carregarPautaAguardandoImagens").mockResolvedValue({
+        pauta: pautaFalsa,
+        post: {
+          id: "post-retomado",
+          titulo: CONTEUDO_COM_H2.titulo,
+          conteudoHtml: CONTEUDO_COM_H2.conteudoHtml,
+          metaTitle: CONTEUDO_COM_H2.metaTitle,
+          metaDescription: CONTEUDO_COM_H2.metaDescription,
+          slug: CONTEUDO_COM_H2.slug,
+        },
+      });
+      const selecionarPautaSpy = vi.spyOn(estrategista, "selecionarPauta");
+      const gerarConteudoSpy = vi.spyOn(escritor, "gerarConteudo");
+      const revisarConteudoSpy = vi.spyOn(revisor, "revisarConteudo");
+      const criarPostSpy = vi.spyOn(repositorio, "criarPost");
+
+      const resultado = await processarProximaPauta("matriz-1", "prop-1");
+
+      expect(resultado).toEqual({ status: "publicado", url: "https://teste.exemplo.com/como-limpar-nome-serasa/" });
+      expect(selecionarPautaSpy).not.toHaveBeenCalled();
+      expect(gerarConteudoSpy).not.toHaveBeenCalled();
+      expect(revisarConteudoSpy).not.toHaveBeenCalled();
+      expect(criarPostSpy).not.toHaveBeenCalled();
+      // gerar_imagens roda de verdade desta vez (relógio desta invocação, não mais estourado).
+      expect(gerarCapa).toHaveBeenCalled();
+      expect(criarRascunho).toHaveBeenCalled();
     });
 
     it("capa não gerada (null): publica sem imagem destacada, schema sem campo image, nada lança", async () => {

@@ -8,6 +8,7 @@ import {
   carregarAngulosUsadosPorPersona,
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
+  carregarPautaAguardandoImagens,
   carregarPersonaFormulario,
   carregarPostProntoParaPublicar,
   carregarUltimoUsoPorTipoAngulo,
@@ -1817,6 +1818,101 @@ describe("carregarPostProntoParaPublicar", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(carregarPostProntoParaPublicar("pauta-1")).rejects.toThrow(/Falha ao carregar post pronto para pauta pauta-1.*erro de teste/);
+  });
+});
+
+// Split de orçamento de tempo entre texto e imagem (22/08/2026) — checkpoint de uma pausa
+// anterior (texto já aprovado/persistido, imagem ainda não tentada) que processar-pauta.ts retoma
+// com prioridade máxima, antes de selecionarPauta.
+describe("carregarPautaAguardandoImagens", () => {
+  const postAguardandoBruto = {
+    id: "post-1",
+    pauta_id: "pauta-1",
+    titulo: "Como Limpar o Nome",
+    conteudo_html: "<h2>Documentos</h2><p>Leve RG e CPF.</p>",
+    meta_title: "Como Limpar o Nome | Guia",
+    meta_description: "Guia completo.",
+    slug: "como-limpar-o-nome",
+  };
+  const pautaBruta = {
+    id: "pauta-1",
+    matriz_conteudo_id: "matriz-1",
+    persona_id: null,
+    palavra_chave_principal: "limpar nome serasa",
+    palavras_secundarias: [],
+    angulo: "passo_a_passo",
+    geografia: null,
+    tipo_conteudo: "post_padrao",
+    funil: "topo",
+    status: "em_producao",
+    tentativas: 0,
+    motivo_ultima_reprovacao: null,
+  };
+
+  it("devolve pauta + post quando existe um checkpoint (post rascunho, pronto_para_publicar=false)", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }), // pautas em_producao da matriz
+      criarQueryFalsa({ data: postAguardandoBruto, error: null }), // post aguardando imagens
+      criarQueryFalsa({ data: pautaBruta, error: null }), // carregarPauta (reidrata a pauta inteira)
+    );
+
+    const resultado = await carregarPautaAguardandoImagens("matriz-1");
+
+    expect(resultado).toEqual({
+      pauta: expect.objectContaining({ id: "pauta-1", status: "em_producao" }),
+      post: {
+        id: "post-1",
+        titulo: "Como Limpar o Nome",
+        conteudoHtml: "<h2>Documentos</h2><p>Leve RG e CPF.</p>",
+        metaTitle: "Como Limpar o Nome | Guia",
+        metaDescription: "Guia completo.",
+        slug: "como-limpar-o-nome",
+      },
+    });
+  });
+
+  it("devolve null sem consultar posts quando não existe nenhuma pauta em_producao nesta matriz", async () => {
+    const from = mockarFrom(criarQueryFalsa({ data: [], error: null }));
+
+    const resultado = await carregarPautaAguardandoImagens("matriz-1");
+
+    expect(resultado).toBeNull();
+    expect(from).toHaveBeenCalledTimes(1); // não bate em "posts" sem nenhuma pauta candidata
+  });
+
+  it("devolve null quando existe pauta em_producao mas nenhum post aguardando imagens (ainda gerando texto, ou já pronto_para_publicar)", async () => {
+    mockarFrom(
+      criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }),
+      criarQueryFalsa({ data: null, error: null }),
+    );
+
+    expect(await carregarPautaAguardandoImagens("matriz-1")).toBeNull();
+  });
+
+  it("filtra a query de posts por status=rascunho e pronto_para_publicar=false", async () => {
+    const builderPosts = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }), builderPosts);
+
+    await carregarPautaAguardandoImagens("matriz-1");
+
+    expect(builderPosts.eq).toHaveBeenCalledWith("status", "rascunho");
+    expect(builderPosts.eq).toHaveBeenCalledWith("pronto_para_publicar", false);
+  });
+
+  it("lança erro claro quando a query de pautas em_producao falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPautaAguardandoImagens("matriz-1")).rejects.toThrow(
+      /Falha ao checar pautas em produção da matriz matriz-1.*erro de teste/,
+    );
+  });
+
+  it("lança erro claro quando a query de posts falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: [{ id: "pauta-1" }], error: null }), criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPautaAguardandoImagens("matriz-1")).rejects.toThrow(
+      /Falha ao checar post aguardando imagens da matriz matriz-1.*erro de teste/,
+    );
   });
 });
 

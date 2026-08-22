@@ -438,6 +438,83 @@ export async function carregarPostProntoParaPublicar(pautaId: string): Promise<P
   };
 }
 
+/** Campos do post já persistidos quando o texto foi aprovado mas a geração de imagem ainda não foi
+ * tentada — ver `carregarPautaAguardandoImagens` logo abaixo. `conteudoHtml` aqui já passou por
+ * "inserir_links" + "sanitizar" (processar-pauta.ts persiste a versão final antes de pausar, não a
+ * versão crua do Escritor) — pronto pra `gerarEEmbutirImagens` embutir as imagens em cima dele. */
+export type PostAguardandoImagens = {
+  id: string;
+  titulo: string;
+  conteudoHtml: string;
+  metaTitle: string;
+  metaDescription: string;
+  slug: string;
+};
+
+/**
+ * Prioridade máxima em `processarProximaPauta` (checada ANTES de `selecionarPauta`) — achado real
+ * de produção, 22/08/2026: o teto de tempo da rota (maxDuration, route.ts) às vezes não sobra o
+ * suficiente pra gerar_conteudo+revisar E gerar_imagens na MESMA invocação (gerar_conteudo sozinho
+ * já foi visto consumindo até 235s dos 290s totais). Em vez de publicar o post sem imagem quando
+ * isso acontece (comportamento antigo do guard de orçamento em processar-pauta.ts), a tentativa
+ * PAUSA logo antes de gerar_imagens — o post já existe (`criarPost` já rodou, texto aprovado e
+ * persistido), só falta a imagem. Esta função reconhece esse post na PRÓXIMA invocação e permite
+ * retomar direto da geração de imagem, com o relógio (`inicioProcessamento`) zerado de novo.
+ *
+ * Diferente do reclaim de `selecionarProximaPautaPendente` (baseado em staleness, RECLAIM_MINUTOS
+ * = 10 minutos) — essa pausa não precisa esperar nada: o sinal não é "quanto tempo faz", é "existe
+ * um post com texto pronto, ainda sem imagem, associado a uma pauta em_producao desta matriz". Por
+ * isso é checada ANTES de `selecionarPauta` (e não dentro dela) — sempre termina o que já foi
+ * começado antes de competir por uma pauta nova.
+ *
+ * `pauta.status = 'em_producao'` primeiro (não busca direto em `posts`) porque `posts` não tem
+ * `matriz_conteudo_id` — o escopo por matriz só existe via `pautas`. Em teoria só existe uma pauta
+ * em_producao por matriz por vez (o lock do cron serializa as tentativas), mas a query não assume
+ * isso — pega a mais recente entre as pautas que casarem.
+ */
+export async function carregarPautaAguardandoImagens(
+  matrizConteudoId: string,
+): Promise<{ pauta: PautaCarregada; post: PostAguardandoImagens } | null> {
+  const supabase = createAdminClient();
+  const { data: pautasEmProducao, error: erroPautas } = await supabase
+    .from("pautas")
+    .select("id")
+    .eq("matriz_conteudo_id", matrizConteudoId)
+    .eq("status", "em_producao");
+  if (erroPautas) throw new Error(`Falha ao checar pautas em produção da matriz ${matrizConteudoId}: ${erroPautas.message}`);
+  if (!pautasEmProducao || pautasEmProducao.length === 0) return null;
+
+  const idsPautas = pautasEmProducao.map((p) => p.id as string);
+  const { data: post, error: erroPost } = await supabase
+    .from("posts")
+    .select("id, pauta_id, titulo, conteudo_html, meta_title, meta_description, slug")
+    .in("pauta_id", idsPautas)
+    .eq("status", "rascunho")
+    .eq("pronto_para_publicar", false)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroPost) throw new Error(`Falha ao checar post aguardando imagens da matriz ${matrizConteudoId}: ${erroPost.message}`);
+  if (!post) return null;
+
+  const pauta = await carregarPauta(post.pauta_id as string);
+  // Defensivo: a pauta sumiu entre as duas queries (não deveria acontecer) — próxima tentativa
+  // reavalia do zero, não trava aqui.
+  if (!pauta) return null;
+
+  return {
+    pauta,
+    post: {
+      id: post.id as string,
+      titulo: post.titulo as string,
+      conteudoHtml: post.conteudo_html as string,
+      metaTitle: post.meta_title as string,
+      metaDescription: post.meta_description as string,
+      slug: post.slug as string,
+    },
+  };
+}
+
 /**
  * Imagens já geradas/enviadas numa tentativa anterior desta pauta (19/08/2026, pedido do Luiz) —
  * reaproveitadas quando o texto precisa de uma correção cirúrgica (motivo de reprovação sobre o
