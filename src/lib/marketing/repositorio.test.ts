@@ -1502,16 +1502,41 @@ describe("atualizarStatusPost", () => {
 });
 
 describe("reabrirPauta", () => {
-  it("volta status pra pendente, zera motivo_ultima_reprovacao, e NÃO mexe em tentativas", async () => {
+  // Achado real de produção (21/08/2026): reabrir sem zerar tentativas deixava "Reabrir" inútil no
+  // caso mais comum de bloqueio (esgotamento de tentativas) — a pauta bloqueava de novo no próprio
+  // próximo tick. Agora zera, EXCETO quando o motivo indica que o post já foi publicado de verdade
+  // (ver teste seguinte) — reprocessar do zero nesse caso duplicaria o post.
+  it("volta status pra pendente, zera motivo_ultima_reprovacao E tentativas (caso comum: esgotamento de tentativas)", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await reabrirPauta("pauta-1", "Limite de tentativas esgotado.");
+
+    const payload = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.status).toBe("pendente");
+    expect(payload.motivo_ultima_reprovacao).toBeNull();
+    expect(payload.tentativas).toBe(0);
+  });
+
+  it("NÃO zera tentativas quando o motivo indica que o post já foi publicado de verdade (evita duplicar)", async () => {
+    const builder = criarQueryFalsa({ data: null, error: null });
+    mockarFrom(builder);
+
+    await reabrirPauta("pauta-1", "Publicado em https://x.com/post mas falhou ao registrar localmente — verificar manualmente.");
+
+    const payload = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.status).toBe("pendente");
+    expect(payload).not.toHaveProperty("tentativas");
+  });
+
+  it("zera tentativas quando nenhum motivo é passado (chamador não sabe, assume o caso comum)", async () => {
     const builder = criarQueryFalsa({ data: null, error: null });
     mockarFrom(builder);
 
     await reabrirPauta("pauta-1");
 
     const payload = (builder.update as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
-    expect(payload.status).toBe("pendente");
-    expect(payload.motivo_ultima_reprovacao).toBeNull();
-    expect(payload).not.toHaveProperty("tentativas");
+    expect(payload.tentativas).toBe(0);
   });
 
   it("lança erro claro quando a query falha", async () => {

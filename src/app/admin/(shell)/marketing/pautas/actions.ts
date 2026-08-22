@@ -14,9 +14,9 @@ export type ResultadoReabrirPauta = { sucesso: true } | { sucesso: false; erro: 
  * (como fazem as ações de exclusão simples de outras telas de configuração): o admin precisa ver um
  * erro claro em vez do overlay genérico do Next.js antes de decidir se tenta de novo.
  */
-export async function reabrirPautaAction(pautaId: string): Promise<ResultadoReabrirPauta> {
+export async function reabrirPautaAction(pautaId: string, motivoAtual?: string | null): Promise<ResultadoReabrirPauta> {
   try {
-    await reabrirPauta(pautaId);
+    await reabrirPauta(pautaId, motivoAtual);
   } catch (erro) {
     return { sucesso: false, erro: erro instanceof Error ? erro.message : "Erro desconhecido ao reabrir a pauta." };
   }

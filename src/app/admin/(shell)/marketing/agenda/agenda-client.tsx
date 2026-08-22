@@ -114,6 +114,7 @@ function BadgePost({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirAcoes
         type="button"
         onClick={(e) => onAbrirAcoes(post.id, e.currentTarget)}
         className="shrink-0 rounded px-1 text-zinc-500 hover:bg-black/10 dark:text-zinc-300 dark:hover:bg-white/10"
+        title="Ações deste post"
         aria-label="Ações do post"
       >
         ⋯
@@ -148,7 +149,8 @@ function LinhaPendente({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirA
           type="button"
           onClick={(e) => onAbrirAcoes(post.id, e.currentTarget)}
           className="rounded px-1.5 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          aria-label="Ações do post"
+          title="Ações deste post"
+        aria-label="Ações do post"
         >
           ⋯
         </button>
@@ -496,26 +498,49 @@ function ModalAcoesPost({
         className="fixed z-50 w-56 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
         style={{ top: posicao.top, left: posicao.left }}
       >
-        <button type="button" onClick={() => onEscolher("visualizar-local")} className={itemMenu}>
+        <button
+          type="button"
+          onClick={() => onEscolher("visualizar-local")}
+          title="Preview do conteúdo salvo no nosso banco, sem depender do WordPress"
+          className={itemMenu}
+        >
           👁️ Visualizar post (local)
         </button>
         {jaPublicadoDeVerdade && urlWordpress && (
-          <a href={urlWordpress} target="_blank" rel="noopener noreferrer" onClick={onFechar} className={itemMenu}>
+          <a
+            href={urlWordpress}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onFechar}
+            title="Abre o post ao vivo no WordPress, em nova aba"
+            className={itemMenu}
+          >
             🌐 Visualizar no WordPress
           </a>
         )}
-        <button type="button" onClick={() => onEscolher("trocar-foto")} className={itemMenu}>
+        <button
+          type="button"
+          onClick={() => onEscolher("trocar-foto")}
+          title="Troca a capa ou uma imagem secundária deste post"
+          className={itemMenu}
+        >
           🖼️ Trocar foto
         </button>
         <button
           type="button"
           onClick={() => router.push(`/admin/marketing/agenda/${postId}/editar`)}
+          title="Edita título, conteúdo, slug e metadados manualmente"
           className={itemMenu}
         >
           ✏️ Editar post
         </button>
         {elegivelAgendamento && (
-          <button type="button" onClick={() => onEscolher("agendar")} className={itemMenu}>
+          <button
+            type="button"
+            onClick={() => onEscolher("agendar")}
+            title={jaAgendado ? "Escolhe um novo horário pra este post" : "Escolhe quando este post deve ir ao ar"}
+            className={itemMenu}
+          >
             📅 {jaAgendado ? "Reagendar..." : "Agendar..."}
           </button>
         )}
