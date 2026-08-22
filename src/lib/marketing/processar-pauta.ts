@@ -23,6 +23,7 @@ import {
   atualizarStatusPost,
   carregarChecklistAtivo,
   carregarImagensPostAnterior,
+  carregarPautaAguardandoImagens,
   carregarPersona,
   carregarPostProntoParaPublicar,
   carregarPostsRecentes,
@@ -327,11 +328,14 @@ async function gerarEEmbutirImagens(
   let custoUsdOpenAi = 0;
 
   try {
-    const capa = await gerarCapa(pauta, conteudo, persona);
+    // Em paralelo, não em sequência (achado real de produção, 22/08/2026): capa e secundárias são
+    // geradas independentes uma da outra (nenhuma lê o resultado da outra) — rodar em série só
+    // somava os dois tempos à toa, empurrando `gerar_imagens` mais perto (ou pra além) do guard de
+    // orçamento de tempo (`LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS` abaixo) e do próprio maxDuration da
+    // rota (route.ts), aumentando a chance real de o post publicar sem nenhuma imagem.
+    const [capa, secundarias] = await Promise.all([gerarCapa(pauta, conteudo, persona), gerarImagensSecundarias(conteudo)]);
     usage = somarUsageTokens(usage, capa.usage);
     custoUsdOpenAi += capa.custoUsdOpenAi;
-
-    const secundarias = await gerarImagensSecundarias(conteudo);
     usage = somarUsageTokens(usage, secundarias.usage);
     custoUsdOpenAi += secundarias.custoUsdOpenAi;
 
@@ -452,9 +456,12 @@ async function gerarEEmbutirImagens(
 }
 
 export async function processarProximaPauta(matrizConteudoId: string, propriedadeId: string) {
-  // Marca o início real do processamento desta pauta — usado só pela etapa "verificar_links"
-  // (ver LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS abaixo) pra saber quanto do orçamento de tempo do
-  // tick (maxDuration=240s, route.ts) já foi gasto antes de tentar uma correção.
+  // Marca o início real do processamento desta pauta — usado pelas etapas "verificar_links" e
+  // "gerar_imagens" (ver LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS/LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS
+  // abaixo) pra saber quanto do orçamento de tempo do tick (maxDuration=290s, route.ts) já foi
+  // gasto. Zerado a cada invocação — inclusive quando esta invocação está RETOMANDO uma pauta que
+  // pausou antes (ver `retomavel` abaixo): o relógio desta função sempre reflete o tempo restante
+  // real desta chamada, nunca de uma tentativa anterior.
   const inicioProcessamento = Date.now();
 
   const propriedade = await carregarPropriedade(propriedadeId);
@@ -467,10 +474,20 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     return { status: "fora_da_janela" as const };
   }
 
-  const pauta = await selecionarPauta(matrizConteudoId, propriedade.id);
+  // Prioridade MÁXIMA (achado real de produção, 22/08/2026, split de orçamento de tempo entre
+  // texto e imagem) — checada ANTES de selecionarPauta: termina uma pauta cujo texto já foi
+  // aprovado e persistido numa tentativa anterior, mas que pausou antes de "gerar_imagens" por
+  // orçamento de tempo curto (ver LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS mais abaixo). Sempre termina
+  // o que já foi começado antes de competir por uma pauta nova — ver comentário completo em
+  // carregarPautaAguardandoImagens (repositorio.ts).
+  const retomavel = await carregarPautaAguardandoImagens(matrizConteudoId);
+
+  const pauta = retomavel ? retomavel.pauta : await selecionarPauta(matrizConteudoId, propriedade.id);
   if (!pauta) return { status: "sem_pauta" as const };
 
-  if (pauta.tentativas >= propriedade.maxTentativas) {
+  // O limite de tentativas protege contra CONTEÚDO que fica sendo reprovado sem parar — não se
+  // aplica aqui: o texto desta pauta já foi aprovado, só falta a imagem.
+  if (!retomavel && pauta.tentativas >= propriedade.maxTentativas) {
     await marcarPautaBloqueada(pauta.id, pauta.motivoUltimaReprovacao ?? "Limite de tentativas esgotado.");
     return { status: "bloqueada" as const, pautaId: pauta.id };
   }
@@ -484,7 +501,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     // com sucesso, ver mais abaixo), pula TODA a geração — direto pra "publicar" com o material que
     // já está pronto. Isso só é seguro porque "pronto_para_publicar" só fica true depois que o
     // Revisor JÁ aprovou o conteúdo (o problema anterior era só técnico, não de conteúdo).
-    const postPronto = await carregarPostProntoParaPublicar(pauta.id);
+    const postPronto = retomavel ? null : await carregarPostProntoParaPublicar(pauta.id);
 
     // Adaptador criado uma única vez, usado tanto por "gerar_imagens" (upload de mídia) quanto por
     // "publicar" — precisa existir nos dois caminhos (reaproveitado ou gerado do zero).
@@ -507,132 +524,158 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       imagemDestacadaId = postPronto.imagemDestaqueMediaId ?? undefined;
       rascunhoIdExistente = postPronto.rascunhoIdWordpress ?? undefined;
     } else {
-      // Cada etapa é envolvida por registrarEtapa (Task 3) — grava início/fim/sucesso em
-      // pautas_execucao_log, alimentando o Monitor de execução e o Painel de Custo (spec seção 6).
-      // Etapas gerar_conteudo/revisar passam um extrator de tokens porque Escritor/Revisor
-      // retornam `usage` junto do resultado de negócio (mudança desta mesma task).
-      const checklist = await registrarEtapa(pauta.id, "buscar_checklist", () => carregarChecklistAtivo(propriedadeId));
+      let persona: PersonaCarregada | null;
+      let conteudoFinal: ConteudoGerado;
+      let corpoHtmlSanitizado: string;
+      let postIdAtual: string;
 
-      // Fase 3 (personas ricas), Task 5, spec seção 7 — pauta.personaId só existe quando a pauta
-      // nasceu do terceiro caminho do Estrategista (persona sorteada, Task 4); pautas antigas/
-      // manuais (pendente/reclaim) têm personaId null e não pagam o custo de uma query extra aqui —
-      // sem carregarPersona nesse caso, `persona` fica null e o Escritor mantém o prompt de antes
-      // desta task (ver escritor.ts).
-      const persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
+      if (retomavel) {
+        // NOVO (22/08/2026, split de orçamento de tempo entre texto e imagem) — retoma direto da
+        // geração de imagens: o texto já foi gerado, revisado e persistido numa tentativa
+        // anterior, que pausou bem antes de "gerar_imagens" por orçamento de tempo curto (ver o
+        // guard mais abaixo). `retomavel.post.conteudoHtml` já passou por "inserir_links" +
+        // "sanitizar" antes de pausar (ver o bloco que persiste o checkpoint, mais abaixo) — não
+        // precisa rodar o Escritor, o Revisor, nem essas duas etapas de novo.
+        persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
+        conteudoFinal = {
+          titulo: retomavel.post.titulo,
+          conteudoHtml: retomavel.post.conteudoHtml,
+          metaTitle: retomavel.post.metaTitle,
+          metaDescription: retomavel.post.metaDescription,
+          slug: retomavel.post.slug,
+        };
+        corpoHtmlSanitizado = retomavel.post.conteudoHtml;
+        postIdAtual = retomavel.post.id;
+      } else {
+        // Cada etapa é envolvida por registrarEtapa (Task 3) — grava início/fim/sucesso em
+        // pautas_execucao_log, alimentando o Monitor de execução e o Painel de Custo (spec seção 6).
+        // Etapas gerar_conteudo/revisar passam um extrator de tokens porque Escritor/Revisor
+        // retornam `usage` junto do resultado de negócio (mudança desta mesma task).
+        const checklist = await registrarEtapa(pauta.id, "buscar_checklist", () => carregarChecklistAtivo(propriedadeId));
 
-      // extrairDetalhes: relatório do Escritor (19/08/2026, pedido do Luiz) — espelha o motivo do
-      // Revisor na etapa "revisar" logo abaixo, pra dar pra cruzar "o que foi pedido" com "o que o
-      // Escritor diz ter feito" no Monitor de execução.
-      const { resultado: conteudo } = await registrarEtapa(
-        pauta.id,
-        "gerar_conteudo",
-        () => gerarConteudo(pauta, checklist, persona, propriedade),
-        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-        (r) => r.resultado.relatorio,
-      );
+        // Fase 3 (personas ricas), Task 5, spec seção 7 — pauta.personaId só existe quando a pauta
+        // nasceu do terceiro caminho do Estrategista (persona sorteada, Task 4); pautas antigas/
+        // manuais (pendente/reclaim) têm personaId null e não pagam o custo de uma query extra aqui —
+        // sem carregarPersona nesse caso, `persona` fica null e o Escritor mantém o prompt de antes
+        // desta task (ver escritor.ts).
+        persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
 
-      // Salva o rascunho ANTES de saber se o Revisor vai aprovar (achado do teste real de ponta a
-      // ponta, 19/08/2026) — se reprovar, a próxima tentativa desta pauta encontra o texto aqui
-      // (pauta.ultimoRascunho) e revisa em vez de reescrever do zero (ver montarPrompt, escritor.ts).
-      // Fora do registrarEtapa de cima de propósito: não é parte do custo/tempo da geração em si.
-      await salvarRascunho(pauta.id, conteudo);
+        // extrairDetalhes: relatório do Escritor (19/08/2026, pedido do Luiz) — espelha o motivo do
+        // Revisor na etapa "revisar" logo abaixo, pra dar pra cruzar "o que foi pedido" com "o que o
+        // Escritor diz ter feito" no Monitor de execução.
+        const { resultado: conteudo } = await registrarEtapa(
+          pauta.id,
+          "gerar_conteudo",
+          () => gerarConteudo(pauta, checklist, persona, propriedade),
+          (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+          (r) => r.resultado.relatorio,
+        );
 
-      // Verificação de links externos (19/08/2026, pedido do Luiz) — achado real de teste em
-      // produção: o Revisor gastava uma tentativa INTEIRA reprovando por "fonte específica" quando
-      // o link nem sequer existia (ex.: uma URL do BACEN saiu com o caminho duplicado,
-      // "supervisaosupervisao"). Confere com um request HTTP real ANTES de chegar no Revisor — só 1
-      // tentativa extra de correção (não um loop), pra manter custo/latência previsíveis; se
-      // continuar quebrado mesmo assim, segue pro Revisor do jeito que está (ele tende a pegar via
-      // fontes_especificas de qualquer forma — Global Constraint do plano mestre: esta etapa nunca
-      // trava o pipeline, só tenta uma vez consertar mais barato do que um ciclo de revisão).
-      //
-      // Orçamento de tempo (21/08/2026, achado real de produção): a rota do cron tem
-      // maxDuration=240s pro tick inteiro (route.ts). A geração inicial do Escritor sozinha já foi
-      // vista consumindo 160-200s em produção — quando isso acontece, tentar aqui uma CORREÇÃO (uma
-      // chamada nova e inteira à Claude, com busca na internet, sem teto de tempo próprio) quase
-      // garante estourar o timeout do Vercel antes de conseguir revisar/publicar. Foi exatamente
-      // isso que deixou 2 pautas travadas pra sempre em "verificar_links" (função morta no meio,
-      // nunca grava conclusão, log fica pra sempre em aberto). Se o orçamento já está curto quando
-      // chegamos aqui, pula a correção (não o pipeline inteiro) — mesmo espírito de "nunca travar"
-      // já aplicado em gerarEEmbutirImagens.
-      const LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS = 120_000;
+        // Salva o rascunho ANTES de saber se o Revisor vai aprovar (achado do teste real de ponta a
+        // ponta, 19/08/2026) — se reprovar, a próxima tentativa desta pauta encontra o texto aqui
+        // (pauta.ultimoRascunho) e revisa em vez de reescrever do zero (ver montarPrompt, escritor.ts).
+        // Fora do registrarEtapa de cima de propósito: não é parte do custo/tempo da geração em si.
+        await salvarRascunho(pauta.id, conteudo);
 
-      let conteudoFinal = conteudo;
-      await registrarEtapa(
-        pauta.id,
-        "verificar_links",
-        async () => {
-          const links = extrairLinksExternos(conteudoFinal.conteudoHtml);
-          const quebrados = links.length > 0 ? (await verificarLinksExternos(links)).filter((r) => !r.ok) : [];
-          if (quebrados.length === 0) return { quebrados, usage: { inputTokens: 0, outputTokens: 0 }, correcaoPulada: false };
+        // Verificação de links externos (19/08/2026, pedido do Luiz) — achado real de teste em
+        // produção: o Revisor gastava uma tentativa INTEIRA reprovando por "fonte específica" quando
+        // o link nem sequer existia (ex.: uma URL do BACEN saiu com o caminho duplicado,
+        // "supervisaosupervisao"). Confere com um request HTTP real ANTES de chegar no Revisor — só 1
+        // tentativa extra de correção (não um loop), pra manter custo/latência previsíveis; se
+        // continuar quebrado mesmo assim, segue pro Revisor do jeito que está (ele tende a pegar via
+        // fontes_especificas de qualquer forma — Global Constraint do plano mestre: esta etapa nunca
+        // trava o pipeline, só tenta uma vez consertar mais barato do que um ciclo de revisão).
+        //
+        // Orçamento de tempo (21/08/2026, achado real de produção): a rota do cron tem
+        // maxDuration=290s pro tick inteiro (route.ts). A geração inicial do Escritor sozinha já foi
+        // vista consumindo até 235s em produção — quando isso acontece, tentar aqui uma CORREÇÃO (uma
+        // chamada nova e inteira à Claude, com busca na internet, sem teto de tempo próprio) quase
+        // garante estourar o timeout do Vercel antes de conseguir revisar/publicar. Foi exatamente
+        // isso que deixou 2 pautas travadas pra sempre em "verificar_links" (função morta no meio,
+        // nunca grava conclusão, log fica pra sempre em aberto). Se o orçamento já está curto quando
+        // chegamos aqui, pula a correção (não o pipeline inteiro) — mesmo espírito de "nunca travar"
+        // já aplicado em gerarEEmbutirImagens.
+        const LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS = 120_000;
 
-          const tempoDecorridoMs = Date.now() - inicioProcessamento;
-          if (tempoDecorridoMs > LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS) {
-            return { quebrados, usage: { inputTokens: 0, outputTokens: 0 }, correcaoPulada: true };
-          }
+        let conteudoParaLinks = conteudo;
+        await registrarEtapa(
+          pauta.id,
+          "verificar_links",
+          async () => {
+            const links = extrairLinksExternos(conteudoParaLinks.conteudoHtml);
+            const quebrados = links.length > 0 ? (await verificarLinksExternos(links)).filter((r) => !r.ok) : [];
+            if (quebrados.length === 0) return { quebrados, usage: { inputTokens: 0, outputTokens: 0 }, correcaoPulada: false };
 
-          const motivoLinks = quebrados
-            .map(
-              (l, i) =>
-                `${i + 1}) O link "${l.url}" não respondeu (${l.motivo}) — use a ferramenta de busca na internet pra achar uma URL real e específica que sustente a mesma afirmação do texto, e substitua só esse href. Não altere mais nada do HTML.`,
-            )
-            .join("\n");
-          const { resultado: corrigido, usage } = await gerarConteudo(
-            { ...pauta, motivoUltimaReprovacao: motivoLinks, ultimoRascunho: conteudoFinal },
-            checklist,
-            persona,
-            propriedade,
-          );
-          conteudoFinal = corrigido;
-          await salvarRascunho(pauta.id, conteudoFinal);
-          return { quebrados, usage, correcaoPulada: false };
-        },
-        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-        (r) => {
-          if (r.quebrados.length === 0) return undefined;
-          const lista = r.quebrados.map((l) => `${l.url} (${l.motivo})`).join("; ");
-          return r.correcaoPulada
-            ? `Link(s) quebrado(s) encontrado(s), mas correção pulada por orçamento de tempo curto (já > ${LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS / 1000}s de tick): ${lista}`
-            : `Link(s) quebrado(s) encontrado(s) e enviado(s) pro Escritor corrigir: ${lista}`;
-        },
-      );
+            const tempoDecorridoMs = Date.now() - inicioProcessamento;
+            if (tempoDecorridoMs > LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS) {
+              return { quebrados, usage: { inputTokens: 0, outputTokens: 0 }, correcaoPulada: true };
+            }
 
-      // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio,
-      // não erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de
-      // log ficaria sucesso: true, detalhes: null, indistinguível de uma revisão realmente
-      // aprovada. Só grava o motivo quando reprovado; aprovado devolve undefined (não escreve nada
-      // em detalhes). postsRecentes (títulos+ângulos dos últimos posts publicados desta
-      // propriedade, pro Revisor julgar originalidade_adequada — spec Fase 4a seção 3.1) —
-      // resolvido na Task 3 via carregarPostsRecentes (repositorio.ts), função dedicada porque
-      // listarPostsPublicados não carrega `angulo` (vive em `pautas`, não em `posts`).
-      // LIMITE_POSTS_RECENTES = 10, "últimos ~10 posts publicados" da spec.
-      const postsRecentes = await carregarPostsRecentes(propriedade.id, LIMITE_POSTS_RECENTES);
+            const motivoLinks = quebrados
+              .map(
+                (l, i) =>
+                  `${i + 1}) O link "${l.url}" não respondeu (${l.motivo}) — use a ferramenta de busca na internet pra achar uma URL real e específica que sustente a mesma afirmação do texto, e substitua só esse href. Não altere mais nada do HTML.`,
+              )
+              .join("\n");
+            const { resultado: corrigido, usage } = await gerarConteudo(
+              { ...pauta, motivoUltimaReprovacao: motivoLinks, ultimoRascunho: conteudoParaLinks },
+              checklist,
+              persona,
+              propriedade,
+            );
+            conteudoParaLinks = corrigido;
+            await salvarRascunho(pauta.id, conteudoParaLinks);
+            return { quebrados, usage, correcaoPulada: false };
+          },
+          (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+          (r) => {
+            if (r.quebrados.length === 0) return undefined;
+            const lista = r.quebrados.map((l) => `${l.url} (${l.motivo})`).join("; ");
+            return r.correcaoPulada
+              ? `Link(s) quebrado(s) encontrado(s), mas correção pulada por orçamento de tempo curto (já > ${LIMITE_MS_PARA_TENTAR_CORRIGIR_LINKS / 1000}s de tick): ${lista}`
+              : `Link(s) quebrado(s) encontrado(s) e enviado(s) pro Escritor corrigir: ${lista}`;
+          },
+        );
+        conteudoFinal = conteudoParaLinks;
 
-      const { resultado: revisao } = await registrarEtapa(
-        pauta.id,
-        "revisar",
-        // pauta.tentativas conta as tentativas já ESGOTADAS antes desta rodada (0 na 1ª geração) —
-        // +1 dá o número desta revisão em si (1 na primeira, 2+ a partir da 1ª correção), o que
-        // "Reprovação só por motivo real" (revisor.ts) usa pra saber quando aplicar a leniência
-        // reforçada pedida pelo Luiz.
-        () => revisarConteudo(conteudoFinal, checklist, propriedade, postsRecentes, pauta.tentativas + 1),
-        (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
-        (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
-      );
+        // extrairDetalhes: uma reprovação por score baixo não lança exceção (é decisão de negócio,
+        // não erro técnico — ver comentário na etapa "publicar" abaixo), então sem isto a linha de
+        // log ficaria sucesso: true, detalhes: null, indistinguível de uma revisão realmente
+        // aprovada. Só grava o motivo quando reprovado; aprovado devolve undefined (não escreve nada
+        // em detalhes). postsRecentes (títulos+ângulos dos últimos posts publicados desta
+        // propriedade, pro Revisor julgar originalidade_adequada — spec Fase 4a seção 3.1) —
+        // resolvido na Task 3 via carregarPostsRecentes (repositorio.ts), função dedicada porque
+        // listarPostsPublicados não carrega `angulo` (vive em `pautas`, não em `posts`).
+        // LIMITE_POSTS_RECENTES = 10, "últimos ~10 posts publicados" da spec.
+        const postsRecentes = await carregarPostsRecentes(propriedade.id, LIMITE_POSTS_RECENTES);
 
-      if (!revisao.aprovado) {
-        await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
-        return { status: "reprovado" as const, pautaId: pauta.id };
+        const { resultado: revisao } = await registrarEtapa(
+          pauta.id,
+          "revisar",
+          // pauta.tentativas conta as tentativas já ESGOTADAS antes desta rodada (0 na 1ª geração) —
+          // +1 dá o número desta revisão em si (1 na primeira, 2+ a partir da 1ª correção), o que
+          // "Reprovação só por motivo real" (revisor.ts) usa pra saber quando aplicar a leniência
+          // reforçada pedida pelo Luiz.
+          () => revisarConteudo(conteudoFinal, checklist, propriedade, postsRecentes, pauta.tentativas + 1),
+          (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
+          (r) => (r.resultado.aprovado ? undefined : (r.resultado.motivo ?? undefined)),
+        );
+
+        if (!revisao.aprovado) {
+          await registrarReprovacaoPauta(pauta.id, revisao.motivo ?? "Reprovado sem motivo detalhado.");
+          return { status: "reprovado" as const, pautaId: pauta.id };
+        }
+
+        const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo: conteudoFinal, scoreQa: revisao.score });
+        // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
+        // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
+        // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
+        const conteudoComLinks = await registrarEtapa(pauta.id, "inserir_links", () =>
+          inserirLinksInternos(conteudoFinal.conteudoHtml, propriedadeId, post.id),
+        );
+        corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
+        postIdAtual = post.id;
       }
-
-      const post = await criarPost({ pautaId: pauta.id, propriedadeId, conteudo: conteudoFinal, scoreQa: revisao.score });
-      // Links (item 7) roda só depois da revisão aprovar — não faz sentido gastar um ciclo de
-      // revisão validando um HTML que ainda vai ganhar uma seção nova — e antes da sanitização
-      // (item 5) e da publicação, pra sanitizar o HTML final que de fato vai pro ar.
-      const conteudoComLinks = await registrarEtapa(pauta.id, "inserir_links", () =>
-        inserirLinksInternos(conteudoFinal.conteudoHtml, propriedadeId, post.id),
-      );
-      const corpoHtmlSanitizado = await registrarEtapa(pauta.id, "sanitizar", async () => sanitizarConteudoHtml(conteudoComLinks));
 
       // Reaproveitamento entre tentativas (19/08/2026, pedido do Luiz) — se uma tentativa anterior
       // desta pauta já gerou imagens (mesmo que a publicação em si nunca tenha chegado a rodar,
@@ -640,6 +683,36 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // em vez de gerar de novo. As imagens dependem do tema/ângulo geral do post, não de detalhes
       // pontuais como um link — uma correção cirúrgica não deveria invalidá-las.
       const imagensExistentes = await carregarImagensPostAnterior(pauta.id);
+
+      // Orçamento de tempo (21/08/2026, achado real de produção; reformulado 22/08/2026) — quando
+      // a geração de texto já consumiu quase todo o maxDuration da rota (route.ts — gerar_conteudo
+      // sozinho já foi visto consumindo até 235s dos 290s totais), NÃO sobra orçamento seguro pra
+      // "gerar_imagens" (capa + secundárias + uploads, ~50-100s) nesta MESMA invocação. Até
+      // 22/08/2026 o comportamento aqui era pular a geração de imagem PRA SEMPRE e publicar sem
+      // ela (Global Constraint "imagem nunca bloqueia publicação" — ainda verdade, mas achado real
+      // de produção: 6 de 14 pautas recentes perderam a imagem exatamente por isso). Agora, em vez
+      // de desistir, PAUSA aqui: o post já existe com o texto aprovado persistido (ver acima), a
+      // pauta continua "em_producao" e o post continua com `pronto_para_publicar = false` — a
+      // PRÓXIMA tentativa desta mesma pauta (prioridade máxima no topo desta função, ver
+      // `carregarPautaAguardandoImagens` em repositorio.ts) reconhece esse checkpoint e retoma
+      // direto daqui, com `inicioProcessamento` zerado de novo (orçamento cheio outra vez).
+      const LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS = 220_000;
+      const tempoDecorridoMs = Date.now() - inicioProcessamento;
+      if (tempoDecorridoMs > LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS) {
+        // Só precisa persistir o checkpoint na PRIMEIRA pausa — o caminho retomado (`retomavel`)
+        // já tem o HTML sanitizado salvo desde a pausa anterior, nada novo pra gravar aqui.
+        if (!retomavel) {
+          try {
+            await atualizarStatusPost(postIdAtual, "rascunho", { conteudoHtml: corpoHtmlSanitizado });
+          } catch (erroPersistirCheckpoint) {
+            console.error(
+              `Pauta ${pauta.id}: falha ao persistir checkpoint de texto pronto pra imagens (retomará do zero na próxima tentativa):`,
+              erroPersistirCheckpoint,
+            );
+          }
+        }
+        return { status: "aguardando_imagens" as const, pautaId: pauta.id };
+      }
 
       // Etapa "gerar_imagens" (Task 10, Fase 4a+4b) — capa + imagens secundárias + upload
       // WordPress + schema Article/Organization embutidos no HTML, entre "sanitizar" e "publicar"
@@ -649,37 +722,10 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // reprovada, upload que falhou, zero secundárias aprovadas) na mesma coluna `detalhes` que
       // as outras etapas usam pra rejeição de negócio, pra não ficar indistinguível de execução
       // perfeita no log.
-      //
-      // Orçamento de tempo (21/08/2026, mesmo achado real de produção do guard em "verificar_links"
-      // acima, mas surgindo aqui também): quando a geração inicial já consumiu quase todo o
-      // maxDuration da rota (route.ts), gerar_imagens é a próxima etapa cara o bastante pra ser
-      // morta pela Vercel no meio, travando a pauta. "Zero imagens" já é uma saída válida e
-      // esperada por design (ver comentário de gerarEEmbutirImagens) — então, com o orçamento
-      // curto, pula a chamada inteira em vez de arriscar ser morta no meio dela, e segue pro
-      // publicar/agendar sem imagem. Reaproveitamento de tentativa anterior (imagensExistentes)
-      // continua funcionando numa próxima tentativa desta mesma pauta, então isto não é permanente.
-      const LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS = 220_000;
       const resultadoImagens = await registrarEtapa(
         pauta.id,
         "gerar_imagens",
-        async () => {
-          const tempoDecorridoMs = Date.now() - inicioProcessamento;
-          if (tempoDecorridoMs > LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS) {
-            return {
-              corpoHtmlFinal: corpoHtmlSanitizado,
-              capaMediaId: undefined,
-              imagemDestaqueUrl: null,
-              imagemDestaqueAlt: null,
-              imagemDestaqueSlug: null,
-              imagemDestaqueStorageUrl: null,
-              imagensSecundariasPersistir: [],
-              usage: { inputTokens: 0, outputTokens: 0 },
-              detalhesLog: `Geração de imagens pulada por orçamento de tempo curto (já > ${LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS / 1000}s de tick) — post segue sem imagem desta vez.`,
-              custoUsdOpenAi: 0,
-            };
-          }
-          return gerarEEmbutirImagens(pauta, conteudoFinal, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes);
-        },
+        () => gerarEEmbutirImagens(pauta, conteudoFinal, persona, propriedade, corpoHtmlSanitizado, adaptador, imagensExistentes),
         (r) => ({ tokensEntrada: r.usage.inputTokens, tokensSaida: r.usage.outputTokens }),
         (r) => r.detalhesLog,
         (r) => r.custoUsdOpenAi,
@@ -692,12 +738,13 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
       // WordPress inválida, 401), as imagens já geradas com sucesso e já enviadas ao
       // WordPress/Storage eram descartadas, e a próxima tentativa as regenerava do zero.
       // pronto_para_publicar: true é o que permite `carregarPostProntoParaPublicar` (topo desta
-      // função) encontrar este post numa tentativa futura e pular a geração inteira. `post` já
-      // existe neste ponto (criado logo após a aprovação do Revisor). Try/catch próprio, não pode
-      // propagar: falha em persistir é só uma degradação de "reaproveitamento futuro", não pode
-      // derrubar a tentativa de publicação que vem a seguir.
+      // função) encontrar este post numa tentativa futura e pular a geração inteira. `postIdAtual`
+      // já existe neste ponto (criado logo após a aprovação do Revisor, ou reaproveitado de uma
+      // pausa anterior). Try/catch próprio, não pode propagar: falha em persistir é só uma
+      // degradação de "reaproveitamento futuro", não pode derrubar a tentativa de publicação que
+      // vem a seguir.
       try {
-        await atualizarStatusPost(post.id, post.status, {
+        await atualizarStatusPost(postIdAtual, "rascunho", {
           conteudoHtml: resultadoImagens.corpoHtmlFinal,
           imagemDestaqueUrl: resultadoImagens.imagemDestaqueUrl ?? undefined,
           imagemDestaqueAlt: resultadoImagens.imagemDestaqueAlt ?? undefined,
@@ -711,7 +758,7 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         console.error(`Pauta ${pauta.id}: falha ao persistir post pronto antes de publicar (não bloqueia a publicação):`, erroPersistirImagens);
       }
 
-      postId = post.id;
+      postId = postIdAtual;
       corpoHtmlParaPublicar = resultadoImagens.corpoHtmlFinal;
       dadosConteudo = { titulo: conteudoFinal.titulo, slug: conteudoFinal.slug, metaTitle: conteudoFinal.metaTitle, metaDescription: conteudoFinal.metaDescription };
       imagemDestacadaId = resultadoImagens.capaMediaId;
