@@ -24,24 +24,51 @@ const RESPOSTA_FIXA_SECUNDARIO =
  * `.eq("pessoas.whatsapp", telefone)` — supabase-js não filtra por coluna de tabela relacionada
  * sem um `!inner` join explícito no `.select()`, mesmo padrão já usado em
  * `buscarOuCriarConversaSecundaria` (src/lib/comunicacao/repositorio.ts).
+ *
+ * Achado real (19/08/2026, mesmo caso já corrigido em `carregarOuCriarConversaWhatsapp`,
+ * src/lib/motor-fluxo/persistencia.ts): `pessoas.whatsapp` não tem constraint de único no banco —
+ * um mesmo número pode estar ligado a mais de uma pessoa. `.maybeSingle()` na busca por telefone
+ * quebra com "multiple rows returned" nesse caso, e a mensagem recebida nunca é registrada. Busca
+ * aceita N linhas e, havendo mais de uma pessoa, prefere a que já tem conversa secundária
+ * existente; sem nenhuma, usa a última da lista (mesmo fallback de `carregarOuCriarConversaWhatsapp`).
  */
 async function buscarConversaSecundariaPorTelefone(telefone: string): Promise<{ id: string } | null> {
   const supabase = createAdminClient();
 
-  const { data: pessoa, error: erroPessoa } = await supabase.from("pessoas").select("id").eq("whatsapp", telefone).maybeSingle();
-  if (erroPessoa) throw new Error(`Falha ao buscar pessoa pelo telefone ${telefone}: ${erroPessoa.message}`);
-  if (!pessoa) return null;
+  const { data: pessoasComTelefone, error: erroPessoas } = await supabase.from("pessoas").select("id").eq("whatsapp", telefone);
+  if (erroPessoas) throw new Error(`Falha ao buscar pessoas pelo telefone ${telefone}: ${erroPessoas.message}`);
+  if (!pessoasComTelefone || pessoasComTelefone.length === 0) return null;
+
+  let pessoaId: string;
+  if (pessoasComTelefone.length === 1) {
+    pessoaId = pessoasComTelefone[0].id;
+  } else {
+    const ids = pessoasComTelefone.map((p) => p.id);
+    const { data: comConversaSecundaria, error: erroComConversa } = await supabase
+      .from("conversas")
+      .select("pessoa_id")
+      .in("pessoa_id", ids)
+      .eq("canal", "whatsapp")
+      .eq("instancia", "secundaria")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (erroComConversa) {
+      throw new Error(`Falha ao buscar conversa secundária entre pessoas duplicadas do telefone ${telefone}: ${erroComConversa.message}`);
+    }
+    pessoaId = comConversaSecundaria ? comConversaSecundaria.pessoa_id : pessoasComTelefone[pessoasComTelefone.length - 1].id;
+  }
 
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select("id")
-    .eq("pessoa_id", pessoa.id)
+    .eq("pessoa_id", pessoaId)
     .eq("canal", "whatsapp")
     .eq("instancia", "secundaria")
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (erroConversa) throw new Error(`Falha ao buscar conversa secundária pra pessoa ${pessoa.id}: ${erroConversa.message}`);
+  if (erroConversa) throw new Error(`Falha ao buscar conversa secundária pra pessoa ${pessoaId}: ${erroConversa.message}`);
 
   return conversa ?? null;
 }
