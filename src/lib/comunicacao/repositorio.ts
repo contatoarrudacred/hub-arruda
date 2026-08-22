@@ -10,10 +10,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function buscarConversaWhatsappOficial(pessoaId: string): Promise<{ id: string; telefone: string } | null> {
   const supabase = createAdminClient();
 
-  const { data: pessoa } = await supabase.from("pessoas").select("whatsapp").eq("id", pessoaId).single();
+  const { data: pessoa, error: erroPessoa } = await supabase.from("pessoas").select("whatsapp").eq("id", pessoaId).single();
+  if (erroPessoa) throw new Error(`Falha ao buscar pessoa ${pessoaId}: ${erroPessoa.message}`);
   if (!pessoa?.whatsapp) return null;
 
-  const { data: conversa } = await supabase
+  const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select("id")
     .eq("pessoa_id", pessoaId)
@@ -22,6 +23,7 @@ export async function buscarConversaWhatsappOficial(pessoaId: string): Promise<{
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (erroConversa) throw new Error(`Falha ao buscar conversa de WhatsApp oficial pra pessoa ${pessoaId}: ${erroConversa.message}`);
 
   if (!conversa) return null;
   return { id: conversa.id, telefone: pessoa.whatsapp };
@@ -31,12 +33,13 @@ export async function buscarConversaWhatsappOficial(pessoaId: string): Promise<{
 export async function buscarOuCriarConversaSecundaria(pessoaId: string): Promise<{ id: string; telefone: string }> {
   const supabase = createAdminClient();
 
-  const { data: pessoa } = await supabase.from("pessoas").select("whatsapp").eq("id", pessoaId).single();
+  const { data: pessoa, error: erroPessoa } = await supabase.from("pessoas").select("whatsapp").eq("id", pessoaId).single();
+  if (erroPessoa) throw new Error(`Falha ao buscar pessoa ${pessoaId}: ${erroPessoa.message}`);
   if (!pessoa?.whatsapp) {
     throw new Error(`Pessoa ${pessoaId} não tem telefone de WhatsApp cadastrado — não é possível enviar.`);
   }
 
-  const { data: existente } = await supabase
+  const { data: existente, error: erroExistente } = await supabase
     .from("conversas")
     .select("id")
     .eq("pessoa_id", pessoaId)
@@ -45,6 +48,7 @@ export async function buscarOuCriarConversaSecundaria(pessoaId: string): Promise
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (erroExistente) throw new Error(`Falha ao buscar conversa secundária pra pessoa ${pessoaId}: ${erroExistente.message}`);
 
   if (existente) return { id: existente.id, telefone: pessoa.whatsapp };
 
@@ -62,7 +66,7 @@ export async function buscarOuCriarConversaSecundaria(pessoaId: string): Promise
 export async function buscarOuCriarConversaEmail(pessoaId: string): Promise<{ id: string }> {
   const supabase = createAdminClient();
 
-  const { data: existente } = await supabase
+  const { data: existente, error: erroExistente } = await supabase
     .from("conversas")
     .select("id")
     .eq("pessoa_id", pessoaId)
@@ -70,6 +74,7 @@ export async function buscarOuCriarConversaEmail(pessoaId: string): Promise<{ id
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (erroExistente) throw new Error(`Falha ao buscar conversa de e-mail pra pessoa ${pessoaId}: ${erroExistente.message}`);
 
   if (existente) return { id: existente.id };
 
@@ -85,7 +90,8 @@ export async function buscarOuCriarConversaEmail(pessoaId: string): Promise<{ id
 
 export async function buscarMensagemPorChaveIdempotencia(chave: string): Promise<{ id: string } | null> {
   const supabase = createAdminClient();
-  const { data } = await supabase.from("mensagens").select("id").eq("chave_idempotencia", chave).maybeSingle();
+  const { data, error } = await supabase.from("mensagens").select("id").eq("chave_idempotencia", chave).maybeSingle();
+  if (error) throw new Error(`Falha ao buscar mensagem por chave de idempotência ${chave}: ${error.message}`);
   return data ?? null;
 }
 
