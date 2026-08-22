@@ -40,6 +40,10 @@ export async function buscarStatusCobrancasAction(
   }
 }
 
+/** Botão continua na tela (decisão do Luiz, 21/08/2026) — só o envio direto (Zapster/Resend) está
+ * desativado dentro de enviarWhatsapp/enviarPorEmail (src/lib/vendas/notificacoes.ts), que lançam
+ * um erro explicando que o envio precisa passar pelo módulo CRM, ainda em integração. Não plugar de
+ * volta o envio direto aqui — aguardar as instruções do Luiz de como rotear isso pelo CRM. */
 export async function reenviarLinkAction(
   pessoaId: string,
   canal: "whatsapp" | "email",
