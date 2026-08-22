@@ -767,7 +767,7 @@ describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra d
     },
   };
 
-  it("FAQ bate: responde com o texto oficial + retoma a pergunta pendente na mesma mensagem, sem avançar", async () => {
+  it("FAQ bate: manda a mensagem já gerada (resposta + retomada), sem avançar", async () => {
     const resultado = await avancarConversa({
       etapaAtual: etapaGenerica,
       etapasPorCodigo,
@@ -776,7 +776,7 @@ describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra d
       resolverMensagensDinamicas,
       calcularDadosDerivados,
       interpretarComIA: async () => null,
-      interpretarDesvio: async () => ({ status: "faq", faq: { pergunta: "Trabalham com CNPJ?", resposta: "Sim, atendemos CPF e CNPJ." } }),
+      interpretarDesvio: async () => ({ status: "faq", mensagem: "Sim, atendemos CPF e CNPJ.\n\nCom quem eu falo?" }),
       variaveisGlobais: VARIAVEIS_GLOBAIS,
     });
     expect(resultado.etapaFinal?.conteudo.codigo).toBe("checkpoint_teste_desvio");
@@ -784,6 +784,25 @@ describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra d
     expect(resultado.efeitos).toEqual([]);
     expect(resultado.dadosNovos).toEqual({});
     expect(txt(resultado.mensagens[0])).toBe("Sim, atendemos CPF e CNPJ.\n\nCom quem eu falo?");
+  });
+
+  it("objeção bate: manda a mensagem já gerada (acolhe + retoma), sem avançar nem escalar", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenerica,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "acho meio caro isso, sei não",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => null,
+      interpretarDesvio: async () => ({ status: "objecao", mensagem: "Entendo a preocupação com o valor! Me conta, com quem eu falo mesmo?" }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("checkpoint_teste_desvio");
+    expect(resultado.naoReconhecido).toBe(true);
+    expect(resultado.efeitos).toEqual([]);
+    expect(resultado.dadosNovos).toEqual({});
+    expect(txt(resultado.mensagens[0])).toBe("Entendo a preocupação com o valor! Me conta, com quem eu falo mesmo?");
   });
 
   it("nada bate (escalar): encerra o automatizado e escala pro supervisor com o motivo certo, sem repetir a pergunta ignorando o lead", async () => {
@@ -804,5 +823,23 @@ describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra d
       { tipo: "escalar_supervisor", motivo: 'Pergunta fora do escopo ou desconhecida: "vocês fazem consórcio de imóveis?"' },
     ]);
     expect(resultado.mensagens.length).toBeGreaterThan(0);
+  });
+
+  it("ambiguo: não escala, cai no comportamento padrão de repetir a pergunta (achado da bateria completa: escalar demais cortava respostas válidas mal interpretadas)", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenerica,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "à vista mesmo",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => null,
+      interpretarDesvio: async () => ({ status: "ambiguo" }),
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("checkpoint_teste_desvio");
+    expect(resultado.naoReconhecido).toBe(true);
+    expect(resultado.efeitos).toEqual([]);
+    expect(txt(resultado.mensagens[0])).toContain("Desculpe, não entendi sua resposta");
   });
 });

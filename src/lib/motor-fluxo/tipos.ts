@@ -292,19 +292,37 @@ export type InterpretadorNegociacaoPagamento = (params: {
 /** Uma FAQ ativa, como o interpretador de desvio precisa pra decidir se a pergunta do lead já tem resposta oficial. */
 export type FaqParaDesvio = { pergunta: string; resposta: string };
 
-/**
- * Resultado do interpretador de desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — só roda
- * quando o `InterpretadorIA` genérico não reconheceu a resposta do lead como sendo sobre o checkpoint
- * atual, pra decidir se é uma pergunta lateral que já tem resposta (FAQ) ou algo que a Malala
- * genuinamente não sabe responder (escalar pra humano em vez de repetir a pergunta ignorando o lead):
- * - `faq`: a pergunta do lead bate com uma FAQ ativa — motor responde com o texto oficial e retoma a
- *   pergunta pendente na mesma mensagem (regra de desvio), permanece no mesmo checkpoint.
- * - `escalar`: não bate com nada — motor encerra o automatizado e escala pro supervisor, registrando o
- *   motivo (que já vira nota interna automaticamente, ver `escalar_supervisor` em `persistencia.ts`).
- */
-export type ResultadoDesvio = { status: "faq"; faq: FaqParaDesvio } | { status: "escalar" };
+/** Uma objeção ativa do banco de objeções — `comoLidar` é ORIENTAÇÃO/técnica, nunca uma resposta pronta pra decorar (mesmo contrato de `ObjecaoParaDetector` em detector-objecao.ts). */
+export type ObjecaoParaDesvio = { objecao: string; comoLidar: string };
 
-/** As FAQs ativas são capturadas por closure na fábrica (mesmo padrão de `criarInterpretadorFaixasDocumentos`), não passadas a cada chamada — por isso a assinatura é igual à do `InterpretadorIA` genérico. */
+/**
+ * Resultado do interpretador de desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md, estendido
+ * em 21/08/2026 pra ligar o banco de objeções de verdade — achado do Luiz assistindo conversas reais:
+ * sem isso, a Malala ignorava qualquer objeção/hesitação e só empurrava o roteiro, indistinguível de
+ * um bot de árvore de decisão) — só roda quando o `InterpretadorIA` genérico não reconheceu a resposta
+ * do lead como sendo sobre o checkpoint atual:
+ * - `faq`: a pergunta do lead bate com uma FAQ ativa — `mensagem` já vem gerada (Sonnet, com a voz da
+ *   Malala) usando o texto oficial da FAQ como fonte da verdade (nunca diverge do fato) e retomando a
+ *   pergunta pendente na mesma mensagem, sem repetir ela crua. Permanece no mesmo checkpoint.
+ * - `objecao`: o lead expressou resistência/hesitação que bate com uma objeção ativa — `mensagem` já
+ *   vem gerada seguindo o princípio de tratamento de objeção da persona (ACOLHER → DIAGNOSTICAR →
+ *   RESPONDER → REDUZIR BARREIRA → PEDIR AVANÇO), usando `comoLidar` como raciocínio, não script
+ *   decorado. Permanece no mesmo checkpoint.
+ * - `escalar`: só quando há confiança real de que é outro assunto/negócio, ou pedido explícito de
+ *   humano — motor encerra o automatizado e escala pro supervisor, registrando o motivo (que já vira
+ *   nota interna automaticamente, ver `escalar_supervisor` em `persistencia.ts`).
+ * - `ambiguo`: qualquer coisa sem confiança suficiente pras opções acima (inclusive falha ao gerar a
+ *   mensagem de faq/objeção) — motor não faz nada especial aqui, cai no comportamento padrão de "não
+ *   reconhecido" (repete a pergunta, respeitando `opcional_apos_tentativas` se configurado) — mais
+ *   seguro que escalar ou inventar por engano.
+ */
+export type ResultadoDesvio =
+  | { status: "faq"; mensagem: string }
+  | { status: "objecao"; mensagem: string }
+  | { status: "escalar" }
+  | { status: "ambiguo" };
+
+/** As FAQs/objeções ativas e o texto da persona são capturados por closure na fábrica (mesmo padrão de `criarInterpretadorFaixasDocumentos`), não passados a cada chamada — por isso a assinatura é igual à do `InterpretadorIA` genérico. */
 export type InterpretadorDesvio = (params: { etapaAtual: EtapaCarregada; respostaLead: string }) => Promise<ResultadoDesvio>;
 
 /** O que o motor precisa pra decidir o próximo passo — tudo isolado do Supabase, testável puro (exceto o hook de IA, que é assíncrono por natureza). */

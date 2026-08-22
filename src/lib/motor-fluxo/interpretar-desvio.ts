@@ -1,16 +1,26 @@
-// Interpretador de desvio — spec docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md.
+// Interpretador de desvio — spec docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md,
+// estendido em 21/08/2026 pra ligar o banco de objeções de verdade (achado do Luiz assistindo
+// conversas reais pela Tela de Atendimento: a Malala ignorava qualquer objeção/hesitação e só
+// empurrava o roteiro adiante — indistinguível de um bot de árvore de decisão, já que o banco de
+// objeções da persona, seção 8, nunca tinha sido ligado a nenhum código).
+//
 // Só roda quando o InterpretadorIA genérico (interpretacao-ia.ts) não reconheceu a resposta do lead
-// como sendo sobre o checkpoint atual: decide se é uma pergunta lateral que já tem resposta oficial
-// (FAQ) ou se a Malala genuinamente não sabe responder (escalar pra humano em vez de repetir a
-// pergunta ignorando o lead — regra de Luiz, 21/08/2026: nunca adivinhar nem protelar).
+// como sendo sobre o checkpoint atual. 2 chamadas de IA, papéis bem diferentes:
+//   1) Classificação (Haiku, tool-use, barato) — decide faq/objecao/escalar/ambiguo.
+//   2) Geração (Sonnet, texto livre, com a voz completa da persona) — só quando faq/objecao, produz a
+//      mensagem final já com a regra de desvio aplicada (responde + retoma a pergunta pendente).
+// Nunca inventa fato: pra FAQ, o texto oficial é fonte da verdade (a IA só reformula, não muda
+// conteúdo); pra objeção, `como_lidar` é ORIENTAÇÃO/técnica (mesma ressalva de detector-objecao.ts),
+// nunca uma resposta pronta pra decorar.
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { textoDeMensagem } from "./engine";
-import { validarResultadoDesvio, type RespostaBrutaDesvio } from "./interpretar-desvio-validacao";
-import type { EtapaCarregada, FaqParaDesvio, InterpretadorDesvio, ResultadoDesvio } from "./tipos";
+import { resolverRespostaDesvio, type RespostaBrutaDesvio } from "./interpretar-desvio-validacao";
+import type { EtapaCarregada, FaqParaDesvio, InterpretadorDesvio, ObjecaoParaDesvio, ResultadoDesvio } from "./tipos";
 
-const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
+const MODELO_CLASSIFICACAO = "claude-haiku-4-5-20251001";
+const MODELO_GERACAO = "claude-sonnet-5";
 
 let clienteSingleton: Anthropic | null = null;
 
@@ -23,36 +33,48 @@ function obterCliente(): Anthropic {
   return clienteSingleton;
 }
 
-function ferramenta(qtdFaqs: number) {
+// --- Classificação (Haiku) -----------------------------------------------------------------------
+
+function ferramentaClassificacao(qtdFaqs: number, qtdObjecoes: number) {
   return {
     name: "interpretar_desvio",
-    description: "Registra se a pergunta do lead já tem resposta numa FAQ cadastrada, ou se precisa escalar pra um atendente humano.",
+    description: "Registra se a pergunta do lead já tem resposta numa FAQ, se é uma objeção/hesitação cadastrada, se precisa escalar pra um humano, ou se é ambígua demais pras três coisas.",
     input_schema: {
       type: "object" as const,
       properties: {
         status: {
           type: "string",
-          enum: ["faq", "escalar"],
+          enum: ["faq", "objecao", "escalar", "ambiguo"],
           description:
-            "'faq' só quando a pergunta do lead bate claramente com uma das FAQs listadas — pergunta factual sobre a empresa/processo/serviço. 'escalar' pra qualquer outra coisa: fora do escopo comercial (ex.: outro produto que a empresa não vende), pergunta que nenhuma FAQ cobre, objeção/resistência, ou qualquer ambiguidade — prefira escalar a forçar uma correspondência fraca.",
+            "'faq' só quando a pergunta do lead bate claramente com uma das FAQs listadas — pergunta factual sobre a empresa/processo/serviço. 'objecao' quando o lead demonstra resistência/hesitação real à contratação (medo, achar caro, querer adiar, pedir desconto) que bate com uma das objeções listadas — dúvida factual neutra NÃO é objeção, é 'faq'. 'escalar' SÓ quando você tem certeza real de que é outro assunto/negócio que a empresa não atende, ou o lead pediu explicitamente falar com um humano. 'ambiguo' é o padrão pra qualquer outra coisa: uma tentativa (mesmo mal formulada) de responder a própria pergunta pendente, uma objeção sem match claro no banco, ou qualquer dúvida sem FAQ correspondente — sempre a escolha mais segura quando você não tem certeza absoluta, porque só faz o sistema repetir a pergunta, sem tirar o lead do automatizado.",
         },
         indice_faq: {
           type: "number",
           description: `Número da FAQ que responde a pergunta, de 1 a ${qtdFaqs} — só preencher com certeza quando status=faq.`,
         },
+        indice_objecao: {
+          type: "number",
+          description: `Número da objeção cadastrada que corresponde, de 1 a ${qtdObjecoes} — só preencher com certeza quando status=objecao.`,
+        },
       },
-      required: ["status", "indice_faq"],
+      required: ["status", "indice_faq", "indice_objecao"],
     },
   };
 }
 
-function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string; faqsAtivas: FaqParaDesvio[] }): string {
-  const { etapaAtual, respostaLead, faqsAtivas } = params;
+function montarPromptClassificacao(params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
+}): string {
+  const { etapaAtual, respostaLead, faqsAtivas, objecoesAtivas } = params;
   const perguntaPendente = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
   const listaFaqs = faqsAtivas.map((f, i) => `${i + 1}. P: ${f.pergunta}\n   R: ${f.resposta}`).join("\n");
+  const listaObjecoes = objecoesAtivas.map((o, i) => `${i + 1}. ${o.objecao}`).join("\n");
 
   return [
-    "Você ajuda a atender leads num script automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). O lead respondeu algo que não tem nada a ver com a pergunta que a Malala fez — pode ser uma pergunta lateral genuína, ou pode ser algo totalmente fora do assunto.",
+    "Você ajuda a atender leads num script automatizado de WhatsApp (ArrudaCred, empresa de limpeza de nome/crédito). O lead respondeu algo que o checkpoint atual não reconheceu como resposta válida — pode ser uma pergunta lateral genuína, uma objeção/hesitação, uma tentativa de resposta mal interpretada, ou algo realmente fora do assunto.",
     "",
     `Pergunta que a Malala tinha feito (ainda pendente):\n"""\n${perguntaPendente}\n"""`,
     "",
@@ -60,35 +82,124 @@ function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string
     "",
     `FAQs cadastradas (perguntas factuais já respondidas oficialmente):\n${listaFaqs || "(nenhuma FAQ cadastrada)"}`,
     "",
-    "Use a ferramenta pra registrar o resultado. REGRA DE CERTEZA: nunca marque 'faq' só porque parece relacionado — só quando a pergunta do lead bate de verdade com uma das FAQs listadas. Qualquer coisa fora disso (inclusive um produto/serviço que a empresa não vende, ou uma pergunta sem FAQ correspondente) é 'escalar' — é sempre mais seguro escalar pra um humano do que a Malala inventar ou adivinhar uma resposta.",
+    `Objeções cadastradas (resistência/hesitação — diferente de dúvida factual):\n${listaObjecoes || "(nenhuma objeção cadastrada)"}`,
+    "",
+    "Use a ferramenta pra registrar o resultado. REGRA DE CERTEZA: nunca marque 'faq' ou 'objecao' só porque parece relacionado — só quando bate de verdade com um item listado. 'escalar' é uma decisão forte (tira o lead do atendimento automatizado) — só use com certeza real de outro assunto/negócio ou pedido explícito de humano. Pra QUALQUER outra situação sem certeza, marque 'ambiguo' — é sempre mais seguro do que escalar ou forçar uma correspondência fraca.",
   ].join("\n");
 }
 
-/** FAQs ativas capturadas por closure (mesmo padrão de `criarInterpretadorFaixasDocumentos`) — carregadas uma vez por dependências do motor, não a cada turno. */
-export function criarInterpretadorDesvio(faqsAtivas: FaqParaDesvio[]): InterpretadorDesvio {
+async function classificarDesvio(params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
+}): Promise<RespostaBrutaDesvio> {
+  const { faqsAtivas, objecoesAtivas } = params;
+  const cliente = obterCliente();
+  const resposta = await cliente.messages.create({
+    model: MODELO_CLASSIFICACAO,
+    max_tokens: 300,
+    tools: [ferramentaClassificacao(faqsAtivas.length, objecoesAtivas.length)],
+    tool_choice: { type: "tool", name: "interpretar_desvio" },
+    messages: [{ role: "user", content: montarPromptClassificacao(params) }],
+  });
+
+  const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+  if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") {
+    return { status: "ambiguo", indice_faq: 0, indice_objecao: 0 };
+  }
+  return blocoFerramenta.input as RespostaBrutaDesvio;
+}
+
+// --- Geração (Sonnet, voz completa da persona) ---------------------------------------------------
+
+function montarPromptGeracao(params: {
+  tipo: "faq" | "objecao";
+  conteudo: string;
+  respostaLead: string;
+  perguntaPendente: string;
+}): string {
+  const { tipo, conteudo, respostaLead, perguntaPendente } = params;
+
+  const instrucao =
+    tipo === "faq"
+      ? `O lead fez uma pergunta lateral com resposta OFICIAL já aprovada — use-a como fonte da verdade absoluta, sem mudar nem inventar nenhum fato, só reformulando numa frase natural, no seu tom:\n"""\n${conteudo}\n"""`
+      : `O lead expressou uma objeção/hesitação. A orientação abaixo é TÉCNICA/raciocínio pra lidar com ela — não é uma resposta pronta pra decorar. Siga o princípio de tratamento de objeção da sua persona (ACOLHER → DIAGNOSTICAR → RESPONDER → REDUZIR RISCO/RESOLVER BARREIRA → RECUPERAR A DOR quando fizer sentido → PEDIR AVANÇO):\n"""\n${conteudo}\n"""`;
+
+  return [
+    instrucao,
+    "",
+    `Resposta do lead: "${respostaLead}"`,
+    "",
+    `Depois de tratar isso, retome (na MESMA mensagem) a pergunta que ainda está pendente — não precisa repetir palavra por palavra, mas precisa deixar claro que precisa dessa resposta pra continuar:\n"""\n${perguntaPendente}\n"""`,
+    "",
+    "Escreva só a mensagem final, pronta pra mandar pro lead pelo WhatsApp — sem aspas ao redor, sem comentário sobre a escolha.",
+  ].join("\n");
+}
+
+/** Retorna null em qualquer falha — quem chama trata como "ambiguo" (cai no comportamento seguro de repetir a pergunta), nunca deixa a conversa sem resposta. */
+async function gerarMensagemDesvio(params: {
+  tipo: "faq" | "objecao";
+  conteudo: string;
+  respostaLead: string;
+  perguntaPendente: string;
+  personaTexto: string;
+}): Promise<string | null> {
+  try {
+    const cliente = obterCliente();
+    const resposta = await cliente.messages.create({
+      model: MODELO_GERACAO,
+      max_tokens: 500,
+      system: params.personaTexto,
+      messages: [{ role: "user", content: montarPromptGeracao(params) }],
+    });
+
+    const bloco = resposta.content.find((b) => b.type === "text");
+    if (!bloco || bloco.type !== "text") return null;
+    const texto = bloco.text.trim();
+    return texto || null;
+  } catch (e) {
+    console.error("[interpretar-desvio] erro ao gerar mensagem:", e);
+    return null;
+  }
+}
+
+// --- Fábrica ---------------------------------------------------------------------------------------
+
+/** FAQs, objeções ativas e o texto da persona capturados por closure (mesmo padrão de `criarInterpretadorFaixasDocumentos`) — carregados uma vez por dependências do motor, não a cada turno. */
+export function criarInterpretadorDesvio(faqsAtivas: FaqParaDesvio[], objecoesAtivas: ObjecaoParaDesvio[], personaTexto: string | null): InterpretadorDesvio {
   return async ({ etapaAtual, respostaLead }) => {
-    if (faqsAtivas.length === 0) return { status: "escalar" };
+    if (faqsAtivas.length === 0 && objecoesAtivas.length === 0) return { status: "ambiguo" };
 
-    const prompt = montarPrompt({ etapaAtual, respostaLead, faqsAtivas });
+    const perguntaPendente = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
 
+    let bruta: RespostaBrutaDesvio;
     try {
-      const cliente = obterCliente();
-      const resposta = await cliente.messages.create({
-        model: MODELO_INTERPRETACAO,
-        max_tokens: 300,
-        tools: [ferramenta(faqsAtivas.length)],
-        tool_choice: { type: "tool", name: "interpretar_desvio" },
-        messages: [{ role: "user", content: prompt }],
-      });
-
-      const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
-      if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return { status: "escalar" } satisfies ResultadoDesvio;
-
-      const bruta = blocoFerramenta.input as RespostaBrutaDesvio;
-      return validarResultadoDesvio(bruta, faqsAtivas);
+      bruta = await classificarDesvio({ etapaAtual, respostaLead, faqsAtivas, objecoesAtivas });
     } catch (e) {
-      console.error("[interpretar-desvio] erro ao chamar Claude:", e);
-      return { status: "escalar" };
+      console.error("[interpretar-desvio] erro ao classificar:", e);
+      return { status: "ambiguo" };
     }
+
+    const resolucao = resolverRespostaDesvio(bruta, faqsAtivas, objecoesAtivas);
+
+    if (resolucao.status === "escalar") return { status: "escalar" } satisfies ResultadoDesvio;
+    if (resolucao.status === "ambiguo") return { status: "ambiguo" } satisfies ResultadoDesvio;
+
+    // faq ou objecao: sem persona configurada não dá pra gerar com a voz certa — mais seguro cair em
+    // ambiguo (repete a pergunta) do que mandar uma mensagem genérica sem a nuance da Malala.
+    if (!personaTexto) return { status: "ambiguo" };
+
+    const conteudo = resolucao.status === "faq" ? resolucao.faq.resposta : resolucao.objecao.comoLidar;
+    const mensagem = await gerarMensagemDesvio({
+      tipo: resolucao.status,
+      conteudo,
+      respostaLead,
+      perguntaPendente,
+      personaTexto,
+    });
+    if (!mensagem) return { status: "ambiguo" };
+
+    return resolucao.status === "faq" ? { status: "faq", mensagem } : { status: "objecao", mensagem };
   };
 }

@@ -10,11 +10,9 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { carregarFaqsAtivas } from "./repositorio";
+import { carregarFaqsAtivas, carregarPersonaTexto } from "./repositorio";
 
 const MODELO_ASSIST = "claude-sonnet-5";
-const CHAVE_CONFIG_PERSONA = "malala_persona_prompt_sistema";
 
 let clienteSingleton: Anthropic | null = null;
 
@@ -25,18 +23,6 @@ function obterCliente(): Anthropic {
     clienteSingleton = new Anthropic({ apiKey });
   }
   return clienteSingleton;
-}
-
-async function carregarPersonaTexto(): Promise<string | null> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("configuracoes")
-    .select("valor")
-    .eq("chave", CHAVE_CONFIG_PERSONA)
-    .maybeSingle();
-  if (error) throw new Error(`Falha ao carregar persona da Malala: ${error.message}`);
-  const valor = data?.valor as { texto?: string } | null;
-  return valor?.texto ?? null;
 }
 
 export type MensagemParaAssist = { remetente: string; conteudo: string | null };

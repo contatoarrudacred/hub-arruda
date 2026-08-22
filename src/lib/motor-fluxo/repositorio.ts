@@ -246,6 +246,21 @@ export async function carregarFaqsAtivas(): Promise<FaqParaDesvio[]> {
   return data ?? [];
 }
 
+const CHAVE_CONFIG_PERSONA = "malala_persona_prompt_sistema";
+
+/** Texto completo da persona da Malala (migration 20260817070001_persona_malala_config.sql) — reaproveitado pelo composer-assist (atendente humano) e pelo interpretador de desvio (geração de resposta a FAQ/objeção, precisa da voz/nuance completa da persona). */
+export async function carregarPersonaTexto(): Promise<string | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("configuracoes")
+    .select("valor")
+    .eq("chave", CHAVE_CONFIG_PERSONA)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao carregar persona da Malala: ${error.message}`);
+  const valor = data?.valor as { texto?: string } | null;
+  return valor?.texto ?? null;
+}
+
 export type DadosAgendamentoConsultor = {
   consultorId: string | null;
   disponibilidade: JanelaDisponibilidade[];
