@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { Ajuda } from "@/components/marketing/ajuda";
 import { decidirProximoHorario } from "@/lib/marketing/agendador";
+import { NOME_TIPO_ANGULO } from "@/lib/marketing/tipos";
 import type { DadosPautaManual, FunilPauta, MatrizAdmin, PersonaAtiva, PostAgendaAdmin, TipoConteudo } from "@/lib/marketing/tipos";
 import { agendarPostAction } from "./agendamento-actions";
 import { carregarImagensPostAction, trocarCapaAction, trocarImagemSecundariaAction, type ImagensPost } from "./imagens-actions";
@@ -943,13 +944,16 @@ function ModalNovoPostManual({
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {personaSelecionada.angulosProntos.map((sugestao) => (
                   <button
-                    key={sugestao}
+                    key={sugestao.texto}
                     type="button"
-                    onClick={() => setAngulo(sugestao)}
+                    onClick={() => setAngulo(sugestao.texto)}
                     className="rounded-full border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    title="Usar este ângulo pronto"
+                    title={`Usar este ângulo pronto — tipo: ${NOME_TIPO_ANGULO[sugestao.tipo].label}`}
                   >
-                    {sugestao}
+                    <span className="mr-1 text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                      {NOME_TIPO_ANGULO[sugestao.tipo].label}
+                    </span>
+                    {sugestao.texto}
                   </button>
                 ))}
               </div>
