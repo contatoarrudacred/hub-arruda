@@ -438,11 +438,30 @@ export function NovaOportunidadeClient({ produtos }: { produtos: ProdutoParaVend
               // cadastrado. Pedido explícito do Luiz, achado testando em produção.
               let pessoaIdResolvido = pessoaId;
               if (!ehComprovanteResidencia) {
-                // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela IA —
-                // senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o caso de uso
-                // do leitor), aoDigitarDocumento zera dadosContrato de volta e apaga o nome que
-                // acabou de ser preenchido aqui (achado real da revisão final da branch).
-                if (dados.documento) pessoaIdResolvido = await aoDigitarDocumento(dados.documento);
+                if (dados.documento) {
+                  // Achado real da auditoria de 21/08/2026 (pendência registrada em
+                  // docs/status/vendas.md desde 19/08): se o usuário tinha acabado de digitar algo
+                  // no campo de documento, o debounce de aoMudarDocumento ainda podia disparar
+                  // depois desta busca direta e sobrescrever o que a IA acabou de preencher com o
+                  // resultado da digitação antiga. Cancela esse timer pendente antes de buscar.
+                  if (buscaDocTimeoutRef.current) clearTimeout(buscaDocTimeoutRef.current);
+                  try {
+                    // Espera a busca por documento terminar ANTES de aplicar o nome extraído pela
+                    // IA — senão, quando a pessoa não é encontrada (comum: PF nova, exatamente o
+                    // caso de uso do leitor), aoDigitarDocumento zera dadosContrato de volta e
+                    // apaga o nome que acabou de ser preenchido aqui (achado real da revisão final
+                    // da branch).
+                    pessoaIdResolvido = await aoDigitarDocumento(dados.documento);
+                  } catch (erroBusca) {
+                    // Achado real da auditoria de 21/08/2026 (mesma pendência registrada desde
+                    // 19/08): se essa busca falhar (rede/servidor), não pode abortar o resto do
+                    // callback — nome/endereço já extraídos pela IA (linhas abaixo) seriam
+                    // perdidos junto, mesmo já estando disponíveis em memória. A busca por
+                    // documento é só uma tentativa de achar cadastro existente; falhar nela não
+                    // deveria custar o que a IA já leu com sucesso.
+                    console.error("[nova-oportunidade] falha ao buscar pessoa pelo documento extraído pela IA:", erroBusca);
+                  }
+                }
                 if (dados.nome) setDadosContrato((atual) => ({ ...atual, nome: dados.nome }));
               }
 
