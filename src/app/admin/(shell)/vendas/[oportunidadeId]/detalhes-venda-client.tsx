@@ -138,6 +138,10 @@ function LinkCopiavel({ link }: { link: string }) {
   );
 }
 
+/** Envio direto pra Zapster/Resend está desativado no módulo Vendas (decisão do Luiz, 21/08/2026,
+ * ver src/lib/vendas/notificacoes.ts) — os botões continuam na tela, mas clicar mostra a mensagem
+ * explicando que o envio precisa passar pelo módulo CRM, ainda em integração. Não remover os
+ * botões: o Luiz vai trazer as instruções de como plugar isso no CRM. */
 function BotoesReenvio({
   pessoaId,
   contexto,
