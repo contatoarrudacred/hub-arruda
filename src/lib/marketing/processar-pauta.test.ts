@@ -231,7 +231,7 @@ describe("processarProximaPauta", () => {
     // Task 10 — default "sem imagem nenhuma" (mesmo comportamento de antes desta task existir):
     // capa reprovada/sem resultado, zero secundárias aprovadas. Testes dedicados de imagem
     // (describe "gerar_imagens (Task 10)" abaixo) sobrescrevem com seus próprios resultados.
-    vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
+    vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0, log: [] });
     vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
   });
 
@@ -1398,6 +1398,7 @@ describe("processarProximaPauta", () => {
         },
         usage: { inputTokens: 800, outputTokens: 400 },
         custoUsdOpenAi: 0.041,
+        log: [],
       });
       vi.mocked(gerarImagensSecundarias).mockResolvedValue({
         resultado: [
@@ -1574,7 +1575,7 @@ describe("processarProximaPauta", () => {
         atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
-      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 100, outputTokens: 50 }, custoUsdOpenAi: 0.041 });
+      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 100, outputTokens: 50 }, custoUsdOpenAi: 0.041, log: [] });
       vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
 
       const resultado = await processarProximaPauta("matriz-1", "prop-1");
@@ -1616,7 +1617,7 @@ describe("processarProximaPauta", () => {
         atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
-      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
+      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0, log: [] });
       vi.mocked(gerarImagensSecundarias).mockResolvedValue({
         resultado: [
           {
@@ -1688,7 +1689,7 @@ describe("processarProximaPauta", () => {
         atualizarPost: vi.fn(),
       };
       configurarCenarioBase(adaptadorFalso);
-      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
+      vi.mocked(gerarCapa).mockResolvedValue({ resultado: null, usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0, log: [] });
       vi.mocked(gerarImagensSecundarias).mockResolvedValue({
         resultado: [
           {
@@ -1755,6 +1756,7 @@ describe("processarProximaPauta", () => {
         resultado: { url: "data:image/png;base64,AAAA", alt: "Alt capa", slug: "capa-serasa", titulo: "Capa Serasa" },
         usage: { inputTokens: 0, outputTokens: 0 },
         custoUsdOpenAi: 0.041,
+        log: [],
       });
       vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
       vi.mocked(enviarImagemStorage).mockRejectedValue(new Error("Storage indisponível"));
@@ -1790,6 +1792,7 @@ describe("processarProximaPauta", () => {
         resultado: { url: "data:image/png;base64,AAAA", alt: "Alt capa", slug: "capa-serasa", titulo: "Capa Serasa" },
         usage: { inputTokens: 0, outputTokens: 0 },
         custoUsdOpenAi: 0.041,
+        log: [],
       });
       vi.mocked(gerarImagensSecundarias).mockResolvedValue({ resultado: [], usage: { inputTokens: 0, outputTokens: 0 }, custoUsdOpenAi: 0 });
       const { detalhesExtraidos } = espiarRegistrarEtapa();

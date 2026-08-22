@@ -256,8 +256,8 @@ async function gerarCruzamento(
     "Escolha UMA única ideia visual principal — não tente combinar várias cenas, vários medos ou várias promessas na mesma imagem.",
     "O momento/personagem escolhido precisa ser coerente com o nível socioeconômico REAL da persona (renda, moradia, patrimônio, descrito no resumo dela) — não escolha por padrão o momento mais \"precário\" ou \"em dificuldade\" só porque o assunto é banco/crédito/dívida: uma persona de renda alta com crédito limpo tem uma preocupação real (ex.: uma dúvida técnica, uma reprovação inesperada), mas ela não vive num cenário de precariedade, e a cena não pode sugerir isso.",
     "",
-    `O AMBIENTE desta cena é OBRIGATORIAMENTE: ${ambiente} — não escolha nem sugira outro ambiente, mesmo que outro pareça mais natural pra este post; essa escolha já foi decidida fora desta chamada, pra variar o cenário entre posts diferentes e as capas pararem de parecer sempre a mesma cena.`,
-    `IMPORTANTE — o ambiente é só o CENÁRIO, nunca o assunto da cena: a ideia visual ainda precisa representar o conflito/emoção REAL deste post específico, exatamente como pedido acima. Errado: usar o ambiente pra ilustrar uma cena genérica e desconectada do post (ex.: "${ambiente}" virar só uma foto qualquer de alguém nesse lugar, sem nenhum sinal do assunto do artigo). Certo: encontrar como o conflito/emoção do post SE MANIFESTA dentro desse ambiente — um objeto, uma expressão, um gesto, uma tela de celular, um documento na mesa, o que for coerente com o ambiente sorteado e ao mesmo tempo carregar o assunto do post. Se a conexão não for óbvia à primeira vista, é sua função de diretor de arte encontrá-la — não abandone o conflito do post só porque o ambiente não é o mais óbvio pra esse assunto.`,
+    `O AMBIENTE desta cena é: ${ambiente} — use-o SEMPRE, com UMA única exceção, estreita e verificável: a persona é dona de um negócio FÍSICO próprio (CNPJ, funcionários, ponto comercial fixo — loja, galpão, oficina, fábrica — descrito no resumo dela). Nesse caso específico, a cena se passa no AMBIENTE DE TRABALHO REAL dela (a loja, o galpão, a oficina que ela descreve), não no ambiente sorteado — mostrar uma dona de empresa numa cena de vida pessoal (sofá, cozinha, carro) não faz sentido quando o post é sobre o negócio dela, e o Revisor (próxima etapa) tem toda razão em reprovar isso (achado real, 22/08/2026). Esta exceção NÃO vale pra profissional autônomo/freelancer PJ sem funcionários nem ponto comercial fixo (ex.: alguém que trabalha de casa, sozinho) — pra esse perfil, e pra qualquer persona sem negócio próprio (a maioria), o ambiente sorteado continua obrigatório, sem exceção. Esta é a ÚNICA exceção admitida: "dona de negócio com funcionários e ponto comercial" é um fato objetivo e checável no resumo da persona — não confundir com "a persona tem uma cena rica no perfil" (isso NÃO é motivo pra trocar o ambiente; histórico real: tentativas anteriores erraram exatamente por generalizar demais essa ideia).`,
+    `IMPORTANTE (quando o ambiente sorteado for mesmo o usado) — ele é só o CENÁRIO, nunca o assunto da cena: a ideia visual ainda precisa representar o conflito/emoção REAL deste post específico, exatamente como pedido acima. Errado: usar o ambiente pra ilustrar uma cena genérica e desconectada do post (ex.: "${ambiente}" virar só uma foto qualquer de alguém nesse lugar, sem nenhum sinal do assunto do artigo). Certo: encontrar como o conflito/emoção do post SE MANIFESTA dentro desse ambiente — um objeto, uma expressão, um gesto, uma tela de celular, um documento na mesa, o que for coerente com o ambiente sorteado e ao mesmo tempo carregar o assunto do post. Se a conexão não for óbvia à primeira vista, é sua função de diretor de arte encontrá-la — não abandone o conflito do post só porque o ambiente não é o mais óbvio pra esse assunto.`,
     "",
     `TÍTULO:\n${titulo}`,
     "",
@@ -330,7 +330,7 @@ async function gerarPromptCapa(
     "",
     `IDEIA VISUAL DEFINIDA (a cena que a imagem deve retratar):\n${ideiaVisual}`,
     "",
-    `AMBIENTE OBRIGATÓRIO DESTA CENA: ${ambiente} — mantenha exatamente este ambiente no prompt final, não substitua por outro. O ambiente é só o cenário: o prompt final ainda precisa deixar claro, através de um objeto/gesto/tela/expressão coerente com a IDEIA VISUAL acima, que a cena é sobre o conflito real deste post — não vire uma foto genérica desse ambiente sem nenhum sinal do assunto do artigo.`,
+    `AMBIENTE DESTA CENA: ${ambiente} — na maioria dos casos, mantenha exatamente este ambiente no prompt final. ÚNICA EXCEÇÃO (ver critério estreito da etapa anterior — dona de negócio físico próprio, com funcionários e ponto comercial fixo): se a IDEIA VISUAL acima ancorou a cena no ambiente de trabalho real da persona por esse motivo específico, siga a IDEIA VISUAL, não force o ambiente sorteado por cima dela. Fora dessa exceção estreita, o ambiente é só o cenário: o prompt final ainda precisa deixar claro, através de um objeto/gesto/tela/expressão coerente com a IDEIA VISUAL, que a cena é sobre o conflito real deste post — não vire uma foto genérica desse ambiente sem nenhum sinal do assunto do artigo.`,
     "",
     `TÍTULO:\n${titulo}`,
     "",
@@ -378,23 +378,42 @@ async function gerarPromptCapa(
 export async function gerarImagemComPrompt(
   promptImagem: string,
   trechoParaRevisao: string,
-): Promise<{ resultado: { url: string } | null; usage: UsageTokens; custoUsdOpenAi: number }> {
+): Promise<{
+  resultado: { url: string } | null;
+  usage: UsageTokens;
+  custoUsdOpenAi: number;
+  // Regra dura de UI (22/08/2026, seção 4.1 item 8 de docs/COORDENACAO_AGENTES_ARRUDACRED.md) —
+  // achado real: "não foi possível gerar a imagem" reprovava 3x seguidas sem NENHUM detalhe pra
+  // investigar (o catch abaixo engolia o erro de verdade). `log` é o rastro passo-a-passo de tudo
+  // que rodou nesta chamada (pra quem for depurar entender ONDE parou); `erroDetalhado` só existe
+  // quando `resultado` é null por uma falha real (infra) — não quando é null por reprovação normal
+  // do Revisor após esgotar as tentativas (isso não é uma "falha", é o Global Constraint "nunca
+  // lança" funcionando como esperado).
+  log: string[];
+  erroDetalhado?: string;
+}> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
   let custoUsdOpenAi = 0;
+  const log: string[] = [];
+  const registrar = (mensagem: string) => log.push(`[${new Date().toISOString()}] ${mensagem}`);
 
   try {
     let promptTentativa = promptImagem;
     for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
+      registrar(`Tentativa ${tentativa}/${LIMITE_TENTATIVAS_IMAGEM}: chamando a OpenAI (gpt-image-2)...`);
       const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
       custoUsdOpenAi += geracao.usage.custoUsd;
+      registrar(`Tentativa ${tentativa}: imagem gerada pela OpenAI (custo $${geracao.usage.custoUsd.toFixed(3)}). Enviando pro Revisor de imagem...`);
 
       const revisao = await revisarImagem(geracao.url, trechoParaRevisao);
       usage = somarUsage(usage, revisao.usage);
 
       if (revisao.resultado.aprovada) {
-        return { resultado: { url: geracao.url }, usage, custoUsdOpenAi };
+        registrar(`Tentativa ${tentativa}: aprovada pelo Revisor.`);
+        return { resultado: { url: geracao.url }, usage, custoUsdOpenAi, log };
       }
 
+      registrar(`Tentativa ${tentativa}: reprovada pelo Revisor — motivo: ${revisao.resultado.motivo ?? "(sem motivo informado)"}.`);
       promptTentativa = [
         promptImagem,
         "",
@@ -403,9 +422,13 @@ export async function gerarImagemComPrompt(
       ].join("\n");
     }
 
-    return { resultado: null, usage, custoUsdOpenAi };
-  } catch {
-    return { resultado: null, usage, custoUsdOpenAi };
+    registrar(`Limite de ${LIMITE_TENTATIVAS_IMAGEM} tentativas esgotado sem aprovação do Revisor — degradação esperada, não uma falha.`);
+    return { resultado: null, usage, custoUsdOpenAi, log };
+  } catch (erro) {
+    const mensagemErro = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro);
+    registrar(`FALHA: ${mensagemErro}`);
+    console.error("gerarImagemComPrompt: falha inesperada durante a geração —", erro);
+    return { resultado: null, usage, custoUsdOpenAi, log, erroDetalhado: mensagemErro };
   }
 }
 
@@ -417,6 +440,12 @@ export async function gerarCapa(
   resultado: { url: string; alt: string; slug: string; titulo: string } | null;
   usage: UsageTokens;
   custoUsdOpenAi: number;
+  // Regra dura de UI (22/08/2026, seção 4.1 item 8 de docs/COORDENACAO_AGENTES_ARRUDACRED.md) —
+  // mesmo raciocínio de gerarImagemComPrompt acima: `log` é o rastro passo-a-passo (pra quem for
+  // depurar ver onde parou); `erroDetalhado` só existe quando `resultado` é null por FALHA real,
+  // não pela reprovação normal do Revisor após esgotar tentativas.
+  log: string[];
+  erroDetalhado?: string;
 }> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
   // Custo real da OpenAI (19/08/2026, pedido do Luiz) — antes desta mudança, `geracao.usage.custoUsd`
@@ -424,24 +453,35 @@ export async function gerarCapa(
   // persistido). Soma TODA tentativa, aprovada ou não — o $ já foi gasto na chamada à API
   // independente do resultado da revisão.
   let custoUsdOpenAi = 0;
+  const log: string[] = [];
+  const registrar = (mensagem: string) => log.push(`[${new Date().toISOString()}] ${mensagem}`);
 
   try {
     // Etapas 1-4 — falha em qualquer uma delas (infra Claude, campo ausente) é uma falha de
     // pipeline: sem prompt de imagem não há o que gerar. Cai no catch geral, devolve null.
+    registrar("Etapa 1 (resumo estratégico do post): iniciando.");
     const etapa1 = await gerarResumoPost(conteudo.titulo, conteudo.conteudoHtml);
     usage = somarUsage(usage, etapa1.usage);
+    registrar("Etapa 1 (resumo estratégico do post): concluída.");
 
+    registrar(persona ? "Etapa 2 (resumo psicológico-visual da persona): iniciando." : "Etapa 2: pulada — pauta sem persona associada, usando resumo-placeholder.");
     const etapa2 = await gerarResumoPersona(persona);
     usage = somarUsage(usage, etapa2.usage);
+    if (persona) registrar("Etapa 2 (resumo psicológico-visual da persona): concluída.");
 
     // Sorteado UMA vez por capa, antes da etapa 3 — ver comentário de CATALOGO_AMBIENTES_CENA.
     const ambienteSorteado = sortearAmbienteCena();
+    registrar(`Ambiente sorteado pra esta cena: "${ambienteSorteado}".`);
 
+    registrar("Etapa 3 (cruzamento — ideia visual única): iniciando.");
     const etapa3 = await gerarCruzamento(conteudo.titulo, etapa1.resumo, etapa2.resumo, ambienteSorteado);
     usage = somarUsage(usage, etapa3.usage);
+    registrar("Etapa 3 (cruzamento — ideia visual única): concluída.");
 
+    registrar("Etapa 4 (prompt final da imagem + metadados): iniciando.");
     const etapa4 = await gerarPromptCapa(conteudo.titulo, etapa1.resumo, etapa2.resumo, etapa3.ideiaVisual, ambienteSorteado);
     usage = somarUsage(usage, etapa4.usage);
+    registrar("Etapa 4 (prompt final da imagem + metadados): concluída.");
 
     // Etapa 5 — geração (OpenAI) + revisão (Claude com visão, Task 6), com retry até
     // LIMITE_TENTATIVAS_IMAGEM. trechoFonte é o post inteiro (conteudoHtml) porque a capa
@@ -449,13 +489,16 @@ export async function gerarCapa(
     // Task 8, onde o trecho-fonte é um trecho específico).
     let promptTentativa = etapa4.resultado.promptImagem;
     for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
+      registrar(`Etapa 5, tentativa ${tentativa}/${LIMITE_TENTATIVAS_IMAGEM}: chamando a OpenAI (gpt-image-2)...`);
       const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
       custoUsdOpenAi += geracao.usage.custoUsd;
+      registrar(`Etapa 5, tentativa ${tentativa}: imagem gerada pela OpenAI (custo $${geracao.usage.custoUsd.toFixed(3)}). Enviando pro Revisor de imagem...`);
 
       const revisao = await revisarImagem(geracao.url, conteudo.conteudoHtml);
       usage = somarUsage(usage, revisao.usage);
 
       if (revisao.resultado.aprovada) {
+        registrar(`Etapa 5, tentativa ${tentativa}: aprovada pelo Revisor.`);
         return {
           resultado: {
             url: geracao.url,
@@ -465,9 +508,11 @@ export async function gerarCapa(
           },
           usage,
           custoUsdOpenAi,
+          log,
         };
       }
 
+      registrar(`Etapa 5, tentativa ${tentativa}: reprovada pelo Revisor — motivo: ${revisao.resultado.motivo ?? "(sem motivo informado)"}.`);
       // Reprovada — dobra o motivo no prompt da próxima tentativa (mesmo padrão de
       // escritor.ts/revisor.ts: motivo concreto pra corrigir, não reescrever do zero).
       promptTentativa = [
@@ -478,12 +523,19 @@ export async function gerarCapa(
       ].join("\n");
     }
 
-    // Limite de tentativas esgotado sem aprovação — degradação aceitável (Global Constraint).
-    return { resultado: null, usage, custoUsdOpenAi };
-  } catch {
+    // Limite de tentativas esgotado sem aprovação — degradação aceitável (Global Constraint), não
+    // uma falha: por isso não seta erroDetalhado aqui, só registra no log.
+    registrar(`Limite de ${LIMITE_TENTATIVAS_IMAGEM} tentativas esgotado sem aprovação do Revisor — degradação esperada, não uma falha.`);
+    return { resultado: null, usage, custoUsdOpenAi, log };
+  } catch (erro) {
     // Qualquer falha de infraestrutura (Claude, OpenAI, revisor) em qualquer etapa — não derruba
     // o pipeline. Um post sem capa é um resultado aceitável; um post que falha de publicar por
-    // causa da capa não é.
-    return { resultado: null, usage, custoUsdOpenAi };
+    // causa da capa não é. Mas a falha REAL não pode mais desaparecer sem rastro (achado real,
+    // 22/08/2026): loga no servidor E devolve a mensagem em `erroDetalhado`, pro chamador poder
+    // mostrar ao administrador do sistema (regra dura, seção 4.1 item 8 da coordenação).
+    const mensagemErro = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro);
+    registrar(`FALHA: ${mensagemErro}`);
+    console.error("gerarCapa: falha inesperada durante a geração —", erro);
+    return { resultado: null, usage, custoUsdOpenAi, log, erroDetalhado: mensagemErro };
   }
 }
