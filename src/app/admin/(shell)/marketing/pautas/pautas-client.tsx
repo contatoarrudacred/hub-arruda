@@ -162,6 +162,7 @@ export function PautasClient({
                       <button
                         type="button"
                         onClick={() => setPautaConfirmandoReabertura(pauta)}
+                        title="Volta a pauta pra fila (pendente) — gera e revisa de novo desde o início"
                         className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
                       >
                         Reabrir
@@ -201,10 +202,16 @@ function ModalConfirmarReabertura({
   const [reabrindo, setReabrindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Achado real de produção (21/08/2026): quando o bloqueio foi porque o post JÁ FOI publicado no
+  // WordPress e só falhou o registro local (motivo começa com "Publicado em "), reabrir não zera
+  // tentativas (ver reabrirPauta, repositorio.ts) — reprocessar do zero publicaria um post
+  // duplicado. Avisa isso na tela em vez de deixar o Luiz achar que "Reabrir" sempre resolve.
+  const jaPublicadaDeVerdade = pauta.motivoUltimaReprovacao?.startsWith("Publicado em ") ?? false;
+
   async function confirmar() {
     setErro(null);
     setReabrindo(true);
-    const resultado = await reabrirPautaAction(pauta.id);
+    const resultado = await reabrirPautaAction(pauta.id, pauta.motivoUltimaReprovacao);
     setReabrindo(false);
 
     if (!resultado.sucesso) {
@@ -225,6 +232,13 @@ function ModalConfirmarReabertura({
           ciclo do cron — isso reintroduz o custo (tokens) de gerar e revisar o conteúdo desde o início. Use só
           depois de já ter corrigido o que causou o bloqueio.
         </p>
+        {jaPublicadaDeVerdade && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            ⚠️ Este post já foi publicado no WordPress — só o registro local falhou. Reabrir aqui NÃO reprocessa do
+            zero (evita duplicar o post), só limpa o aviso de bloqueio. Confira manualmente se o post está no ar
+            antes de continuar.
+          </p>
+        )}
         {erro && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{erro}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <button
