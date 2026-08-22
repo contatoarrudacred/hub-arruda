@@ -117,7 +117,17 @@ export async function trocarCapaAction(formData: FormData): Promise<ResultadoTro
   const midia = await adaptador.enviarMidia(novaDataUrl, `capa-${novoSlug}.png`, novoAlt);
 
   const novaTagImg = `<img src="${midia.url}" alt="${escaparAtributoHtml(novoAlt)}" data-imagem="capa">`;
-  const novoHtml = substituirImagemNoHtml(post.conteudoHtml, "capa", post.imagemDestaqueUrl, novaTagImg);
+  let novoHtml = substituirImagemNoHtml(post.conteudoHtml, "capa", post.imagemDestaqueUrl, novaTagImg);
+
+  // Achado real de produção (21/08/2026): quando o post nunca teve capa embutida no HTML (ex.:
+  // gerar_imagens foi pulada por orçamento de tempo curto, ver processar-pauta.ts), não existe
+  // <img> nenhum pra substituir — substituirImagemNoHtml devolve o HTML sem alteração nesse caso.
+  // Resultado sem este fallback: imagem_destaque_url fica salva no banco, mas a foto nunca aparece
+  // no conteúdo (nem no preview local, nem no WordPress). Insere a figura no INÍCIO do HTML —
+  // mesmo formato de construirFiguraCapa (processar-pauta.ts) — quando não havia nada pra trocar.
+  if (novoHtml === post.conteudoHtml) {
+    novoHtml = `<figure><img src="${midia.url}" alt="${escaparAtributoHtml(novoAlt)}" data-imagem="capa"></figure>\n${post.conteudoHtml}`;
+  }
 
   if (post.rascunhoIdWordpress) {
     await adaptador.atualizarPost(post.rascunhoIdWordpress, { content: novoHtml, featuredMedia: midia.idRemoto });
