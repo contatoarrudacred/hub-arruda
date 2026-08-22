@@ -1,4 +1,5 @@
-import { buscarStatusWebhook, type StatusWebhookAssinafy } from "@/lib/assinafy/cliente";
+import type { StatusWebhookAssinafy } from "@/lib/assinafy/cliente";
+import { buscarStatusWebhookAssinafyAction } from "./actions";
 import { AssinafyWebhookClient } from "./assinafy-webhook-client";
 
 // Server Actions herdam o maxDuration da página que os chama, não do arquivo actions.ts (ver
@@ -9,12 +10,16 @@ export const maxDuration = 30;
 
 export default async function AssinafyWebhookPage() {
   let statusInicial: StatusWebhookAssinafy | null = null;
+  let segredoBateInicial: boolean | null = null;
   let erroInicial: string | null = null;
-  try {
-    statusInicial = await buscarStatusWebhook();
-  } catch (erro) {
-    erroInicial = erro instanceof Error ? erro.message : "Falha ao consultar o status.";
+
+  const resultado = await buscarStatusWebhookAssinafyAction();
+  if (resultado.sucesso) {
+    statusInicial = resultado.status;
+    segredoBateInicial = resultado.segredoBate;
+  } else {
+    erroInicial = resultado.erro;
   }
 
-  return <AssinafyWebhookClient statusInicial={statusInicial} erroInicial={erroInicial} />;
+  return <AssinafyWebhookClient statusInicial={statusInicial} segredoBateInicial={segredoBateInicial} erroInicial={erroInicial} />;
 }
