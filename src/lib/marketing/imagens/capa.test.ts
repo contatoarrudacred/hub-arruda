@@ -1,7 +1,7 @@
 // src/lib/marketing/imagens/capa.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
-import { gerarCapa, gerarImagemComPrompt } from "./capa";
+import { CATALOGO_AMBIENTES_CENA, gerarCapa, gerarImagemComPrompt } from "./capa";
 import * as geradorImagemOpenAI from "./gerador-imagem-openai";
 import * as revisorImagem from "./revisor-imagem";
 import type { ConteudoGerado, PautaCarregada, PersonaCarregada } from "../tipos";
@@ -151,6 +151,87 @@ describe("gerarCapa", () => {
 
     const chamadaEtapa2 = mockCreate.mock.calls[1][0];
     expect(chamadaEtapa2.messages[0].content).toContain(persona.conteudoCompleto);
+  });
+
+  // Achado real de produção (22/08/2026): a etapa 3 (cruzamento) calculava uma "ideia visual
+  // única" que a etapa 4 (prompt final) nunca usava — cada uma reinventava a cena de forma
+  // independente. Corrigido: etapa 4 recebe e deve se basear no `ideia_visual` da etapa 3.
+  it("etapa 4 recebe a ideia_visual da etapa 3 no prompt (bug de wiring corrigido)", async () => {
+    const mockCreate = obterMockCreate();
+    mockarQuatroEtapasClaude(mockCreate);
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({
+      url: "data:image/png;base64,x=",
+      usage: { custoUsd: 0.041 },
+    });
+    vi.mocked(revisorImagem.revisarImagem).mockResolvedValue({
+      resultado: { aprovada: true, motivo: null },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await gerarCapa(pauta, conteudo, persona);
+
+    const chamadaEtapa4 = mockCreate.mock.calls[3][0];
+    expect(chamadaEtapa4.messages[0].content).toContain(
+      "Marcelo escondendo o celular com notificação de negativa da família.",
+    );
+  });
+
+  // Achado real de produção (22/08/2026, pedido do Luiz): as capas saíam quase sempre com o mesmo
+  // ambiente (personagem sentado à mesa de casa) — a IA converge pro ambiente "mais seguro" quando
+  // deixada livre, mesmo princípio já corrigido pro tipo de ângulo do texto (estrategista.ts).
+  // Correção: sorteia o ambiente (Math.random, catálogo de 14) e injeta como obrigatório nas
+  // etapas 3 e 4 — aqui travamos Math.random pra tornar o sorteio determinístico e verificável.
+  it("sorteia um ambiente do catálogo e o injeta como obrigatório nas etapas 3 e 4", async () => {
+    const mockCreate = obterMockCreate();
+    mockarQuatroEtapasClaude(mockCreate);
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({
+      url: "data:image/png;base64,x=",
+      usage: { custoUsd: 0.041 },
+    });
+    vi.mocked(revisorImagem.revisarImagem).mockResolvedValue({
+      resultado: { aprovada: true, motivo: null },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0); // sempre o primeiro do catálogo
+    try {
+      await gerarCapa(pauta, conteudo, persona);
+    } finally {
+      randomSpy.mockRestore();
+    }
+
+    const ambienteEsperado = CATALOGO_AMBIENTES_CENA[0];
+    const chamadaEtapa3 = mockCreate.mock.calls[2][0];
+    const chamadaEtapa4 = mockCreate.mock.calls[3][0];
+    expect(chamadaEtapa3.messages[0].content).toContain(ambienteEsperado);
+    expect(chamadaEtapa4.messages[0].content).toContain(ambienteEsperado);
+  });
+
+  // Sorteios diferentes devem poder produzir ambientes diferentes — prova que a escolha não está
+  // hard-coded num único valor do catálogo.
+  it("um sorteio diferente produz um ambiente diferente", async () => {
+    const mockCreate = obterMockCreate();
+    mockarQuatroEtapasClaude(mockCreate);
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({
+      url: "data:image/png;base64,x=",
+      usage: { custoUsd: 0.041 },
+    });
+    vi.mocked(revisorImagem.revisarImagem).mockResolvedValue({
+      resultado: { aprovada: true, motivo: null },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99); // último do catálogo
+    try {
+      await gerarCapa(pauta, conteudo, persona);
+    } finally {
+      randomSpy.mockRestore();
+    }
+
+    const ambienteEsperado = CATALOGO_AMBIENTES_CENA[CATALOGO_AMBIENTES_CENA.length - 1];
+    const chamadaEtapa3 = mockCreate.mock.calls[2][0];
+    expect(chamadaEtapa3.messages[0].content).toContain(ambienteEsperado);
+    expect(ambienteEsperado).not.toBe(CATALOGO_AMBIENTES_CENA[0]);
   });
 
   // Cenário 3: revisor reprova na 1ª tentativa com motivo, gerarCapa regenera a imagem dobrando o
