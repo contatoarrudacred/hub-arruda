@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { corEstagio, ehEstagioTerminal, ehEstagioTransitorio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
+import type { StatusContrato } from "@/lib/vendas/contratos";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
 import { cancelarVendaAction, excluirVendaAction, listarVendasAction, tentarNovamenteEmLoteAction } from "./actions";
 
@@ -175,11 +176,29 @@ function MenuAcoes({ venda, onMudou }: { venda: VendaResumo; onMudou: () => void
 export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaResumo[] }) {
   const [vendas, setVendas] = useState(vendasIniciais);
   const [visao, setVisao] = useState<"lista" | "kanban">("kanban");
+  // Achado real da auditoria de 21/08/2026: "Tentar novamente todos" já sabia quantos cards tinha
+  // retentado (tentarNovamenteEmLoteAction sempre devolveu `{ total }`) mas a tela descartava esse
+  // número — clicar no botão não dava nenhum retorno de quantos foram de fato re-tentados. Chave por
+  // etapa (`estagio.valor`) porque cada coluna tem seu próprio botão/resultado.
+  const [retentandoEmLote, setRetentandoEmLote] = useState<StatusContrato | null>(null);
+  const [feedbackRetentativa, setFeedbackRetentativa] = useState<Partial<Record<StatusContrato, string>>>({});
 
   const recarregar = useCallback(async () => {
     const recarregadas = await listarVendasAction();
     setVendas(recarregadas);
   }, []);
+
+  async function tentarNovamenteTodos(status: StatusContrato) {
+    setRetentandoEmLote(status);
+    const { total } = await tentarNovamenteEmLoteAction(status);
+    setRetentandoEmLote(null);
+    setFeedbackRetentativa((atual) => ({
+      ...atual,
+      [status]: total === 0 ? "Nenhum card com erro pra tentar." : total === 1 ? "1 card tentado." : `${total} cards tentados.`,
+    }));
+    setTimeout(() => setFeedbackRetentativa((atual) => ({ ...atual, [status]: undefined })), 4000);
+    recarregar();
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -293,16 +312,17 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                   {cardsDaColuna.some((v) => v.ultimoErro) && (
                     <button
                       type="button"
-                      onClick={async () => {
-                        await tentarNovamenteEmLoteAction(estagio.valor);
-                        recarregar();
-                      }}
-                      className="ml-auto text-xs text-amber-700 underline dark:text-amber-400"
+                      onClick={() => tentarNovamenteTodos(estagio.valor)}
+                      disabled={retentandoEmLote === estagio.valor}
+                      className="ml-auto text-xs text-amber-700 underline dark:text-amber-400 disabled:opacity-50"
                     >
-                      Tentar novamente todos
+                      {retentandoEmLote === estagio.valor ? "Tentando..." : "Tentar novamente todos"}
                     </button>
                   )}
                 </div>
+                {feedbackRetentativa[estagio.valor] && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">{feedbackRetentativa[estagio.valor]}</p>
+                )}
                 {cardsDaColuna.length > 0 && (
                   <p
                     className="text-xs text-zinc-500 dark:text-zinc-400"
