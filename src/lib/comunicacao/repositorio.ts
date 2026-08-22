@@ -123,6 +123,17 @@ export async function inserirMensagemSistema(params: {
     })
     .select("id")
     .single();
+
+  if (error?.code === "23505" && params.chaveIdempotencia) {
+    // Duas chamadas concorrentes com a mesma chave de idempotência passam as duas pela checagem
+    // prévia (buscarMensagemPorChaveIdempotencia, em enviar.ts) antes de qualquer uma inserir — a
+    // mensagem de verdade acaba sendo enviada duas vezes por fora (isso não dá pra evitar sem
+    // redesenhar pra "reservar antes de enviar", fora de escopo aqui), mas o INSERT da segunda
+    // estoura a UNIQUE em chave_idempotencia. Em vez de propagar um erro genérico, trata como
+    // idempotente: busca a mensagem que a primeira chamada já gravou e devolve o id dela.
+    const existente = await buscarMensagemPorChaveIdempotencia(params.chaveIdempotencia);
+    if (existente) return existente;
+  }
   if (error || !data) throw new Error(`Falha ao gravar mensagem do sistema: ${error?.message}`);
   return { id: data.id };
 }

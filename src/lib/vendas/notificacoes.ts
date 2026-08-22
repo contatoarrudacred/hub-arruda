@@ -26,8 +26,17 @@ export async function enviarPorEmail(pessoaId: string, assunto: string, texto: s
   await enviarComunicacao({ pessoaId, categoriaId, canal: "email", conteudo: { assunto, corpo: texto } });
 }
 
-/** Link de pagamento gerado automaticamente na criação da cobrança (Asaas) — silencioso, mesma decisão de antes (uma falha aqui não pode travar o fluxo de criação de cobrança). */
-export async function enviarLinkPagamentoWhatsapp(pessoaId: string, link: string): Promise<void> {
+/**
+ * Link de pagamento gerado automaticamente na criação da cobrança (Asaas) — silencioso, mesma
+ * decisão de antes (uma falha aqui não pode travar o fluxo de criação de cobrança).
+ *
+ * `chaveIdempotencia` opcional — quem chama de um contexto com retry explícito (ex.:
+ * `criarCobrancasDoContrato`, src/lib/asaas/adapter.ts, cuja retentativa manual pode rodar de novo
+ * depois de um sucesso parcial anterior) deve passar uma chave estável pra não reenviar o mesmo
+ * link de pagamento duplicado ao lead. Chamadores de reenvio intencional (ex.: `reenviarLinkAction`)
+ * continuam sem chave — ali o reenvio é o comportamento esperado.
+ */
+export async function enviarLinkPagamentoWhatsapp(pessoaId: string, link: string, chaveIdempotencia?: string): Promise<void> {
   try {
     const categoriaId = await idCategoriaCobranca();
     await enviarComunicacao({
@@ -35,6 +44,7 @@ export async function enviarLinkPagamentoWhatsapp(pessoaId: string, link: string
       categoriaId,
       canal: "whatsapp",
       conteudo: { texto: `Aqui está o link para pagamento: ${link}` },
+      chaveIdempotencia,
     });
   } catch (e) {
     console.error("[vendas/notificacoes] falha ao enviar link de pagamento automático:", e);

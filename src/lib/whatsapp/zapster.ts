@@ -98,8 +98,9 @@ export async function enviarMensagemMidia(
   telefone: string,
   urlMidia: string,
   legenda?: string,
+  instancia: InstanciaZapster = "oficial",
 ): Promise<{ messageId: string }> {
-  const { baseUrl, token, instanceId } = obterConfig();
+  const { baseUrl, token, instanceId } = obterConfig(instancia);
 
   const resposta = await fetch(`${baseUrl}/wa/messages`, {
     method: "POST",

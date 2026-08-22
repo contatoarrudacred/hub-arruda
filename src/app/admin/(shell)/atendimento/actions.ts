@@ -154,7 +154,17 @@ export async function resolverEstagnacaoAction(conversaId: string): Promise<void
 
 export type ResultadoEnviarMensagem = { sucesso: true } | { sucesso: false; erro: string };
 
-/** Envia de verdade via WhatsApp (Zapster) e registra na conversa. Só deve ser chamado quando o atendimento está com um humano (composer desabilitado com a Malala no controle, ver Tela de Atendimento seção 5). */
+/**
+ * Envia de verdade via WhatsApp (Zapster) e registra na conversa. Só deve ser chamado quando o
+ * atendimento está com um humano (composer desabilitado com a Malala no controle, ver Tela de
+ * Atendimento seção 5).
+ *
+ * Busca a `instancia` real da conversa no banco (nunca confia em nada vindo do client) — se a
+ * conversa for `secundaria` (mecanismo de comunicação centralizada disparou por lá porque o lead
+ * ainda não tinha escrito pro oficial, ver Task 12), a resposta manual do atendente precisa sair
+ * pela MESMA instância; sair pelo oficial nesse caso seria o próprio número oficial iniciando
+ * contato — exatamente o risco de banimento que a instância secundária existe pra evitar.
+ */
 export async function enviarMensagemAction(
   conversaId: string,
   telefone: string,
@@ -162,7 +172,9 @@ export async function enviarMensagemAction(
 ): Promise<ResultadoEnviarMensagem> {
   if (!texto.trim()) return { sucesso: false, erro: "Mensagem vazia." };
   try {
-    const { messageId } = await enviarMensagemTexto(telefone, texto);
+    const conversa = await carregarConversaDetalhe(conversaId);
+    const instancia = conversa.instancia === "secundaria" ? "secundaria" : "oficial";
+    const { messageId } = await enviarMensagemTexto(telefone, texto, instancia);
     await registrarMensagemHumana(conversaId, texto, messageId || null);
     revalidatePath("/admin/atendimento");
     return { sucesso: true };
@@ -196,7 +208,10 @@ export async function enviarMidiaAction(
   const upload = await uploadMidiaAction(formData);
   if (!upload.sucesso) return { sucesso: false, erro: upload.erro };
   try {
-    const { messageId } = await enviarMensagemMidia(telefone, upload.url, legenda || undefined);
+    // Mesma regra de `enviarMensagemAction` acima: instância real do banco, não do client.
+    const conversa = await carregarConversaDetalhe(conversaId);
+    const instancia = conversa.instancia === "secundaria" ? "secundaria" : "oficial";
+    const { messageId } = await enviarMensagemMidia(telefone, upload.url, legenda || undefined, instancia);
     await registrarMensagemHumana(conversaId, legenda, messageId || null, upload.url, midiaTipo);
     revalidatePath("/admin/atendimento");
     return { sucesso: true };

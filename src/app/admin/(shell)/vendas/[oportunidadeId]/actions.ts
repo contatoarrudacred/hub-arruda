@@ -40,10 +40,10 @@ export async function buscarStatusCobrancasAction(
   }
 }
 
-/** Botão continua na tela (decisão do Luiz, 21/08/2026) — só o envio direto (Zapster/Resend) está
- * desativado dentro de enviarWhatsapp/enviarPorEmail (src/lib/vendas/notificacoes.ts), que lançam
- * um erro explicando que o envio precisa passar pelo módulo CRM, ainda em integração. Não plugar de
- * volta o envio direto aqui — aguardar as instruções do Luiz de como rotear isso pelo CRM. */
+/** Reenvio manual do link (assinatura/pagamento) pelo botão em Detalhes da Venda. Desde a Task 13
+ * (22/08/2026), `enviarWhatsapp`/`enviarPorEmail` (src/lib/vendas/notificacoes.ts) já mandam de
+ * verdade, passando pelo mecanismo de comunicação centralizada (src/lib/comunicacao/enviar.ts) —
+ * não é mais um envio direto pra Zapster/Resend nem está desativado. */
 export async function reenviarLinkAction(
   pessoaId: string,
   canal: "whatsapp" | "email",

@@ -78,7 +78,9 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
   if (contrato.metodoPagamento === "cartao") {
     const link = await gerarEPersistirCheckout(contrato);
     await atualizarStatusContrato(contratoId, "aguardando_pagamento");
-    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, link);
+    // Chave estável por contrato — uma retentativa manual (Task 14) que chame isto de novo depois de
+    // já ter enviado o link com sucesso não deve reenviar o mesmo link duplicado ao lead.
+    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, link, `vendas_link_pagamento_${contratoId}`);
     return;
   }
 
@@ -120,7 +122,8 @@ export async function criarCobrancasDoContrato(contratoId: string): Promise<void
   await atualizarStatusContrato(contratoId, "aguardando_pagamento");
 
   if (linkPrimeiraParcela) {
-    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, linkPrimeiraParcela);
+    // Mesma chave de idempotência do ramo "cartão" acima — protege contra o mesmo cenário de retry.
+    await enviarLinkPagamentoWhatsapp(contrato.pessoaSignatarioId, linkPrimeiraParcela, `vendas_link_pagamento_${contratoId}`);
   }
 }
 

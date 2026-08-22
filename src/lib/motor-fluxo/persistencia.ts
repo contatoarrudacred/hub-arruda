@@ -103,26 +103,49 @@ export async function carregarOuCriarConversaWhatsapp(
     pessoaExistente = pessoasComTelefone[0];
   } else if (pessoasComTelefone && pessoasComTelefone.length > 1) {
     const ids = pessoasComTelefone.map((p) => p.id);
-    const { data: comConversaAtiva } = await supabase
+    // `.is("instancia", null)` = só a conversa OFICIAL (mesmo padrão de `buscarConversaWhatsappOficial`,
+    // src/lib/comunicacao/repositorio.ts) — desde a comunicação centralizada (22/08/2026) pode existir
+    // também uma conversa `instancia="secundaria"` pra essa pessoa (criada pelo mecanismo de disparo,
+    // sem o lead nunca ter escrito pro oficial); sem este filtro o motor de fluxo (que só deve rodar na
+    // conversa oficial) podia pegar a secundária por engano nesta desambiguação.
+    const { data: comConversaAtiva, error: erroComConversaAtiva } = await supabase
       .from("conversas")
       .select("pessoa_id")
       .in("pessoa_id", ids)
       .eq("canal", "whatsapp")
       .eq("status", "ativa")
+      .is("instancia", null)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (erroComConversaAtiva) {
+      throw new Error(
+        `Falha ao desambiguar pessoa com telefone duplicado (conversa oficial ativa): ${erroComConversaAtiva.message}`,
+      );
+    }
     pessoaExistente = comConversaAtiva ? { id: comConversaAtiva.pessoa_id } : pessoasComTelefone[pessoasComTelefone.length - 1];
   }
 
   if (pessoaExistente) {
-    const { data: conversaAtiva } = await supabase
+    // Mesmo motivo do `.is("instancia", null)` acima: sem ele, uma pessoa com conversa secundária E
+    // oficial simultâneas fazia o `.maybeSingle()` estourar "multiple rows returned" — erro que antes
+    // desta correção era descartado (`const { data } = ...`, sem capturar `error`), fazendo
+    // `conversaAtiva` virar `null` silenciosamente e o código abaixo cair no caminho de CRIAR uma
+    // conversa/oportunidade nova a cada mensagem (duplicando oportunidades e reiniciando o fluxo a
+    // cada turno). Agora captura o erro e lança, em vez de mascarar.
+    const { data: conversaAtiva, error: erroConversaAtiva } = await supabase
       .from("conversas")
       .select("id, oportunidade_id, etapa_fluxo_atual_id, dados, sob_supervisor, oportunidades(etapa_kanban)")
       .eq("pessoa_id", pessoaExistente.id)
       .eq("canal", "whatsapp")
       .eq("status", "ativa")
+      .is("instancia", null)
       .maybeSingle();
+    if (erroConversaAtiva) {
+      throw new Error(
+        `Falha ao carregar conversa oficial de WhatsApp da pessoa ${pessoaExistente.id}: ${erroConversaAtiva.message}`,
+      );
+    }
 
     if (conversaAtiva?.oportunidade_id) {
       // Lead que tinha sido marcado Perdida voltou a responder — reabre a oportunidade (decisão de

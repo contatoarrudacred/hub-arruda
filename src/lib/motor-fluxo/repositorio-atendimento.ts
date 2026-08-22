@@ -309,6 +309,11 @@ export async function listarConversasAtendimento(
     .from("conversas_resumo")
     .select("*")
     .eq("status", "ativa")
+    // A Tela de Atendimento só tem UI de WhatsApp por enquanto — sem este filtro, uma conversa
+    // `canal="email"` criada pelo mecanismo de comunicação centralizada (22/08/2026) aparecia
+    // aqui como se fosse WhatsApp, e "responder" nela mandava WhatsApp pro telefone da pessoa. E-mail
+    // não tem tela própria ainda (fora de escopo aqui).
+    .eq("canal", "whatsapp")
     // Escopo padrão (TELA_ATENDIMENTO_ARRUDACRED.md seção 2): esconde oportunidade "perdida" —
     // volta a aparecer sozinha se o lead responder de novo (a oportunidade reabre na última etapa,
     // motor-followup.ts, sem precisar de filtro nenhum aqui).
@@ -344,6 +349,7 @@ export async function listarConversasAtendimento(
         .from("conversas_resumo")
         .select("*")
         .eq("status", "ativa")
+        .eq("canal", "whatsapp")
         .in("conversa_id", Array.from(idsViaMensagem));
       const idsJaListados = new Set(linhas.map((l) => l.conversa_id));
       for (const extra of extras ?? []) {
