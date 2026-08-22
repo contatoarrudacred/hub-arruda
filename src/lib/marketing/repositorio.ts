@@ -398,12 +398,18 @@ export async function criarPost(params: {
  * primeiro + `limit(1)`: uma pauta pode, em teoria, ter mais de um post ao longo de tentativas
  * diferentes (cada `criarPost` insere uma linha nova) — sempre o mais recente é o que reflete a
  * tentativa mais avançada.
+ *
+ * `rascunhoIdWordpress` (21/08/2026, achado real de produção — duplicidade de post no WordPress):
+ * se uma tentativa anterior já chegou a criar o post no WordPress (etapa "publicar" com sucesso,
+ * `rascunho_id` persistido ali mesmo — ver processar-pauta.ts) mas morreu antes de
+ * "registrar_resultado" completar, este campo carrega esse id pra próxima tentativa ATUALIZAR o
+ * post existente em vez de criar outro.
  */
 export async function carregarPostProntoParaPublicar(pautaId: string): Promise<PostProntoParaPublicar | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("posts")
-    .select("id, titulo, conteudo_html, meta_title, meta_description, slug, imagem_destaque_media_id")
+    .select("id, titulo, conteudo_html, meta_title, meta_description, slug, imagem_destaque_media_id, canais")
     .eq("pauta_id", pautaId)
     .eq("status", "rascunho")
     .eq("pronto_para_publicar", true)
@@ -414,12 +420,15 @@ export async function carregarPostProntoParaPublicar(pautaId: string): Promise<P
   if (error) throw new Error(`Falha ao carregar post pronto para pauta ${pautaId}: ${error.message}`);
   if (!data) return null;
 
+  const canais = data.canais as { wordpress?: { rascunho_id?: string } } | null;
+
   return {
     id: data.id,
     titulo: data.titulo,
     conteudoHtml: data.conteudo_html,
     metaTitle: data.meta_title,
     metaDescription: data.meta_description,
+    rascunhoIdWordpress: canais?.wordpress?.rascunho_id ?? null,
     slug: data.slug,
     imagemDestaqueMediaId: data.imagem_destaque_media_id,
   };

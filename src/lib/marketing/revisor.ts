@@ -268,11 +268,25 @@ export async function revisarConteudo(
   const bruta = blocoFerramenta.input as ResultadoBrutoFerramenta;
   const aprovado = calcularAprovacao(bruta, propriedade);
 
+  // Achado real de produção (21/08/2026): uma reprovação sem `motivo` preenchido é inutilizável —
+  // nem o Escritor nem um humano revisando manualmente sabem o que corrigir. O schema não pode
+  // forçar `motivo` como obrigatório incondicionalmente (ele é null de propósito quando aprovado),
+  // então isto já aconteceu antes por truncamento de tokens (ver comentário do max_tokens acima,
+  // 2 ocorrências reais) e voltou a acontecer aqui sem truncamento nenhum — o modelo simplesmente
+  // não preencheu. Trata os dois casos como falha TÉCNICA (lança, não retorna), mesmo padrão já
+  // usado em escritor.ts pra "resposta truncada por limite de tokens": melhor perder esta
+  // tentativa e deixar a próxima (ou o circuit breaker, se repetir) lidar com isso do que persistir
+  // "Reprovado sem motivo detalhado." — uma reprovação de negócio fantasma, sem diagnóstico nenhum.
+  if (!aprovado && !bruta.motivo) {
+    const causa = resposta.stop_reason === "max_tokens" ? "resposta truncada por limite de tokens" : "campo 'motivo' não preenchido pelo modelo";
+    throw new Error(`Revisor: reprovação sem motivo (${causa}).`);
+  }
+
   return {
     resultado: {
       aprovado,
       score: bruta.score,
-      motivo: aprovado ? null : (bruta.motivo ?? "Reprovado sem motivo detalhado."),
+      motivo: aprovado ? null : bruta.motivo!,
       precisaoFactualAdequada: bruta.precisao_factual_adequada,
       fontesEspecificas: bruta.fontes_especificas,
       originalidadeAdequada: bruta.originalidade_adequada,

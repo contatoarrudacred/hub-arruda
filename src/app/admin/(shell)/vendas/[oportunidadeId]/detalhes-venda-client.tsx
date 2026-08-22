@@ -138,6 +138,10 @@ function LinkCopiavel({ link }: { link: string }) {
   );
 }
 
+/** Envio direto pra Zapster/Resend está desativado no módulo Vendas (decisão do Luiz, 21/08/2026,
+ * ver src/lib/vendas/notificacoes.ts) — os botões continuam na tela, mas clicar mostra a mensagem
+ * explicando que o envio precisa passar pelo módulo CRM, ainda em integração. Não remover os
+ * botões: o Luiz vai trazer as instruções de como plugar isso no CRM. */
 function BotoesReenvio({
   pessoaId,
   contexto,
@@ -624,21 +628,27 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const parcelasComCobranca = contrato.parcelas.filter((p) => p.status !== "previsto");
+  // Achado real, Luiz 21/08/2026: as duas funções abaixo mandavam `p.id` (o id da nossa própria
+  // linha em contrato_parcelas) pra Asaas, em vez de `p.asaasPaymentId` (o id real da cobrança lá) —
+  // por coincidência o mesmo `p.id` também é o `externalReference` que mandamos ao criar a cobrança
+  // (ver criarCobranca, asaas/adapter.ts), então o erro 404 "parecia" um id de cobrança de verdade
+  // sem ser. Corrigido: a consulta usa `asaasPaymentId`; o Map de resultado continua indexado por
+  // `p.id` (não pelo id da Asaas) porque é assim que o restante do componente já busca no Map.
+  const parcelasComCobranca = contrato.parcelas.filter((p) => p.asaasPaymentId !== null);
   const temAtraso = contrato.parcelas.some((p) => p.status === "atrasado");
 
   async function verificar() {
     setCarregando(true);
     setErro(null);
-    const ids = parcelasComCobranca.map((p) => p.id);
-    const resultado = await buscarStatusCobrancasAction(ids);
+    const asaasIds = parcelasComCobranca.map((p) => p.asaasPaymentId!);
+    const resultado = await buscarStatusCobrancasAction(asaasIds);
     setCarregando(false);
     if (!resultado.sucesso) {
       setErro(resultado.erro);
       return;
     }
     const mapa = new Map<string, CobrancaStatus>();
-    resultado.cobrancas.forEach((c, i) => mapa.set(ids[i], c));
+    parcelasComCobranca.forEach((p, i) => mapa.set(p.id, resultado.cobrancas[i]));
     setStatus(mapa);
   }
 
@@ -649,11 +659,11 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
   useEffect(() => {
     if (parcelasComCobranca.length === 0) return;
     let cancelado = false;
-    const ids = parcelasComCobranca.map((p) => p.id);
-    buscarStatusCobrancasAction(ids).then((resultado) => {
+    const asaasIds = parcelasComCobranca.map((p) => p.asaasPaymentId!);
+    buscarStatusCobrancasAction(asaasIds).then((resultado) => {
       if (cancelado || !resultado.sucesso) return;
       const mapa = new Map<string, CobrancaStatus>();
-      resultado.cobrancas.forEach((c, i) => mapa.set(ids[i], c));
+      parcelasComCobranca.forEach((p, i) => mapa.set(p.id, resultado.cobrancas[i]));
       setStatus(mapa);
     });
     return () => {

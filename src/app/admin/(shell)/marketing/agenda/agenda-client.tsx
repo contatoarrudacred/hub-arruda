@@ -9,12 +9,14 @@ import type { DadosPautaManual, FunilPauta, MatrizAdmin, PersonaAtiva, PostAgend
 import { agendarPostAction } from "./agendamento-actions";
 import { carregarImagensPostAction, trocarCapaAction, trocarImagemSecundariaAction, type ImagensPost } from "./imagens-actions";
 import { criarPautaManualAction, listarMatrizesAtivasAction, listarPersonasParaPautaManualAction } from "./pauta-manual-actions";
+import { carregarPostVisualizacaoAction, type PostVisualizacao } from "./visualizar-actions";
 
 type Propriedade = { id: string; nome: string; horariosPublicacao?: string[] };
 
 type ModalAberto =
-  | { tipo: "acoes"; postId: string }
+  | { tipo: "acoes"; postId: string; posicao: { top: number; left: number } }
   | { tipo: "trocar-foto"; postId: string }
+  | { tipo: "visualizar-local"; postId: string }
   | { tipo: "agendar"; postId: string; diaFixo?: string };
 
 const campo =
@@ -79,13 +81,15 @@ function celulasDoMes(ano: number, mes: number): { diaISO: string; dia: number; 
 
 // Arrastável só quando "Agendado" (futuro) — post já ao vivo não faz sentido reagendar por drag,
 // e um post "Publicado" arrastado pra outro dia não teria efeito nenhum no WordPress.
-function BadgePost({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirAcoes: (postId: string) => void }) {
+function BadgePost({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirAcoes: (postId: string, origem: HTMLElement) => void }) {
   const agendado = Boolean(post.agendadoPara && new Date(post.agendadoPara) > new Date());
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `post:${post.id}`, disabled: !agendado });
   const classe = agendado
     ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
     : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
-  const rotuloBadge = agendado ? `Agendado ${horaEmSaoPaulo(post.agendadoPara!)}` : "Publicado";
+  // 21/08/2026, pedido do Luiz: sem a palavra "Agendado" — o relógio já comunica isso, e economiza
+  // espaço no chip pro título aparecer mais completo.
+  const rotuloBadge = agendado ? `🕐 ${horaEmSaoPaulo(post.agendadoPara!)}` : "Publicado";
   return (
     <span
       ref={agendado ? setNodeRef : undefined}
@@ -108,7 +112,7 @@ function BadgePost({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirAcoes
       )}
       <button
         type="button"
-        onClick={() => onAbrirAcoes(post.id)}
+        onClick={(e) => onAbrirAcoes(post.id, e.currentTarget)}
         className="shrink-0 rounded px-1 text-zinc-500 hover:bg-black/10 dark:text-zinc-300 dark:hover:bg-white/10"
         aria-label="Ações do post"
       >
@@ -127,7 +131,7 @@ function CelulaDia({ diaISO, children, className }: { diaISO: string; children: 
   );
 }
 
-function LinhaPendente({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirAcoes: (postId: string) => void }) {
+function LinhaPendente({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirAcoes: (postId: string, origem: HTMLElement) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `post:${post.id}` });
   return (
     <tr ref={setNodeRef} style={{ opacity: isDragging ? 0.4 : 1 }} className="align-top text-zinc-800 dark:text-zinc-100">
@@ -142,7 +146,7 @@ function LinhaPendente({ post, onAbrirAcoes }: { post: PostAgendaAdmin; onAbrirA
       <td className="px-4 py-2.5 text-right">
         <button
           type="button"
-          onClick={() => onAbrirAcoes(post.id)}
+          onClick={(e) => onAbrirAcoes(post.id, e.currentTarget)}
           className="rounded px-1.5 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           aria-label="Ações do post"
         >
@@ -175,6 +179,19 @@ export function AgendaClient({
 
   function aoTrocarPropriedade(id: string) {
     router.push(id ? `/admin/marketing/agenda?propriedadeId=${id}` : "/admin/marketing/agenda");
+  }
+
+  // Menu flutuante de ações (21/08/2026, pedido do Luiz — antes era uma modal centralizada) — abre
+  // ancorado no botão "⋯" clicado em vez do centro da tela. Clamp simples pra não vazar pra fora do
+  // viewport perto das bordas (largura/altura estimadas do menu, únicas usadas nesta tela).
+  function abrirMenuAcoes(postId: string, origem: HTMLElement) {
+    const rect = origem.getBoundingClientRect();
+    const larguraMenu = 224;
+    const alturaMenuEstimada = 220;
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - larguraMenu - 8);
+    const top =
+      rect.bottom + alturaMenuEstimada > window.innerHeight ? Math.max(8, rect.top - alturaMenuEstimada) : rect.bottom + 4;
+    setModal({ tipo: "acoes", postId, posicao: { top, left } });
   }
 
   function aoTerminarDrag(event: DragEndEvent) {
@@ -227,6 +244,11 @@ export function AgendaClient({
       const lista = mapa.get(diaISO) ?? [];
       lista.push(post);
       mapa.set(diaISO, lista);
+    }
+    // Ordem cronológica dentro do dia (21/08/2026, pedido do Luiz) — sem isto a ordem seguia só a
+    // da query (não necessariamente por horário), confuso num dia com vários posts.
+    for (const lista of mapa.values()) {
+      lista.sort((a, b) => new Date(a.agendadoPara ?? a.publicadoEm!).getTime() - new Date(b.agendadoPara ?? b.publicadoEm!).getTime());
     }
     return mapa;
   }, [postsFiltrados]);
@@ -361,7 +383,7 @@ export function AgendaClient({
                 >
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">{celula.dia}</span>
                   {visiveis.map((post) => (
-                    <BadgePost key={post.id} post={post} onAbrirAcoes={(id) => setModal({ tipo: "acoes", postId: id })} />
+                    <BadgePost key={post.id} post={post} onAbrirAcoes={abrirMenuAcoes} />
                   ))}
                   {restantes > 0 && <span className="block text-[11px] text-zinc-400">+{restantes} mais</span>}
                 </CelulaDia>
@@ -387,7 +409,7 @@ export function AgendaClient({
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                   {pendentesFiltrados.map((post) => (
-                    <LinhaPendente key={post.id} post={post} onAbrirAcoes={(id) => setModal({ tipo: "acoes", postId: id })} />
+                    <LinhaPendente key={post.id} post={post} onAbrirAcoes={abrirMenuAcoes} />
                   ))}
                 </tbody>
               </table>
@@ -399,6 +421,9 @@ export function AgendaClient({
       {modal?.tipo === "acoes" && postAlvo && (
         <ModalAcoesPost
           postId={postAlvo.id}
+          posicao={modal.posicao}
+          urlWordpress={postAlvo.url}
+          jaPublicadoDeVerdade={Boolean(postAlvo.url) && !(postAlvo.agendadoPara && new Date(postAlvo.agendadoPara) > hoje)}
           elegivelAgendamento={!postAlvo.agendadoPara || new Date(postAlvo.agendadoPara) > hoje}
           jaAgendado={Boolean(postAlvo.agendadoPara)}
           onFechar={() => setModal(null)}
@@ -406,6 +431,7 @@ export function AgendaClient({
         />
       )}
       {modal?.tipo === "trocar-foto" && <ModalTrocarFoto postId={modal.postId} onFechar={() => setModal(null)} />}
+      {modal?.tipo === "visualizar-local" && <ModalVisualizarPostLocal postId={modal.postId} onFechar={() => setModal(null)} />}
       {modal?.tipo === "agendar" && postAlvo && (
         <ModalAgendar
           postId={postAlvo.id}
@@ -435,58 +461,140 @@ export function AgendaClient({
   );
 }
 
+const itemMenu =
+  "block w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800";
+
+/**
+ * Menu flutuante de ações (21/08/2026, pedido do Luiz — antes era uma modal centralizada com
+ * fundo escurecido). Ancorado no botão "⋯" que abriu (posicao vem de abrirMenuAcoes), fecha ao
+ * clicar fora via uma camada invisível por trás — sem bg-black/50, é um menu, não uma modal.
+ */
 function ModalAcoesPost({
   postId,
+  posicao,
+  urlWordpress,
+  jaPublicadoDeVerdade,
   elegivelAgendamento,
   jaAgendado,
   onFechar,
   onEscolher,
 }: {
   postId: string;
+  posicao: { top: number; left: number };
+  urlWordpress: string | null;
+  jaPublicadoDeVerdade: boolean;
   elegivelAgendamento: boolean;
   jaAgendado: boolean;
   onFechar: () => void;
-  onEscolher: (tipo: "trocar-foto" | "agendar") => void;
+  onEscolher: (tipo: "trocar-foto" | "agendar" | "visualizar-local") => void;
 }) {
   const router = useRouter();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onFechar}>
-      <div className="w-full max-w-xs rounded-xl bg-white p-4 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between pb-2">
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Ações</h2>
+    <>
+      <div className="fixed inset-0 z-40" onClick={onFechar} />
+      <div
+        className="fixed z-50 w-56 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        style={{ top: posicao.top, left: posicao.left }}
+      >
+        <button type="button" onClick={() => onEscolher("visualizar-local")} className={itemMenu}>
+          👁️ Visualizar post (local)
+        </button>
+        {jaPublicadoDeVerdade && urlWordpress && (
+          <a href={urlWordpress} target="_blank" rel="noopener noreferrer" onClick={onFechar} className={itemMenu}>
+            🌐 Visualizar no WordPress
+          </a>
+        )}
+        <button type="button" onClick={() => onEscolher("trocar-foto")} className={itemMenu}>
+          🖼️ Trocar foto
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/admin/marketing/agenda/${postId}/editar`)}
+          className={itemMenu}
+        >
+          ✏️ Editar post
+        </button>
+        {elegivelAgendamento && (
+          <button type="button" onClick={() => onEscolher("agendar")} className={itemMenu}>
+            📅 {jaAgendado ? "Reagendar..." : "Agendar..."}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Visualizar post (local) (21/08/2026, pedido do Luiz) — preview só-leitura do que está salvo no
+ * NOSSO banco, distinto de "Visualizar no WordPress" (o post ao vivo lá fora). Mesmo padrão
+ * lazy-fetch-on-open de ModalTrocarFoto/ModalVisualizarPost (Monitor). conteudoHtml já passou por
+ * sanitizarConteudoHtml no pipeline — seguro renderizar direto.
+ */
+function ModalVisualizarPostLocal({ postId, onFechar }: { postId: string; onFechar: () => void }) {
+  const [dados, setDados] = useState<PostVisualizacao | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erroCarregar, setErroCarregar] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    Promise.resolve().then(async () => {
+      setCarregando(true);
+      setErroCarregar(false);
+      try {
+        const resultado = await carregarPostVisualizacaoAction(postId);
+        if (cancelado) return;
+        setDados(resultado);
+        setCarregando(false);
+      } catch {
+        if (cancelado) return;
+        setErroCarregar(true);
+        setCarregando(false);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [postId]);
+
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onFechar();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [onFechar]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-10" onClick={onFechar}>
+      <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{dados?.titulo ?? "Visualizar post"}</h2>
           <button
             type="button"
             onClick={onFechar}
-            className="rounded-full px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="shrink-0 rounded-full px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
             ✕
           </button>
         </div>
-        <div className="space-y-1">
-          <button
-            type="button"
-            onClick={() => onEscolher("trocar-foto")}
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            🖼️ Trocar foto
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push(`/admin/marketing/agenda/${postId}/editar`)}
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            ✏️ Editar post
-          </button>
-          {elegivelAgendamento && (
-            <button
-              type="button"
-              onClick={() => onEscolher("agendar")}
-              className="block w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-            >
-              📅 {jaAgendado ? "Reagendar..." : "Agendar..."}
-            </button>
-          )}
-        </div>
+
+        {carregando && <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Carregando…</p>}
+        {erroCarregar && <p className="mt-4 text-sm text-red-600 dark:text-red-400">Não foi possível carregar este post.</p>}
+
+        {dados && !carregando && !erroCarregar && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">Meta title:</span> {dados.metaTitle}
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">Meta description:</span> {dados.metaDescription}
+            </p>
+            <div
+              className="prose prose-sm max-w-none border-t border-zinc-100 pt-3 dark:prose-invert dark:border-zinc-800"
+              dangerouslySetInnerHTML={{ __html: dados.conteudoHtml }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

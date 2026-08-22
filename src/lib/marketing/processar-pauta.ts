@@ -494,12 +494,18 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
     let corpoHtmlParaPublicar: string;
     let dadosConteudo: { titulo: string; slug: string; metaTitle: string; metaDescription: string };
     let imagemDestacadaId: string | undefined;
+    // Achado real de produção (21/08/2026): quando presente, uma tentativa ANTERIOR desta mesma
+    // pauta já criou este post no WordPress (etapa "publicar" teve sucesso, id persistido ali
+    // mesmo) mas morreu antes de "registrar_resultado" completar — a etapa "publicar" abaixo usa
+    // isto pra ATUALIZAR o post existente em vez de criar um duplicado.
+    let rascunhoIdExistente: string | undefined;
 
     if (postPronto) {
       postId = postPronto.id;
       corpoHtmlParaPublicar = postPronto.conteudoHtml;
       dadosConteudo = { titulo: postPronto.titulo, slug: postPronto.slug, metaTitle: postPronto.metaTitle, metaDescription: postPronto.metaDescription };
       imagemDestacadaId = postPronto.imagemDestaqueMediaId ?? undefined;
+      rascunhoIdExistente = postPronto.rascunhoIdWordpress ?? undefined;
     } else {
       // Cada etapa é envolvida por registrarEtapa (Task 3) — grava início/fim/sucesso em
       // pautas_execucao_log, alimentando o Monitor de execução e o Painel de Custo (spec seção 6).
@@ -746,17 +752,50 @@ export async function processarProximaPauta(matrizConteudoId: string, propriedad
         // imagens secundárias + schema já embutidos, e o id de mídia da capa já enviada ao
         // WordPress (undefined quando a capa não gerou/não subiu, e criarRascunho trata isso como
         // "sem imagem destacada", ver canais/wordpress.ts).
-        const rascunho = await adaptador.criarRascunho(
-          {
-            titulo: dadosConteudo.titulo,
-            corpoHtml: corpoHtmlParaPublicar,
-            slug: dadosConteudo.slug,
-            metaTitle: dadosConteudo.metaTitle,
-            metaDescription: dadosConteudo.metaDescription,
-          },
-          imagemDestacadaId,
-          agendadoPara ?? undefined,
-        );
+        //
+        // Achado real de produção (21/08/2026, duplicidade de post no WordPress): quando
+        // rascunhoIdExistente já existe (uma tentativa anterior desta pauta já criou o post, mas
+        // morreu antes de "registrar_resultado" persistir isso — ver carregarPostProntoParaPublicar),
+        // ATUALIZA esse post em vez de criar outro. Sem `rascunhoIdExistente`, comportamento
+        // idêntico a antes: cria um post novo e persiste o id JÁ (antes de verificar/aprovar) —
+        // é exatamente essa persistência que falta antes desta correção, e que permite a próxima
+        // tentativa (se houver) reconhecer que o post já existe.
+        const rascunho = rascunhoIdExistente
+          ? {
+              idRemoto: rascunhoIdExistente,
+              status: "rascunho" as const,
+              link: (
+                await adaptador.atualizarPost(rascunhoIdExistente, {
+                  title: dadosConteudo.titulo,
+                  content: corpoHtmlParaPublicar,
+                  slug: dadosConteudo.slug,
+                  meta: { _yoast_wpseo_title: dadosConteudo.metaTitle, _yoast_wpseo_metadesc: dadosConteudo.metaDescription },
+                  ...(imagemDestacadaId ? { featuredMedia: imagemDestacadaId } : {}),
+                  ...(agendadoPara ? { status: "future" as const, dateGmt: agendadoPara.toISOString() } : {}),
+                })
+              ).link,
+            }
+          : await (async () => {
+              const criado = await adaptador.criarRascunho(
+                {
+                  titulo: dadosConteudo.titulo,
+                  corpoHtml: corpoHtmlParaPublicar,
+                  slug: dadosConteudo.slug,
+                  metaTitle: dadosConteudo.metaTitle,
+                  metaDescription: dadosConteudo.metaDescription,
+                },
+                imagemDestacadaId,
+                agendadoPara ?? undefined,
+              );
+              try {
+                await atualizarStatusPost(postId, "rascunho", {
+                  canais: { wordpress: { rascunho_id: criado.idRemoto, status: "rascunho", url: criado.link } },
+                });
+              } catch (erroPersistirRascunhoId) {
+                console.error(`Pauta ${pauta.id}: falha ao persistir rascunho_id ${criado.idRemoto} (não bloqueia a publicação):`, erroPersistirRascunhoId);
+              }
+              return criado;
+            })();
 
         const verificacao = await adaptador.verificarRascunho(rascunho.idRemoto);
         if (!verificacao.ok) {

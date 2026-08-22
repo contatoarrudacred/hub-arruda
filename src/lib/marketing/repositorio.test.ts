@@ -9,6 +9,7 @@ import {
   carregarDuracaoMediaPorEtapa,
   carregarPersona,
   carregarPersonaFormulario,
+  carregarPostProntoParaPublicar,
   carregarPostsRecentes,
   carregarProximosAgendamentos,
   carregarPropriedade,
@@ -1737,6 +1738,59 @@ describe("carregarPostDetalhado", () => {
     mockarFrom(criarQueryFalsa({ data: null, error: erro }));
 
     await expect(carregarPostDetalhado("post-1")).rejects.toThrow(/Falha ao carregar post post-1.*erro de teste/);
+  });
+});
+
+// Achado real de produção (21/08/2026, duplicidade de post no WordPress): rascunhoIdWordpress
+// precisa vir junto do resto do post reaproveitável, senão a etapa "publicar" (processar-pauta.ts)
+// não tem como saber que uma tentativa anterior já criou o post no WordPress, e cria outro.
+describe("carregarPostProntoParaPublicar", () => {
+  const postProntoBruto = {
+    id: "post-1",
+    titulo: "Como Limpar o Nome",
+    conteudo_html: "<h1>Como Limpar o Nome</h1><p>...</p>",
+    meta_title: "Como Limpar o Nome | Guia",
+    meta_description: "Guia completo.",
+    slug: "como-limpar-o-nome",
+    imagem_destaque_media_id: "media-1",
+    canais: { wordpress: { rascunho_id: "5289", status: "rascunho", url: "https://x.com/?p=5289" } },
+  };
+
+  it("mapeia rascunhoIdWordpress a partir de canais.wordpress.rascunho_id, quando uma tentativa anterior já criou o post no WordPress", async () => {
+    mockarFrom(criarQueryFalsa({ data: postProntoBruto, error: null }));
+
+    const post = await carregarPostProntoParaPublicar("pauta-1");
+
+    expect(post).toEqual({
+      id: "post-1",
+      titulo: "Como Limpar o Nome",
+      conteudoHtml: "<h1>Como Limpar o Nome</h1><p>...</p>",
+      metaTitle: "Como Limpar o Nome | Guia",
+      metaDescription: "Guia completo.",
+      slug: "como-limpar-o-nome",
+      imagemDestaqueMediaId: "media-1",
+      rascunhoIdWordpress: "5289",
+    });
+  });
+
+  it("rascunhoIdWordpress null quando o post ainda não chegou a ser criado no WordPress", async () => {
+    mockarFrom(criarQueryFalsa({ data: { ...postProntoBruto, canais: {} }, error: null }));
+
+    const post = await carregarPostProntoParaPublicar("pauta-1");
+
+    expect(post?.rascunhoIdWordpress).toBeNull();
+  });
+
+  it("devolve null quando não existe post pronto pra esta pauta", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: null }));
+
+    expect(await carregarPostProntoParaPublicar("pauta-x")).toBeNull();
+  });
+
+  it("lança erro claro quando a query falha", async () => {
+    mockarFrom(criarQueryFalsa({ data: null, error: erro }));
+
+    await expect(carregarPostProntoParaPublicar("pauta-1")).rejects.toThrow(/Falha ao carregar post pronto para pauta pauta-1.*erro de teste/);
   });
 });
 
