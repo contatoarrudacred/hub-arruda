@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
-import { corEstagio, ehEstagioTransitorio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
+import { corEstagio, ehEstagioTerminal, ehEstagioTransitorio, ESTAGIOS_VENDA, rotuloEstagio } from "@/lib/vendas/estagio-venda";
 import type { VendaResumo } from "@/lib/vendas/painel-vendas";
 import { cancelarVendaAction, excluirVendaAction, listarVendasAction, tentarNovamenteEmLoteAction } from "./actions";
 
@@ -306,9 +306,14 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                 {cardsDaColuna.length > 0 && (
                   <p
                     className="text-xs text-zinc-500 dark:text-zinc-400"
-                    title="Soma do valor total das vendas paradas nesta etapa — dinheiro que ainda não virou pagamento"
+                    title={
+                      ehEstagioTerminal(estagio.valor)
+                        ? "Soma do valor total das vendas nesta etapa"
+                        : "Soma do valor total das vendas paradas nesta etapa — dinheiro que ainda não virou pagamento"
+                    }
                   >
-                    💰 {formatarValor(somaColuna)} parado aqui
+                    {formatarValor(somaColuna)}
+                    {!ehEstagioTerminal(estagio.valor) && " parado aqui"}
                   </p>
                 )}
               </div>
