@@ -6,7 +6,8 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import type { AnguloGerado, FunilPauta, PersonaCarregada, TipoConteudo, UsageTokens } from "./tipos";
+import { NOME_TIPO_ANGULO } from "./tipos";
+import type { AnguloGerado, FunilPauta, PersonaCarregada, TipoAngulo, TipoConteudo, UsageTokens } from "./tipos";
 
 const MODELO_GERADOR_ANGULO = "claude-sonnet-5";
 
@@ -53,8 +54,9 @@ const FERRAMENTA_GERADOR_ANGULO = {
   },
 };
 
-function montarPrompt(persona: PersonaCarregada, angulosUsados: string[]): string {
+function montarPrompt(persona: PersonaCarregada, angulosUsados: string[], tipoRequerido: TipoAngulo): string {
   const linhasAngulosUsados = angulosUsados.length ? angulosUsados.map((a) => `- ${a}`).join("\n") : "(nenhum ainda)";
+  const { label, descricao } = NOME_TIPO_ANGULO[tipoRequerido];
   return [
     "Você é o Agente Gerador de Ângulo de um pipeline de geração de conteúdo. Esta persona esgotou os ângulos pré-escritos e você precisa criar UM ângulo novo, original, coerente com a voz, as dores e o vocabulário dela.",
     "",
@@ -67,16 +69,19 @@ function montarPrompt(persona: PersonaCarregada, angulosUsados: string[]): strin
     "Ângulos já usados por essa persona — o ângulo novo não pode repetir nenhum deles, nem no texto nem na ideia central:",
     linhasAngulosUsados,
     "",
-    "Gere UM ângulo novo, junto com a palavra-chave principal de SEO, as palavras-chave secundárias, o funil (topo/meio/fundo) e o tipo de conteúdo mais adequado. Use a ferramenta para registrar o resultado.",
+    `O ângulo novo é OBRIGATORIAMENTE do tipo retórico "${label}": ${descricao} Não gere um ângulo de outro tipo, mesmo que pareça mais natural para a persona — o tipo já foi decidido antes desta chamada, por sorteio, exatamente para não deixar o conteúdo gerado convergir sempre para o mesmo padrão.`,
+    "",
+    "Gere UM ângulo novo desse tipo, junto com a palavra-chave principal de SEO, as palavras-chave secundárias, o funil (topo/meio/fundo) e o tipo de conteúdo mais adequado. Use a ferramenta para registrar o resultado.",
   ].join("\n");
 }
 
 export async function gerarAngulo(
   persona: PersonaCarregada,
   angulosUsados: string[],
+  tipoRequerido: TipoAngulo,
 ): Promise<{ resultado: AnguloGerado; usage: UsageTokens }> {
   const cliente = obterCliente();
-  const prompt = montarPrompt(persona, angulosUsados);
+  const prompt = montarPrompt(persona, angulosUsados, tipoRequerido);
 
   const resposta = await cliente.messages.create({
     model: MODELO_GERADOR_ANGULO,

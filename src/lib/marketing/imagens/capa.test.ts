@@ -40,6 +40,7 @@ const pauta: PautaCarregada = {
   motivoUltimaReprovacao: null,
   ultimoRascunho: null,
   agendamentoForcado: null,
+  tipoAngulo: null,
 };
 
 const conteudo: ConteudoGerado = {

@@ -41,6 +41,7 @@ const pautaFalsa = {
   motivoUltimaReprovacao: null,
   ultimoRascunho: null,
   agendamentoForcado: null as string | null,
+  tipoAngulo: null,
 };
 
 const propriedadeFalsa = {

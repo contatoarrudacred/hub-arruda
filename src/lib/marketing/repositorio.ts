@@ -34,8 +34,10 @@ import type {
   ResumoVisaoGeral,
   StatusPauta,
   StatusPost,
+  TipoAngulo,
   TipoConteudo,
 } from "./tipos";
+import { CATALOGO_TIPOS_ANGULO } from "./tipos";
 // Tipo da imagem secundária (Fase 4b, Task 8) importado do próprio orquestrador em vez de
 // duplicado aqui — reaproveita a mesma forma que processar-pauta.ts (Task 10) já recebe de
 // gerarImagensSecundarias, sem uma segunda definição que possa divergir. Sem ciclo de import:
@@ -48,7 +50,7 @@ import type { ImagemSecundaria } from "./imagens/secundarias";
 // a persona completa pro Escritor, spec seção 7). Nulo em pautas antigas/manuais — a coluna aceita
 // null (migration da Task 1).
 const CAMPOS_PAUTA =
-  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho, agendamento_forcado";
+  "id, matriz_conteudo_id, persona_id, palavra_chave_principal, palavras_secundarias, angulo, geografia, tipo_conteudo, funil, status, tentativas, motivo_ultima_reprovacao, ultimo_rascunho, agendamento_forcado, tipo_angulo";
 
 // Pauta em_producao com atualizado_em mais antigo que isto é considerada travada (reclaim). Exportada
 // porque a tela Monitor de execução (Task 13, src/app/admin/(shell)/marketing/monitor/) reusa o
@@ -113,6 +115,7 @@ function mapearPauta(data: {
   motivo_ultima_reprovacao: string | null;
   ultimo_rascunho?: unknown;
   agendamento_forcado?: string | null;
+  tipo_angulo?: TipoAngulo | null;
 }): PautaCarregada {
   return {
     id: data.id,
@@ -132,6 +135,7 @@ function mapearPauta(data: {
     motivoUltimaReprovacao: data.motivo_ultima_reprovacao,
     ultimoRascunho: mapearRascunho(data.ultimo_rascunho),
     agendamentoForcado: data.agendamento_forcado ?? null,
+    tipoAngulo: data.tipo_angulo ?? null,
   };
 }
 
@@ -1176,16 +1180,46 @@ export async function listarPersonasAtivasComAngulosDisponiveis(propriedadeId: s
 
   return personas.map((persona) => {
     const personaId = persona.id as string;
-    const angulosProntos = (persona.angulos_prontos as string[]) ?? [];
+    // 22/08/2026: angulos_prontos passou de string[] pra {texto,tipo}[] (sorteio de tipo de
+    // ângulo, ver estrategista.ts) — a subtração dos já usados agora compara por `.texto`.
+    const angulosProntos = (persona.angulos_prontos as { texto: string; tipo: TipoAngulo }[]) ?? [];
     const angulosUsados = angulosUsadosPorPersona.get(personaId) ?? new Set<string>();
     return {
       id: personaId,
       nome: persona.nome as string,
       dorEntrada: persona.dor_entrada as string,
-      angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo)),
+      angulosProntos: angulosProntos.filter((angulo) => !angulosUsados.has(angulo.texto)),
       usadaPelaUltimaVezEm: ultimoUsoPorPersona.get(personaId) ?? null,
     };
   });
+}
+
+/**
+ * `created_at` mais recente entre pautas desta MATRIZ pra cada um dos 15 tipos de ângulo — usado
+ * pelo Estrategista (`escolherTipoMenosUsadoRecentemente`, estrategista.ts) pra sortear qual tipo
+ * usar na próxima pauta (achado real de produção, 22/08/2026: sem isto, os ângulos prontos de cada
+ * persona quase sempre saem do mesmo tipo retórico, deixando os posts parecidos). Escopo por
+ * MATRIZ, não propriedade — mesmo escopo que `selecionarPauta` já recebe; é uma query separada de
+ * `listarPersonasAtivasComAngulosDisponiveis` (que é por `propriedadeId`). Tipos sem nenhuma pauta
+ * ainda vêm com valor `null` no mapa — tratados como "nunca usado" (prioridade máxima) por quem
+ * ordena o resultado.
+ */
+export async function carregarUltimoUsoPorTipoAngulo(matrizConteudoId: string): Promise<Record<TipoAngulo, string | null>> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("pautas").select("tipo_angulo, created_at").eq("matriz_conteudo_id", matrizConteudoId);
+  if (error) throw new Error(`Falha ao carregar histórico de tipo de ângulo da matriz ${matrizConteudoId}: ${error.message}`);
+
+  const ultimoUsoPorTipo = {} as Record<TipoAngulo, string | null>;
+  for (const tipo of CATALOGO_TIPOS_ANGULO) ultimoUsoPorTipo[tipo] = null;
+
+  for (const pauta of data ?? []) {
+    const tipo = pauta.tipo_angulo as TipoAngulo | null;
+    if (!tipo) continue; // pauta antiga/manual sem tipo registrado — não conta pra recência de nenhum tipo
+    const createdAt = pauta.created_at as string;
+    const atual = ultimoUsoPorTipo[tipo];
+    if (!atual || createdAt > atual) ultimoUsoPorTipo[tipo] = createdAt;
+  }
+  return ultimoUsoPorTipo;
 }
 
 function mapearPersonaCarregada(data: {
@@ -1199,7 +1233,7 @@ function mapearPersonaCarregada(data: {
     id: data.id,
     nome: data.nome,
     dorEntrada: data.dor_entrada,
-    angulosProntos: (data.angulos_prontos as string[]) ?? [],
+    angulosProntos: (data.angulos_prontos as { texto: string; tipo: TipoAngulo }[]) ?? [],
     // Não computado aqui (exigiria uma 2ª query agregando pautas, igual a
     // listarPersonasAtivasComAngulosDisponiveis) — nenhum consumidor de carregarPersona (Gerador
     // de Ângulo, Task 3; Escritor, Task 5) usa usadaPelaUltimaVezEm, só conteudoCompleto. Quem
@@ -1260,6 +1294,9 @@ export async function criarPautaDePersona(params: {
   palavrasSecundarias: string[];
   funil: FunilPauta;
   tipoConteudo: TipoConteudo;
+  // Obrigatório (22/08/2026): todo caminho que chama esta função já sorteou um tipo de ângulo
+  // antes de chegar aqui (ver selecionarPauta, estrategista.ts) — nunca é opcional na prática.
+  tipoAngulo: TipoAngulo;
 }): Promise<PautaCarregada> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -1272,6 +1309,7 @@ export async function criarPautaDePersona(params: {
       palavras_secundarias: params.palavrasSecundarias,
       funil: params.funil,
       tipo_conteudo: params.tipoConteudo,
+      tipo_angulo: params.tipoAngulo,
       geografia: null,
       status: "em_producao",
     })
