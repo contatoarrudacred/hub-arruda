@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
 import { concluirVenda, deveConcluirAoConfirmarParcela } from "@/lib/vendas/conclusao-venda";
-import { buscarContratoPorId, marcarParcelaPaga } from "@/lib/vendas/contratos";
+import { buscarContratoPorAsaasCheckoutId, buscarContratoPorId, marcarParcelaPaga } from "@/lib/vendas/contratos";
 
 export const maxDuration = 30;
 
@@ -14,6 +14,14 @@ export const maxDuration = 30;
  *
  * Payload confirmado na doc: {id, event, dateCreated, payment: {id, status, value, ...}} —
  * payment.id é o asaas_payment_id que já gravamos em contrato_parcelas ao criar a cobrança.
+ *
+ * `CHECKOUT_PAID`: payload traz um objeto `checkout` (mesmo formato "irmão" de `CHECKOUT_CREATED`,
+ * confirmado na doc) com `checkout.id`, que bate com `contratos.asaas_checkout_id` já gravado ao
+ * gerar o link (`src/lib/asaas/adapter.ts`). Cartão: o cliente já pagou o valor cheio pra Asaas no
+ * ato da compra, então conclui a venda na hora, sem esperar nenhuma parcela — diferente de
+ * boleto/pix. Captura do parcelamento real e chargeback/estorno são escopo do futuro módulo
+ * Financeiro (ver docs/superpowers/specs/2026-08-21-vendas-checkout-cartao-recebiveis-design.md,
+ * seção 0), não implementados aqui.
  */
 function segredosBatem(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -24,7 +32,25 @@ function segredosBatem(a: string, b: string): boolean {
 type PayloadAsaas = {
   event?: string;
   payment?: { id?: string };
+  checkout?: { id?: string };
 };
+
+async function processarCheckoutPago(asaasCheckoutId: string): Promise<void> {
+  try {
+    const contrato = await buscarContratoPorAsaasCheckoutId(asaasCheckoutId);
+    if (!contrato) {
+      console.error(`[webhook asaas] contrato não encontrado pro checkout ${asaasCheckoutId}`);
+      return;
+    }
+
+    await concluirVenda(contrato);
+
+    // TODO(módulo Operação, fora de escopo desta sub-frente): handoff pra Ordem de Serviço — a
+    // Oportunidade "ganha" já carrega tudo que a OS vai precisar (spec seção 3.5).
+  } catch (e) {
+    console.error("[webhook asaas] erro ao processar checkout pago:", e);
+  }
+}
 
 async function processarPagamentoConfirmado(asaasPaymentId: string): Promise<void> {
   try {
@@ -69,12 +95,19 @@ export async function POST(request: Request) {
   const payload = (await request.json().catch(() => null)) as PayloadAsaas | null;
   console.log("[webhook asaas] payload recebido:", JSON.stringify(payload));
 
-  if (!payload || !payload.event || !payload.payment?.id) {
+  if (!payload || !payload.event) {
     return Response.json({ ignorado: true, motivo: "payload vazio ou incompleto" });
   }
 
   if (payload.event === "PAYMENT_RECEIVED" || payload.event === "PAYMENT_CONFIRMED") {
+    if (!payload.payment?.id) return Response.json({ ignorado: true, motivo: "payload sem payment.id" });
     after(() => processarPagamentoConfirmado(payload.payment!.id!));
+    return Response.json({ recebido: true });
+  }
+
+  if (payload.event === "CHECKOUT_PAID") {
+    if (!payload.checkout?.id) return Response.json({ ignorado: true, motivo: "payload sem checkout.id" });
+    after(() => processarCheckoutPago(payload.checkout!.id!));
     return Response.json({ recebido: true });
   }
 
