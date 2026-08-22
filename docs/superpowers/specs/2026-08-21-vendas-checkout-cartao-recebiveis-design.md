@@ -1,7 +1,20 @@
 # Vendas — Reconciliação do Checkout de cartão: conclusão automática + parcelas a receber da Asaas — Design
 
-**Status:** desenhado, aguardando plano de implementação.
-**Decidido com:** Luiz, 21/08/2026, conversa direta em chat (sem sessão de brainstorming em terminal separada).
+**Status:** escopo reduzido em 22/08/2026 (ver abaixo) — a parte que sobra pro Vendas está pronta pra virar plano pequeno; o resto vira responsabilidade do módulo Financeiro quando ele existir.
+**Decidido com:** Luiz, 21/08/2026 (desenho original), 22/08/2026 (redução de escopo) — conversa direta em chat.
+
+## 0. Atualização de escopo (22/08/2026) — Financeiro herda a reconciliação
+
+Luiz decidiu, revisando esta spec: **o Vendas só cuida de (a) gerar a venda certa com o Checkout quando o método é cartão, e (b) detectar que foi pago pra poder concluir a venda e seguir o processo.** Toda a parte de *reconciliação* — capturar o cronograma real de parcelas a receber da Asaas, marcar cada uma como paga, detectar chargeback/estorno, cancelar parcelas restantes — é trabalho do futuro módulo **Financeiro**, não do Vendas. Raciocínio: "a venda concluiu" é uma decisão de negócio do Vendas (motivo pelo qual o `CHECKOUT_PAID` continua aqui); "qual o cronograma de repasse desse dinheiro e o que fazer se ele for contestado" é tesouraria/contabilidade — não tem relação com decidir se a venda em si terminou.
+
+Isso significa, nesta spec:
+- **Seção 4, passos 1-3 continuam sendo trabalho do Vendas** (achar a venda pelo `checkout.id`, concluir a venda na hora, sem esperar parcela nenhuma).
+- **Seção 4 passo 4 (capturar o parcelamento real via `GET /v3/installments/{id}/payments` e gravar em `contrato_parcelas`) MOVE PRO FINANCEIRO.** O Vendas não grava mais nenhuma parcela real de cartão — o placeholder que já existe fica como está, sem ser substituído.
+- **Seção 6 (chargeback/estorno) MOVE PRO FINANCEIRO** — inteira, já que ela só existe em função das parcelas reais que o Vendas não vai mais capturar.
+- **Seção 3 (novo valor `'contestado'` no CHECK de `contrato_parcelas.status`) MOVE PRO FINANCEIRO** — só faz sentido junto do chargeback, que é deles agora.
+- **Pesquisa da seção 2** (payload do `CHECKOUT_PAID`, `GET`/`DELETE /v3/installments/{id}/payments`, eventos de estorno/chargeback) continua válida e reaproveitável — só quem implementa é que muda.
+
+O plano de implementação (`docs/superpowers/plans/2026-08-21-vendas-checkout-cartao-recebiveis.md`) será reduzido na mesma linha — só as tasks 1 (parte do CHECKOUT_PAID que conclui a venda) seguem como Vendas; o resto fica registrado lá como "não é mais escopo do Vendas, ver esta spec seção 0" pro Financeiro reaproveitar quando existir.
 
 ## 1. Contexto e motivação
 
@@ -26,7 +39,7 @@ O Checkout de cartão (`criarCheckout`, `src/lib/asaas/cliente.ts`) já existe e
 
 **Correção depois da spec original (achado ao ler a migration de novo antes de planejar):** `contrato_parcelas` **já tem** uma coluna `asaas_installment_id text`, criada desde o início do módulo (`20260818090001_vendas_contrato_nucleo.sql`) com o comentário "id do parcelamento completo na Asaas — compartilhado entre todas as parcelas do mesmo contrato quando parcelas_qtd > 1" — nunca populada até hoje. Ou seja: **nenhuma coluna nova é necessária em `contratos` nem em `contrato_parcelas` pra guardar o id do parcelamento** — só falta (a) expor esse campo já existente no tipo `ContratoParcela`/`SELECT_CONTRATO` de `src/lib/vendas/contratos.ts` (hoje não é lido) e (b) gravá-lo em cada linha real inserida no passo 4 abaixo.
 
-**`contrato_parcelas`** — a única mudança de schema real desta spec: um valor novo no `CHECK` do `status`: `'contestado'` (hoje: `previsto/gerado/pago/atrasado/cancelado`) — marca uma parcela que sofreu chargeback/estorno e está aguardando decisão manual, sem confundir com `cancelado` (que já significa "resolvido, não vai mais ser cobrado").
+**`contrato_parcelas`** — mudança de schema associada ao chargeback (seção 6), **MOVIDA PRO FINANCEIRO (seção 0, 22/08/2026)**: um valor novo no `CHECK` do `status`: `'contestado'` (hoje: `previsto/gerado/pago/atrasado/cancelado`) — marca uma parcela que sofreu chargeback/estorno e está aguardando decisão manual, sem confundir com `cancelado` (que já significa "resolvido, não vai mais ser cobrado"). O Vendas não escreve essa migration.
 
 Nenhuma tabela nova. Nenhuma coluna nova pra "isso é receita da Asaas, não do cliente" — já dá pra saber isso olhando `contratos.metodo_pagamento = 'cartao'` via join, sem duplicar informação.
 
@@ -37,7 +50,7 @@ Em `src/app/api/webhooks/asaas/route.ts`, novo tratamento pro evento `CHECKOUT_P
 1. Acha a venda por `contratos.asaas_checkout_id = checkout.id` (nova função `buscarContratoPorAsaasCheckoutId` em `src/lib/vendas/contratos.ts`, mesmo padrão de `buscarContratoPorAssinafyDocumentId`).
 2. Se não achar, loga erro e sai (mesmo padrão dos outros handlers).
 3. **Marca a venda como concluída e dispara os efeitos de conclusão na hora** — `atualizarStatusContrato(contrato.id, "concluida")`, `sincronizarEtapaKanban(contrato.oportunidadeId, "ganha")`, `promoverPessoaACliente` (mesma sequência que `processarPagamentoConfirmado` já faz pra boleto/pix, extraída pra uma função compartilhada `concluirVenda(contrato)` em `src/lib/vendas/contratos.ts` ou `oportunidades.ts` — usada pelos dois caminhos). **Não espera nenhuma parcela específica**: diferente do boleto/pix, no cartão o cliente já pagou o valor cheio pra Asaas no ato da compra — o que vem depois é só repasse escalonado pra nossa conta, e isso não deveria segurar a entrega do serviço.
-4. **Numa etapa separada, em `try/catch` próprio que não pode derrubar o passo 3** (mesmo padrão já usado hoje pra `sincronizarPdfCertificado` no webhook da Assinafy): lê `checkout.installment` do payload. Se vier vazio, loga um aviso claro ("checkout pago mas sem id de parcelamento no payload — parcelas a receber não foram capturadas, conferir manualmente") e para por aqui — a venda já está concluída, só falta a tabela de recebíveis. Se vier preenchido, chama `GET /v3/installments/{id}/payments`, apaga a(s) parcela(s)-placeholder do contrato e grava uma linha real em `contrato_parcelas` por parcela (`numero` sequencial, `valor`, `vencimento_previsto` = `dueDate`, `asaas_payment_id` = `id`, `asaas_installment_id` = o id do parcelamento — coluna já existente, ver seção 3), atualiza `contratos.parcelas_qtd`.
+4. ~~Numa etapa separada... captura o parcelamento real e grava em `contrato_parcelas`.~~ **MOVIDO PRO FINANCEIRO (seção 0, 22/08/2026)** — o Vendas para no passo 3. Descrição original mantida abaixo só como referência de pesquisa pro Financeiro reaproveitar: numa etapa separada, em `try/catch` próprio que não pode derrubar o passo 3 (mesmo padrão já usado hoje pra `sincronizarPdfCertificado` no webhook da Assinafy), lê `checkout.installment` do payload. Se vier vazio, loga um aviso claro e para por aqui. Se vier preenchido, chama `GET /v3/installments/{id}/payments`, apaga a(s) parcela(s)-placeholder do contrato e grava uma linha real em `contrato_parcelas` por parcela (`numero` sequencial, `valor`, `vencimento_previsto` = `dueDate`, `asaas_payment_id` = `id`, `asaas_installment_id` = o id do parcelamento — coluna já existente, ver seção 3), atualiza `contratos.parcelas_qtd`.
 
 ## 5. Fluxo: pagamento de cada parcela real
 
@@ -45,7 +58,9 @@ O webhook `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` já existente (`processarPagame
 
 **Um ajuste pontual:** a regra atual "só a 1ª parcela paga conclui a venda" não pode rodar de novo pro cartão (a venda já foi concluída na seção 4). Gate: `if (contrato.metodoPagamento !== "cartao" && parcelaPaga.numero === 1) { /* concluir venda */ }` — pra cartão, o webhook só atualiza `status`/`pago_em` da parcela via `marcarParcelaPaga`, sem repetir a promoção de cliente/mudança de etapa.
 
-## 6. Fluxo: chargeback/estorno
+## 6. Fluxo: chargeback/estorno — **MOVIDO PRO FINANCEIRO (seção 0, 22/08/2026)**
+
+Descrição original mantida como referência de pesquisa (payload/endpoint já confirmados, seção 2) pro Financeiro reaproveitar quando existir — o Vendas não implementa nada desta seção.
 
 Novo tratamento no mesmo webhook pros eventos `PAYMENT_REFUNDED`, `PAYMENT_PARTIALLY_REFUNDED`, `PAYMENT_REFUND_IN_PROGRESS`, `PAYMENT_CHARGEBACK_REQUESTED`, `PAYMENT_CHARGEBACK_DISPUTE`, `PAYMENT_AWAITING_CHARGEBACK_REVERSAL` (agrupados — mesmo tratamento pros seis, só o texto do alerta muda por evento):
 
@@ -64,10 +79,11 @@ Em Detalhes da Venda, dentro do quadro Financeiro (`CardCheckoutCartao`, constru
 
 ## 8. Fora de escopo (registrado pro futuro módulo Financeiro)
 
-- **Reconciliação periódica/proativa** (cron que confere sozinho, de tempos em tempos, o status de cada parcela a receber na Asaas, sem depender só do webhook) — ideia validada com o Luiz nesta conversa como direção futura, motivada por um caso real desta mesma sessão (um webhook da Assinafy que nunca chegou deixou uma venda presa até uma ação manual). Fica só registrada aqui; construir isso é trabalho do módulo Financeiro, não de Vendas.
-- Qualquer tela ou relatório de fluxo de caixa consolidado (múltiplas vendas, múltiplos meses) — Vendas só grava o dado por venda; consolidar é Financeiro.
-- Cancelamento automático de parcelas restantes em chargeback — fica manual nesta spec (seção 6); automatizar exigiria confirmar antes, com o suporte da Asaas, se eles não fazem isso sozinhos.
+- **Captura do parcelamento real, chargeback/estorno, cancelamento de parcelas restantes** (seções 4-passo-4, 6, e o `CHECK` novo da seção 3) — decisão de escopo explícita do Luiz (seção 0, 22/08/2026): é reconciliação/tesouraria, não decisão de venda. Todo o desenho já pesquisado (payload, endpoints, riscos) fica pronto pro Financeiro reaproveitar.
+- **Reconciliação periódica/proativa** (cron que confere sozinho, de tempos em tempos, o status de cada parcela a receber na Asaas, sem depender só do webhook) — ideia validada com o Luiz como direção futura, motivada por um caso real desta mesma sessão (um webhook da Assinafy que nunca chegou deixou uma venda presa até uma ação manual). Financeiro, junto com o item acima.
+- Qualquer tela ou relatório de fluxo de caixa consolidado (múltiplas vendas, múltiplos meses) — Financeiro.
+- Cancelamento automático de parcelas restantes em chargeback — ficaria manual mesmo no desenho original (seção 6), até confirmar com o suporte da Asaas se eles não cancelam sozinhos; decisão de automatizar ou não também é do Financeiro quando chegar lá.
 
 ## 9. Testes
 
-`concluirVenda` (extraída pra ser compartilhada entre boleto/pix e cartão) e o gate do passo 5 (não repetir conclusão pro cartão) são lógica pura o bastante pra ganhar teste Vitest direto (dado um `contrato` com `metodoPagamento`/`status` variados, confere se os efeitos de conclusão disparam ou não). O resto (parse de payload, chamadas HTTP à Asaas, gravação em `contrato_parcelas`) segue a convenção já usada no resto do módulo — I/O não ganha teste unitário, verificação é manual (primeira venda de cartão de teste em produção, já registrada como pendência de verificação ao vivo em `docs/status/vendas.md`).
+Do que sobra pro Vendas (seção 4, passos 1-3): `concluirVenda` e o gate `deveConcluirAoConfirmarParcela` **já foram extraídos e testados** (`src/lib/vendas/conclusao-venda.ts`, implementados em 21/08/2026 como parte da feature "Recebido em dinheiro" — reaproveitáveis aqui sem trabalho extra). O parse do payload `CHECKOUT_PAID` e a busca por `checkout.id` seguem a convenção do módulo — I/O não ganha teste unitário, verificação é manual (primeira venda de cartão de teste em produção). Tudo relacionado a parcelamento/chargeback (Financeiro) tem sua própria seção de testes quando aquele módulo escrever o plano dele.

@@ -2,6 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) ou superpowers:executing-plans pra implementar task a task. Steps usam checkbox (`- [ ]`).
 
+> **⚠️ Escopo reduzido em 22/08/2026 (ver spec seção 0) — status atual de cada task:**
+> - **Task 4** (`concluirVenda`/`deveConcluirAoConfirmarParcela`, TDD) — ✅ **já implementada**, em 21/08/2026, como parte da feature "Recebido em dinheiro" (`src/lib/vendas/conclusao-venda.ts`). Reaproveitar sem trabalho extra.
+> - **Task 5** (webhook `CHECKOUT_PAID` + chargeback + refatoração) — só a parte de `CHECKOUT_PAID` que conclui a venda (achar contrato pelo `checkout.id`, chamar `concluirVenda`, sem esperar parcela) **continua sendo trabalho do Vendas**. A captura do parcelamento real (dentro da mesma task, no código do plano) e o tratamento de chargeback **NÃO são mais escopo do Vendas** — ver abaixo.
+> - **Tasks 1, 2, 3 (parte de `substituirParcelasPorParcelamentoReal`/`marcarParcelaContestada`/`cancelarParcelasNaoPagas`), 6, 7, 8** — **MOVIDAS PRO FUTURO MÓDULO FINANCEIRO.** Decisão do Luiz: reconciliação de recebíveis/chargeback é tesouraria, não decisão de venda. O conteúdo das tasks fica registrado abaixo como pesquisa/desenho pronto pro Financeiro reaproveitar (endpoints e payloads já confirmados na doc oficial da Asaas) — o Vendas não implementa nada disso.
+> - **Task 9** (verificação manual) — só a parte de confirmar que o `CHECKOUT_PAID` conclui a venda continua relevante pro Vendas; o resto (parcelas reais, chargeback de teste) é do Financeiro quando ele existir.
+
 **Goal:** Fazer o sistema saber quando uma venda por Checkout de cartão foi paga (concluir a venda na hora, sem depender de nenhuma parcela específica) e capturar o cronograma real das parcelas que a Asaas vai repassar pra ArrudaCred, vinculado à venda, com cancelamento manual em caso de chargeback/estorno.
 
 **Architecture:** Extensão do webhook `/api/webhooks/asaas` (já existe) com 3 caminhos novos: `CHECKOUT_PAID` (conclui a venda + dispara a captura do parcelamento real), os 6 eventos de estorno/chargeback (marcam a parcela atingida como `'contestado'`), e uma refatoração do caminho já existente de `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` (extrai a lógica de "concluir venda" pra uma função compartilhada, com um gate que impede repetir a conclusão pro cartão). Um botão manual novo em Detalhes da Venda cancela as parcelas restantes de um parcelamento contestado.
