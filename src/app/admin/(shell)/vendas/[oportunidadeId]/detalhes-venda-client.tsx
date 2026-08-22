@@ -737,20 +737,25 @@ function CardFinanceiro({ contrato, pessoa }: { contrato: Contrato; pessoa: Pess
                       >
                         👁️ Ver fatura
                       </a>
-                      {cobranca.bankSlipUrl && (
-                        <a
-                          href={cobranca.bankSlipUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={botaoSecundario}
-                          title="Baixa o PDF do boleto"
-                        >
-                          📄 Boleto
-                        </a>
-                      )}
-                      <LinkCopiavel link={cobranca.invoiceUrl} />
+                      {/* Boleto/Copiar somem quando já pago — pedido do Luiz, 21/08/2026: depois de
+                          paga, não faz sentido oferecer baixar o boleto nem copiar o link, só
+                          consultar a fatura já quitada. "Ver fatura" continua sempre disponível. */}
                       {parcela.status !== "pago" && (
-                        <BotoesReenvio pessoaId={pessoa.id} contexto="pagamento" link={cobranca.invoiceUrl} mostrarCopiar={false} />
+                        <>
+                          {cobranca.bankSlipUrl && (
+                            <a
+                              href={cobranca.bankSlipUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={botaoSecundario}
+                              title="Baixa o PDF do boleto"
+                            >
+                              📄 Boleto
+                            </a>
+                          )}
+                          <LinkCopiavel link={cobranca.invoiceUrl} />
+                          <BotoesReenvio pessoaId={pessoa.id} contexto="pagamento" link={cobranca.invoiceUrl} mostrarCopiar={false} />
+                        </>
                       )}
                     </div>
                   )}

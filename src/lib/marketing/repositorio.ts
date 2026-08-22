@@ -1396,13 +1396,30 @@ export async function listarPautasPorStatus(status?: StatusPauta, propriedadeId?
   return (data ?? []).map((linha) => mapearPauta(linha as unknown as Parameters<typeof mapearPauta>[0]));
 }
 
-/** Reabre pra `pendente` e limpa o motivo de reprovação — deliberadamente não mexe em `tentativas`
- * (histórico de quantas vezes já tentou continua contando pro circuit breaker de maxTentativas). */
-export async function reabrirPauta(pautaId: string): Promise<void> {
+/**
+ * Reabre pra `pendente` e limpa o motivo de reprovação. Achado real de produção (21/08/2026): a
+ * versão anterior desta função deliberadamente não zerava `tentativas` — mas isso deixava
+ * "Reabrir" inútil no caso mais comum de bloqueio (esgotamento de tentativas): a pauta voltava pra
+ * "pendente" só pra bloquear de novo no próprio próximo tick (processarProximaPauta checa
+ * `tentativas >= maxTentativas` logo na entrada). Zera `tentativas` agora, EXCETO quando o motivo
+ * do bloqueio começa com "Publicado em " — esse é o caso perigoso onde a pauta JÁ FOI publicada de
+ * verdade no WordPress e só falhou o registro local (ver marcarPautaBloqueada em
+ * processar-pauta.ts, bloco "registrar_resultado"); reabrir e zerar tentativas nesse caso
+ * reprocessaria a pauta do zero e publicaria um SEGUNDO post duplicado — a mesma classe de bug já
+ * corrigida no fluxo automático (ver rascunhoIdWordpress). Motivo já vem do chamador (a tela já o
+ * exibe) — evita uma leitura extra só pra decidir isso.
+ */
+export async function reabrirPauta(pautaId: string, motivoAtual?: string | null): Promise<void> {
   const supabase = createAdminClient();
+  const jaPublicadaDeVerdade = motivoAtual?.startsWith("Publicado em ") ?? false;
   const { error } = await supabase
     .from("pautas")
-    .update({ status: "pendente", motivo_ultima_reprovacao: null, atualizado_em: new Date().toISOString() })
+    .update({
+      status: "pendente",
+      motivo_ultima_reprovacao: null,
+      atualizado_em: new Date().toISOString(),
+      ...(jaPublicadaDeVerdade ? {} : { tentativas: 0 }),
+    })
     .eq("id", pautaId);
   if (error) throw new Error(`Falha ao reabrir pauta ${pautaId}: ${error.message}`);
 }
