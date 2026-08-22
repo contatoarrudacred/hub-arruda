@@ -6,13 +6,14 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { dataDeHojeISO } from "./calculo-vencimentos-pagamento";
 import { textoDeMensagem } from "./engine";
+import { blocoPromptConteudoExtra, propriedadesSchemaConteudoExtra } from "./interpretar-desvio-validacao";
 import {
   validarRespostaNegociacaoPagamento,
   type EstadoNegociacaoPagamento,
   type RespostaBrutaNegociacaoPagamento,
 } from "./interpretar-negociacao-pagamento-validacao";
 import { formatarReais } from "./regras-limpeza-nome";
-import type { EtapaCarregada, InterpretadorNegociacaoPagamento } from "./tipos";
+import type { EtapaCarregada, FaqParaDesvio, InterpretadorNegociacaoPagamento, ObjecaoParaDesvio } from "./tipos";
 
 const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
 
@@ -27,7 +28,7 @@ function obterCliente(): Anthropic {
   return clienteSingleton;
 }
 
-function ferramenta() {
+function ferramenta(qtdFaqs: number, qtdObjecoes: number) {
   return {
     name: "interpretar_negociacao_pagamento",
     description:
@@ -60,6 +61,7 @@ function ferramenta() {
           description:
             "Se status=ajuste_valido: frase curta e natural confirmando a mudança (ex.: 'Combinado, ajustei pra cartão!'). Se status=negociando: mensagem explicando o que é possível dentro do que o lead pediu, no tom da Malala — natural, não robótica, pode fazer pergunta de volta. Vazio se status=confirmado.",
         },
+        ...propriedadesSchemaConteudoExtra(qtdFaqs, qtdObjecoes),
       },
       required: ["status", "forma_pagamento", "data_primeira_parcela", "dia_ancora", "mensagem"],
     },
@@ -72,8 +74,10 @@ function montarPrompt(params: {
   estadoAtual: EstadoNegociacaoPagamento;
   hojeISO: string;
   totalContrato: number | null;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
 }): string {
-  const { etapaAtual, respostaLead, estadoAtual, hojeISO, totalContrato } = params;
+  const { etapaAtual, respostaLead, estadoAtual, hojeISO, totalContrato, faqsAtivas, objecoesAtivas } = params;
   const mensagemAtual = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
 
   return [
@@ -102,56 +106,62 @@ function montarPrompt(params: {
       : null,
     "",
     "Se o lead confirmou (mesmo implicitamente, tipo 'combinado' ou 'pode fechar assim'), marque confirmado. Se pediu algo dentro do permitido, marque ajuste_valido com os valores finais. Se pediu algo fora do permitido, foi vago, ou fez uma pergunta, marque negociando e escreva uma resposta natural (não robótica) explicando o que é possível — pode negociar em várias mensagens, não precisa fechar nesta.",
+    blocoPromptConteudoExtra(faqsAtivas, objecoesAtivas),
   ]
-    .filter((linha): linha is string => linha !== null)
+    .filter((linha): linha is string => linha !== null && linha !== "")
     .join("\n");
 }
 
-export const interpretarNegociacaoPagamento: InterpretadorNegociacaoPagamento = async ({
-  etapaAtual,
-  respostaLead,
-  dados,
-}) => {
-  const hojeISO = dataDeHojeISO();
-  const estadoAtual: EstadoNegociacaoPagamento = {
-    formaPagamento: dados.forma_pagamento_detalhe === "cartao" ? "cartao" : "boleto_pix",
-    dataPrimeiraParcela: dados.data_primeira_parcela || hojeISO,
-    diaAncora:
-      dados.dia_ancora_parcelas === "1" || dados.dia_ancora_parcelas === "20"
-        ? (Number(dados.dia_ancora_parcelas) as 1 | 20)
-        : 10,
-    parcelado: dados.forma_pagamento === "parcelado",
-  };
+/** FAQs/objeções ativas capturadas por closure (mesmo padrão de `criarInterpretadorFaixasDocumentos`) — detecção de conteúdo extra (achado 22/08/2026) só relevante quando status=confirmado. */
+export function criarInterpretadorNegociacaoPagamento(
+  faqsAtivas: FaqParaDesvio[] = [],
+  objecoesAtivas: ObjecaoParaDesvio[] = [],
+): InterpretadorNegociacaoPagamento {
+  return async ({ etapaAtual, respostaLead, dados }) => {
+    const hojeISO = dataDeHojeISO();
+    const estadoAtual: EstadoNegociacaoPagamento = {
+      formaPagamento: dados.forma_pagamento_detalhe === "cartao" ? "cartao" : "boleto_pix",
+      dataPrimeiraParcela: dados.data_primeira_parcela || hojeISO,
+      diaAncora:
+        dados.dia_ancora_parcelas === "1" || dados.dia_ancora_parcelas === "20"
+          ? (Number(dados.dia_ancora_parcelas) as 1 | 20)
+          : 10,
+      parcelado: dados.forma_pagamento === "parcelado",
+    };
 
-  const valoresParcelas = (dados.parcelas_valores ?? "")
-    .split(",")
-    .filter(Boolean)
-    .map(Number)
-    .filter((v) => !Number.isNaN(v));
-  const totalContrato = valoresParcelas.length > 0 ? valoresParcelas.reduce((soma, v) => soma + v, 0) : null;
+    const valoresParcelas = (dados.parcelas_valores ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map(Number)
+      .filter((v) => !Number.isNaN(v));
+    const totalContrato = valoresParcelas.length > 0 ? valoresParcelas.reduce((soma, v) => soma + v, 0) : null;
 
-  const prompt = montarPrompt({ etapaAtual, respostaLead, estadoAtual, hojeISO, totalContrato });
+    const prompt = montarPrompt({ etapaAtual, respostaLead, estadoAtual, hojeISO, totalContrato, faqsAtivas, objecoesAtivas });
 
-  try {
-    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
-    const cliente = obterCliente();
-    const resposta = await cliente.messages.create({
-      model: MODELO_INTERPRETACAO,
-      max_tokens: 800,
-      tools: [ferramenta()],
-      tool_choice: { type: "tool", name: "interpretar_negociacao_pagamento" },
-      messages: [{ role: "user", content: prompt }],
-    });
+    try {
+      // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
+      const cliente = obterCliente();
+      const resposta = await cliente.messages.create({
+        model: MODELO_INTERPRETACAO,
+        max_tokens: 800,
+        tools: [ferramenta(faqsAtivas.length, objecoesAtivas.length)],
+        tool_choice: { type: "tool", name: "interpretar_negociacao_pagamento" },
+        messages: [{ role: "user", content: prompt }],
+      });
 
-    const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
-    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") {
+      const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+      if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") {
+        return { status: "negociando", mensagemNegociacao: "Deixa eu confirmar isso direitinho com você antes de seguir." };
+      }
+
+      const bruta = blocoFerramenta.input as RespostaBrutaNegociacaoPagamento;
+      return validarRespostaNegociacaoPagamento(bruta, estadoAtual, hojeISO, faqsAtivas, objecoesAtivas);
+    } catch (e) {
+      console.error("[interpretar-negociacao-pagamento] erro ao chamar Claude:", e);
       return { status: "negociando", mensagemNegociacao: "Deixa eu confirmar isso direitinho com você antes de seguir." };
     }
+  };
+}
 
-    const bruta = blocoFerramenta.input as RespostaBrutaNegociacaoPagamento;
-    return validarRespostaNegociacaoPagamento(bruta, estadoAtual, hojeISO);
-  } catch (e) {
-    console.error("[interpretar-negociacao-pagamento] erro ao chamar Claude:", e);
-    return { status: "negociando", mensagemNegociacao: "Deixa eu confirmar isso direitinho com você antes de seguir." };
-  }
-};
+/** Compatibilidade: uso sem FAQ/objeção (comportamento idêntico a antes de 22/08/2026). */
+export const interpretarNegociacaoPagamento: InterpretadorNegociacaoPagamento = criarInterpretadorNegociacaoPagamento();

@@ -89,14 +89,26 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
       "minha dívida hoje deve estar uns 20 mil",
+      // Grafo real conferido 21/08/2026 direto no banco (fluxo_id 7e410b97...): ln_passo6(confirma) →
+      // ln_passo8(experiencia_e_origem, texto livre) → auto x3 (ln_passo9/10/11) → ln_passo12(urgencia,
+      // menu) → auto (ln_passo13) → ln_passo14(prioridade_fechar_hoje, sim/nao) → auto
+      // (ln_passo15_router) → ln_passo15_normal. Cada uma dessas precisa da própria resposta — antes só
+      // 3 mensagens cobriam esse trecho inteiro, e a confirmação de ln_passo6 só "colava" por sorte via
+      // modo_livre (sem valor de correção real), o que fazia a resposta de urgência real (`é urgente...`)
+      // ser engolida por ln_passo8 (texto livre aceita qualquer coisa) em vez de responder ln_passo12.
+      "sim, está correto",
       "já tentei antes com outra empresa e não deu certo, vi vocês no Google",
       "é urgente pra mim, preciso resolver rápido",
-      "sim, é prioridade fechar hoje",
+      "sim, quero aproveitar essa condição hoje mesmo",
       "à vista mesmo",
       "pode ser dia 25",
+      "sim, confirmo assim",
       "CPF 111.111.111-11, meu nome completo é João Pedro Silva",
-      "meu e-mail e senha do gov.br eu mando em seguida",
-      "combinado, vou enviar os documentos",
+      // ln_passo17b real pede a lista completa de dados de quem assina (confirmado 21/08/2026 —
+      // a mensagem antiga aqui ("email e senha do gov.br") era de uma versão bem anterior do
+      // fluxo, não bate com o ln_passo17b atual).
+      "CPF 111.111.111-11, nome completo João Pedro Silva, RG 12.345.678-9, solteiro, autônomo, brasileiro, nascido em 10/05/1990, email joaopedro@testandodasilva.com.br, whatsapp (11) 99999-0000, endereço Rua Exemplo 123, Centro, São Paulo-SP, CEP 01310-100",
+      "combinado, vou enviar os documentos depois",
     ],
   },
   {
@@ -111,10 +123,11 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "quero limpar meu nome",
       ...CONFIRMACOES_ATE_LN_PASSO4,
       "só CPF",
+      // dívida alta pula direto de ln_passo6 pra ln_agendamento_oferta (mesmo achado do cenário de
+      // recusa, 21/08/2026) — as mensagens de preenchimento que existiam aqui antes (pensadas pra
+      // uma cadeia mais longa que não acontece nesse caminho) só faziam a resposta real cair na
+      // etapa errada.
       "minha dívida está em uns 800 mil reais",
-      "vi vocês no Google",
-      "é urgente pra mim",
-      "sim, é prioridade fechar hoje",
       "sim, quero agendar a ligação",
       "pode ser a primeira opção",
     ],
@@ -151,7 +164,11 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
       "quero limpar meu nome",
       ...CONFIRMACOES_ATE_LN_PASSO4,
       "CPF e CNPJ, os dois",
-      "o CPF está em uns 25 mil e o CNPJ uns 40 mil",
+      // Valores originais (25 mil + 40 mil) davam um pacote de R$7.200 (faixas 10-30k e 30-50k, R$3.600
+      // cada) — abaixo do corte de R$8.000 (CORTE_PACOTE_CARO), então nunca escalava pro agendamento
+      // de verdade (achado 21/08/2026, rodando a bateria completa). 60 mil + 60 mil caem na faixa
+      // 50-100k (R$4.800 cada) = R$9.600, acima do corte.
+      "o CPF está em uns 60 mil e o CNPJ uns 60 mil",
       "sim, confirmo os dois valores",
       "vi o Google mesmo",
       "não é tão urgente, uns 3 a 6 meses",

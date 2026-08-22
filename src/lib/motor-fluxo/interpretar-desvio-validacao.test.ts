@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolverRespostaDesvio } from "./interpretar-desvio-validacao";
+import { resolverConteudoExtra, resolverRespostaDesvio, type RespostaBrutaConteudoExtra } from "./interpretar-desvio-validacao";
 import type { FaqParaDesvio, ObjecaoParaDesvio } from "./tipos";
 
 const FAQS: FaqParaDesvio[] = [
@@ -54,5 +54,51 @@ describe("resolverRespostaDesvio", () => {
 
   it("status desconhecido/inesperado vira ambiguo, defensivo", () => {
     expect(resolverRespostaDesvio({ status: "outra_coisa" as never, indice_faq: 1, indice_objecao: 1 }, FAQS, OBJECOES)).toEqual({ status: "ambiguo" });
+  });
+});
+
+// resolverConteudoExtra — achado 22/08/2026 (docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md,
+// seção "Atualização"): quando um dos 4 interpretadores (interpretacao-ia.ts, faixas_documentos,
+// negociacao_pagamento, lista_documentos) já RECONHECE a resposta do lead como válida pro checkpoint
+// atual, o desvio (interpretar-desvio.ts) nunca chega a rodar (só dispara quando não reconhece) — uma
+// objeção/pergunta embutida na MESMA mensagem que a resposta válida se perdia silenciosamente. Em vez
+// de rodar uma 2ª chamada de IA à parte, os próprios 4 interpretadores passam a detectar isso na MESMA
+// chamada que já reconhece a resposta — esta função resolve o índice bruto (igual resolverRespostaDesvio),
+// só que sem "escalar": uma resposta já reconhecida nunca deve ser escalada por causa de algo extra.
+describe("resolverConteudoExtra", () => {
+  it("sem conteúdo extra (bruto undefined): null", () => {
+    expect(resolverConteudoExtra(undefined, FAQS, OBJECOES)).toBeNull();
+  });
+
+  it("índices zerados (nada detectado, caso mais comum): null", () => {
+    expect(resolverConteudoExtra({ indice_faq_extra: 0, indice_objecao_extra: 0 }, FAQS, OBJECOES)).toBeNull();
+  });
+
+  it("faq extra com índice válido: resolve pro objeto FAQ certo", () => {
+    const bruto: RespostaBrutaConteudoExtra = { indice_faq_extra: 2, indice_objecao_extra: 0 };
+    expect(resolverConteudoExtra(bruto, FAQS, OBJECOES)).toEqual({ tipo: "faq", faq: FAQS[1] });
+  });
+
+  it("objeção extra com índice válido: resolve pro objeto de objeção certo", () => {
+    const bruto: RespostaBrutaConteudoExtra = { indice_faq_extra: 0, indice_objecao_extra: 1 };
+    expect(resolverConteudoExtra(bruto, FAQS, OBJECOES)).toEqual({ tipo: "objecao", objecao: OBJECOES[0] });
+  });
+
+  it("faq tem prioridade quando os 2 índices vêm preenchidos (não deveria acontecer, mas defensivo)", () => {
+    const bruto: RespostaBrutaConteudoExtra = { indice_faq_extra: 1, indice_objecao_extra: 1 };
+    expect(resolverConteudoExtra(bruto, FAQS, OBJECOES)).toEqual({ tipo: "faq", faq: FAQS[0] });
+  });
+
+  it("índice fora do range (alucinação) vira null, nunca escala nem cita FAQ/objeção errada — mesma filosofia de resolverRespostaDesvio", () => {
+    expect(resolverConteudoExtra({ indice_faq_extra: 99, indice_objecao_extra: 0 }, FAQS, OBJECOES)).toBeNull();
+    expect(resolverConteudoExtra({ indice_faq_extra: 0, indice_objecao_extra: 99 }, FAQS, OBJECOES)).toBeNull();
+  });
+
+  it("índice negativo vira null", () => {
+    expect(resolverConteudoExtra({ indice_faq_extra: -1, indice_objecao_extra: 0 }, FAQS, OBJECOES)).toBeNull();
+  });
+
+  it("listas vazias: qualquer índice vira null", () => {
+    expect(resolverConteudoExtra({ indice_faq_extra: 1, indice_objecao_extra: 0 }, [], [])).toBeNull();
   });
 });

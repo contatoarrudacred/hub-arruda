@@ -296,11 +296,49 @@ escalar pro agendamento — é o roteiro do cenário que precisa de valores maio
 
 - ✅ 0a, 0b, 1, 1b, 1c, 3 e a recusa de agendamento (caminho dívida alta) corrigidos e verificados
   (21/08/2026).
-- Nova feature (spec `2026-08-21-desvio-escalar-quando-nao-sabe.md`) cobre só FAQ por enquanto — banco de
-  objeções, tela de admin pra revisar dúvidas escaladas, e estender o mesmo tratamento pros
-  interpretadores especializados (`faixas_documentos`, `lista_documentos`) ficam pra próxima rodada.
-- Ajustar os valores do cenário `pacote_caro_recusa_vai_pro_selfservice` em `cenarios.ts` pra realmente
-  ultrapassar `CORTE_PACOTE_CARO` e confirmar o caminho de self-service da recusa de agendamento — a
-  lógica já está coberta por teste de unidade (`engine.test.ts`), só falta a confirmação via conversa
-  real com um roteiro que dispare a escalação de verdade. Baixa prioridade (ajuste de roteiro de teste).
+- Nova feature (spec `2026-08-21-desvio-escalar-quando-nao-sabe.md`) cobre FAQ + banco de objeções
+  (implementado em 21/08/2026, ver atualização no plano) — tela de admin pra revisar dúvidas escaladas e
+  estender o mesmo tratamento pros interpretadores especializados (`faixas_documentos`,
+  `lista_documentos`) ficam pra próxima rodada.
 - 2 (emoji de gênero) é cosmético, entra em qualquer correção que já mexer no texto do script.
+
+## Atualização 22/08/2026 — item (a): roteiros de teste desatualizados corrigidos e re-verificados
+
+Luiz pediu, nesta ordem: (a) atualizar os cenários roteirizados desalinhados com o grafo real de produção
+(a lista de "falsos positivos" registrada acima), (b) investigar a perda de conteúdo embutido em respostas
+reconhecidas. Item (a) concluído:
+
+- **`duvida_media_fecha_avista`**: faltava uma confirmação explícita em `ln_passo6` (a resposta "livre"
+  seguinte estava sendo engolida por `ln_passo8`, que aceita qualquer texto) e uma confirmação distinta de
+  `ln_passo14` (`prioridade_fechar_hoje`), separada de `ln_passo12` (`urgencia`) — o script antigo tratava
+  as duas como uma pergunta só. Corrigido e re-testado ao vivo: percorre `ln_passo6` →... →
+  `ln_etapa_nomes_para_limpar` em exatamente 1 mensagem por checkpoint, sem repetição.
+- **`divida_alta_aceita_agendamento`**: tinha as mesmas mensagens de preenchimento (“vi vocês no Google”,
+  “é urgente pra mim”) que não se aplicam ao caminho direto de dívida alta — mesmo bug já corrigido antes
+  no cenário irmão `divida_alta_recusa_duas_vezes`, mas esse aqui tinha ficado pra trás. Corrigido
+  (removidas as mensagens de preenchimento) e re-testado: agendamento confirmado limpo,
+  `sob_supervisor=true`.
+- **`pacote_caro_recusa_vai_pro_selfservice`**: valores (CPF 25 mil + CNPJ 40 mil) não somavam acima de
+  `CORTE_PACOTE_CARO` (R$8.000 combinado); bumpados pra 60 mil cada (consultei a tabela real de
+  `precos_por_faixa` em produção pra confirmar: faixa 50-100mil → `precoCheio` R$4.800 cada, total
+  R$9.600). Corrigido e re-testado: agora dispara `ln_agendamento_oferta` → recusa → `ln_passo15_selfservice`
+  corretamente, confirmando por fim a lógica de roteamento que só tinha cobertura de unidade até aqui.
+
+**Achado investigado durante o re-teste do `pacote_caro`, e descartado como falso positivo do juiz**: o
+veredito apontou a Malala "calculando um valor em texto livre" (`R$ 9.930,00`) em `ln_passo15_selfservice`,
+o que seria uma violação grave da regra de preço travado (persona seção 6). Rastreei a cadeia completa no
+código e é **100% determinístico, sem IA envolvida**: `documentos_valores` (valor fixo por faixa de cada
+documento, ex. faixa 50-100mil → R$75.000, `resolverValorRestricao`) → `somarValoresDocumentos` →
+`dados.valor_restricao_estimado` (campo derivado, calculado uma vez) → `calcularFormulaAltoValor` (7680 +
+1,5% × 150.000 = 9.930) → `montarPropostaAltoValorSelfService` (template puro em
+`regras-limpeza-nome.ts:365-372`). O juiz não tem acesso ao código, só ao texto da conversa, e confundiu um
+preço templatizado por mecanismo determinístico com "a IA calculou". Não é bug — nenhuma correção
+necessária.
+
+Os demais cenários roteirizados já listados como falsos positivos (`triagem_handoff_outro_assunto`,
+`desvio_pergunta_lateral_com_faq`, `acima_do_corte_direto_no_menu`, `consulta_paga_escalada`) foram
+confirmados corretos nas 2 baterias completas anteriores, sem necessidade de ajuste.
+
+`duvida_baixa_negocia_direto` continua com um bug real (não é problema de script): a Malala ignora a
+"regra de honestidade" da dívida baixa e a decisão do lead de negociar direto — fica registrado, não
+corrigido ainda (fora do escopo do item (a), que é só scripts).

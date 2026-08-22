@@ -9,7 +9,8 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { textoDeMensagem } from "./engine";
 import { validarRespostaIA } from "./interpretacao-ia-validacao";
-import type { EtapaCarregada, InterpretadorIA } from "./tipos";
+import { blocoPromptConteudoExtra, propriedadesSchemaConteudoExtra } from "./interpretar-desvio-validacao";
+import type { EtapaCarregada, FaqParaDesvio, InterpretadorIA, ObjecaoParaDesvio } from "./tipos";
 
 const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
 
@@ -24,29 +25,37 @@ function obterCliente(): Anthropic {
   return clienteSingleton;
 }
 
-const FERRAMENTA_INTERPRETACAO = {
-  name: "interpretar_resposta",
-  description: "Registra o resultado da interpretação da resposta do lead para este checkpoint do script.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      conseguiu_interpretar: {
-        type: "boolean",
-        description:
-          "true só se for possível entender a intenção do lead com confiança razoável; false se a resposta for ambígua, fora do assunto, ou não corresponder a nenhuma opção válida.",
+function ferramentaInterpretacao(qtdFaqs: number, qtdObjecoes: number) {
+  return {
+    name: "interpretar_resposta",
+    description: "Registra o resultado da interpretação da resposta do lead para este checkpoint do script.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        conseguiu_interpretar: {
+          type: "boolean",
+          description:
+            "true só se for possível entender a intenção do lead com confiança razoável; false se a resposta for ambígua, fora do assunto, ou não corresponder a nenhuma opção válida.",
+        },
+        valor: {
+          type: "string",
+          description:
+            "Quando conseguiu_interpretar=true: para checkpoints com opções, o campo 'valor' EXATO de uma das opções listadas (nunca invente um valor fora da lista); para checkpoints de texto livre, o valor extraído/normalizado da resposta do lead.",
+        },
+        ...propriedadesSchemaConteudoExtra(qtdFaqs, qtdObjecoes),
       },
-      valor: {
-        type: "string",
-        description:
-          "Quando conseguiu_interpretar=true: para checkpoints com opções, o campo 'valor' EXATO de uma das opções listadas (nunca invente um valor fora da lista); para checkpoints de texto livre, o valor extraído/normalizado da resposta do lead.",
-      },
+      required: ["conseguiu_interpretar", "valor"],
     },
-    required: ["conseguiu_interpretar", "valor"],
-  },
-};
+  };
+}
 
-function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string }): string {
-  const { etapaAtual, respostaLead } = params;
+function montarPrompt(params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
+}): string {
+  const { etapaAtual, respostaLead, faqsAtivas, objecoesAtivas } = params;
   const conteudo = etapaAtual.conteudo;
   const pergunta = conteudo.mensagens.map(textoDeMensagem).join("\n");
 
@@ -78,35 +87,51 @@ function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string
     `Resposta do lead: "${respostaLead}"`,
     "",
     "Use a ferramenta pra registrar o resultado. Prefira marcar conseguiu_interpretar=false a adivinhar errado — quando o sistema não consegue interpretar, ele simplesmente repete a pergunta pro lead, então um falso negativo é seguro, um falso positivo não é.",
+    blocoPromptConteudoExtra(faqsAtivas, objecoesAtivas),
   );
 
   return linhas.join("\n");
 }
 
-export const interpretarComIA: InterpretadorIA = async ({ etapaAtual, respostaLead }) => {
-  const prompt = montarPrompt({ etapaAtual, respostaLead });
+/**
+ * FAQs/objeções ativas capturadas por closure (mesmo padrão de `criarInterpretadorFaixasDocumentos`)
+ * — permite detectar conteúdo extra (achado 22/08/2026, ver interpretar-desvio-validacao.ts) na
+ * MESMA chamada de IA que já reconhece a resposta, sem custo de uma 2ª chamada.
+ */
+export function criarInterpretadorIA(faqsAtivas: FaqParaDesvio[] = [], objecoesAtivas: ObjecaoParaDesvio[] = []): InterpretadorIA {
+  return async ({ etapaAtual, respostaLead }) => {
+    const prompt = montarPrompt({ etapaAtual, respostaLead, faqsAtivas, objecoesAtivas });
 
-  try {
-    // obterCliente() dentro do try de propósito (achado real, 18/08/2026): estava fora, e uma
-    // API key ausente/inválida derrubava o turno inteiro do webhook sem resposta nenhuma pro lead,
-    // em vez de degradar pra "não reconhecido" (mesmo tratamento que qualquer outra falha da IA já
-    // tinha aqui embaixo).
-    const cliente = obterCliente();
-    const resposta = await cliente.messages.create({
-      model: MODELO_INTERPRETACAO,
-      max_tokens: 300,
-      tools: [FERRAMENTA_INTERPRETACAO],
-      tool_choice: { type: "tool", name: "interpretar_resposta" },
-      messages: [{ role: "user", content: prompt }],
-    });
+    try {
+      // obterCliente() dentro do try de propósito (achado real, 18/08/2026): estava fora, e uma
+      // API key ausente/inválida derrubava o turno inteiro do webhook sem resposta nenhuma pro lead,
+      // em vez de degradar pra "não reconhecido" (mesmo tratamento que qualquer outra falha da IA já
+      // tinha aqui embaixo).
+      const cliente = obterCliente();
+      const resposta = await cliente.messages.create({
+        model: MODELO_INTERPRETACAO,
+        max_tokens: 300,
+        tools: [ferramentaInterpretacao(faqsAtivas.length, objecoesAtivas.length)],
+        tool_choice: { type: "tool", name: "interpretar_resposta" },
+        messages: [{ role: "user", content: prompt }],
+      });
 
-    const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
-    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return null;
+      const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+      if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return null;
 
-    const bruta = blocoFerramenta.input as { conseguiu_interpretar: boolean; valor: string };
-    return validarRespostaIA(bruta, etapaAtual.conteudo.opcoes);
-  } catch (e) {
-    console.error("[interpretacao-ia] erro ao chamar Claude:", e);
-    return null;
-  }
-};
+      const bruta = blocoFerramenta.input as {
+        conseguiu_interpretar: boolean;
+        valor: string;
+        indice_faq_extra?: number;
+        indice_objecao_extra?: number;
+      };
+      return validarRespostaIA(bruta, etapaAtual.conteudo.opcoes, faqsAtivas, objecoesAtivas);
+    } catch (e) {
+      console.error("[interpretacao-ia] erro ao chamar Claude:", e);
+      return null;
+    }
+  };
+}
+
+/** Compatibilidade: uso sem FAQ/objeção (comportamento idêntico a antes de 22/08/2026). */
+export const interpretarComIA: InterpretadorIA = criarInterpretadorIA();
