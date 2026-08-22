@@ -1468,6 +1468,13 @@ export function AtendimentoClient({
               </div>
             )}
 
+            {detalhe.instancia === "secundaria" && (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                ⚠️ Canal secundário — este número é apenas para envio automático. Uma resposta manual aqui não é o
+                padrão esperado pelo cliente.
+              </div>
+            )}
+
             {buscaConversaAberta && (
               <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
                 <input

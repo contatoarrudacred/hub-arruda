@@ -510,6 +510,8 @@ export type ConversaDetalhe = {
   aguardandoRespostaDesde: string | null;
   contadorNaoReconhecimento: number;
   estagnadoDesde: string | null;
+  /** 'oficial'/'secundaria'/null — instância secundária é só pra disparo automático (anti-banimento); resposta manual aqui é possível mas fora do fluxo esperado (Tela de Atendimento mostra aviso). */
+  instancia: string | null;
 };
 
 /** Conversa inteira (cabeçalho + timeline) — painel direito. */
@@ -519,7 +521,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversas")
     .select(
-      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, created_at, dados, contador_nao_reconhecimento, estagnado_desde, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome, nome_reduzido)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
+      "id, pessoa_id, oportunidade_id, sob_supervisor, atendente_id, etapa_fluxo_atual_id, agenda_followup_id, aguardando_resposta_desde, proximo_item_agenda, followup_manual_ativo, created_at, dados, contador_nao_reconhecimento, estagnado_desde, instancia, pessoas(nome_razao_social, whatsapp, email), oportunidades(etapa_kanban, valor_estimado, produtos(nome, nome_reduzido)), usuarios_sistema(cor_badge, pessoas(nome_razao_social))",
     )
     .eq("id", conversaId)
     .single();
@@ -594,6 +596,7 @@ export async function carregarConversaDetalhe(conversaId: string): Promise<Conve
     aguardandoRespostaDesde: conversa.aguardando_resposta_desde,
     contadorNaoReconhecimento: conversa.contador_nao_reconhecimento ?? 0,
     estagnadoDesde: conversa.estagnado_desde,
+    instancia: conversa.instancia,
     notas: (notas ?? []).map((n) => {
       const autorInfo = n.usuarios_sistema as unknown as { pessoas: { nome_razao_social: string } | null } | null;
       return {
