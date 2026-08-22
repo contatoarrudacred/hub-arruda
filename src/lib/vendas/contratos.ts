@@ -254,6 +254,19 @@ export async function buscarContratoPorAssinafyDocumentId(assinafyDocumentId: st
   return mapearContrato(data as unknown as LinhaContratoBruta);
 }
 
+export async function buscarContratoPorAsaasCheckoutId(asaasCheckoutId: string): Promise<Contrato | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contratos")
+    .select(SELECT_CONTRATO)
+    .eq("asaas_checkout_id", asaasCheckoutId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao buscar contrato por Checkout Asaas: ${error.message}`);
+  if (!data) return null;
+
+  return mapearContrato(data as unknown as LinhaContratoBruta);
+}
+
 export async function buscarContratoPorOportunidade(oportunidadeId: string): Promise<Contrato | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
