@@ -49,6 +49,21 @@ export const CENARIOS_ROTEIRIZADOS: Cenario[] = [
   },
   {
     tipo: "roteirizado",
+    nome: "desvio_pergunta_lateral_com_faq",
+    descricao:
+      "Lead faz uma pergunta lateral (coberta por FAQ) no meio de um checkpoint comum (ln_fazsentido) — testa o interpretador de desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md): deve responder com o texto oficial da FAQ e retomar a pergunta pendente na mesma mensagem, sem escalar nem travar.",
+    expectativaHandoff: null,
+    mensagens: [
+      "Oi",
+      ...NOME_E_EMAIL,
+      "quero limpar meu nome",
+      "as restrições podem voltar depois de limpo? o que é esse seguro garantia que vocês oferecem?",
+      "sim, pode ser",
+      "sim, faz sentido",
+    ],
+  },
+  {
+    tipo: "roteirizado",
     nome: "duvida_baixa_negocia_direto",
     descricao: "Dívida baixa (<R$3.000) — a Malala recomenda negociar direto e o lead aceita a recomendação, encerrando com perda (não é bug, é o desenho do script).",
     expectativaHandoff: null,

@@ -11,6 +11,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { carregarFaqsAtivas } from "./repositorio";
 
 const MODELO_ASSIST = "claude-sonnet-5";
 const CHAVE_CONFIG_PERSONA = "malala_persona_prompt_sistema";
@@ -36,13 +37,6 @@ async function carregarPersonaTexto(): Promise<string | null> {
   if (error) throw new Error(`Falha ao carregar persona da Malala: ${error.message}`);
   const valor = data?.valor as { texto?: string } | null;
   return valor?.texto ?? null;
-}
-
-async function carregarFaqsAtivas(): Promise<{ pergunta: string; resposta: string }[]> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase.from("faqs").select("pergunta, resposta").eq("ativo", true);
-  if (error) throw new Error(`Falha ao carregar FAQs: ${error.message}`);
-  return data ?? [];
 }
 
 export type MensagemParaAssist = { remetente: string; conteudo: string | null };

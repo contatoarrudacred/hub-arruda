@@ -11,6 +11,7 @@ import {
   type EstadoNegociacaoPagamento,
   type RespostaBrutaNegociacaoPagamento,
 } from "./interpretar-negociacao-pagamento-validacao";
+import { formatarReais } from "./regras-limpeza-nome";
 import type { EtapaCarregada, InterpretadorNegociacaoPagamento } from "./tipos";
 
 const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
@@ -70,8 +71,9 @@ function montarPrompt(params: {
   respostaLead: string;
   estadoAtual: EstadoNegociacaoPagamento;
   hojeISO: string;
+  totalContrato: number | null;
 }): string {
-  const { etapaAtual, respostaLead, estadoAtual, hojeISO } = params;
+  const { etapaAtual, respostaLead, estadoAtual, hojeISO, totalContrato } = params;
   const mensagemAtual = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
 
   return [
@@ -92,9 +94,17 @@ function montarPrompt(params: {
     estadoAtual.parcelado
       ? "- Dia-âncora das parcelas seguintes: só 01, 10 ou 20 do mês."
       : "- Esta venda é à vista — não existe dia-âncora, só a data da 1ª (e única) parcela.",
+    totalContrato != null
+      ? [
+          `- Valor total do contrato: ${formatarReais(totalContrato)}. Não existe (em lugar nenhum do nosso sistema) um valor exato calculado pra parcela no CARTÃO — isso só é definido depois, no momento do pagamento (Checkout da operadora), e pode incluir juros que não controlamos.`,
+          "  Se o lead perguntar quanto fica a parcela no cartão numa quantidade de vezes específica, você PODE estimar dividindo o valor total do contrato por essa quantidade, SEM aplicar juros — mas deixe claro que é uma estimativa e que o valor final exato (com eventual juros da operadora) só é confirmado no momento do pagamento. Não fique pedindo o mesmo dado de novo nem travando: responda com a estimativa e siga a conversa.",
+        ].join("\n")
+      : null,
     "",
     "Se o lead confirmou (mesmo implicitamente, tipo 'combinado' ou 'pode fechar assim'), marque confirmado. Se pediu algo dentro do permitido, marque ajuste_valido com os valores finais. Se pediu algo fora do permitido, foi vago, ou fez uma pergunta, marque negociando e escreva uma resposta natural (não robótica) explicando o que é possível — pode negociar em várias mensagens, não precisa fechar nesta.",
-  ].join("\n");
+  ]
+    .filter((linha): linha is string => linha !== null)
+    .join("\n");
 }
 
 export const interpretarNegociacaoPagamento: InterpretadorNegociacaoPagamento = async ({
@@ -113,7 +123,14 @@ export const interpretarNegociacaoPagamento: InterpretadorNegociacaoPagamento = 
     parcelado: dados.forma_pagamento === "parcelado",
   };
 
-  const prompt = montarPrompt({ etapaAtual, respostaLead, estadoAtual, hojeISO });
+  const valoresParcelas = (dados.parcelas_valores ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map(Number)
+    .filter((v) => !Number.isNaN(v));
+  const totalContrato = valoresParcelas.length > 0 ? valoresParcelas.reduce((soma, v) => soma + v, 0) : null;
+
+  const prompt = montarPrompt({ etapaAtual, respostaLead, estadoAtual, hojeISO, totalContrato });
 
   try {
     // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).

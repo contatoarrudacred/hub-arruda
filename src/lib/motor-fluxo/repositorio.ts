@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { JanelaDisponibilidade, PeriodoOcupado } from "./agenda-consultor";
 import type { ConfigPrecificacaoLimpaNome, FaixaPreco } from "./regras-limpeza-nome";
 import type { ModoRoteamentoLeadNovo, RegraRoteamento } from "./roteamento-lead-novo";
-import type { ConteudoEtapa, EtapaCarregada } from "./tipos";
+import type { ConteudoEtapa, EtapaCarregada, FaqParaDesvio } from "./tipos";
 
 // Camada de I/O do motor de fluxo — único lugar que fala com o Supabase. O motor em si
 // (engine.ts) e as regras de produto (regras-limpeza-nome.ts) continuam puros/testáveis sem banco.
@@ -236,6 +236,14 @@ export async function listarObjecoesAtivas(): Promise<ObjecaoParaDetectorCarrega
   }
 
   return (data ?? []).map((linha) => ({ id: linha.id, objecao: linha.objecao, comoLidar: linha.como_lidar }));
+}
+
+/** FAQs ativas — reaproveitada pelo composer-assist (atendente humano) e pelo interpretador de desvio (Malala automatizada, spec 2026-08-21-desvio-escalar-quando-nao-sabe.md). */
+export async function carregarFaqsAtivas(): Promise<FaqParaDesvio[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("faqs").select("pergunta, resposta").eq("ativo", true);
+  if (error) throw new Error(`Falha ao carregar FAQs: ${error.message}`);
+  return data ?? [];
 }
 
 export type DadosAgendamentoConsultor = {

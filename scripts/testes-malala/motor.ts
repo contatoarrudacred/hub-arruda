@@ -15,6 +15,7 @@ import {
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
 import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
+import { criarInterpretadorDesvio } from "@/lib/motor-fluxo/interpretar-desvio";
 import { criarInterpretadorFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
 import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
 import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
@@ -24,15 +25,17 @@ import {
   carregarDadosAgendamentoConsultor,
   carregarEtapasPorCodigo,
   carregarFaixasPreco,
+  carregarFaqsAtivas,
 } from "@/lib/motor-fluxo/repositorio";
 import type { DadosConversa, ResultadoAvanco } from "@/lib/motor-fluxo/tipos";
 
 async function montarDependencias() {
-  const [etapasPorCodigo, faixas, config, dadosAgendamento] = await Promise.all([
+  const [etapasPorCodigo, faixas, config, dadosAgendamento, faqsAtivas] = await Promise.all([
     carregarEtapasPorCodigo(),
     carregarFaixasPreco(),
     carregarConfigPrecificacao(),
     carregarDadosAgendamentoConsultor(),
+    carregarFaqsAtivas(),
   ]);
   return {
     etapasPorCodigo,
@@ -42,6 +45,7 @@ async function montarDependencias() {
       agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
     }),
     interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
+    interpretarDesvio: criarInterpretadorDesvio(faqsAtivas),
   };
 }
 
@@ -65,7 +69,7 @@ export type ResultadoTurnoTeste = {
  * guardando estado entre turnos).
  */
 export async function rodarTurno(telefone: string, textoLead: string): Promise<ResultadoTurnoTeste> {
-  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos } =
+  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos, interpretarDesvio } =
     await montarDependencias();
   const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
 
@@ -109,6 +113,7 @@ export async function rodarTurno(telefone: string, textoLead: string): Promise<R
       interpretarListaDocumentos,
       interpretarFaixasDocumentos,
       interpretarNegociacaoPagamento,
+      interpretarDesvio,
       variaveisGlobais: { saudacao: saudacaoPorHorario() },
     });
     dadosNovos = resultado.dadosNovos;
