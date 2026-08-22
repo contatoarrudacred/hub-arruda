@@ -615,9 +615,32 @@ function ModalVisualizarPostLocal({ postId, onFechar }: { postId: string; onFech
               <span className="font-medium text-zinc-700 dark:text-zinc-300">Meta description:</span> {dados.metaDescription}
             </p>
             <div
-              className="prose prose-sm max-w-none border-t border-zinc-100 pt-3 dark:prose-invert dark:border-zinc-800"
+              className="post-preview-conteudo border-t border-zinc-100 pt-3 text-zinc-800 dark:border-zinc-800 dark:text-zinc-100"
               dangerouslySetInnerHTML={{ __html: dados.conteudoHtml }}
             />
+            {/* Estilo próprio pro conteúdo do post (21/08/2026, pedido do Luiz) — não depende de
+                nenhum plugin de tipografia do Tailwind (não confirmado neste projeto); título/
+                subtítulos/texto ganham hierarquia visual clara, e links saem sublinhados numa cor
+                própria, fáceis de distinguir do texto comum. */}
+            <style>{`
+              .post-preview-conteudo h1 { font-size: 1.4rem; font-weight: 700; line-height: 1.3; margin: 1.5rem 0 0.75rem; }
+              .post-preview-conteudo h1:first-child { margin-top: 0; }
+              .post-preview-conteudo h2 { font-size: 1.15rem; font-weight: 600; line-height: 1.35; margin: 1.75rem 0 0.6rem; }
+              .post-preview-conteudo h3 { font-size: 1.02rem; font-weight: 600; line-height: 1.4; margin: 1.5rem 0 0.5rem; }
+              .post-preview-conteudo p { font-size: 0.9rem; line-height: 1.75; margin: 0 0 1rem; }
+              .post-preview-conteudo ul, .post-preview-conteudo ol { font-size: 0.9rem; line-height: 1.7; margin: 0 0 1rem 1.25rem; }
+              .post-preview-conteudo li { margin-bottom: 0.35rem; }
+              .post-preview-conteudo a { color: #2563eb; text-decoration: underline; text-underline-offset: 2px; }
+              .post-preview-conteudo a:hover { text-decoration-thickness: 2px; }
+              .post-preview-conteudo strong { font-weight: 700; }
+              .post-preview-conteudo figure { margin: 1.25rem 0; }
+              .post-preview-conteudo figure img { width: 100%; border-radius: 0.5rem; }
+              .post-preview-conteudo figcaption { font-size: 0.75rem; color: #71717a; margin-top: 0.375rem; }
+              @media (prefers-color-scheme: dark) {
+                .post-preview-conteudo a { color: #60a5fa; }
+                .post-preview-conteudo figcaption { color: #a1a1aa; }
+              }
+            `}</style>
           </div>
         )}
       </div>
@@ -1216,19 +1239,20 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
 
             {erroEnvio && <p className="text-sm text-red-600 dark:text-red-400">{erroEnvio}</p>}
 
-            {/* Geração de imagem real leva ~20-40s (chamada à OpenAI + upload) — pedido do Luiz,
-                21/08/2026: ícone girando + barra indeterminada (não representa % real de
-                conclusão, só comunica "está trabalhando", já que a chamada não expõe progresso). */}
+            {/* 21/08/2026, pedido do Luiz: a barra indeterminada + "~20-40s" de antes davam a
+                impressão errada de travado quando a geração passava desse tempo (a chamada não
+                expõe progresso real — não dá pra prometer uma janela curta e específica). Só o
+                ícone girando + uma explicação honesta sobre a variação real do tempo. */}
             {enviando && (
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-start gap-2.5 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800">
                 <span
                   aria-hidden
-                  className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500"
+                  className="mt-0.5 inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500"
                 />
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                  <div className="h-full w-2/3 animate-pulse rounded-full bg-zinc-900 dark:bg-zinc-50" />
-                </div>
-                <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">~20-40s</span>
+                <p className="text-xs text-zinc-600 dark:text-zinc-300">
+                  Gerando a imagem — isso pode levar alguns minutos, dependendo da complexidade do prompt. Não feche
+                  esta janela.
+                </p>
               </div>
             )}
 
