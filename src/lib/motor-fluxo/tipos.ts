@@ -333,14 +333,30 @@ export type ResultadoDesvio =
   | { status: "escalar" }
   | { status: "ambiguo" };
 
-/** As FAQs/objeções ativas e o texto da persona são capturados por closure na fábrica (mesmo padrão de `criarInterpretadorFaixasDocumentos`), não passados a cada chamada — por isso a assinatura é igual à do `InterpretadorIA` genérico. */
-export type InterpretadorDesvio = (params: { etapaAtual: EtapaCarregada; respostaLead: string }) => Promise<ResultadoDesvio>;
+/**
+ * As FAQs/objeções ativas e o texto da persona são capturados por closure na fábrica (mesmo padrão
+ * de `criarInterpretadorFaixasDocumentos`). `perguntaPendente`/`nomeLead` vêm de quem chama
+ * (`engine.ts`) porque só ele tem acesso a `resolverMensagensDinamicas`/`dados` — achado 22/08/2026
+ * (re-teste `lead_muda_de_ideia_varias_vezes`): a Malala inventou o nome "Marcelo" pro lead "Carlos"
+ * porque a geração nunca recebia o nome real, e a "pergunta pendente" vinha do texto ESTÁTICO de
+ * `conteudo.mensagens` — que em checkpoints com mensagem dinâmica (`resolverMensagensDinamicas`,
+ * ex.: ln_passo14) é só um placeholder tipo "(pergunta de voucher calculada dinamicamente...)", não
+ * a pergunta real que o lead viu. Sem o nome real e com uma "pergunta" sem sentido pra retomar, o
+ * modelo improvisou os dois.
+ */
+export type InterpretadorDesvio = (params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  perguntaPendente: string;
+  nomeLead: string | null;
+}) => Promise<ResultadoDesvio>;
 
 /**
  * Gera a mensagem que endereça um `ConteudoExtraDetectado` (FAQ ou objeção embutida numa resposta
  * JÁ reconhecida pelo checkpoint — ver `ConteudoExtraDetectado`) reaproveitando a mesma geração com
  * a voz da persona já usada pelo `InterpretadorDesvio` (`criarGeradorConteudoExtra`, em
- * interpretar-desvio.ts, compartilha o closure de faqs/objeções/persona com `criarInterpretadorDesvio`).
+ * interpretar-desvio.ts, compartilha o closure de persona com `criarInterpretadorDesvio`).
+ * `perguntaPendente`/`nomeLead` seguem a mesma regra do `InterpretadorDesvio` (ver comentário acima).
  * Retorna `null` em qualquer falha — quem chama simplesmente não prepend nenhuma mensagem extra
  * (a resposta principal do checkpoint segue normalmente, nunca trava o turno por causa disso).
  */
@@ -348,6 +364,7 @@ export type GeradorConteudoExtra = (params: {
   conteudoExtra: ConteudoExtraDetectado;
   respostaLead: string;
   perguntaPendente: string;
+  nomeLead: string | null;
 }) => Promise<string | null>;
 
 /** O que o motor precisa pra decidir o próximo passo — tudo isolado do Supabase, testável puro (exceto o hook de IA, que é assíncrono por natureza). */
