@@ -79,6 +79,22 @@ function substituirImagemNoHtml(html: string, marcador: string, urlAntiga: strin
   return html;
 }
 
+/**
+ * Achado real de produção (22/08/2026): "Gerar de novo" reenviava `post.conteudoHtml` inteiro —
+ * INCLUINDO o `<figure><img alt="..."></figure>` da imagem JÁ publicada — como texto-fonte tanto
+ * pra gerarCapa/gerarImagemComPrompt (etapa 1, resumo do post) quanto pro Revisor de imagem
+ * (fidelidade). O Revisor então comparava a imagem NOVA contra a descrição da imagem ANTIGA (o
+ * `alt` de uma geração anterior), não contra o post editorial em si — cada tentativa de regenerar
+ * ficava ancorada na cena específica que uma tentativa anterior tinha inventado, garantindo
+ * reprovação sempre que o ambiente sorteado mudasse. Remove todo `<figure>...</figure>` (capa e
+ * secundárias, ambas embaladas nesse marcador — ver construirFiguraCapa/inserirImagensSecundariasNoHtml
+ * em processar-pauta.ts) antes de usar o HTML como fonte pra IA — o HTML "de verdade" (com as
+ * imagens) continua sendo usado pra persistência/substituição, só a CÓPIA enviada à IA é limpa.
+ */
+function removerImagensEmbutidas(html: string): string {
+  return html.replace(/<figure>[\s\S]*?<\/figure>\n?/gi, "");
+}
+
 async function arquivoParaDataUrl(arquivo: File): Promise<string> {
   const buffer = Buffer.from(await arquivo.arrayBuffer());
   return `data:${arquivo.type || "image/png"};base64,${buffer.toString("base64")}`;
@@ -106,6 +122,11 @@ export async function trocarCapaAction(formData: FormData): Promise<ResultadoTro
     const post = await carregarPostDetalhado(postId);
     if (!post) return { sucesso: false, erro: "Post não encontrado.", log };
     registrar("Post carregado.");
+    // Ver comentário de removerImagensEmbutidas — a versão enviada à IA (geração + revisão) não
+    // pode conter o <figure> da imagem atual, senão a IA compara a imagem nova contra o `alt` da
+    // imagem ANTIGA em vez do post editorial. `post.conteudoHtml` (com a imagem) continua intacto
+    // pra tudo que persiste/substitui HTML de verdade, mais abaixo.
+    const htmlParaIa = removerImagensEmbutidas(post.conteudoHtml);
 
     let novaDataUrl: string;
     let novoAlt = post.titulo;
@@ -121,7 +142,7 @@ export async function trocarCapaAction(formData: FormData): Promise<ResultadoTro
       const prompt = (formData.get("prompt") as string | null)?.trim();
       if (!prompt) return { sucesso: false, erro: "Digite um prompt.", log };
       registrar("Chamando gerarImagemComPrompt...");
-      const { resultado, log: logGeracao, erroDetalhado } = await gerarImagemComPrompt(prompt, post.conteudoHtml);
+      const { resultado, log: logGeracao, erroDetalhado } = await gerarImagemComPrompt(prompt, htmlParaIa);
       log.push(...logGeracao);
       if (!resultado) {
         return { sucesso: false, erro: "Não foi possível gerar a imagem. Tente de novo.", detalhesErro: erroDetalhado, log };
@@ -132,7 +153,7 @@ export async function trocarCapaAction(formData: FormData): Promise<ResultadoTro
       const pauta = await carregarPauta(post.pautaId);
       if (!pauta) return { sucesso: false, erro: "Pauta do post não encontrada.", log };
       const persona = pauta.personaId ? await carregarPersona(pauta.personaId) : null;
-      const conteudo = { titulo: post.titulo, conteudoHtml: post.conteudoHtml, metaTitle: post.metaTitle, metaDescription: post.metaDescription, slug: post.slug };
+      const conteudo = { titulo: post.titulo, conteudoHtml: htmlParaIa, metaTitle: post.metaTitle, metaDescription: post.metaDescription, slug: post.slug };
       const { resultado, log: logGeracao, erroDetalhado } = await gerarCapa(pauta, conteudo, persona);
       log.push(...logGeracao);
       if (!resultado) {
@@ -208,6 +229,8 @@ export async function trocarImagemSecundariaAction(formData: FormData): Promise<
     const imagemAtual = post.imagensSecundarias.find((i) => i.slug === slugImagem);
     if (!imagemAtual) return { sucesso: false, erro: "Imagem secundária não encontrada.", log };
     registrar("Post e imagem secundária carregados.");
+    // Ver comentário de removerImagensEmbutidas — mesmo raciocínio de trocarCapaAction.
+    const htmlParaIa = removerImagensEmbutidas(post.conteudoHtml);
 
     let novaDataUrl: string;
 
@@ -224,7 +247,7 @@ export async function trocarImagemSecundariaAction(formData: FormData): Promise<
       const prompt = modo === "prompt" ? (formData.get("prompt") as string | null)?.trim() : `${imagemAtual.titulo}: ${imagemAtual.legenda}`;
       if (!prompt) return { sucesso: false, erro: "Digite um prompt.", log };
       registrar(modo === "prompt" ? "Modo: prompt digitado pelo usuário." : "Modo: gerar de novo (prompt aproximado a partir de título/legenda salvos).");
-      const { resultado, log: logGeracao, erroDetalhado } = await gerarImagemComPrompt(prompt, post.conteudoHtml);
+      const { resultado, log: logGeracao, erroDetalhado } = await gerarImagemComPrompt(prompt, htmlParaIa);
       log.push(...logGeracao);
       if (!resultado) {
         return { sucesso: false, erro: "Não foi possível gerar a imagem. Tente de novo.", detalhesErro: erroDetalhado, log };
