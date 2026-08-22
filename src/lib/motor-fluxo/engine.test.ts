@@ -842,4 +842,84 @@ describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra d
     expect(resultado.efeitos).toEqual([]);
     expect(txt(resultado.mensagens[0])).toContain("Desculpe, não entendi sua resposta");
   });
+
+  // Conteúdo extra embutido numa resposta JÁ reconhecida (achado 22/08/2026, ver
+  // docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md, seção "Atualização") — ex.:
+  // "2, entre 10 e 30 mil. Mas você ainda não me confirmou os 70% de desconto..." reconhece a faixa
+  // (2) E carrega uma objeção embutida que antes se perdia (o desvio só rodava quando !reconhecido).
+  // `etapaGenerica` aponta pra "proxima_etapa" (código fictício, só serve pros testes acima que nunca
+  // chegam a avançar de verdade) — aqui o avanço precisa ser real, então aponta pra um código que
+  // existe de fato no fluxo semente (abertura_email).
+  const etapaGenericaComAvancoReal = {
+    ...etapaGenerica,
+    conteudo: {
+      ...etapaGenerica.conteudo,
+      opcoes: etapaGenerica.conteudo.opcoes.map((o) => ({ ...o, proximo_codigo: "abertura_email" })),
+    },
+  };
+
+  it("conteúdo extra detectado + geração com sucesso: prepend da mensagem, sem interromper o avanço normal do checkpoint", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenericaComAvancoReal,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "sim. mas vocês trabalham com CNPJ também?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => ({
+        valor: "sim",
+        opcaoEscolhida: etapaGenericaComAvancoReal.conteudo.opcoes[0],
+        conteudoExtra: { tipo: "faq", faq: { pergunta: "Vocês trabalham com CNPJ?", resposta: "Sim, atendemos CPF e CNPJ." } },
+      }),
+      gerarRespostaConteudoExtra: async ({ conteudoExtra }) =>
+        conteudoExtra?.tipo === "faq" ? `${conteudoExtra.faq.resposta} (retomando...)` : null,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.naoReconhecido).toBe(false);
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("abertura_email");
+    expect(resultado.dadosNovos.confirmacao_teste).toBe("sim");
+    expect(txt(resultado.mensagens[0])).toBe("Sim, atendemos CPF e CNPJ. (retomando...)");
+    // a mensagem seguinte já é o avanço normal do checkpoint (não substitui, só prepend).
+    expect(resultado.mensagens.length).toBeGreaterThan(1);
+  });
+
+  it("conteúdo extra detectado mas a geração falha (retorna null): não prepend nada, avanço normal intacto", async () => {
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenericaComAvancoReal,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "sim. mas vocês trabalham com CNPJ também?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => ({
+        valor: "sim",
+        opcaoEscolhida: etapaGenericaComAvancoReal.conteudo.opcoes[0],
+        conteudoExtra: { tipo: "faq", faq: { pergunta: "Vocês trabalham com CNPJ?", resposta: "Sim, atendemos CPF e CNPJ." } },
+      }),
+      gerarRespostaConteudoExtra: async () => null,
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(resultado.etapaFinal?.conteudo.codigo).toBe("abertura_email");
+    expect(txt(resultado.mensagens[0])).not.toContain("Sim, atendemos CPF e CNPJ");
+  });
+
+  it("sem conteúdo extra detectado: gerarRespostaConteudoExtra nem é chamado (caso mais comum, nenhuma mudança de comportamento)", async () => {
+    let chamado = false;
+    const resultado = await avancarConversa({
+      etapaAtual: etapaGenericaComAvancoReal,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "sim",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => ({ valor: "sim", opcaoEscolhida: etapaGenericaComAvancoReal.conteudo.opcoes[0] }),
+      gerarRespostaConteudoExtra: async () => {
+        chamado = true;
+        return "não deveria aparecer";
+      },
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(chamado).toBe(false);
+    expect(txt(resultado.mensagens[0])).not.toContain("não deveria aparecer");
+  });
 });

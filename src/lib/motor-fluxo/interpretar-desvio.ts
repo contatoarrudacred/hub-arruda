@@ -17,7 +17,15 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { textoDeMensagem } from "./engine";
 import { resolverRespostaDesvio, type RespostaBrutaDesvio } from "./interpretar-desvio-validacao";
-import type { EtapaCarregada, FaqParaDesvio, InterpretadorDesvio, ObjecaoParaDesvio, ResultadoDesvio } from "./tipos";
+import type {
+  ConteudoExtraDetectado,
+  EtapaCarregada,
+  FaqParaDesvio,
+  GeradorConteudoExtra,
+  InterpretadorDesvio,
+  ObjecaoParaDesvio,
+  ResultadoDesvio,
+} from "./tipos";
 
 const MODELO_CLASSIFICACAO = "claude-haiku-4-5-20251001";
 const MODELO_GERACAO = "claude-sonnet-5";
@@ -203,3 +211,24 @@ export function criarInterpretadorDesvio(faqsAtivas: FaqParaDesvio[], objecoesAt
     return resolucao.status === "faq" ? { status: "faq", mensagem } : { status: "objecao", mensagem };
   };
 }
+
+/**
+ * Gera a mensagem que endereça um `ConteudoExtraDetectado` (FAQ ou objeção embutida numa resposta
+ * já reconhecida por um dos 4 interpretadores — achado 22/08/2026). Reaproveita a MESMA geração com
+ * a voz da persona já usada por `criarInterpretadorDesvio` (`gerarMensagemDesvio`) — a diferença é
+ * só de onde vem a classificação: aqui já chega resolvida (o interpretador que reconheceu a
+ * resposta já fez a detecção na mesma chamada de IA, ver `resolverConteudoExtra`), então não há
+ * classificação nem resolução de índice pra fazer aqui, só geração.
+ */
+export function criarGeradorConteudoExtra(personaTexto: string | null): GeradorConteudoExtra {
+  return async ({ conteudoExtra, respostaLead, perguntaPendente }) => {
+    if (!conteudoExtra || !personaTexto) return null;
+
+    const tipo = conteudoExtra.tipo;
+    const conteudo = tipo === "faq" ? conteudoExtra.faq.resposta : conteudoExtra.objecao.comoLidar;
+
+    return gerarMensagemDesvio({ tipo, conteudo, respostaLead, perguntaPendente, personaTexto });
+  };
+}
+
+export type { ConteudoExtraDetectado };

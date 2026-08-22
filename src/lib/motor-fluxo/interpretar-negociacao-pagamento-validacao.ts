@@ -3,7 +3,8 @@
 // da Anthropic quebra o Vitest se importado direto).
 
 import { DIAS_ANCORA_VALIDOS, validarDataPrimeiraParcela, type DiaAncora } from "./calculo-vencimentos-pagamento";
-import type { ResultadoNegociacaoPagamento } from "./tipos";
+import { resolverConteudoExtra } from "./interpretar-desvio-validacao";
+import type { FaqParaDesvio, ObjecaoParaDesvio, ResultadoNegociacaoPagamento } from "./tipos";
 
 export type RespostaBrutaNegociacaoPagamento = {
   status: "confirmado" | "ajuste_valido" | "negociando";
@@ -11,6 +12,9 @@ export type RespostaBrutaNegociacaoPagamento = {
   data_primeira_parcela: string;
   dia_ancora: number;
   mensagem: string;
+  /** Conteúdo extra embutido (achado 22/08/2026) — só relevante quando status=confirmado (ver `validarRespostaNegociacaoPagamento`). */
+  indice_faq_extra?: number;
+  indice_objecao_extra?: number;
 };
 
 /** Estado atual da negociação (o que já está em `dados` — defaults ou ajuste de rodada anterior). */
@@ -33,8 +37,13 @@ export function validarRespostaNegociacaoPagamento(
   bruta: RespostaBrutaNegociacaoPagamento,
   estadoAtual: EstadoNegociacaoPagamento,
   hojeISO: string,
+  faqsAtivas: FaqParaDesvio[] = [],
+  objecoesAtivas: ObjecaoParaDesvio[] = [],
 ): ResultadoNegociacaoPagamento {
-  if (bruta.status === "confirmado") return { status: "confirmado" };
+  if (bruta.status === "confirmado") {
+    const conteudoExtra = resolverConteudoExtra(bruta, faqsAtivas, objecoesAtivas);
+    return conteudoExtra ? { status: "confirmado", conteudoExtra } : { status: "confirmado" };
+  }
 
   if (bruta.status === "negociando") {
     const mensagem = bruta.mensagem?.trim();

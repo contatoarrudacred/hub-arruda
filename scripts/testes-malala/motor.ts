@@ -14,11 +14,11 @@ import {
   criarExtratorAbertura,
   criarResolverMensagensDinamicas,
 } from "@/lib/motor-fluxo/fluxo-limpeza-nome";
-import { interpretarComIA } from "@/lib/motor-fluxo/interpretacao-ia";
-import { criarInterpretadorDesvio } from "@/lib/motor-fluxo/interpretar-desvio";
+import { criarInterpretadorIA } from "@/lib/motor-fluxo/interpretacao-ia";
+import { criarGeradorConteudoExtra, criarInterpretadorDesvio } from "@/lib/motor-fluxo/interpretar-desvio";
 import { criarInterpretadorFaixasDocumentos } from "@/lib/motor-fluxo/interpretar-faixas-documentos";
-import { interpretarListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
-import { interpretarNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
+import { criarInterpretadorListaDocumentos } from "@/lib/motor-fluxo/interpretar-lista-documentos";
+import { criarInterpretadorNegociacaoPagamento } from "@/lib/motor-fluxo/interpretar-negociacao-pagamento";
 import { carregarOuCriarConversaWhatsapp, registrarMensagemLead, registrarTurnoMalala } from "@/lib/motor-fluxo/persistencia";
 import {
   carregarConfigPrecificacao,
@@ -48,8 +48,12 @@ async function montarDependencias() {
       disponibilidadeConsultor: dadosAgendamento.disponibilidade,
       agendamentosExistentes: dadosAgendamento.agendamentosExistentes,
     }),
-    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor),
+    interpretarComIA: criarInterpretadorIA(faqsAtivas, objecoesAtivas),
+    interpretarListaDocumentos: criarInterpretadorListaDocumentos(faqsAtivas, objecoesAtivas),
+    interpretarFaixasDocumentos: criarInterpretadorFaixasDocumentos(faixas, config.corteAltoValor, faqsAtivas, objecoesAtivas),
+    interpretarNegociacaoPagamento: criarInterpretadorNegociacaoPagamento(faqsAtivas, objecoesAtivas),
     interpretarDesvio: criarInterpretadorDesvio(faqsAtivas, objecoesAtivas, personaTexto),
+    gerarRespostaConteudoExtra: criarGeradorConteudoExtra(personaTexto),
   };
 }
 
@@ -73,8 +77,17 @@ export type ResultadoTurnoTeste = {
  * guardando estado entre turnos).
  */
 export async function rodarTurno(telefone: string, textoLead: string): Promise<ResultadoTurnoTeste> {
-  const { etapasPorCodigo, resolverMensagensDinamicas, calcularDadosDerivados, interpretarFaixasDocumentos, interpretarDesvio } =
-    await montarDependencias();
+  const {
+    etapasPorCodigo,
+    resolverMensagensDinamicas,
+    calcularDadosDerivados,
+    interpretarComIA,
+    interpretarListaDocumentos,
+    interpretarFaixasDocumentos,
+    interpretarNegociacaoPagamento,
+    interpretarDesvio,
+    gerarRespostaConteudoExtra,
+  } = await montarDependencias();
   const estado = await carregarOuCriarConversaWhatsapp(telefone, etapasPorCodigo);
 
   if (estado.sobSupervisor) {
@@ -118,6 +131,7 @@ export async function rodarTurno(telefone: string, textoLead: string): Promise<R
       interpretarFaixasDocumentos,
       interpretarNegociacaoPagamento,
       interpretarDesvio,
+      gerarRespostaConteudoExtra,
       variaveisGlobais: { saudacao: saudacaoPorHorario() },
     });
     dadosNovos = resultado.dadosNovos;

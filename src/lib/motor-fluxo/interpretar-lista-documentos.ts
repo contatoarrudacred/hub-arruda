@@ -20,11 +20,12 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { textoDeMensagem } from "./engine";
+import { blocoPromptConteudoExtra, propriedadesSchemaConteudoExtra } from "./interpretar-desvio-validacao";
 import {
   validarRespostaListaDocumentos,
   type RespostaBrutaListaDocumentos,
 } from "./interpretar-lista-documentos-validacao";
-import type { DadosConversa, EtapaCarregada, InterpretadorListaDocumentos } from "./tipos";
+import type { DadosConversa, EtapaCarregada, FaqParaDesvio, InterpretadorListaDocumentos, ObjecaoParaDesvio } from "./tipos";
 
 const MODELO_INTERPRETACAO = "claude-haiku-4-5-20251001";
 
@@ -39,40 +40,49 @@ function obterCliente(): Anthropic {
   return clienteSingleton;
 }
 
-const FERRAMENTA = {
-  name: "interpretar_lista_documentos",
-  description:
-    "Registra quantos documentos (CPF/CNPJ) o lead quer limpar, ou pede esclarecimento quando a resposta não deixa isso claro.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      status: {
-        type: "string",
-        enum: ["completo", "incompleto", "nao_entendi"],
-        description:
-          "'completo' quando der pra inferir com confiança razoável quantos CPFs e quantos CNPJs (não precisa certeza absoluta — 'meu cpf e o cnpj da minha mulher' já é 1 CPF + 1 CNPJ). 'incompleto' só quando genuinamente não der pra saber a contagem — gere uma pergunta de esclarecimento bem específica. 'nao_entendi' quando a resposta não tem nada a ver com quantidade/tipo de documento.",
+function ferramenta(qtdFaqs: number, qtdObjecoes: number) {
+  return {
+    name: "interpretar_lista_documentos",
+    description:
+      "Registra quantos documentos (CPF/CNPJ) o lead quer limpar, ou pede esclarecimento quando a resposta não deixa isso claro.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        status: {
+          type: "string",
+          enum: ["completo", "incompleto", "nao_entendi"],
+          description:
+            "'completo' quando der pra inferir com confiança razoável quantos CPFs e quantos CNPJs (não precisa certeza absoluta — 'meu cpf e o cnpj da minha mulher' já é 1 CPF + 1 CNPJ). 'incompleto' só quando genuinamente não der pra saber a contagem — gere uma pergunta de esclarecimento bem específica. 'nao_entendi' quando a resposta não tem nada a ver com quantidade/tipo de documento.",
+        },
+        quantidade_cpf: {
+          type: "integer",
+          description:
+            "Quantos CPFs o lead quer limpar. Preencha com o valor final quando status=completo. Quando status=incompleto E você estiver propondo uma contagem específica pra confirmar (ex.: pergunta 'Você quer limpar 1 CPF e 1 CNPJ, é isso?'), preencha com o número PROPOSTO — o sistema lembra disso pro próximo turno. Nos outros casos, 0.",
+        },
+        quantidade_cnpj: {
+          type: "integer",
+          description: "Mesma regra de quantidade_cpf, mas pra CNPJ.",
+        },
+        pergunta_esclarecimento: {
+          type: "string",
+          description:
+            "Só quando status=incompleto: uma pergunta curta e específica em português, no tom da Malala. Se for confirmar uma contagem que você já entendeu (o caso mais comum), faça UMA pergunta simples de sim/não (ex.: 'Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?') — nunca acrescente alternativa extra tipo 'ou precisa limpar mais documentos?', isso só confunde. Nunca repita a pergunta original genérica.",
+        },
+        ...propriedadesSchemaConteudoExtra(qtdFaqs, qtdObjecoes),
       },
-      quantidade_cpf: {
-        type: "integer",
-        description:
-          "Quantos CPFs o lead quer limpar. Preencha com o valor final quando status=completo. Quando status=incompleto E você estiver propondo uma contagem específica pra confirmar (ex.: pergunta 'Você quer limpar 1 CPF e 1 CNPJ, é isso?'), preencha com o número PROPOSTO — o sistema lembra disso pro próximo turno. Nos outros casos, 0.",
-      },
-      quantidade_cnpj: {
-        type: "integer",
-        description: "Mesma regra de quantidade_cpf, mas pra CNPJ.",
-      },
-      pergunta_esclarecimento: {
-        type: "string",
-        description:
-          "Só quando status=incompleto: uma pergunta curta e específica em português, no tom da Malala. Se for confirmar uma contagem que você já entendeu (o caso mais comum), faça UMA pergunta simples de sim/não (ex.: 'Perfeito! Você quer limpar 1 CPF e 1 CNPJ, é isso?') — nunca acrescente alternativa extra tipo 'ou precisa limpar mais documentos?', isso só confunde. Nunca repita a pergunta original genérica.",
-      },
+      required: ["status", "quantidade_cpf", "quantidade_cnpj", "pergunta_esclarecimento"],
     },
-    required: ["status", "quantidade_cpf", "quantidade_cnpj", "pergunta_esclarecimento"],
-  },
-};
+  };
+}
 
-function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string; dados: DadosConversa }): string {
-  const { etapaAtual, respostaLead, dados } = params;
+function montarPrompt(params: {
+  etapaAtual: EtapaCarregada;
+  respostaLead: string;
+  dados: DadosConversa;
+  faqsAtivas: FaqParaDesvio[];
+  objecoesAtivas: ObjecaoParaDesvio[];
+}): string {
+  const { etapaAtual, respostaLead, dados, faqsAtivas, objecoesAtivas } = params;
   const pergunta = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
 
   const linhas: string[] = [
@@ -99,32 +109,42 @@ function montarPrompt(params: { etapaAtual: EtapaCarregada; respostaLead: string
     `Resposta do lead: "${respostaLead}"`,
     "",
     "Use a ferramenta pra registrar o resultado. PREFIRA marcar completo sempre que conseguir inferir a contagem com confiança razoável — não perca tempo perguntando detalhe que não muda QUANTOS documentos limpar (de quem é a empresa, se outra pessoa também precisa limpar o nome dela, etc. — isso não importa aqui, não pergunte). Só marque incompleto quando genuinamente não der pra saber quantos CPFs e quantos CNPJs.",
+    blocoPromptConteudoExtra(faqsAtivas, objecoesAtivas),
   );
 
   return linhas.join("\n");
 }
 
-export const interpretarListaDocumentos: InterpretadorListaDocumentos = async ({ etapaAtual, respostaLead, dados }) => {
-  const prompt = montarPrompt({ etapaAtual, respostaLead, dados });
+/** FAQs/objeções ativas capturadas por closure (mesmo padrão de `criarInterpretadorFaixasDocumentos`) — detecção de conteúdo extra (achado 22/08/2026) só relevante quando status=completo. */
+export function criarInterpretadorListaDocumentos(
+  faqsAtivas: FaqParaDesvio[] = [],
+  objecoesAtivas: ObjecaoParaDesvio[] = [],
+): InterpretadorListaDocumentos {
+  return async ({ etapaAtual, respostaLead, dados }) => {
+    const prompt = montarPrompt({ etapaAtual, respostaLead, dados, faqsAtivas, objecoesAtivas });
 
-  try {
-    // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
-    const cliente = obterCliente();
-    const resposta = await cliente.messages.create({
-      model: MODELO_INTERPRETACAO,
-      max_tokens: 400,
-      tools: [FERRAMENTA],
-      tool_choice: { type: "tool", name: "interpretar_lista_documentos" },
-      messages: [{ role: "user", content: prompt }],
-    });
+    try {
+      // obterCliente() dentro do try de propósito (achado real, 18/08/2026, ver interpretacao-ia.ts).
+      const cliente = obterCliente();
+      const resposta = await cliente.messages.create({
+        model: MODELO_INTERPRETACAO,
+        max_tokens: 400,
+        tools: [ferramenta(faqsAtivas.length, objecoesAtivas.length)],
+        tool_choice: { type: "tool", name: "interpretar_lista_documentos" },
+        messages: [{ role: "user", content: prompt }],
+      });
 
-    const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
-    if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return { status: "nao_entendi" };
+      const blocoFerramenta = resposta.content.find((b) => b.type === "tool_use");
+      if (!blocoFerramenta || blocoFerramenta.type !== "tool_use") return { status: "nao_entendi" };
 
-    const bruta = blocoFerramenta.input as RespostaBrutaListaDocumentos;
-    return validarRespostaListaDocumentos(bruta);
-  } catch (e) {
-    console.error("[interpretar-lista-documentos] erro ao chamar Claude:", e);
-    return { status: "nao_entendi" };
-  }
-};
+      const bruta = blocoFerramenta.input as RespostaBrutaListaDocumentos;
+      return validarRespostaListaDocumentos(bruta, faqsAtivas, objecoesAtivas);
+    } catch (e) {
+      console.error("[interpretar-lista-documentos] erro ao chamar Claude:", e);
+      return { status: "nao_entendi" };
+    }
+  };
+}
+
+/** Compatibilidade: uso sem FAQ/objeção (comportamento idêntico a antes de 22/08/2026). */
+export const interpretarListaDocumentos: InterpretadorListaDocumentos = criarInterpretadorListaDocumentos();

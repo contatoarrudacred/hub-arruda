@@ -197,11 +197,22 @@ export type CalcularDadosDerivados = (dados: DadosConversa) => DadosConversa;
  * lógica de ramificação já existente (encerra_com_perda, opcao.proximo_codigo etc.) — ou `null` se
  * nem a IA conseguiu entender (aí sim o motor repete a pergunta).
  */
+/**
+ * Conteúdo extra (FAQ ou objeção) detectado EMBUTIDO na mesma resposta que já reconheceu o
+ * checkpoint atual (achado 21/08/2026: "2, entre 10 e 30 mil. Mas você ainda não me confirmou os
+ * 70% de desconto..." — a parte da objeção se perdia porque o desvio só rodava quando a resposta
+ * NÃO era reconhecida). Resolvido (já contra as listas de verdade, nunca um índice cru) porque cada
+ * interpretador teria que receber faqsAtivas/objecoesAtivas de qualquer forma pra fazer a detecção
+ * na mesma chamada de IA — resolver ali mesmo evita duplicar a lógica de validação de índice em
+ * cada um dos 4 arquivos (ver `resolverConteudoExtra` em interpretar-desvio-validacao.ts).
+ */
+export type ConteudoExtraDetectado = { tipo: "faq"; faq: FaqParaDesvio } | { tipo: "objecao"; objecao: ObjecaoParaDesvio } | null;
+
 export type InterpretadorIA = (params: {
   etapaAtual: EtapaCarregada;
   respostaLead: string;
   dados: DadosConversa;
-}) => Promise<{ valor: string; opcaoEscolhida?: Opcao } | null>;
+}) => Promise<{ valor: string; opcaoEscolhida?: Opcao; conteudoExtra?: ConteudoExtraDetectado } | null>;
 
 /** Um documento (CPF ou CNPJ) que o lead quer limpar, dentro de um pacote com mais de um item. */
 export type ItemDocumentoPendente = { tipo: "cpf" | "cnpj" };
@@ -216,7 +227,7 @@ export type ItemDocumentoPendente = { tipo: "cpf" | "cnpj" };
  * - `nao_entendi`: resposta sem relação nenhuma com a pergunta — motor repete a pergunta original.
  */
 export type ResultadoInterpretacaoListaDocumentos =
-  | { status: "completo"; itens: ItemDocumentoPendente[] }
+  | { status: "completo"; itens: ItemDocumentoPendente[]; conteudoExtra?: ConteudoExtraDetectado }
   /**
    * `dadosParciais` (19/08/2026, Luiz: "corrigir tudo de forma global") — quando a IA propõe uma
    * contagem específica pra confirmar (ex.: "1 CPF e 1 CNPJ, é isso?"), a pergunta em si precisa
@@ -249,7 +260,7 @@ export type FaixaDocumentoCapturada = { tipo: "cpf" | "cnpj"; valorAproximado: n
  * `dados`, sem histórico de turnos — o motor precisa persistir o que já foi entendido).
  */
 export type ResultadoInterpretacaoFaixasDocumentos =
-  | { status: "completo"; itens: FaixaDocumentoCapturada[] }
+  | { status: "completo"; itens: FaixaDocumentoCapturada[]; conteudoExtra?: ConteudoExtraDetectado }
   | { status: "incompleto"; perguntaEsclarecimento: string; dadosParciais?: DadosConversa }
   /** Lead pediu a consulta oficial paga (R$39/documento) — escala pra atendimento humano em vez de continuar o automatizado. */
   | { status: "escalar_consulta_paga"; mensagem: string }
@@ -273,7 +284,7 @@ export type InterpretadorFaixasDocumentos = (params: {
  *   linguagem natural (não uma mensagem fixa) e o motor permanece no checkpoint.
  */
 export type ResultadoNegociacaoPagamento =
-  | { status: "confirmado" }
+  | { status: "confirmado"; conteudoExtra?: ConteudoExtraDetectado }
   | {
       status: "ajuste_valido";
       formaPagamento: "boleto_pix" | "cartao";
@@ -325,6 +336,20 @@ export type ResultadoDesvio =
 /** As FAQs/objeções ativas e o texto da persona são capturados por closure na fábrica (mesmo padrão de `criarInterpretadorFaixasDocumentos`), não passados a cada chamada — por isso a assinatura é igual à do `InterpretadorIA` genérico. */
 export type InterpretadorDesvio = (params: { etapaAtual: EtapaCarregada; respostaLead: string }) => Promise<ResultadoDesvio>;
 
+/**
+ * Gera a mensagem que endereça um `ConteudoExtraDetectado` (FAQ ou objeção embutida numa resposta
+ * JÁ reconhecida pelo checkpoint — ver `ConteudoExtraDetectado`) reaproveitando a mesma geração com
+ * a voz da persona já usada pelo `InterpretadorDesvio` (`criarGeradorConteudoExtra`, em
+ * interpretar-desvio.ts, compartilha o closure de faqs/objeções/persona com `criarInterpretadorDesvio`).
+ * Retorna `null` em qualquer falha — quem chama simplesmente não prepend nenhuma mensagem extra
+ * (a resposta principal do checkpoint segue normalmente, nunca trava o turno por causa disso).
+ */
+export type GeradorConteudoExtra = (params: {
+  conteudoExtra: ConteudoExtraDetectado;
+  respostaLead: string;
+  perguntaPendente: string;
+}) => Promise<string | null>;
+
 /** O que o motor precisa pra decidir o próximo passo — tudo isolado do Supabase, testável puro (exceto o hook de IA, que é assíncrono por natureza). */
 export type ContextoAvanco = {
   etapaAtual: EtapaCarregada;
@@ -339,6 +364,8 @@ export type ContextoAvanco = {
   interpretarFaixasDocumentos?: InterpretadorFaixasDocumentos;
   interpretarNegociacaoPagamento?: InterpretadorNegociacaoPagamento;
   interpretarDesvio?: InterpretadorDesvio;
+  /** Gera a mensagem que prepend quando algum dos 4 interpretadores acima detecta conteúdo extra (ver `ConteudoExtraDetectado`) embutido numa resposta já reconhecida. */
+  gerarRespostaConteudoExtra?: GeradorConteudoExtra;
   /** placeholders tipo `[saudacao]` que não vêm de `dados` (ex.: hora do dia) — computados por quem chama o motor, pra manter o motor determinístico/testável */
   variaveisGlobais?: Record<string, string>;
 };
