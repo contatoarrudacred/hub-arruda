@@ -1,18 +1,23 @@
 import "server-only";
 
 // Envio real de WhatsApp via Zapster (Fase 7, decidido em 11/08/2026 — ver PLANO_MESTRE seção 8.5).
-// Modo não-oficial (QR), instância única por enquanto — quando existir uma segunda instância
-// (número de atendimento real, sem escala), ZAPSTER_INSTANCE_ID passa a precisar de seleção por
-// contexto; não fazemos isso agora (YAGNI, só existe 1 instância hoje).
+// 2 instâncias desde 22/08/2026 (comunicação centralizada via CRM, ver
+// docs/superpowers/specs/2026-08-22-comunicacao-centralizada-crm-design.md): "oficial" é o número
+// real de atendimento (nunca inicia conversa do zero — risco de banimento em modo não-oficial);
+// "secundaria" é um número extra, só pra disparar mensagem quando ainda não existe conversa aberta
+// no oficial (sempre acompanhada do aviso pra migrar pro oficial, ver src/lib/comunicacao).
 // Único lugar do projeto que fala com a API da Zapster.
 
-function obterConfig(): { baseUrl: string; token: string; instanceId: string } {
+export type InstanciaZapster = "oficial" | "secundaria";
+
+function obterConfig(instancia: InstanciaZapster = "oficial"): { baseUrl: string; token: string; instanceId: string } {
   const baseUrl = process.env.ZAPSTER_API_BASE_URL;
-  const token = process.env.ZAPSTER_API_TOKEN;
-  const instanceId = process.env.ZAPSTER_INSTANCE_ID;
+  const token = instancia === "oficial" ? process.env.ZAPSTER_API_TOKEN : process.env.ZAPSTER_SECUNDARIO_API_TOKEN;
+  const instanceId = instancia === "oficial" ? process.env.ZAPSTER_INSTANCE_ID : process.env.ZAPSTER_SECUNDARIO_INSTANCE_ID;
   if (!baseUrl || !token || !instanceId) {
+    const sufixo = instancia === "oficial" ? "" : "_SECUNDARIO";
     throw new Error(
-      "Configuração do Zapster incompleta — falta ZAPSTER_API_BASE_URL / ZAPSTER_API_TOKEN / ZAPSTER_INSTANCE_ID no .env.local (dev) ou nas variáveis de ambiente da Vercel (produção).",
+      `Configuração do Zapster incompleta (instância ${instancia}) — falta ZAPSTER_API_BASE_URL / ZAPSTER_API_TOKEN${sufixo} / ZAPSTER_INSTANCE_ID${sufixo} no .env.local (dev) ou nas variáveis de ambiente da Vercel (produção).`,
     );
   }
   return { baseUrl, token, instanceId };
@@ -24,8 +29,12 @@ function normalizarTelefone(telefone: string): string {
 }
 
 /** Envia uma mensagem de texto simples via WhatsApp. Lança erro em caso de falha. */
-export async function enviarMensagemTexto(telefone: string, texto: string): Promise<{ messageId: string }> {
-  const { baseUrl, token, instanceId } = obterConfig();
+export async function enviarMensagemTexto(
+  telefone: string,
+  texto: string,
+  instancia: InstanciaZapster = "oficial",
+): Promise<{ messageId: string }> {
+  const { baseUrl, token, instanceId } = obterConfig(instancia);
 
   const resposta = await fetch(`${baseUrl}/wa/messages`, {
     method: "POST",
