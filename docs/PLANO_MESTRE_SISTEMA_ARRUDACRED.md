@@ -599,6 +599,25 @@ Dia inteiro de testes reais em produção pelo Luiz, cada achado discutido e cor
 
 tsc/eslint limpos e vitest verde (só as mesmas 2-3 falhas pré-existentes de Marketing/CRM, sem relação com Vendas, confirmadas em toda rodada) — commits principais: `b91df4e`, `e904939`, `abf9096`, `06e7a40`, `bc66667`, `ef41644`, `7fa7821`, `bd8939f`, `db05dba`, `ab9302b`, `55f2f9c`, `447249b`. Nenhuma migration nova pendente no momento desta entrada. Ver `docs/status/vendas.md` pro estado corrente.
 
+### ✅ Módulo Vendas — fechamento das últimas 6 pendências + CHECKOUT_PAID implementado (22/08/2026)
+
+Luiz respondeu, item a item, as 6 pendências levantadas na entrada anterior. Cada resposta virou uma decisão ou uma correção real:
+
+**1-3-5-6.** Migration `20260819130001` confirmada aplicada (linha do quadro-branco corrigida). Escopo do Checkout de cartão reduzido, por decisão do Luiz: reconciliação de parcelas reais/chargeback/estorno passa a ser do futuro módulo **Financeiro** — Vendas fica só com "gerar o Checkout certo + detectar que foi pago pra concluir a venda" (spec e plano atualizados, seção 0 nova em cada um, preservando toda a pesquisa de API já feita como referência reaproveitável). 3 Minors da auditoria anterior corrigidos (feedback de quantos cards "Tentar novamente todos" re-tentou; `FORMA_PAGAMENTO_LABEL` virou `Record<MetodoPagamento, string>` exaustivo). Cliente duplicado no Checkout Asaas por CPF/CNPJ: reconfirmado direto na doc oficial que continua sem essa informação documentada — registrado como está, sem impacto funcional.
+
+**2. Contrato assinado não avançou sozinho no Kanban** — segredo do webhook Assinafy confirmado batendo pelo Luiz, descartando a hipótese anterior. Revisão completa da cadeia do webhook não achou bug: nomes de evento conferem com a lista oficial `GET /webhooks/event-types` da Assinafy, busca por `assinafy_document_id` é direta. Achado relevante: o mesmo sintoma já tinha acontecido em 21/08 — é por isso que existe o escape hatch `confirmarAssinaturaManualAction` ("Verificar assinaturas agora"). Hipótese mais provável: o webhook simplesmente não chega em alguns casos (lado Assinafy ou rede), não uma falha de processamento nosso. **Combinado com o Luiz:** ele testa de novo numa Oportunidade nova antes de olhar logs; se virar recorrente, ele topa uma reconciliação automática (cron) — não desenhar sem ele pedir.
+
+**Achado extra, fora dos 6 itens originais:** ao revisar o que sobrou pro Vendas na redução de escopo do Checkout de cartão, ficou claro que a parte que continuava sendo nossa — detectar `CHECKOUT_PAID` pra concluir a venda — **só estava documentada, nunca implementada**: uma venda de cartão paga de verdade não concluiria sozinha. Implementado no mesmo dia: `buscarContratoPorAsaasCheckoutId` (`src/lib/vendas/contratos.ts`) + tratamento do evento `CHECKOUT_PAID` em `src/app/api/webhooks/asaas/route.ts`, reaproveitando `concluirVenda` (já existente e testado desde a feature "Recebido em dinheiro") sem esperar nenhuma parcela — no cartão o cliente já paga o valor cheio pra Asaas no ato da compra.
+
+**Pendências de teste em produção, registradas — nenhuma bloqueia considerar o módulo funcionalmente completo, mas nenhuma foi verificada com dado real ainda:**
+- Avanço automático do Kanban após assinatura completa (item 2 acima) — Luiz vai reproduzir.
+- Payload real do evento `CHECKOUT_PAID` nunca foi visto — só o de `CHECKOUT_CREATED` (evento "irmão") está confirmado na doc oficial da Asaas. Primeira venda de cartão paga de verdade em produção precisa ser conferida no log do webhook antes de considerar o fluxo validado ponta a ponta.
+- Cliente duplicado no painel Asaas via Checkout — sem confirmação oficial, sem impacto funcional, baixa prioridade.
+
+tsc/eslint limpos e vitest verde (mesmas 2-3 falhas pré-existentes de Marketing/CRM) em toda rodada — commits `7849e05`, `9bd2735`, `29b345e`, `cb7c7a9`. Nenhuma migration nova pendente. Ver `docs/status/vendas.md` pro estado corrente.
+
+**Estado do módulo:** todas as sub-frentes planejadas (seção 12.3) estão construídas e testadas em produção; não há nenhuma peça de escopo próprio do Vendas identificada como faltante — só os 3 pontos de teste acima e o handoff, já documentado desde o desenho (seção 12.1/12.5), pros futuros módulos **Financeiro** (reconciliação de recebíveis/chargeback) e **Operação** (Ordem de Serviço a partir da Oportunidade "ganha") — exatamente os dois módulos que começam a ser construídos a seguir.
+
 ### Stack técnica confirmada (13/08/2026)
 - **Next.js 16** (App Router, TypeScript, Tailwind, pnpm) na Vercel
 - **Supabase**: Postgres + **Supabase Auth** (login do admin — substituiu a ideia original de `senha_hash` próprio em `usuarios_sistema`) + Storage (mídia) — acesso via `service_role` no backend
