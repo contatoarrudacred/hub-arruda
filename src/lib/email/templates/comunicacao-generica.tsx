@@ -29,6 +29,14 @@ export function EmailComunicacaoGenerica({ assunto, corpo, linkWhatsapp, redesSo
             {paragrafo}
           </Text>
         ))}
+        {/* Decisão do Luiz (22/08/2026): comunicações enviadas por este mecanismo são avisos
+            obrigatórios sobre a conta/contrato (cobrança, institucional, lembrete), não propaganda —
+            por isso são enviadas mesmo que a pessoa tenha optado por não receber e-mail de marketing.
+            Nota de rodapé explícita pra deixar isso claro pro destinatário. */}
+        <Text style={{ fontSize: 11, lineHeight: "16px", color: "#999999", margin: "8px 0 0" }}>
+          Este é um aviso obrigatório sobre sua conta ou contrato com a ArrudaCred — não é uma mensagem
+          promocional, por isso é enviado independentemente de preferências de e-mail marketing.
+        </Text>
       </div>
     </EmailLayout>
   );

@@ -181,6 +181,17 @@ ativo/inativo, com exclusão física (mesmo padrão real já usado em objeções
 `mensagens.categoria_id` usa `on delete set null`: excluir uma categoria não apaga mensagens antigas
 que a referenciam, só limpa a referência nelas.
 
+## E-mail e opt-out de marketing
+
+Decisão do Luiz (22/08/2026): `pessoas.email_marketing_opt_out` é sobre PROPAGANDA, não sobre avisos
+de conta/contrato. `enviarComunicacao` não checa essa flag — todo e-mail enviado por este mecanismo
+é tratado como aviso obrigatório (cobrança, institucional, lembrete) e sai independentemente do
+opt-out, com uma nota de rodapé explícita no e-mail dizendo isso (`EmailComunicacaoGenerica`). Isso
+só é seguro enquanto o mecanismo for usado só pra avisos obrigatórios — se um módulo precisar mandar
+conteúdo genuinamente promocional por aqui no futuro, esse caso precisa checar o opt-out antes de
+chamar (hoje não há campo na categoria pra distinguir "isso é marketing" — extensão futura, não
+implementada nesta rodada).
+
 ## Erros
 
 - Nunca falha silenciosamente: se o envio de verdade falhar (Zapster ou Resend fora do ar, etc.), a

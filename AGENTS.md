@@ -15,7 +15,8 @@ Cada agente (CRM, Marketing, Vendas, …) roda numa sessão própria, numa branc
 1. **`docs/INBOX_AGENTES.md`** — se tem uma linha com o seu nome, **responda antes de qualquer outra coisa**, nem que seja "visto, entra na fila". Alguém está parado esperando. (Um hook `SessionStart` costuma mostrar isso sozinho; se não apareceu, leia o arquivo.)
 2. **`docs/COORDENACAO_AGENTES_ARRUDACRED.md`** — o quadro-branco. A **seção 0** tem o protocolo de comunicação; leia antes de mexer em migration, `database.types.ts`, sidebar, `configuracoes` ou Storage, que são território compartilhado.
 
-Duas regras que já custaram tempo a este projeto:
+Regras que já custaram tempo a este projeto:
 
 - **Nenhum agente roda migration no Supabase.** Escreva o `.sql`, reserve o timestamp na tabela da seção 2 e avise o Coordenador — ele leva ao Luiz, que executa.
 - **Recado escrito de dentro de um worktree não chega a ninguém** até o commit alcançar `main`. Avise o Coordenador para ele trazer.
+- **Nenhum módulo manda WhatsApp/e-mail pro cliente direto pela Zapster/Resend.** Todo envio (Vendas, Financeiro, Marketing, Operações, o que for) passa por `enviarComunicacao` (`src/lib/comunicacao/enviar.ts`) — decisão do Luiz, 21/08/2026 (`docs/COORDENACAO_AGENTES_ARRUDACRED.md`, seção 4, item 7). Antes de escrever qualquer chamada nova de envio pro cliente, leia `docs/guias/comunicacao-centralizada.md`.

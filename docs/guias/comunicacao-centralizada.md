@@ -66,6 +66,21 @@ pessoa sem e-mail cadastrado ao mandar por e-mail, falha da Zapster/Resend) — 
 try/catch se o seu fluxo não pode travar por causa disso (padrão usado em
 `enviarLinkPagamentoWhatsapp`, ver abaixo).
 
+## E-mail: aviso obrigatório, não respeita opt-out de marketing
+
+Decisão do Luiz (22/08/2026): `enviarComunicacao` **não checa** `pessoas.email_marketing_opt_out`
+ao mandar e-mail. Isso é proposital, não um bug — as comunicações que passam por este mecanismo
+(cobrança, institucional, lembrete, o que Vendas/Financeiro/Marketing precisar registrar como
+categoria) são avisos obrigatórios sobre a conta/contrato do cliente, não propaganda. Quem optou
+por não receber e-mail de marketing continua recebendo esses avisos normalmente — o template
+(`EmailComunicacaoGenerica`) já inclui uma nota de rodapé deixando isso explícito pro destinatário.
+
+**Isso só vale enquanto o mecanismo for usado só pra avisos obrigatórios.** Se algum módulo um dia
+precisar mandar conteúdo genuinamente promocional (propaganda, cupom, newsletter) por aqui, ESSE
+caso específico precisa respeitar o opt-out — não existe hoje uma forma de marcar uma categoria
+como "isso é marketing, checar o opt-out" antes de mandar. Não force esse uso sem antes conversar
+com o Luiz/CRM pra decidir como distinguir os dois casos (provavelmente um campo na categoria).
+
 ## Categoria (`categoriaId`)
 
 Toda mensagem enviada pelo mecanismo precisa de uma categoria (ex.: "Cobrança", "Marketing",
