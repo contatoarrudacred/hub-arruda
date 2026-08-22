@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import type { StatusContrato } from "./contratos";
+import { buscarContratoPorId, type StatusContrato } from "./contratos";
+import { apagarPdfContrato } from "./geracao-pdf";
+import { sincronizarEtapaKanban } from "./oportunidades";
 
 export type VendaResumo = {
   contratoId: string;
@@ -64,8 +66,19 @@ export async function listarVendas(): Promise<VendaResumo[]> {
   });
 }
 
+/**
+ * Achado real da auditoria de 21/08/2026: esta função nunca sincronizava `oportunidades.etapa_kanban`
+ * — diferente do caminho automático (`processarDocumentoRecusado`, webhook da Assinafy, que já
+ * chama `sincronizarEtapaKanban(..., "perdida")` quando um signatário recusa), uma venda cancelada
+ * manualmente aqui ficava "viva" em alguma etapa do Kanban do CRM. Corrigido pra chamar a mesma
+ * sincronização — não é território novo, é a mesma função que o Vendas já usa em vários outros
+ * pontos-chave (assinatura recusada, venda concluída, venda comissionada confirmada).
+ */
 export async function cancelarVenda(contratoId: string, motivo: string): Promise<void> {
   const supabase = await createClient();
+  const contrato = await buscarContratoPorId(contratoId);
+  if (!contrato) throw new Error("Contrato não encontrado.");
+
   // Limpa ultimo_erro/tentativas_erro junto — sem isso, uma venda cancelada por causa de um erro
   // pendente continuava aparecendo vermelha na coluna "Cancelada", com o botão "Tentar novamente
   // todos" da coluna ativo pra ela (clicar nele só apaga o erro sem retentar nada, já que
@@ -75,12 +88,28 @@ export async function cancelarVenda(contratoId: string, motivo: string): Promise
     .update({ status: "cancelada", motivo_cancelamento: motivo, ultimo_erro: null, tentativas_erro: 0 })
     .eq("id", contratoId);
   if (error) throw new Error(`Falha ao cancelar venda: ${error.message}`);
+
+  await sincronizarEtapaKanban(contrato.oportunidadeId, "perdida");
 }
 
-/** Exclusão definitiva — uso restrito ao admin (confirmação na UI, não aqui). Remove só os
- * registros do Vendas (contrato + parcelas, via ON DELETE CASCADE); a Oportunidade do CRM nunca é
- * tocada por esta função. */
+/**
+ * Exclusão definitiva — uso restrito ao admin (confirmação na UI, não aqui). Remove os registros do
+ * Vendas (contrato + parcelas, via ON DELETE CASCADE) e o PDF do contrato no Storage, quando existir
+ * — achado real da auditoria de 21/08/2026: antes desta correção, o arquivo ficava órfão no bucket
+ * pra sempre (a linha que apontava pra ele já não existe mais em lugar nenhum). Falha ao apagar o
+ * PDF não impede a exclusão do registro (o Storage pode já não ter o arquivo por algum motivo — não
+ * é motivo pra travar a ação principal). A Oportunidade do CRM nunca é tocada por esta função.
+ */
 export async function excluirVenda(contratoId: string): Promise<void> {
+  const contrato = await buscarContratoPorId(contratoId);
+  if (contrato?.pdfUrl) {
+    try {
+      await apagarPdfContrato(contrato.pdfUrl);
+    } catch (erro) {
+      console.error(`[excluirVenda] falha ao apagar o PDF do contrato ${contratoId} no Storage:`, erro);
+    }
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.from("contratos").delete().eq("id", contratoId);
   if (error) throw new Error(`Falha ao excluir venda: ${error.message}`);

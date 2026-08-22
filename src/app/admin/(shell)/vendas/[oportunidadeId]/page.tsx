@@ -10,6 +10,12 @@ import { listarComissoesDaVenda } from "@/lib/vendas/comissoes";
 import { gerarUrlAssinadaContrato } from "@/lib/vendas/geracao-pdf";
 import { DetalhesVendaClient } from "./detalhes-venda-client";
 
+// Server Actions herdam o maxDuration da página que os chama — achado da auditoria de 21/08/2026
+// (mesma pendência corrigida em nova-oportunidade/page.tsx e fechamento/page.tsx): o botão "Tentar
+// novamente" desta tela pode reexecutar tentarEmitirContrato (Puppeteer + upload + Assinafy) via
+// progressao.ts, a mesma cadeia pesada e síncrona.
+export const maxDuration = 60;
+
 export default async function DetalhesVendaPage({ params }: { params: Promise<{ oportunidadeId: string }> }) {
   const { oportunidadeId } = await params;
 
