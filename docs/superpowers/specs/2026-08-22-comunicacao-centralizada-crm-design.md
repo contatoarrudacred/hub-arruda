@@ -32,8 +32,16 @@ esse problema (Resend é um serviço transacional, não uma automação de núme
 Pra resolver isso sem travar o envio: Luiz vai configurar uma **segunda instância no Zapster** (número
 secundário), de uso exclusivo pra disparar mensagens quando não existe conversa aberta no oficial. Toda
 mensagem enviada pelo secundário leva, **sempre, em toda mensagem** (decisão explícita de Luiz — mesmo
-sabendo que fica repetitivo), um aviso amigável + cartão de contato (`MensagemEtapa` tipo `"contato"`,
-já existe no motor de fluxo) apontando pro número oficial, pedindo que o cliente responda por lá.
+sabendo que fica repetitivo), um aviso amigável apontando pro número oficial, pedindo que o cliente
+responda por lá.
+
+**Checado na documentação real da Zapster** (`https://developer.zapsterapi.com/llms.txt` → referência
+de envio, `POST /wa/messages`) **antes de desenhar isto**: só suporta `text`, `media`, `buttons`,
+`send_at`, `template`, `reply_to` — **não existe endpoint pra enviar cartão de contato/vCard**. O aviso
+leva o número oficial como **texto simples com link `wa.me/<número>` clicável**, não um cartão de
+contato de verdade (o tipo `"contato"` existe no modelo interno do motor de fluxo, mas nunca foi
+implementado pro envio real via Zapster — `src/lib/whatsapp/enviar.ts` lança erro pra esse tipo hoje).
+Se um dia a Zapster (ou outro provedor) passar a suportar isso, vira uma melhoria incremental depois.
 
 **"Já existe conversa"** = qualquer conversa que já existiu alguma vez com aquela pessoa no oficial,
 não importa há quanto tempo (decisão de Luiz — o risco é sobre *iniciar do zero*, não sobre reengajar
@@ -53,11 +61,14 @@ adicionar mais instâncias depois (por área) sem quebrar nada, mas só constró
 
 ## Modelo de dados
 
-Duas colunas novas em `conversas` (migration, Luiz roda como sempre):
+`conversas.canal` **já existe** hoje (não é coluna nova) — e já é mais genérico do que eu esperava:
+`check (canal in ('whatsapp', 'instagram', 'messenger', 'widget', 'telegram', 'simulador'))`, pensado
+desde o início pros canais futuros que o Luiz mencionou (Instagram Direct, Messenger, Telegram). Só
+falta adicionar `'email'` a esse `CHECK` (migration pequena, `alter constraint`) — não precisa de
+coluna nova nem de mudança de schema maior.
 
-- `canal`: texto, `'whatsapp'` (default) | `'email'` — pensando já no pedido futuro do Luiz de abrir
-  conversa em outros canais (Instagram Direct, Messenger, Telegram...), esse campo é o que distingue
-  qual canal aquela conversa representa. Cada Pessoa pode ter uma conversa por canal.
+Uma coluna nova em `conversas` (migration, Luiz roda como sempre):
+
 - `instancia`: texto nullable, só relevante quando `canal = 'whatsapp'` — `'oficial'` | `'secundaria'`.
 
 Uma pessoa ganha, sob demanda (nunca de antemão), uma conversa por combinação (canal, instância) que
@@ -129,7 +140,8 @@ independente), não faz sentido forçar como uma coisa só.
 2. Busca se já existe `conversas` (canal=whatsapp, instancia=oficial) pra essa pessoa.
    - Existe → usa o oficial, manda só o `conteudo.texto`.
    - Não existe → usa/cria `conversas` (canal=whatsapp, instancia=secundaria), e SEMPRE prepend o
-     aviso + cartão de contato do oficial antes do `conteudo.texto` (2 mensagens seguidas).
+     aviso (texto simples + link `wa.me/<número oficial>`) antes do `conteudo.texto` (2 mensagens
+     de texto seguidas — nada de cartão de contato, ver correção acima).
 3. Envia de verdade via `zapster.ts` (`enviarMensagemTexto`, na instância certa).
 4. Grava em `mensagens` (`remetente: "sistema"`, `categoria_id`, `chave_idempotencia`,
    `provedor_message_id` = o `messageId` devolvido pelo Zapster).
