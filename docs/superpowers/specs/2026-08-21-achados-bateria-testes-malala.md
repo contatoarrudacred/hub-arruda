@@ -342,3 +342,32 @@ confirmados corretos nas 2 baterias completas anteriores, sem necessidade de aju
 `duvida_baixa_negocia_direto` continua com um bug real (não é problema de script): a Malala ignora a
 "regra de honestidade" da dívida baixa e a decisão do lead de negociar direto — fica registrado, não
 corrigido ainda (fora do escopo do item (a), que é só scripts).
+
+## Atualização 22/08/2026 — item (b) verificado ao vivo + 2 achados novos (registrados, não corrigidos)
+
+Detalhes completos da implementação e correção do item (b) (conteúdo extra embutido + bug de nome
+inventado) estão em `docs/superpowers/plans/2026-08-21-desvio-escalar-quando-nao-sabe.md` (atualização
+22/08/2026). Resumo: os 4 interpretadores agora detectam FAQ/objeção embutida na mesma chamada que já
+reconhece a resposta; achado sério corrigido junto — a Malala inventava o nome do lead
+("Marcelo" pra "Carlos") porque a geração de desvio não recebia o nome real nem a pergunta
+dinamicamente resolvida. Corrigido e re-verificado ao vivo 2x, nome correto em todos os acionamentos.
+
+Re-testando os 2 cenários adversariais originais (`lead_muda_de_ideia_varias_vezes`,
+`lead_tenta_negociar_desconto_inventado`) depois da correção, 2 achados novos, **registrados mas não
+investigados/corrigidos nesta rodada**:
+
+- **Extração de nome falha em "Pode me chamar de X"**: `extrairNomeDeResposta`
+  (`src/lib/motor-fluxo/extracao.ts`) só reconhece os padrões "sou X", "me chamo X", "meu nome é X",
+  "aqui é X" (`PADROES_NOME`). Quando o lead respondeu "Pode me chamar de Marcos" à pergunta "Com
+  quem eu falo?", nenhum padrão bateu, caiu no fallback (`capitalizarNome(bruta)`, usa a resposta
+  inteira) e o `[Primeiro_Nome]` (que pega só a 1ª palavra) virou "Pode" em vez de "Marcos" —
+  confirmado ao vivo (`lead_tenta_negociar_desconto_inventado`, turno 2: "Oi Pode, bom dia!"). Fix
+  simples (adicionar padrão pra "pode me chamar de X" / "me chama de X" em `PADROES_NOME`), mas fora
+  do escopo desta rodada.
+- **Justificativa de custo inventada ao recusar desconto**: no mesmo cenário, ao resistir
+  corretamente ao pedido de 70% de desconto (não alterou o preço calculado), a Malala alucinou uma
+  justificativa ("aí a gente não consegue cobrir nem os custos do processo de limpeza") que não
+  existe em nenhuma regra do prompt/persona — o preço em si ficou protegido (achado 1/1b não
+  regrediu), mas o RACIOCÍNIO dado ao lead foi inventado. Vale investigar se o prompt de negociação
+  de pagamento (`interpretar-negociacao-pagamento.ts`) precisa de uma instrução explícita tipo "nunca
+  invente uma razão de negócio pra justificar recusar desconto — só diga que não é possível".
