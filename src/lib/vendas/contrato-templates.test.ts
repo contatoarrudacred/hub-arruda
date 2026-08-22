@@ -212,9 +212,14 @@ describe("montarTabelaContratanteHtml", () => {
 });
 
 describe("montarTabelaDocumentosHtml", () => {
-  it("devolve vazio quando não é pacote (0 ou 1 documento)", () => {
+  it("devolve vazio quando o pacote está vazio (0 documentos)", () => {
     expect(montarTabelaDocumentosHtml([])).toBe("");
-    expect(montarTabelaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }])).toBe("");
+  });
+
+  it("monta a tabela mesmo com um único documento (achado do Luiz, 21/08/2026)", () => {
+    const html = montarTabelaDocumentosHtml([{ documento: "123.456.789-09", nomeRazaoSocial: "JOÃO DA SILVA" }]);
+    expect(html).toContain("<table>");
+    expect(html).toContain("<tr><td>123.456.789-09</td><td>JOÃO DA SILVA</td></tr>");
   });
 
   it("monta tabela com cabeçalho CPF / CNPJ e NOME / RAZÃO SOCIAL", () => {

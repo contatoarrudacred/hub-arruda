@@ -33,7 +33,7 @@ const GRUPOS_PLACEHOLDERS = [
     itens: [
       { chave: "dados_cliente", descricao: "Bloco já formatado com todos os campos acima de uma vez (nome, CPF, RG, endereço...) em parágrafos. Alternativa rápida a montar campo a campo." },
       { chave: "tabela_contratante", descricao: "Mesmos dados de {{dados_cliente}}, mas como tabela (rótulo em negrito + valor). PJ: tabela de Razão Social/CNPJ, \"representada por:\", e a tabela do representante legal embaixo." },
-      { chave: "tabela_documentos", descricao: "Tabela (CPF/CNPJ + nome/razão social) de cada documento do pacote, quando a venda cobre mais de um." },
+      { chave: "tabela_documentos", descricao: "Tabela (CPF/CNPJ + nome/razão social) de cada documento do pacote — aparece sempre que o pacote tiver pelo menos 1 documento." },
     ],
   },
   {

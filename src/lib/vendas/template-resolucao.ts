@@ -243,12 +243,18 @@ export type DocumentoPacote = { documento: string; nomeRazaoSocial: string };
  * Monta {{tabela_documentos}} — tabela de duas colunas (CPF/CNPJ, nome/razão social) de cada
  * documento coberto pelo contrato. **Decisão de escopo (Luiz, 18/08/2026): só temos dado completo
  * (RG/estado civil/profissão/endereço) de quem assina o contrato — os demais documentos do pacote
- * só têm documento + nome, e é só isso que existe pra mostrar aqui.** Devolve string vazia quando
- * não é pacote (0 ou 1 documento — nesse caso os dados já estão em {{dados_cliente}}, não precisa
- * repetir).
+ * só têm documento + nome, e é só isso que existe pra mostrar aqui.** Devolve string vazia só
+ * quando não há nenhum documento cadastrado no pacote (produto sem `exige_lista_documentos`, ou
+ * pacote ainda vazio).
+ *
+ * Achado do Luiz (21/08/2026, mesmo padrão do bug já corrigido em {{tabela_vencimentos}}): antes só
+ * gerava a tabela com MAIS de 1 documento — um pacote com 1 documento só (ex.: produto exige a
+ * lista, mas só um nome foi informado) ficava sem tabela nenhuma no contrato real, mesmo o preview
+ * do editor (sempre com 2 documentos fictícios) mostrando a tabela funcionando normalmente. Gera
+ * sempre que houver pelo menos 1 documento agora.
  */
 export function montarTabelaDocumentosHtml(documentos: DocumentoPacote[]): string {
-  if (documentos.length <= 1) return "";
+  if (documentos.length === 0) return "";
 
   const linhas = documentos
     .map((doc) => `<tr><td>${doc.documento}</td><td>${doc.nomeRazaoSocial}</td></tr>`)
