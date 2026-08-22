@@ -88,6 +88,14 @@ export async function buscarOuCriarConversaEmail(pessoaId: string): Promise<{ id
   return { id: criada.id };
 }
 
+/** E-mail cadastrado da pessoa. Retorna `null` se não tiver e-mail — estado válido, quem chama decide o que fazer. */
+export async function buscarEmailPessoa(pessoaId: string): Promise<string | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from("pessoas").select("email").eq("id", pessoaId).single();
+  if (error) throw new Error(`Falha ao buscar e-mail da pessoa ${pessoaId}: ${error.message}`);
+  return data?.email ?? null;
+}
+
 export async function buscarMensagemPorChaveIdempotencia(chave: string): Promise<{ id: string } | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase.from("mensagens").select("id").eq("chave_idempotencia", chave).maybeSingle();

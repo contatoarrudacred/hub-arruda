@@ -4,9 +4,9 @@ import { carregarContatoInstitucional } from "@/lib/email/contato-institucional"
 import { EmailComunicacaoGenerica } from "@/lib/email/templates/comunicacao-generica";
 import { enviarEmail } from "@/lib/email/resend";
 import { enviarMensagemTexto } from "@/lib/whatsapp/zapster";
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   buscarConversaWhatsappOficial,
+  buscarEmailPessoa,
   buscarMensagemPorChaveIdempotencia,
   buscarOuCriarConversaEmail,
   buscarOuCriarConversaSecundaria,
@@ -82,10 +82,10 @@ export async function enviarComunicacao(params: ParametrosComunicacao): Promise<
     }),
   );
 
-  const { data: pessoaEmail } = await createAdminClient().from("pessoas").select("email").eq("id", pessoaId).single();
-  if (!pessoaEmail?.email) throw new Error(`Pessoa ${pessoaId} não tem e-mail cadastrado — não é possível enviar.`);
+  const emailPessoa = await buscarEmailPessoa(pessoaId);
+  if (!emailPessoa) throw new Error(`Pessoa ${pessoaId} não tem e-mail cadastrado — não é possível enviar.`);
 
-  const { id: emailId } = await enviarEmail({ destinatario: pessoaEmail.email, assunto: conteudo.assunto, html });
+  const { id: emailId } = await enviarEmail({ destinatario: emailPessoa, assunto: conteudo.assunto, html });
   const { id: mensagemId } = await inserirMensagemSistema({
     conversaId: conversaEmail.id,
     texto: `${conteudo.assunto}\n\n${conteudo.corpo}`,
