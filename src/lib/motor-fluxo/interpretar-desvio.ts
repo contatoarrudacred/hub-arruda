@@ -15,11 +15,9 @@
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { textoDeMensagem } from "./engine";
 import { resolverRespostaDesvio, type RespostaBrutaDesvio } from "./interpretar-desvio-validacao";
 import type {
   ConteudoExtraDetectado,
-  EtapaCarregada,
   FaqParaDesvio,
   GeradorConteudoExtra,
   InterpretadorDesvio,
@@ -71,13 +69,12 @@ function ferramentaClassificacao(qtdFaqs: number, qtdObjecoes: number) {
 }
 
 function montarPromptClassificacao(params: {
-  etapaAtual: EtapaCarregada;
+  perguntaPendente: string;
   respostaLead: string;
   faqsAtivas: FaqParaDesvio[];
   objecoesAtivas: ObjecaoParaDesvio[];
 }): string {
-  const { etapaAtual, respostaLead, faqsAtivas, objecoesAtivas } = params;
-  const perguntaPendente = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
+  const { perguntaPendente, respostaLead, faqsAtivas, objecoesAtivas } = params;
   const listaFaqs = faqsAtivas.map((f, i) => `${i + 1}. P: ${f.pergunta}\n   R: ${f.resposta}`).join("\n");
   const listaObjecoes = objecoesAtivas.map((o, i) => `${i + 1}. ${o.objecao}`).join("\n");
 
@@ -97,7 +94,7 @@ function montarPromptClassificacao(params: {
 }
 
 async function classificarDesvio(params: {
-  etapaAtual: EtapaCarregada;
+  perguntaPendente: string;
   respostaLead: string;
   faqsAtivas: FaqParaDesvio[];
   objecoesAtivas: ObjecaoParaDesvio[];
@@ -126,8 +123,9 @@ function montarPromptGeracao(params: {
   conteudo: string;
   respostaLead: string;
   perguntaPendente: string;
+  nomeLead: string | null;
 }): string {
-  const { tipo, conteudo, respostaLead, perguntaPendente } = params;
+  const { tipo, conteudo, respostaLead, perguntaPendente, nomeLead } = params;
 
   const instrucao =
     tipo === "faq"
@@ -141,6 +139,10 @@ function montarPromptGeracao(params: {
     "",
     `Depois de tratar isso, retome (na MESMA mensagem) a pergunta que ainda está pendente — não precisa repetir palavra por palavra, mas precisa deixar claro que precisa dessa resposta pra continuar:\n"""\n${perguntaPendente}\n"""`,
     "",
+    nomeLead
+      ? `O nome do lead é "${nomeLead}" — use SÓ esse nome se for chamá-lo por nome (nem sempre precisa). NUNCA invente ou use outro nome.`
+      : "O nome do lead ainda não é conhecido nesta conversa — NUNCA invente um nome, escreva sem chamá-lo por nome nenhum.",
+    "",
     "Escreva só a mensagem final, pronta pra mandar pro lead pelo WhatsApp — sem aspas ao redor, sem comentário sobre a escolha.",
   ].join("\n");
 }
@@ -151,6 +153,7 @@ async function gerarMensagemDesvio(params: {
   conteudo: string;
   respostaLead: string;
   perguntaPendente: string;
+  nomeLead: string | null;
   personaTexto: string;
 }): Promise<string | null> {
   try {
@@ -176,14 +179,12 @@ async function gerarMensagemDesvio(params: {
 
 /** FAQs, objeções ativas e o texto da persona capturados por closure (mesmo padrão de `criarInterpretadorFaixasDocumentos`) — carregados uma vez por dependências do motor, não a cada turno. */
 export function criarInterpretadorDesvio(faqsAtivas: FaqParaDesvio[], objecoesAtivas: ObjecaoParaDesvio[], personaTexto: string | null): InterpretadorDesvio {
-  return async ({ etapaAtual, respostaLead }) => {
+  return async ({ respostaLead, perguntaPendente, nomeLead }) => {
     if (faqsAtivas.length === 0 && objecoesAtivas.length === 0) return { status: "ambiguo" };
-
-    const perguntaPendente = etapaAtual.conteudo.mensagens.map(textoDeMensagem).join("\n");
 
     let bruta: RespostaBrutaDesvio;
     try {
-      bruta = await classificarDesvio({ etapaAtual, respostaLead, faqsAtivas, objecoesAtivas });
+      bruta = await classificarDesvio({ perguntaPendente, respostaLead, faqsAtivas, objecoesAtivas });
     } catch (e) {
       console.error("[interpretar-desvio] erro ao classificar:", e);
       return { status: "ambiguo" };
@@ -204,6 +205,7 @@ export function criarInterpretadorDesvio(faqsAtivas: FaqParaDesvio[], objecoesAt
       conteudo,
       respostaLead,
       perguntaPendente,
+      nomeLead,
       personaTexto,
     });
     if (!mensagem) return { status: "ambiguo" };
@@ -221,13 +223,13 @@ export function criarInterpretadorDesvio(faqsAtivas: FaqParaDesvio[], objecoesAt
  * classificação nem resolução de índice pra fazer aqui, só geração.
  */
 export function criarGeradorConteudoExtra(personaTexto: string | null): GeradorConteudoExtra {
-  return async ({ conteudoExtra, respostaLead, perguntaPendente }) => {
+  return async ({ conteudoExtra, respostaLead, perguntaPendente, nomeLead }) => {
     if (!conteudoExtra || !personaTexto) return null;
 
     const tipo = conteudoExtra.tipo;
     const conteudo = tipo === "faq" ? conteudoExtra.faq.resposta : conteudoExtra.objecao.comoLidar;
 
-    return gerarMensagemDesvio({ tipo, conteudo, respostaLead, perguntaPendente, personaTexto });
+    return gerarMensagemDesvio({ tipo, conteudo, respostaLead, perguntaPendente, nomeLead, personaTexto });
   };
 }
 

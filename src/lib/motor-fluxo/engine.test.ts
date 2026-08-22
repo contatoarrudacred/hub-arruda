@@ -767,6 +767,51 @@ describe("Desvio (spec 2026-08-21-desvio-escalar-quando-nao-sabe.md) — regra d
     },
   };
 
+  // Achado 22/08/2026 (re-teste lead_muda_de_ideia_varias_vezes): a Malala inventou o nome "Marcelo"
+  // pro lead "Carlos" porque a geração nunca recebia o nome real, e a "pergunta pendente" vinha do
+  // texto ESTÁTICO de conteudo.mensagens — que em checkpoints com mensagem dinâmica é só um
+  // placeholder ("(pergunta de voucher calculada dinamicamente...)"), não a pergunta real que o
+  // lead viu. engine.ts agora resolve a mensagem dinâmica (quando existir) e passa o nome de
+  // dados.nome pro interpretarDesvio/gerarRespostaConteudoExtra.
+  it("resolve a pergunta pendente via mensagem dinâmica (não o texto estático) e passa nomeLead de dados.nome", async () => {
+    let paramsRecebidos: { perguntaPendente: string; nomeLead: string | null } | null = null;
+    await avancarConversa({
+      etapaAtual: etapaGenerica,
+      etapasPorCodigo,
+      dados: { nome: "Carlos" },
+      respostaLead: "vocês trabalham com consórcio?",
+      resolverMensagensDinamicas: (codigo) =>
+        codigo === "checkpoint_teste_desvio" ? [{ tipo: "texto", texto: "Pergunta real resolvida dinamicamente" }] : null,
+      calcularDadosDerivados,
+      interpretarComIA: async () => null,
+      interpretarDesvio: async (params) => {
+        paramsRecebidos = { perguntaPendente: params.perguntaPendente, nomeLead: params.nomeLead };
+        return { status: "escalar" };
+      },
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(paramsRecebidos).toEqual({ perguntaPendente: "Pergunta real resolvida dinamicamente", nomeLead: "Carlos" });
+  });
+
+  it("sem dados.nome: passa nomeLead null (nunca inventa um nome pra IA usar)", async () => {
+    let nomeRecebido: string | null | undefined;
+    await avancarConversa({
+      etapaAtual: etapaGenerica,
+      etapasPorCodigo,
+      dados: {},
+      respostaLead: "vocês trabalham com consórcio?",
+      resolverMensagensDinamicas,
+      calcularDadosDerivados,
+      interpretarComIA: async () => null,
+      interpretarDesvio: async (params) => {
+        nomeRecebido = params.nomeLead;
+        return { status: "escalar" };
+      },
+      variaveisGlobais: VARIAVEIS_GLOBAIS,
+    });
+    expect(nomeRecebido).toBeNull();
+  });
+
   it("FAQ bate: manda a mensagem já gerada (resposta + retomada), sem avançar", async () => {
     const resultado = await avancarConversa({
       etapaAtual: etapaGenerica,

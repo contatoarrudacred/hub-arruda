@@ -147,3 +147,49 @@ só o fallback) também verifique "esta resposta tem algo além do que eu espera
 reconhece uma resposta válida. Fica registrado como a extensão natural do item (b) já combinado com o
 Luiz (investigar a precisão do classificador em respostas "sim, mas...") — o escopo real é maior do que
 só isso: é sobre conteúdo extra embutido em qualquer resposta, não só hedges tipo "sim, mas...".
+
+## Atualização 22/08/2026 — item (b) implementado, testado e verificado ao vivo
+
+Luiz aprovou a Opção A (embutir a detecção na MESMA chamada de IA que já reconhece a resposta, sem
+custo de uma 2ª chamada). Implementado nos 4 interpretadores (`interpretacao-ia.ts` genérico,
+`interpretar-faixas-documentos.ts`, `interpretar-negociacao-pagamento.ts`,
+`interpretar-lista-documentos.ts`): cada um agora também detecta, na mesma chamada, se a resposta
+que reconheceu TAMBÉM carrega uma FAQ/objeção embutida (`ConteudoExtraDetectado`, resolvido contra
+as listas de verdade em `resolverConteudoExtra`, mesma filosofia defensiva de
+`resolverRespostaDesvio` — índice fora do range vira `null`, nunca escala). `engine.ts` carrega o
+resultado até o fim do turno e, se houver, faz **prepend** da mensagem gerada (reaproveita
+`gerarMensagemDesvio`) antes do avanço normal do checkpoint — nunca interrompe nem trava o turno.
+
+**Achado sério durante a verificação ao vivo (não é bug da feature nova, é pré-existente no
+`interpretar-desvio.ts` original, só nunca tinha sido exposto)**: re-testando
+`lead_muda_de_ideia_varias_vezes`, a Malala chamou o lead de **"Marcelo"** quando ele tinha se
+apresentado como **"Carlos"**. Causa raiz dupla, confirmada por leitura direta do banco:
+1. A "pergunta pendente" enviada no prompt de geração vinha do texto ESTÁTICO de
+   `conteudo.mensagens` — em checkpoints com mensagem dinâmica (`resolverMensagensDinamicas`, ex.:
+   `ln_passo14`), esse texto estático é só um placeholder gravado no banco
+   ("(pergunta de voucher calculada dinamicamente conforme CPF/CNPJ escolhido em ln_passo4)"), não a
+   pergunta real que o lead viu.
+2. A geração nunca recebia o nome real do lead (`dados.nome`) em lugar nenhum do prompt.
+Sem uma pergunta real pra retomar e sem o nome certo, o modelo improvisou os dois.
+
+**Correção**: `InterpretadorDesvio`/`GeradorConteudoExtra` (tipos.ts) passam a receber
+`perguntaPendente`/`nomeLead` de quem chama (`engine.ts`), que é o único lugar com acesso a
+`resolverMensagensDinamicas`/`dados`. Novo helper `textoPerguntaAtual` (engine.ts, mesma prioridade
+de `mensagemRetomada`: mensagem dinâmica resolvida > texto estático) substitui o cálculo que antes
+vivia dentro de `interpretar-desvio.ts`. O prompt de geração agora inclui uma instrução explícita:
+usar SÓ o nome informado, ou não usar nome nenhum se ainda não for conhecido — nunca inventar.
+
+**Verificado**: 666/667 testes (2 novos cobrindo perguntaPendente/nomeLead corretos + o caso sem
+nome ainda conhecido), tsc/eslint limpos. Ao vivo: re-rodei `lead_muda_de_ideia_varias_vezes` 2x
+após a correção — nome "Carlos" usado corretamente em TODOS os turnos onde a geração de
+desvio/objeção disparou (antes só tinha acontecido uma vez, mas o mesmo `gerarMensagemDesvio` é
+usado nos dois recursos, então o risco existia em qualquer acionamento). O turno 8 da 2ª rodada
+mostra o item (b) funcionando de verdade: o lead embutiu uma pergunta sobre prazo numa resposta que
+também confirmava o checkpoint, e a Malala respondeu a pergunta corretamente (endereçando o prazo)
+E manteve o nome certo, tudo na mesma mensagem.
+
+**Achado novo, registrado mas NÃO investigado ainda** (fora do escopo desta rodada): no re-teste, o
+juiz apontou que a Malala ignora repetidamente a pergunta do lead sobre prazo em turnos posteriores
+(depois de já ter respondido bem uma vez no turno 8), insiste de forma robótica na pergunta de faixa
+de valor, e usa gatilhos de urgência/escassez ("vouchers limitados", "fechar HOJE") sem uma base
+clara de que são fatos confirmados. Fica pra próxima investigação/bateria.

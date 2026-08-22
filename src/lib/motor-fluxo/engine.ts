@@ -74,6 +74,24 @@ function mensagemRetomada(conteudo: ConteudoEtapa, mensagensResolvidas?: Mensage
 }
 
 /**
+ * Texto da pergunta que o lead REALMENTE viu neste checkpoint — usado como "pergunta pendente" nos
+ * prompts de desvio/conteúdo extra (interpretar-desvio.ts). Mesma prioridade de `mensagemRetomada`
+ * (mensagem dinâmica resolvida > texto estático de `conteudo.mensagens`): achado 22/08/2026
+ * (re-teste `lead_muda_de_ideia_varias_vezes`) — sem isto, checkpoints com mensagem dinâmica (ex.:
+ * ln_passo14) mandavam pra IA o placeholder cru gravado no banco ("(pergunta de voucher calculada
+ * dinamicamente...)"), não a pergunta de verdade — a IA, sem uma pergunta real pra retomar (e sem o
+ * nome do lead, ver `nomeLead` nos dois pontos de chamada), inventou os dois.
+ */
+function textoPerguntaAtual(
+  conteudo: ConteudoEtapa,
+  dados: DadosConversa,
+  resolverMensagensDinamicas?: ResolverMensagensDinamicas,
+): string {
+  const mensagens = resolverMensagensDinamicas?.(conteudo.codigo, dados) ?? conteudo.mensagens;
+  return mensagens.map(textoDeMensagem).join("\n");
+}
+
+/**
  * Resolve `{tipo: "automatico"}` num `{tipo: "aleatorio", ...}` concreto, calculado a partir do
  * tamanho da mensagem — objetivo duplo de Luiz (15/08/2026): dar um respiro proporcional ao
  * tamanho do texto pro lead pensar, e nunca repetir o mesmo tempo em conversas diferentes (a
@@ -473,7 +491,12 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   // uma objeção/hesitação, ou algo que a Malala genuinamente não sabe responder (escala pro humano em
   // vez de repetir a pergunta ignorando o lead).
   if (!reconhecido && conteudo.interpretacao_ia?.habilitado && interpretarDesvio) {
-    const resultadoDesvio = await interpretarDesvio({ etapaAtual, respostaLead });
+    const resultadoDesvio = await interpretarDesvio({
+      etapaAtual,
+      respostaLead,
+      perguntaPendente: textoPerguntaAtual(conteudo, dados, resolverMensagensDinamicas),
+      nomeLead: dados.nome ?? null,
+    });
 
     if (resultadoDesvio.status === "faq" || resultadoDesvio.status === "objecao") {
       // A mensagem já vem pronta (gerada com a voz da persona, respondendo/acolhendo e retomando a
@@ -646,11 +669,11 @@ export async function avancarConversa(contexto: ContextoAvanco): Promise<Resulta
   // trava o turno por causa disso: falha na geração simplesmente não adiciona nada).
   let mensagensComExtra = percurso.mensagens;
   if (conteudoExtraDetectado && gerarRespostaConteudoExtra) {
-    const perguntaPendente = conteudo.mensagens.map(textoDeMensagem).join("\n");
     const mensagemExtra = await gerarRespostaConteudoExtra({
       conteudoExtra: conteudoExtraDetectado,
       respostaLead,
-      perguntaPendente,
+      perguntaPendente: textoPerguntaAtual(conteudo, dados, resolverMensagensDinamicas),
+      nomeLead: dados.nome ?? null,
     });
     if (mensagemExtra) {
       mensagensComExtra = [empacotar({ tipo: "texto", texto: mensagemExtra }, conteudo), ...percurso.mensagens];
