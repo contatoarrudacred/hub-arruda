@@ -282,31 +282,40 @@ describe("gerarCapa", () => {
       usage: { inputTokens: 10, outputTokens: 10 },
     });
 
-    const { resultado, usage } = await gerarCapa(pauta, conteudo, persona);
+    const { resultado, usage, log, erroDetalhado } = await gerarCapa(pauta, conteudo, persona);
 
     expect(resultado).toBeNull();
     expect(usage.inputTokens).toBeGreaterThan(0);
     expect(geradorImagemOpenAI.gerarImagemOpenAI).toHaveBeenCalledTimes(2);
     expect(revisorImagem.revisarImagem).toHaveBeenCalledTimes(2);
+    // Regra dura de UI (22/08/2026): esgotar tentativas é degradação ESPERADA (Global Constraint),
+    // não uma falha — erroDetalhado não deve existir aqui, só o log com o motivo de cada reprovação.
+    expect(erroDetalhado).toBeUndefined();
+    expect(log.some((linha) => linha.includes("reprovada") && linha.includes("Elemento visual fora do trecho-fonte."))).toBe(true);
+    expect(log.some((linha) => linha.includes("Limite de 2 tentativas esgotado"))).toBe(true);
   });
 
   // Cenário 5: falha de infraestrutura da API OpenAI (gerarImagemOpenAI lança) → gerarCapa
   // devolve resultado null em vez de propagar o erro (Global Constraint do plano: "OPENAI_API_KEY
   // ausente não pode derrubar o pipeline de texto... segue sem imagem").
-  it("falha da API OpenAI (gerarImagemOpenAI lança) → resultado null, não lança", async () => {
+  it("falha da API OpenAI (gerarImagemOpenAI lança) → resultado null, não lança, mas erroDetalhado e log capturam a falha real", async () => {
     const mockCreate = obterMockCreate();
     mockarQuatroEtapasClaude(mockCreate);
 
     vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockRejectedValue(new Error("OPENAI_API_KEY não configurada."));
 
-    await expect(gerarCapa(pauta, conteudo, persona)).resolves.toEqual(
-      expect.objectContaining({ resultado: null }),
-    );
+    const { resultado, erroDetalhado, log } = await gerarCapa(pauta, conteudo, persona);
+
+    expect(resultado).toBeNull();
+    // Regra dura de UI (22/08/2026, docs/COORDENACAO_AGENTES_ARRUDACRED.md seção 4.1 item 8) — a
+    // falha REAL não pode mais desaparecer sem rastro: erroDetalhado carrega a mensagem original.
+    expect(erroDetalhado).toContain("OPENAI_API_KEY não configurada.");
+    expect(log.some((linha) => linha.includes("FALHA") && linha.includes("OPENAI_API_KEY"))).toBe(true);
   });
 
   // Cenário 6: falha do revisor de imagem (erro de rede/API, não reprovação) também degrada pra
   // null em vez de lançar — mesma Global Constraint.
-  it("falha de infraestrutura do revisor de imagem → resultado null, não lança", async () => {
+  it("falha de infraestrutura do revisor de imagem → resultado null, não lança, erroDetalhado carrega a mensagem real", async () => {
     const mockCreate = obterMockCreate();
     mockarQuatroEtapasClaude(mockCreate);
     vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({
@@ -315,19 +324,21 @@ describe("gerarCapa", () => {
     });
     vi.mocked(revisorImagem.revisarImagem).mockRejectedValue(new Error("ECONNRESET"));
 
-    const { resultado } = await gerarCapa(pauta, conteudo, persona);
+    const { resultado, erroDetalhado } = await gerarCapa(pauta, conteudo, persona);
     expect(resultado).toBeNull();
+    expect(erroDetalhado).toContain("ECONNRESET");
   });
 
   // Cenário 7: falha de uma das etapas Claude (ex.: resumo do post) também degrada pra null —
   // nenhuma etapa deste módulo pode derrubar o pipeline.
-  it("falha numa etapa Claude (ex.: resumo do post) → resultado null, não lança", async () => {
+  it("falha numa etapa Claude (ex.: resumo do post) → resultado null, não lança, erroDetalhado presente", async () => {
     const mockCreate = obterMockCreate();
     mockCreate.mockRejectedValueOnce(new Error("ANTHROPIC_API_KEY não configurada."));
 
-    const { resultado } = await gerarCapa(pauta, conteudo, persona);
+    const { resultado, erroDetalhado } = await gerarCapa(pauta, conteudo, persona);
     expect(resultado).toBeNull();
     expect(geradorImagemOpenAI.gerarImagemOpenAI).not.toHaveBeenCalled();
+    expect(erroDetalhado).toContain("ANTHROPIC_API_KEY não configurada.");
   });
 
   // Cenário 8: persona null — não lança, degrada graciosamente. Etapa 2 (resumo da persona) NÃO
@@ -426,12 +437,30 @@ describe("gerarImagemComPrompt", () => {
     expect(geradorImagemOpenAI.gerarImagemOpenAI).toHaveBeenCalledTimes(2);
   });
 
-  it("falha de infraestrutura (gerarImagemOpenAI lança) → resultado null, não lança", async () => {
+  it("falha de infraestrutura (gerarImagemOpenAI lança) → resultado null, não lança, erroDetalhado carrega a mensagem real", async () => {
     obterMockCreate();
     vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockRejectedValue(new Error("OPENAI_API_KEY não configurada."));
 
-    const { resultado } = await gerarImagemComPrompt("prompt", "trecho");
+    const { resultado, erroDetalhado, log } = await gerarImagemComPrompt("prompt", "trecho");
 
     expect(resultado).toBeNull();
+    // Regra dura de UI (22/08/2026, docs/COORDENACAO_AGENTES_ARRUDACRED.md seção 4.1 item 8).
+    expect(erroDetalhado).toContain("OPENAI_API_KEY não configurada.");
+    expect(log.some((linha) => linha.includes("FALHA"))).toBe(true);
+  });
+
+  it("esgota tentativas sem aprovação → resultado null, SEM erroDetalhado (degradação esperada, não falha)", async () => {
+    obterMockCreate();
+    vi.mocked(geradorImagemOpenAI.gerarImagemOpenAI).mockResolvedValue({ url: "data:image/png;base64,x=", usage: { custoUsd: 0.041 } });
+    vi.mocked(revisorImagem.revisarImagem).mockResolvedValue({
+      resultado: { aprovada: false, motivo: "Sempre reprovado." },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const { resultado, erroDetalhado, log } = await gerarImagemComPrompt("prompt", "trecho");
+
+    expect(resultado).toBeNull();
+    expect(erroDetalhado).toBeUndefined();
+    expect(log.some((linha) => linha.includes("reprovada") && linha.includes("Sempre reprovado."))).toBe(true);
   });
 });

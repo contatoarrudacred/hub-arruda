@@ -1075,6 +1075,14 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  // Regra dura de UI (22/08/2026, docs/COORDENACAO_AGENTES_ARRUDACRED.md seção 4.1 item 8) +
+  // modo de depuração pedido pelo Luiz especificamente pra esta modal (achado real: "não foi
+  // possível gerar a imagem" reprovando 3x seguidas sem nenhuma pista). `detalhesErro` é a
+  // mensagem técnica real (só existe numa falha de verdade); `logDebug` é o rastro passo-a-passo
+  // de tudo que a action fez nesta tentativa — mostrado sempre que existir, sucesso ou falha, pra
+  // ajudar a identificar onde exatamente o processo parou.
+  const [detalhesErro, setDetalhesErro] = useState<string | null>(null);
+  const [logDebug, setLogDebug] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelado = false;
@@ -1130,12 +1138,16 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
     setPrompt("");
     setArquivo(null);
     setErroEnvio(null);
+    setDetalhesErro(null);
+    setLogDebug([]);
   }
 
   async function confirmar() {
     if (!alvo) return;
     setEnviando(true);
     setErroEnvio(null);
+    setDetalhesErro(null);
+    setLogDebug([]);
 
     const formData = new FormData();
     formData.append("postId", postId);
@@ -1146,8 +1158,10 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
 
     const resultado = alvo.tipo === "capa" ? await trocarCapaAction(formData) : await trocarImagemSecundariaAction(formData);
     setEnviando(false);
+    setLogDebug(resultado.log);
     if (!resultado.sucesso) {
       setErroEnvio(resultado.erro);
+      setDetalhesErro(resultado.detalhesErro ?? null);
       return;
     }
 
@@ -1261,6 +1275,37 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
             )}
 
             {erroEnvio && <p className="text-sm text-red-600 dark:text-red-400">{erroEnvio}</p>}
+
+            {/* Regra dura de UI (22/08/2026, docs/COORDENACAO_AGENTES_ARRUDACRED.md seção 4.1
+                item 8) — a mensagem amigável acima nunca vem sozinha quando existe detalhe técnico
+                real: quadro numa cor DIFERENTE do erro (âmbar, não vermelho) com o máximo de dado
+                real sobre o que quebrou, pra quem for investigar não precisar caçar log de
+                servidor. */}
+            {detalhesErro && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                  Detalhes do erro — mostre ao administrador do sistema
+                </p>
+                <pre className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs text-amber-900 dark:text-amber-200">
+                  {detalhesErro}
+                </pre>
+              </div>
+            )}
+
+            {/* Modo de depuração específico desta modal (22/08/2026, pedido do Luiz) — rastro
+                passo-a-passo de tudo que a última tentativa fez, pra ajudar a identificar onde o
+                processo realmente parou. Mostrado sempre que existir (sucesso ou falha), não só em
+                erro — diferente do quadro de detalhes acima, que só aparece numa falha real. */}
+            {logDebug.length > 0 && (
+              <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Modo de depuração — o que a última tentativa fez
+                </p>
+                <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+                  {logDebug.join("\n")}
+                </pre>
+              </div>
+            )}
 
             {/* 21/08/2026, pedido do Luiz: a barra indeterminada + "~20-40s" de antes davam a
                 impressão errada de travado quando a geração passava desse tempo (a chamada não
