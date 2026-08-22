@@ -378,23 +378,42 @@ async function gerarPromptCapa(
 export async function gerarImagemComPrompt(
   promptImagem: string,
   trechoParaRevisao: string,
-): Promise<{ resultado: { url: string } | null; usage: UsageTokens; custoUsdOpenAi: number }> {
+): Promise<{
+  resultado: { url: string } | null;
+  usage: UsageTokens;
+  custoUsdOpenAi: number;
+  // Regra dura de UI (22/08/2026, seção 4.1 item 8 de docs/COORDENACAO_AGENTES_ARRUDACRED.md) —
+  // achado real: "não foi possível gerar a imagem" reprovava 3x seguidas sem NENHUM detalhe pra
+  // investigar (o catch abaixo engolia o erro de verdade). `log` é o rastro passo-a-passo de tudo
+  // que rodou nesta chamada (pra quem for depurar entender ONDE parou); `erroDetalhado` só existe
+  // quando `resultado` é null por uma falha real (infra) — não quando é null por reprovação normal
+  // do Revisor após esgotar as tentativas (isso não é uma "falha", é o Global Constraint "nunca
+  // lança" funcionando como esperado).
+  log: string[];
+  erroDetalhado?: string;
+}> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
   let custoUsdOpenAi = 0;
+  const log: string[] = [];
+  const registrar = (mensagem: string) => log.push(`[${new Date().toISOString()}] ${mensagem}`);
 
   try {
     let promptTentativa = promptImagem;
     for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
+      registrar(`Tentativa ${tentativa}/${LIMITE_TENTATIVAS_IMAGEM}: chamando a OpenAI (gpt-image-2)...`);
       const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
       custoUsdOpenAi += geracao.usage.custoUsd;
+      registrar(`Tentativa ${tentativa}: imagem gerada pela OpenAI (custo $${geracao.usage.custoUsd.toFixed(3)}). Enviando pro Revisor de imagem...`);
 
       const revisao = await revisarImagem(geracao.url, trechoParaRevisao);
       usage = somarUsage(usage, revisao.usage);
 
       if (revisao.resultado.aprovada) {
-        return { resultado: { url: geracao.url }, usage, custoUsdOpenAi };
+        registrar(`Tentativa ${tentativa}: aprovada pelo Revisor.`);
+        return { resultado: { url: geracao.url }, usage, custoUsdOpenAi, log };
       }
 
+      registrar(`Tentativa ${tentativa}: reprovada pelo Revisor — motivo: ${revisao.resultado.motivo ?? "(sem motivo informado)"}.`);
       promptTentativa = [
         promptImagem,
         "",
@@ -403,9 +422,13 @@ export async function gerarImagemComPrompt(
       ].join("\n");
     }
 
-    return { resultado: null, usage, custoUsdOpenAi };
-  } catch {
-    return { resultado: null, usage, custoUsdOpenAi };
+    registrar(`Limite de ${LIMITE_TENTATIVAS_IMAGEM} tentativas esgotado sem aprovação do Revisor — degradação esperada, não uma falha.`);
+    return { resultado: null, usage, custoUsdOpenAi, log };
+  } catch (erro) {
+    const mensagemErro = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro);
+    registrar(`FALHA: ${mensagemErro}`);
+    console.error("gerarImagemComPrompt: falha inesperada durante a geração —", erro);
+    return { resultado: null, usage, custoUsdOpenAi, log, erroDetalhado: mensagemErro };
   }
 }
 
@@ -417,6 +440,12 @@ export async function gerarCapa(
   resultado: { url: string; alt: string; slug: string; titulo: string } | null;
   usage: UsageTokens;
   custoUsdOpenAi: number;
+  // Regra dura de UI (22/08/2026, seção 4.1 item 8 de docs/COORDENACAO_AGENTES_ARRUDACRED.md) —
+  // mesmo raciocínio de gerarImagemComPrompt acima: `log` é o rastro passo-a-passo (pra quem for
+  // depurar ver onde parou); `erroDetalhado` só existe quando `resultado` é null por FALHA real,
+  // não pela reprovação normal do Revisor após esgotar tentativas.
+  log: string[];
+  erroDetalhado?: string;
 }> {
   let usage: UsageTokens = { inputTokens: 0, outputTokens: 0 };
   // Custo real da OpenAI (19/08/2026, pedido do Luiz) — antes desta mudança, `geracao.usage.custoUsd`
@@ -424,24 +453,35 @@ export async function gerarCapa(
   // persistido). Soma TODA tentativa, aprovada ou não — o $ já foi gasto na chamada à API
   // independente do resultado da revisão.
   let custoUsdOpenAi = 0;
+  const log: string[] = [];
+  const registrar = (mensagem: string) => log.push(`[${new Date().toISOString()}] ${mensagem}`);
 
   try {
     // Etapas 1-4 — falha em qualquer uma delas (infra Claude, campo ausente) é uma falha de
     // pipeline: sem prompt de imagem não há o que gerar. Cai no catch geral, devolve null.
+    registrar("Etapa 1 (resumo estratégico do post): iniciando.");
     const etapa1 = await gerarResumoPost(conteudo.titulo, conteudo.conteudoHtml);
     usage = somarUsage(usage, etapa1.usage);
+    registrar("Etapa 1 (resumo estratégico do post): concluída.");
 
+    registrar(persona ? "Etapa 2 (resumo psicológico-visual da persona): iniciando." : "Etapa 2: pulada — pauta sem persona associada, usando resumo-placeholder.");
     const etapa2 = await gerarResumoPersona(persona);
     usage = somarUsage(usage, etapa2.usage);
+    if (persona) registrar("Etapa 2 (resumo psicológico-visual da persona): concluída.");
 
     // Sorteado UMA vez por capa, antes da etapa 3 — ver comentário de CATALOGO_AMBIENTES_CENA.
     const ambienteSorteado = sortearAmbienteCena();
+    registrar(`Ambiente sorteado pra esta cena: "${ambienteSorteado}".`);
 
+    registrar("Etapa 3 (cruzamento — ideia visual única): iniciando.");
     const etapa3 = await gerarCruzamento(conteudo.titulo, etapa1.resumo, etapa2.resumo, ambienteSorteado);
     usage = somarUsage(usage, etapa3.usage);
+    registrar("Etapa 3 (cruzamento — ideia visual única): concluída.");
 
+    registrar("Etapa 4 (prompt final da imagem + metadados): iniciando.");
     const etapa4 = await gerarPromptCapa(conteudo.titulo, etapa1.resumo, etapa2.resumo, etapa3.ideiaVisual, ambienteSorteado);
     usage = somarUsage(usage, etapa4.usage);
+    registrar("Etapa 4 (prompt final da imagem + metadados): concluída.");
 
     // Etapa 5 — geração (OpenAI) + revisão (Claude com visão, Task 6), com retry até
     // LIMITE_TENTATIVAS_IMAGEM. trechoFonte é o post inteiro (conteudoHtml) porque a capa
@@ -449,13 +489,16 @@ export async function gerarCapa(
     // Task 8, onde o trecho-fonte é um trecho específico).
     let promptTentativa = etapa4.resultado.promptImagem;
     for (let tentativa = 1; tentativa <= LIMITE_TENTATIVAS_IMAGEM; tentativa++) {
+      registrar(`Etapa 5, tentativa ${tentativa}/${LIMITE_TENTATIVAS_IMAGEM}: chamando a OpenAI (gpt-image-2)...`);
       const geracao = await gerarImagemOpenAI(promptTentativa, "16:9");
       custoUsdOpenAi += geracao.usage.custoUsd;
+      registrar(`Etapa 5, tentativa ${tentativa}: imagem gerada pela OpenAI (custo $${geracao.usage.custoUsd.toFixed(3)}). Enviando pro Revisor de imagem...`);
 
       const revisao = await revisarImagem(geracao.url, conteudo.conteudoHtml);
       usage = somarUsage(usage, revisao.usage);
 
       if (revisao.resultado.aprovada) {
+        registrar(`Etapa 5, tentativa ${tentativa}: aprovada pelo Revisor.`);
         return {
           resultado: {
             url: geracao.url,
@@ -465,9 +508,11 @@ export async function gerarCapa(
           },
           usage,
           custoUsdOpenAi,
+          log,
         };
       }
 
+      registrar(`Etapa 5, tentativa ${tentativa}: reprovada pelo Revisor — motivo: ${revisao.resultado.motivo ?? "(sem motivo informado)"}.`);
       // Reprovada — dobra o motivo no prompt da próxima tentativa (mesmo padrão de
       // escritor.ts/revisor.ts: motivo concreto pra corrigir, não reescrever do zero).
       promptTentativa = [
@@ -478,12 +523,19 @@ export async function gerarCapa(
       ].join("\n");
     }
 
-    // Limite de tentativas esgotado sem aprovação — degradação aceitável (Global Constraint).
-    return { resultado: null, usage, custoUsdOpenAi };
-  } catch {
+    // Limite de tentativas esgotado sem aprovação — degradação aceitável (Global Constraint), não
+    // uma falha: por isso não seta erroDetalhado aqui, só registra no log.
+    registrar(`Limite de ${LIMITE_TENTATIVAS_IMAGEM} tentativas esgotado sem aprovação do Revisor — degradação esperada, não uma falha.`);
+    return { resultado: null, usage, custoUsdOpenAi, log };
+  } catch (erro) {
     // Qualquer falha de infraestrutura (Claude, OpenAI, revisor) em qualquer etapa — não derruba
     // o pipeline. Um post sem capa é um resultado aceitável; um post que falha de publicar por
-    // causa da capa não é.
-    return { resultado: null, usage, custoUsdOpenAi };
+    // causa da capa não é. Mas a falha REAL não pode mais desaparecer sem rastro (achado real,
+    // 22/08/2026): loga no servidor E devolve a mensagem em `erroDetalhado`, pro chamador poder
+    // mostrar ao administrador do sistema (regra dura, seção 4.1 item 8 da coordenação).
+    const mensagemErro = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro);
+    registrar(`FALHA: ${mensagemErro}`);
+    console.error("gerarCapa: falha inesperada durante a geração —", erro);
+    return { resultado: null, usage, custoUsdOpenAi, log, erroDetalhado: mensagemErro };
   }
 }
