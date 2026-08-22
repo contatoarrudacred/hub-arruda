@@ -276,31 +276,44 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
             // à toa; a coluna aparecendo já é o sinal de que algo travou. As demais (esperas humanas
             // genuínas + terminais) continuam sempre visíveis, mesmo vazias.
             .filter((estagio) => !ehEstagioTransitorio(estagio.valor) || (porEstagio.get(estagio.valor)?.length ?? 0) > 0)
-            .map((estagio) => (
+            .map((estagio) => {
+            const cardsDaColuna = porEstagio.get(estagio.valor) ?? [];
+            const somaColuna = cardsDaColuna.reduce((soma, v) => soma + v.valorTotal, 0);
+            return (
             <div
               key={estagio.valor}
               className="flex w-64 shrink-0 flex-col divide-y divide-zinc-200 rounded-md border border-zinc-200 bg-zinc-50 text-xs shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
             >
-              <div className="flex items-center gap-2 p-2">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: estagio.cor }} />
-                <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" title={estagio.rotulo}>
-                  {estagio.rotulo} ({porEstagio.get(estagio.valor)?.length ?? 0})
-                </h2>
-                {(porEstagio.get(estagio.valor) ?? []).some((v) => v.ultimoErro) && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await tentarNovamenteEmLoteAction(estagio.valor);
-                      recarregar();
-                    }}
-                    className="ml-auto text-xs text-amber-700 underline dark:text-amber-400"
+              <div className="flex flex-col gap-1 p-2">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: estagio.cor }} />
+                  <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" title={estagio.rotulo}>
+                    {estagio.rotulo} ({cardsDaColuna.length})
+                  </h2>
+                  {cardsDaColuna.some((v) => v.ultimoErro) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await tentarNovamenteEmLoteAction(estagio.valor);
+                        recarregar();
+                      }}
+                      className="ml-auto text-xs text-amber-700 underline dark:text-amber-400"
+                    >
+                      Tentar novamente todos
+                    </button>
+                  )}
+                </div>
+                {cardsDaColuna.length > 0 && (
+                  <p
+                    className="text-xs text-zinc-500 dark:text-zinc-400"
+                    title="Soma do valor total das vendas paradas nesta etapa — dinheiro que ainda não virou pagamento"
                   >
-                    Tentar novamente todos
-                  </button>
+                    💰 {formatarValor(somaColuna)} parado aqui
+                  </p>
                 )}
               </div>
               <div className="flex max-h-[70vh] flex-col gap-2 overflow-y-auto p-2">
-                {(porEstagio.get(estagio.valor) ?? []).map((venda) => (
+                {cardsDaColuna.map((venda) => (
                   <div
                     key={venda.contratoId}
                     className={`rounded-md border p-3 shadow-sm ${
@@ -326,7 +339,8 @@ export function PainelVendasClient({ vendasIniciais }: { vendasIniciais: VendaRe
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
