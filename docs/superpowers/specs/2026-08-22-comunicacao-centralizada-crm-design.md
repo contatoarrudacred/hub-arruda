@@ -177,8 +177,9 @@ muda.
 Nova tela em `/admin/configuracoes` (ou seção equivalente), seguindo o MESMO padrão de UX/layout já
 usado em `/admin/faqs` e `/admin/objecoes` (lista simples, toggle `ativo`, edição inline/modal) —
 nada de componente novo, reaproveita os mesmos padrões visuais já validados. CRUD: nome da categoria +
-ativo/inativo. Sem exclusão física (mesmo padrão de FAQs/objeções — desativa, não apaga, preserva
-histórico de mensagens antigas que referenciam a categoria).
+ativo/inativo, com exclusão física (mesmo padrão real já usado em objeções — `excluirObjecaoAction`).
+`mensagens.categoria_id` usa `on delete set null`: excluir uma categoria não apaga mensagens antigas
+que a referenciam, só limpa a referência nelas.
 
 ## Erros
 
