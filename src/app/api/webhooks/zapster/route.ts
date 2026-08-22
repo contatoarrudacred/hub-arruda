@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { avancarConversa, iniciarFluxo, saudacaoPorHorario } from "@/lib/motor-fluxo/engine";
 import {
@@ -38,6 +38,7 @@ import {
 import { resolverEtapaInicialLeadNovo } from "@/lib/motor-fluxo/roteamento-lead-novo";
 import { transcreverAudio } from "@/lib/motor-fluxo/transcricao-audio";
 import { enviarSequenciaWhatsapp } from "@/lib/whatsapp/enviar";
+import { verificarSegredoWebhook } from "@/lib/whatsapp/verificar-segredo-webhook";
 
 // Delay/digitando entre mensagens (ver enviarSequenciaWhatsapp) pode somar alguns segundos por
 // turno, e agora soma também o debounce de entrada (DEBOUNCE_MS abaixo) — maxDuration maior evita
@@ -263,31 +264,9 @@ async function processarMensagemRecebida(
   }
 }
 
-/** Comparação em tempo constante — evita vazar, por timing, quantos caracteres do segredo já acertaram. */
-function segredosBatem(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
-}
-
 export async function POST(request: Request) {
-  const segredo = process.env.ZAPSTER_WEBHOOK_SECRET;
-
-  // Falha fechado em produção: sem a env var configurada, a checagem abaixo era pulada por
-  // inteiro (achado real na avaliação de 16/08/2026) — um erro de configuração na Vercel viraria
-  // um endpoint aberto, aceitando "mensagens" falsas de qualquer um (gera lead falso, roda o motor
-  // de verdade, custo real). Mesmo padrão de CRON_SECRET (route.ts do cron de follow-up): vazio
-  // localmente pula a checagem (dev), mas em produção (Vercel) é obrigatório.
-  if (!segredo) {
-    if (process.env.VERCEL) {
-      console.error("[webhook zapster] ZAPSTER_WEBHOOK_SECRET não configurada em produção — rejeitando.");
-      return new Response("Não autorizado", { status: 401 });
-    }
-  } else {
-    const secretDaUrl = new URL(request.url).searchParams.get("secret") ?? "";
-    if (!segredosBatem(secretDaUrl, segredo)) {
-      return new Response("Não autorizado", { status: 401 });
-    }
+  if (!verificarSegredoWebhook(request, "ZAPSTER_WEBHOOK_SECRET")) {
+    return new Response("Não autorizado", { status: 401 });
   }
 
   const payload = await request.json().catch(() => null);
