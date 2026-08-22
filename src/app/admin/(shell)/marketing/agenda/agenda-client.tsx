@@ -1216,6 +1216,22 @@ function ModalTrocarFoto({ postId, onFechar }: { postId: string; onFechar: () =>
 
             {erroEnvio && <p className="text-sm text-red-600 dark:text-red-400">{erroEnvio}</p>}
 
+            {/* Geração de imagem real leva ~20-40s (chamada à OpenAI + upload) — pedido do Luiz,
+                21/08/2026: ícone girando + barra indeterminada (não representa % real de
+                conclusão, só comunica "está trabalhando", já que a chamada não expõe progresso). */}
+            {enviando && (
+              <div className="flex items-center gap-2.5">
+                <span
+                  aria-hidden
+                  className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500"
+                />
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-zinc-900 dark:bg-zinc-50" />
+                </div>
+                <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">~20-40s</span>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
