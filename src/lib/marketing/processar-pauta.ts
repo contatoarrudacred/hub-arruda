@@ -327,11 +327,14 @@ async function gerarEEmbutirImagens(
   let custoUsdOpenAi = 0;
 
   try {
-    const capa = await gerarCapa(pauta, conteudo, persona);
+    // Em paralelo, não em sequência (achado real de produção, 22/08/2026): capa e secundárias são
+    // geradas independentes uma da outra (nenhuma lê o resultado da outra) — rodar em série só
+    // somava os dois tempos à toa, empurrando `gerar_imagens` mais perto (ou pra além) do guard de
+    // orçamento de tempo (`LIMITE_MS_PARA_TENTAR_GERAR_IMAGENS` abaixo) e do próprio maxDuration da
+    // rota (route.ts), aumentando a chance real de o post publicar sem nenhuma imagem.
+    const [capa, secundarias] = await Promise.all([gerarCapa(pauta, conteudo, persona), gerarImagensSecundarias(conteudo)]);
     usage = somarUsageTokens(usage, capa.usage);
     custoUsdOpenAi += capa.custoUsdOpenAi;
-
-    const secundarias = await gerarImagensSecundarias(conteudo);
     usage = somarUsageTokens(usage, secundarias.usage);
     custoUsdOpenAi += secundarias.custoUsdOpenAi;
 
